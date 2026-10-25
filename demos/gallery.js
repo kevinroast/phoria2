@@ -1,85 +1,43 @@
-import {
-  Entity, OrbitControl, PointLight, RADIANS, Scene, generateTesselatedPlane, generateUnitCube,
-} from 'phoria2'
-import { CanvasRenderer } from 'phoria2/canvas'
+import { Group, Lines, Mesh, PointLight, View, box, edges, grid, sphere } from 'phoria2'
 import { DEMOS } from './registry.js'
-import { animate, fitScene } from './shell.js'
 
-const list = document.getElementById('demos')
-for (const { name, title } of DEMOS) {
+// one heading and grid of links per section
+const sections = /** @type {HTMLElement} */ (document.getElementById('demo-sections'))
+/** @type {HTMLUListElement | null} */
+let list = null
+for (const { section, name, title } of DEMOS) {
+  if (section || !list) {
+    const heading = document.createElement('h2')
+    heading.className = 'section-heading'
+    heading.textContent = section ?? 'Demos'
+    list = document.createElement('ul')
+    list.className = 'demo-grid'
+    sections.append(heading, list)
+  }
   const li = document.createElement('li')
   li.innerHTML = `<a href="demo.html?name=${name}"><span class="name">${name}</span><span class="title">${title}</span></a>`
   list.append(li)
 }
 
-// The front page scene: a spinning cube with a bobbing child cube, lit by three coloured point
-// lights orbiting at different speeds.
-const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('canvas'))
-// match the canvas to its CSS frame - registered before fitScene() so it runs first on resize
-const sizeCanvas = () => {
-  canvas.width = canvas.clientWidth
-  canvas.height = canvas.clientHeight
-}
-window.addEventListener('resize', sizeCanvas)
-sizeCanvas()
-
-const scene = new Scene()
-scene.camera.position = { x: 0.0, y: 5.0, z: -15.0 }
-fitScene(scene, canvas)
-// no wheel zoom here - the wheel should scroll the page
-new OrbitControl(canvas, scene, { zoom: false })
-const renderer = new CanvasRenderer(canvas)
-
-const plane = generateTesselatedPlane(16, 16, 0, 20)
-scene.graph.push(Entity.create({
-  points: plane.points,
-  edges: plane.edges,
-  polygons: plane.polygons,
-  style: {
-    drawmode: 'wireframe',
-    linewidth: 0.5,
-    objectsortmode: 'back',
-  },
-}))
-
-const testCube = Entity.create({ ...generateUnitCube(1), style: { drawmode: 'solid' } })
-scene.graph.push(testCube)
-const childCube = Entity.create({
-  ...generateUnitCube(0.5),
-  style: { color: [230, 230, 230], drawmode: 'wireframe' },
+// The front page scene: a spinning cube with a bobbing child, lit by three coloured point lights
+// orbiting at different speeds. No wheel zoom here - the wheel should scroll the page.
+const view = new View({ canvas: '#canvas', orbit: { zoom: false }, background: '#141414', camera: { position: [0, 5, 13] } })
+view.scene.add(new Lines({ geometry: grid({ size: 20, divisions: 16 }), material: { color: '#3c3c44' } }))
+const cube = view.scene.add(new Mesh({ geometry: box(2), material: { color: '#ffffff', roughness: 0.5 }, position: [0, 1, 0] }))
+const child = cube.add(new Lines({ geometry: edges(box(1)), material: { color: '#e6e6e6' } }))
+const bulb = sphere({ radius: 0.12 })
+const lights = [['#0000ff', -5, 1], ['#ff0000', 5, 0.5], ['#00ff00', 5, 1.5]].map(([color, z, speed]) => {
+  const pivot = view.scene.add(new Group())
+  const light = pivot.add(new PointLight({ color, intensity: 30, position: [0, 2.5, Number(z)] }))
+  light.add(new Mesh({ geometry: bulb, material: { color, unlit: true } }))
+  return { pivot, speed: Number(speed) }
 })
-testCube.children.push(childCube)
 
-// a visible point for each light, with the light itself as a child so it follows the point
-const orbitingLight = (position, color) => {
-  const marker = Entity.create({
-    points: [position],
-    style: {
-      color: color.map((c) => c * 255),
-      drawmode: 'point',
-      shademode: 'plain',
-      linewidth: 5,
-      linescale: 2,
-    },
-  })
-  marker.children.push(PointLight.create({ position, color }))
-  scene.graph.push(marker)
-  return marker
-}
-const lights = [
-  { marker: orbitingLight({ x: 0, y: 2, z: -5 }, [0, 0, 1]), speed: 1, angle: 0 },
-  { marker: orbitingLight({ x: 0, y: 2, z: 5 }, [1, 0, 0]), speed: 0.5, angle: 0 },
-  { marker: orbitingLight({ x: 0, y: 2, z: 5 }, [0, 1, 0]), speed: 1.5, angle: 0 },
-]
-
-animate(() => {
-  testCube.rotateY(0.5 * RADIANS)
-  // the child's translation combines with the parent's rotation
-  childCube.identity().translateY(Math.sin(Date.now() / 1000) + 3)
-  const sine = Math.sin(Date.now() / 500)
-  for (const light of lights) {
-    light.marker.identity().rotateY(light.angle += light.speed * RADIANS).translateY(sine)
+view.start((dt, t) => {
+  cube.rotateY(0.5 * dt)
+  child.position.y = Math.sin(t) + 3
+  for (const { pivot, speed } of lights) {
+    pivot.rotateY(speed * dt)
+    pivot.position.y = Math.sin(t * 2)
   }
-  scene.modelView()
-  renderer.render(scene)
 })

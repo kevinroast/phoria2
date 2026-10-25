@@ -1,165 +1,303 @@
-import { vec2, vec3 } from './math.js'
-import { intersectionInsidePolygon, planeLineIntersection } from './intersect.js'
+import { collect } from './frame.js'
+import { LabelLayer } from './labels.js'
+import { OrbitControl } from './OrbitControl.js'
+import { Raycaster } from './Raycaster.js'
+import { Box3 } from './value/Box3.js'
+import { Vec3 } from './value/Vec3.js'
+import { Scene } from './scene/Scene.js'
+import { Camera, PerspectiveCamera } from './scene/cameras.js'
+import { DirectionalLight, HemisphereLight } from './scene/lights.js'
+import { WebGLRenderer } from './webgl/WebGLRenderer.js'
+import { checkOptions, describe, fail } from './validate.js'
 
-/** @import { Scene } from './scene.js' */
-/** @import { Entity } from './entity/Entity.js' */
-/** @import { Vec3Like } from './types.js' */
-
-/**
- * Live pointer drag state from addMouseEvents().
- * @typedef {object} MouseTracker
- * @property {number} velocityH accumulated horizontal drag, typically used as an angle
- * @property {number} velocityV accumulated vertical drag
- * @property {number} velocityLastH
- * @property {number} velocityLastV
- * @property {number} positionX current pointer position, element pixels
- * @property {number} positionY
- * @property {number} clickPositionX last press position, element pixels
- * @property {number} clickPositionY
- * @property {(e: PointerEvent) => void} [onMouseMove]
- * @property {(e: PointerEvent) => void} [onMouseUp]
- * @property {(e: PointerEvent) => void} [onMouseDown]
- */
-
-// View helpers: drag tracking for rotating a view with the mouse or touch, and reverse object
-// selection (picking) - contributed to phoria by Ruan Moolman.
-
-const trackers = new WeakMap()
+/** @import { OrbitOptions } from './OrbitControl.js' */
+/** @import { Hit } from './Raycaster.js' */
+/** @import { FrameDescription } from './frame.js' */
+/** @import { ToneMapping } from './webgl/WebGLRenderer.js' */
+/** @import { CameraOptions } from './scene/cameras.js' */
+/** @import { ColorInput } from './types.js' */
+/** @import { Node } from './scene/Node.js' */
 
 /**
- * Track pointer drags on an element. Returns a live state object - velocityH/velocityV accumulate
- * the drag distance and are typically used as rotation angles; clickPositionX/Y is the last press
- * position in element (canvas pixel) coordinates. fnOnClick is added as a click listener.
- * @param {HTMLElement & { width?: number, height?: number }} el
- * @param {(e: MouseEvent) => void} [fnOnClick]
- * @returns {MouseTracker}
+ * @typedef {object} ViewOptions
+ * @property {HTMLCanvasElement | string} [canvas] element or CSS selector; default: a new canvas filling the window
+ * @property {Scene} [scene] default: a new Scene (from a description: create({ type: 'scene', ... }))
+ * @property {Camera | (CameraOptions & { fov?: number })} [camera] a camera, or PerspectiveCamera options
+ * @property {boolean | OrbitOptions} [orbit] mouse/touch camera control (default false)
+ * @property {ColorInput | null} [background] shortcut for scene.background
+ * @property {number} [pixelRatio] default min(devicePixelRatio, 2)
+ * @property {boolean} [antialias] (default true)
+ * @property {ToneMapping} [toneMapping] 'neutral' keeps colours true (default), 'aces' is filmic, 'none' clips
+ * @property {number} [exposure] (default 1)
+ * @property {boolean} [autoLight] light a scene that has no lights, with one console note (default true)
+ * @property {number} [maxDelta] longest frame step in seconds, so a background tab doesn't jump (default 0.1)
  */
-export function addMouseEvents(el, fnOnClick) {
-  const mouse = {
-    velocityH: 0,
-    velocityLastH: 0,
-    positionX: 0,
-    clickPositionX: 0,
-    velocityV: 0,
-    velocityLastV: 0,
-    positionY: 0,
-    clickPositionY: 0,
-  }
 
-  // element relative position, scaled to canvas pixels if the element is CSS scaled
-  const local = (evt) => {
-    const rect = el.getBoundingClientRect()
-    const sx = el.width ? el.width / rect.width : 1
-    const sy = el.height ? el.height / rect.height : 1
-    return [(evt.clientX - rect.left) * sx, (evt.clientY - rect.top) * sy]
-  }
-
-  mouse.onMouseMove = (evt) => {
-    [mouse.positionX, mouse.positionY] = local(evt)
-    mouse.velocityH = mouse.velocityLastH + (mouse.positionX - mouse.clickPositionX) * 0.5
-    mouse.velocityV = mouse.velocityLastV + (mouse.positionY - mouse.clickPositionY) * 0.5
-  }
-
-  mouse.onMouseUp = (evt) => {
-    el.removeEventListener('pointermove', mouse.onMouseMove)
-    if (el.hasPointerCapture?.(evt.pointerId)) el.releasePointerCapture(evt.pointerId)
-  }
-
-  mouse.onMouseDown = (evt) => {
-    evt.preventDefault()
-    el.setPointerCapture?.(evt.pointerId)
-    el.addEventListener('pointermove', mouse.onMouseMove)
-    ;[mouse.clickPositionX, mouse.clickPositionY] = local(evt)
-    mouse.velocityLastH = mouse.velocityH
-    mouse.velocityLastV = mouse.velocityV
-  }
-
-  // stop the browser claiming touch drags for scrolling
-  el.style.touchAction = 'none'
-  el.addEventListener('pointerdown', mouse.onMouseDown)
-  el.addEventListener('pointerup', mouse.onMouseUp)
-  el.addEventListener('pointercancel', mouse.onMouseUp)
-  if (fnOnClick) el.addEventListener('click', fnOnClick)
-
-  trackers.set(el, mouse)
-  return mouse
-}
-
-/** @param {HTMLElement} el @param {(e: MouseEvent) => void} [fnOnClick] */
-export function removeMouseEvents(el, fnOnClick) {
-  const mouse = trackers.get(el)
-  if (!mouse) return
-  el.removeEventListener('pointermove', mouse.onMouseMove)
-  el.removeEventListener('pointerdown', mouse.onMouseDown)
-  el.removeEventListener('pointerup', mouse.onMouseUp)
-  el.removeEventListener('pointercancel', mouse.onMouseUp)
-  if (fnOnClick) el.removeEventListener('click', fnOnClick)
-  trackers.delete(el)
-}
-
-/** @param {HTMLElement} el @returns {MouseTracker | undefined} */
-export const getMouse = (el) => trackers.get(el)
-
-/**
- * World space ray for a viewport position. clickPoint lies on the plane through the camera's
- * look-at point, facing the camera; clickVector points from the camera through it.
- * @param {Scene} scene processed by modelView() at least once
- * @param {number} mousex viewport x
- * @param {number} mousey viewport y
- * @returns {{ clickPoint: Float32Array, clickVector: Float32Array }}
- */
-export function calculateClickPointAndVector(scene, mousex, mousey) {
-  const { camera, viewport, perspective } = scene
-  const camLookAt = vec3.fromValues(camera.lookat.x, camera.lookat.y, camera.lookat.z)
-  const camOff = vec3.subtract(vec3.create(), scene._cameraPosition, camLookAt)
-
-  // pixels per world unit on the click plane
-  const pixelsPerUnit = (viewport.height / 2) / (vec3.length(camOff) * Math.tan((perspective.fov / 180 * Math.PI) / 2))
-
-  // world units from the centre of the viewport to the click
-  const units = vec2.fromValues(
-    (mousex - viewport.width / 2) / pixelsPerUnit,
-    (mousey - viewport.height / 2) / pixelsPerUnit)
-
-  // move along the click plane horizontally...
-  const up = vec3.fromValues(camera.up.x, camera.up.y, camera.up.z)
-  const side = vec3.normalize(vec3.create(), vec3.cross(vec3.create(), camOff, up))
-  const clickPoint = vec3.scaleAndAdd(vec3.create(), camLookAt, side, units[0])
-
-  // ...and vertically (screen y points down)
-  const planeUp = vec3.normalize(vec3.create(), vec3.cross(vec3.create(), side, camOff))
-  vec3.scaleAndAdd(clickPoint, clickPoint, planeUp, -units[1])
-
-  // ray from the camera position through the click point
-  const camPosition = vec3.add(vec3.create(), camLookAt, camOff)
-  return {
-    clickPoint,
-    clickVector: vec3.subtract(vec3.create(), clickPoint, camPosition),
-  }
+const OPTIONS = ['canvas', 'scene', 'camera', 'orbit', 'background', 'pixelRatio', 'antialias', 'toneMapping',
+  'exposure', 'autoLight', 'maxDelta']
+const HINTS = {
+  renderer: 'the View makes its renderer - read it from view.renderer',
+  controls: "use orbit: true (or orbit options); the control is then view.controls",
+  container: "use canvas: an element or selector (a full-window canvas is made when omitted)",
 }
 
 /**
- * Solid entity polygons hit by a ray, nearest first.
- * @param {Scene} scene
- * @param {Vec3Like} clickPoint
- * @param {Vec3Like} clickVector
- * @returns {{ entity: Entity, polygonIndex: number, intersectionPoint: Float32Array, distance: number }[]}
+ * The one object most apps touch: it owns the canvas, renderer, camera, controls and loop.
+ *
+ *     const view = new View({ canvas: '#c', orbit: true })
+ *     const cube = view.scene.add(new Mesh({ geometry: box(2), material: { color: 'orange' } }))
+ *     view.start((dt) => cube.rotateY(0.6 * dt))
  */
-export function getIntersectedObjects(scene, clickPoint, clickVector) {
-  const intersections = []
-  for (const entity of scene.renderlist) {
-    if (entity.style.drawmode !== 'solid') continue
-    entity.polygons.forEach((poly, polygonIndex) => {
-      const point = planeLineIntersection(poly._worldnormal, entity._worldcoords[poly.vertices[0]], clickVector, clickPoint)
-      if (point && intersectionInsidePolygon(poly, entity._worldcoords, point)) {
-        intersections.push({
-          entity,
-          polygonIndex,
-          intersectionPoint: point,
-          distance: vec3.distance(scene._cameraPosition, point),
-        })
-      }
-    })
+export class View {
+  /** @type {HTMLCanvasElement} */ canvas
+  /** @type {Scene} */ scene
+  /** @type {Camera} */ #camera
+  /** @type {WebGLRenderer} */ renderer
+  /** @type {OrbitControl | null} */ controls = null
+  /** Seconds the loop has run. */
+  time = 0
+  /** Light the scene when it has none. */
+  autoLight = true
+  maxDelta = 0.1
+  /** The last frame drawn. @type {FrameDescription | null} */
+  lastFrame = null
+
+  /** @type {((dt: number, t: number) => void) | null} */ #onFrame = null
+  #running = false
+  #rafId = 0
+  #lastTime = 0
+  #width = 0
+  #height = 0
+  #pixelRatio = 1
+  #explicitPixelRatio = false
+  /** @type {ResizeObserver | null} */ #resizeObserver = null
+  #labels
+  // used for scenes without lights; never added to the scene itself
+  #autoSky = new HemisphereLight({ sky: '#ffffff', ground: '#444444', intensity: 0.5 })
+  #autoSun = new DirectionalLight({ direction: [-0.5, -1, -0.6], intensity: 1.5 })
+  #noted = false
+
+  /** @param {ViewOptions} [options] */
+  constructor(options = {}) {
+    checkOptions('View', options, OPTIONS, HINTS)
+    this.canvas = resolveCanvas(options.canvas)
+
+    if (options.scene === undefined) this.scene = new Scene()
+    else if (options.scene instanceof Scene) this.scene = options.scene
+    else fail('View', `'scene' must be a Scene${options.scene && typeof options.scene === 'object' && 'type' in options.scene ? " - build one from a description with create({ type: 'scene', ... })" : `, got ${describe(options.scene)}`}`)
+    if (options.background !== undefined) this.scene.background = options.background
+
+    if (options.camera instanceof Camera) this.#camera = options.camera
+    else this.#camera = new PerspectiveCamera({ position: [0, 1.5, 6], target: [0, 0, 0], ...options.camera })
+
+    this.renderer = new WebGLRenderer({ canvas: this.canvas, antialias: options.antialias, toneMapping: options.toneMapping, exposure: options.exposure })
+    if (options.autoLight !== undefined) this.autoLight = !!options.autoLight
+    if (options.maxDelta !== undefined) this.maxDelta = options.maxDelta
+    if (options.pixelRatio !== undefined) {
+      this.#pixelRatio = options.pixelRatio
+      this.#explicitPixelRatio = true
+    }
+    if (options.orbit) this.controls = new OrbitControl(this.camera, this.canvas, options.orbit === true ? {} : options.orbit)
+    this.#labels = new LabelLayer(this.canvas)
+
+    this.resize()
+    if (typeof ResizeObserver !== 'undefined') {
+      this.#resizeObserver = new ResizeObserver(() => {
+        this.resize()
+        // keep showing the scene while the window is dragged, even when the loop isn't running
+        if (!this.#running) this.render()
+      })
+      this.#resizeObserver.observe(this.canvas)
+    }
   }
-  return intersections.sort((a, b) => a.distance - b.distance)
+
+  /** The camera drawn from. Setting another keeps the aspect, and the orbit control moves over to it. @returns {Camera} */
+  get camera() { return this.#camera }
+  set camera(camera) {
+    if (!(camera instanceof Camera)) fail('View', `'camera' must be a camera, got ${describe(camera)}`)
+    this.#camera = camera
+    if (this.#height) camera.aspect = this.#width / this.#height
+    if (this.controls) {
+      // the control orbits the camera's target, so give it one where the old camera was looking
+      camera.target ??= this.controls.target.clone()
+      this.controls.camera = camera
+    }
+  }
+
+  /** Canvas width in CSS pixels. */
+  get width() { return this.#width }
+  /** Canvas height in CSS pixels. */
+  get height() { return this.#height }
+
+  /** Resolves when every texture in the scene has loaded. @returns {Promise<void>} */
+  get ready() {
+    return this.scene.ready
+  }
+
+  /**
+   * Run the loop: fn(dt, t) is called each frame (seconds), then the scene updates and draws.
+   * @param {(dt: number, t: number) => void} [fn]
+   * @returns {this}
+   */
+  start(fn) {
+    if (fn) this.#onFrame = fn
+    if (this.#running) return this
+    this.#running = true
+    this.#lastTime = 0
+    const tick = (now) => {
+      if (!this.#running) return
+      const dt = this.#lastTime ? Math.min(this.maxDelta, (now - this.#lastTime) / 1000) : 0
+      this.#lastTime = now
+      this.step(dt)
+      this.#rafId = requestAnimationFrame(tick)
+    }
+    this.#rafId = requestAnimationFrame(tick)
+    return this
+  }
+
+  /** @returns {this} */
+  stop() {
+    this.#running = false
+    cancelAnimationFrame(this.#rafId)
+    return this
+  }
+
+  /** Is the loop running? */
+  get running() {
+    return this.#running
+  }
+
+  /**
+   * Advance exactly one frame by dt seconds and draw it. Deterministic - for tests, screenshots
+   * and stepping a paused scene.
+   * @param {number} dt
+   * @returns {FrameDescription}
+   */
+  step(dt) {
+    this.time += dt
+    this.#onFrame?.(dt, this.time)
+    this.controls?.update(dt)
+    this.scene.update(dt, this.time)
+    return this.render()
+  }
+
+  /** Draw the current state without advancing time. @returns {FrameDescription} */
+  render() {
+    this.scene.updateWorldTree()
+    const frame = collect(this.scene, this.camera)
+    if (this.autoLight && frame.lights.length === 0) this.#addAutoLights(frame)
+    this.renderer.renderFrame(frame)
+    this.#labels.update(frame.labels)
+    this.lastFrame = frame
+    return frame
+  }
+
+  /** Match the drawing buffer and camera to the canvas's displayed size. Automatic; call after manual changes. */
+  resize() {
+    const w = this.canvas.clientWidth || this.canvas.width || 1
+    const h = this.canvas.clientHeight || this.canvas.height || 1
+    if (!this.#explicitPixelRatio) this.#pixelRatio = Math.min(globalThis.devicePixelRatio || 1, 2)
+    this.#width = w
+    this.#height = h
+    this.renderer.setSize(w, h, this.#pixelRatio)
+    this.camera.aspect = w / h
+  }
+
+  /**
+   * Move the camera so a node (or box) fills the view, keeping the viewing direction. The orbit
+   * target moves to its centre.
+   * @param {Node | Box3} target
+   * @param {{ padding?: number }} [options] 1 is a tight fit (default 1.2)
+   * @returns {this}
+   */
+  frame(target, { padding = 1.2 } = {}) {
+    const box = target instanceof Box3 ? target : target.bounds
+    if (box.isEmpty()) return this
+    const center = box.getCenter()
+    const radius = Math.max(box.getRadius(), 1e-3)
+    const cam = /** @type {any} */ (this.camera)
+    const direction = cam.position.clone().sub(cam.target ?? new Vec3()).normalize()
+    if (direction.len() === 0) direction.set(0, 0.3, 1).normalize()
+    if (cam.constructor.type === 'orthographic-camera') {
+      cam.height = radius * 2 * padding
+      cam.position.copy(center).add(direction.clone().multiplyScalar(radius * 4))
+    } else {
+      const fit = Math.min(cam.fov, cam.fov * cam.aspect) * Math.PI / 360
+      const distance = radius / Math.sin(fit) * padding
+      cam.position.copy(center).add(direction.clone().multiplyScalar(distance))
+      // keep the near/far range sensible for the model's size
+      cam.near = Math.max(1e-3, distance / 1000)
+      cam.far = Math.max(cam.far, distance * 10)
+    }
+    cam.target = center
+    return this
+  }
+
+  /**
+   * The nearest hit under a canvas position - CSS pixels from the canvas's top left, or a pointer event.
+   * @param {number | MouseEvent} x
+   * @param {number} [y]
+   * @returns {Hit | null}
+   */
+  pick(x, y) {
+    return this.pickAll(x, y)[0] ?? null
+  }
+
+  /** Every hit under a canvas position, nearest first. @param {number | MouseEvent} x @param {number} [y] @returns {Hit[]} */
+  pickAll(x, y) {
+    if (typeof x === 'object') {
+      const rect = this.canvas.getBoundingClientRect()
+      y = x.clientY - rect.top
+      x = x.clientX - rect.left
+    }
+    const ndc = [(x / this.#width) * 2 - 1, 1 - (/** @type {number} */ (y) / this.#height) * 2]
+    const raycaster = new Raycaster().setFromCamera(ndc, this.camera)
+    // a few pixels' tolerance for points and lines, as world units at the target's distance
+    const cam = /** @type {any} */ (this.camera)
+    const distance = cam.position.distanceTo(cam.target ?? [0, 0, 0])
+    const worldPerPixel = cam.constructor.type === 'orthographic-camera'
+      ? cam.height / this.#height
+      : 2 * distance * Math.tan(cam.fov * Math.PI / 360) / this.#height
+    raycaster.threshold = 4 * worldPerPixel
+    return raycaster.intersect(this.scene)
+  }
+
+  /** Stop the loop, remove listeners and labels, and free GPU resources. */
+  dispose() {
+    this.stop()
+    this.#resizeObserver?.disconnect()
+    this.controls?.dispose()
+    this.#labels.dispose()
+    this.renderer.dispose()
+  }
+
+  /** @param {FrameDescription} frame */
+  #addAutoLights(frame) {
+    if (!this.#noted) {
+      this.#noted = true
+      console.info('phoria2: the scene has no lights, so the View is lighting it (autoLight: false turns this off)')
+    }
+    const hemi = this.#autoSky, sun = this.#autoSun
+    frame.lights.push(
+      { kind: 'hemisphere', node: hemi, color: hemi.sky, ground: hemi.ground, intensity: hemi.intensity },
+      { kind: 'directional', node: sun, color: sun.color, intensity: sun.intensity, direction: sun.worldDirection })
+  }
+}
+
+/** @param {HTMLCanvasElement | string | undefined} canvas @returns {HTMLCanvasElement} */
+function resolveCanvas(canvas) {
+  if (canvas === undefined) {
+    const c = document.createElement('canvas')
+    Object.assign(c.style, { position: 'fixed', inset: '0', width: '100vw', height: '100vh', display: 'block' })
+    document.body.append(c)
+    return c
+  }
+  if (typeof canvas === 'string') {
+    const el = document.querySelector(canvas)
+    if (!el) fail('View', `canvas '${canvas}' not found`)
+    if (!(el instanceof HTMLCanvasElement)) fail('View', `'${canvas}' is a <${el.tagName.toLowerCase()}>, not a <canvas>`)
+    return el
+  }
+  if (!(canvas instanceof HTMLCanvasElement)) fail('View', `'canvas' must be a <canvas> element or a selector, got ${describe(canvas)}`)
+  return canvas
 }

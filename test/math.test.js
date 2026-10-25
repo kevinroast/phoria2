@@ -50,6 +50,20 @@ const cases = {
   'mat4.fromQuat': [mat4.fromQuat, gl.mat4.fromQuat, () => [gl.quat.normalize([], arr(4))], 16],
   'mat4.perspective': [mat4.perspective, gl.mat4.perspective, () => [0.3 + Math.abs(rnd()), 0.5 + Math.abs(rnd()), 1, 1000], 16],
   'mat4.lookAt': [mat4.lookAt, gl.mat4.lookAt, () => [arr(3).map((v) => v * 10), arr(3), [0, 1, 0]], 16],
+  'mat4.targetTo': [mat4.targetTo, gl.mat4.targetTo, () => [arr(3).map((v) => v * 10), arr(3), [0, 1, 0]], 16],
+  'mat4.ortho': [mat4.ortho, gl.mat4.ortho, () => [-1 - Math.abs(rnd()), 1 + Math.abs(rnd()), -2, 2, 0.1, 100], 16],
+  'mat4.fromRotationTranslationScale': [mat4.fromRotationTranslationScale, gl.mat4.fromRotationTranslationScale,
+    () => [gl.quat.normalize([], arr(4)), arr(3), arr(3)], 16],
+  'mat3.fromMat4': [mat3.fromMat4, gl.mat3.fromMat4, () => [arr(16)], 9],
+  'vec3.transformMat4': [vec3.transformMat4, gl.vec3.transformMat4, () => [arr(3), affine()], 3],
+  'vec3.transformQuat': [vec3.transformQuat, gl.vec3.transformQuat, () => [arr(3), gl.quat.normalize([], arr(4))], 3],
+  'vec3.lerp': [vec3.lerp, gl.vec3.lerp, () => [arr(3), arr(3), rnd()], 3],
+  'vec3.negate': [vec3.negate, gl.vec3.negate, () => [arr(3)], 3],
+  'quat.multiply': [quat.multiply, gl.quat.multiply, () => [arr(4), arr(4)], 4],
+  'quat.normalize': [quat.normalize, gl.quat.normalize, () => [arr(4)], 4],
+  'quat.invert': [quat.invert, gl.quat.invert, () => [arr(4)], 4],
+  'quat.slerp': [quat.slerp, gl.quat.slerp, () => [gl.quat.normalize([], arr(4)), gl.quat.normalize([], arr(4)), Math.abs(rnd()) / 2], 4],
+  'quat.fromMat3': [quat.fromMat3, gl.quat.fromMat3, () => [gl.mat3.fromQuat([], gl.quat.normalize([], arr(4)))], 4],
 }
 
 describe('math matches gl-matrix', () => {
@@ -90,6 +104,14 @@ describe('math matches gl-matrix', () => {
     same(mat4.identity(arr(16)), gl.mat4.create())
     same(mat3.identity(arr(9)), gl.mat3.create())
     same(mat4.perspective(new Float32Array(16), 1, 1.5, 1, Infinity), gl.mat4.perspective(new Float32Array(16), 1, 1.5, 1, Infinity))
+  })
+
+  it('quat.fromEulerXYZ matches gl-matrix xyz order (which takes degrees)', () => {
+    for (let n = 0; n < 25; n++) {
+      const [x, y, z] = [rnd() * 3, rnd() * 3, rnd() * 3]
+      const deg = 180 / Math.PI
+      same(quat.fromEulerXYZ(new Float32Array(4), x, y, z), gl.quat.fromEuler(new Float32Array(4), x * deg, y * deg, z * deg, 'xyz'))
+    }
   })
 
   it('edge cases', () => {

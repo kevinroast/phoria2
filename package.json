@@ -15,10 +15,6 @@
       "types": "./dist/types/index.d.ts",
       "import": "./dist/phoria2.js"
     },
-    "./canvas": {
-      "types": "./dist/types/canvas/index.d.ts",
-      "import": "./dist/canvas.js"
-    },
     "./particles": {
       "types": "./dist/types/particles/index.d.ts",
       "import": "./dist/particles.js"

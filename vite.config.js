@@ -3,11 +3,10 @@ import { defineConfig } from 'vite'
 
 const root = import.meta.dirname
 
-// The package entry points: 'phoria2' and its sub-paths. The library build emits one ES module per
-// entry (dist/phoria2.js, dist/canvas.js, dist/particles.js) sharing chunks between them.
+// The package entry points: 'phoria2' (the core) and 'phoria2/particles'. The library build emits one
+// ES module per entry (dist/phoria2.js, dist/particles.js).
 const ENTRIES = {
   phoria2: 'src/index.js',
-  canvas: 'src/canvas/index.js',
   particles: 'src/particles/index.js',
 }
 
@@ -19,7 +18,6 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: [
       { find: /^phoria2$/, replacement: resolve(root, ENTRIES.phoria2) },
-      { find: /^phoria2\/canvas$/, replacement: resolve(root, ENTRIES.canvas) },
       { find: /^phoria2\/particles$/, replacement: resolve(root, ENTRIES.particles) },
     ],
   },
@@ -44,7 +42,7 @@ export default defineConfig(({ mode }) => ({
         rollupOptions: {
           output: {
             // everything the sub-paths share with the core goes in one predictable chunk
-            manualChunks: (id) => (/[\\/]src[\\/](?!canvas|particles)/.test(id) ? 'core' : undefined),
+            manualChunks: (id) => (/[\\/]src[\\/](?!particles)/.test(id) ? 'core' : undefined),
             chunkFileNames: '[name].js',
           },
         },

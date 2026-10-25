@@ -7,6 +7,7 @@
 //   f.add(emitter, 'gravity')                      checkbox (boolean)
 //   f.add(actions, 'reset')                        button (function)
 //   f.add(scene, 'speed').name('Speed').onChange(fn)
+//   panel.updateDisplay()                          re-read every value after changing them in code
 
 const el = (tag, className, text) => {
   const e = document.createElement(tag)
@@ -28,7 +29,12 @@ class Controller {
     this.nameEl = el('span', '', property)
     this.label = el('span', 'control-label')
     this.label.append(this.nameEl)
+    /** the form field, for controllers that have one @type {HTMLInputElement | null} */
+    this.input = null
   }
+
+  // refresh any readout beside the field
+  show() {}
 
   name(text) {
     this.nameEl.textContent = text
@@ -44,6 +50,15 @@ class Controller {
     this.object[this.property] = value
     for (const fn of this.handlers) fn.call(this, value)
   }
+
+  // show the property's current value - after code changed it
+  updateDisplay() {
+    const value = this.object[this.property]
+    if (this.input?.type === 'checkbox') this.input.checked = value
+    else if (this.input) this.input.value = value
+    this.show()
+    return this
+  }
 }
 
 class SliderController extends Controller {
@@ -51,7 +66,7 @@ class SliderController extends Controller {
     super(object, property)
     this.readout = el('span', 'control-value')
     this.label.append(this.readout)
-    const input = el('input')
+    const input = this.input = el('input')
     Object.assign(input, { type: 'range', min, max, step, value: object[property] })
     input.addEventListener('input', () => {
       this.setValue(parseFloat(input.value))
@@ -70,7 +85,7 @@ class SliderController extends Controller {
 class NumberController extends Controller {
   constructor(object, property) {
     super(object, property)
-    const input = el('input')
+    const input = this.input = el('input')
     Object.assign(input, { type: 'number', value: object[property] })
     input.addEventListener('input', () => {
       const v = parseFloat(input.value)
@@ -95,6 +110,14 @@ class SelectController extends Controller {
       this.setValue(entries.find(([label]) => label === select.value)[1])
     })
     this.root.append(this.label, select)
+    this.select = select
+    this.entries = entries
+  }
+
+  updateDisplay() {
+    const match = this.entries.find(([, value]) => value === this.object[this.property])
+    if (match) this.select.value = match[0]
+    return this
   }
 }
 
@@ -102,7 +125,7 @@ class CheckboxController extends Controller {
   constructor(object, property) {
     super(object, property)
     this.root.classList.add('control-inline')
-    const input = el('input')
+    const input = this.input = el('input')
     Object.assign(input, { type: 'checkbox', checked: object[property] })
     input.addEventListener('change', () => this.setValue(input.checked))
     this.root.append(input, this.label)
@@ -161,6 +184,11 @@ class Folder {
     return this
   }
 
+  updateDisplay() {
+    for (const c of this.children) c.updateDisplay()
+    return this
+  }
+
   close() {
     this.root.classList.add('closed')
     return this
@@ -196,6 +224,12 @@ export class Panel extends Folder {
     const folder = new Folder(this.panel.querySelector('.panel-scroll'), title)
     this.folders.push(folder)
     return folder
+  }
+
+  updateDisplay() {
+    super.updateDisplay()
+    for (const folder of this.folders) folder.updateDisplay()
+    return this
   }
 
   get isEmpty() {

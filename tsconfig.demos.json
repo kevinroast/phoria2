@@ -9,7 +9,6 @@
     "types": ["vite/client"],
     "paths": {
       "phoria2": ["./src/index.js"],
-      "phoria2/canvas": ["./src/canvas/index.js"],
       "phoria2/particles": ["./src/particles/index.js"]
     }
   }

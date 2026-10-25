@@ -260,3 +260,56 @@ export function lookAt(out, eye, center, up) {
   out[15] = 1
   return out
 }
+
+/** Compose translation, rotation and scale: T * R * S. @template {Mat4Like} T @param {T} out @param {Float32Array | number[]} q @param {Vec3Like} v @param {Vec3Like} s @returns {T} */
+export function fromRotationTranslationScale(out, q, v, s) {
+  const x = q[0], y = q[1], z = q[2], w = q[3]
+  const x2 = x + x, y2 = y + y, z2 = z + z
+  const xx = x * x2, xy = x * y2, xz = x * z2
+  const yy = y * y2, yz = y * z2, zz = z * z2
+  const wx = w * x2, wy = w * y2, wz = w * z2
+  const sx = s[0], sy = s[1], sz = s[2]
+  out[0] = (1 - (yy + zz)) * sx; out[1] = (xy + wz) * sx; out[2] = (xz - wy) * sx; out[3] = 0
+  out[4] = (xy - wz) * sy; out[5] = (1 - (xx + zz)) * sy; out[6] = (yz + wx) * sy; out[7] = 0
+  out[8] = (xz + wy) * sz; out[9] = (yz - wx) * sz; out[10] = (1 - (xx + yy)) * sz; out[11] = 0
+  out[12] = v[0]; out[13] = v[1]; out[14] = v[2]; out[15] = 1
+  return out
+}
+
+/** Orthographic projection with a -1..1 clip-space depth range. @template {Mat4Like} T @param {T} out @param {number} left @param {number} right @param {number} bottom @param {number} top @param {number} near @param {number} far @returns {T} */
+export function ortho(out, left, right, bottom, top, near, far) {
+  const lr = 1 / (left - right), bt = 1 / (bottom - top), nf = 1 / (near - far)
+  out.fill(0)
+  out[0] = -2 * lr
+  out[5] = -2 * bt
+  out[10] = 2 * nf
+  out[12] = (left + right) * lr
+  out[13] = (top + bottom) * bt
+  out[14] = (far + near) * nf
+  out[15] = 1
+  return out
+}
+
+// Model matrix placing an object at `eye` with its -Z axis pointing at `target` - the inverse of
+// a lookAt view matrix. Used to aim cameras, lights and nodes.
+/** @template {Mat4Like} T @param {T} out @param {Vec3Like} eye @param {Vec3Like} target @param {Vec3Like} up @returns {T} */
+export function targetTo(out, eye, target, up) {
+  const ex = eye[0], ey = eye[1], ez = eye[2]
+  let z0 = ex - target[0], z1 = ey - target[1], z2 = ez - target[2]
+  let len = z0 * z0 + z1 * z1 + z2 * z2
+  if (len > 0) {
+    len = 1 / Math.sqrt(len)
+    z0 *= len; z1 *= len; z2 *= len
+  }
+  let x0 = up[1] * z2 - up[2] * z1, x1 = up[2] * z0 - up[0] * z2, x2 = up[0] * z1 - up[1] * z0
+  len = x0 * x0 + x1 * x1 + x2 * x2
+  if (len > 0) {
+    len = 1 / Math.sqrt(len)
+    x0 *= len; x1 *= len; x2 *= len
+  }
+  out[0] = x0; out[1] = x1; out[2] = x2; out[3] = 0
+  out[4] = z1 * x2 - z2 * x1; out[5] = z2 * x0 - z0 * x2; out[6] = z0 * x1 - z1 * x0; out[7] = 0
+  out[8] = z0; out[9] = z1; out[10] = z2; out[11] = 0
+  out[12] = ex; out[13] = ey; out[14] = ez; out[15] = 1
+  return out
+}

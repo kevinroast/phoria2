@@ -1,10 +1,11 @@
 import { DEMOS } from './registry.js'
 import { Panel } from './panel.js'
 
-// Host for a single demo: demo.html?name=test0 loads demos/test0.js and calls its default export
-// with { canvas, gui, info }. Each demo owns its scene and animation loop from there.
+// Host for a single demo: demo.html?name=hello loads demos/hello.js and calls its default export
+// with { canvas, gui, info }. Each demo owns its scene and animation loop from there, and returns
+// its View - in dev it is window.view, for poking at from the console.
 /** @typedef {(ctx: { canvas: HTMLCanvasElement, gui: Panel, info: HTMLElement }) => unknown} DemoRun */
-const modules = /** @type {Record<string, () => Promise<{ default: DemoRun }>>} */ (import.meta.glob(['./*.js', '!./main.js', '!./shell.js', '!./registry.js', '!./gallery.js', '!./panel.js']))
+const modules = /** @type {Record<string, () => Promise<{ default: DemoRun }>>} */ (import.meta.glob(['./*.js', '!./main.js', '!./registry.js', '!./gallery.js', '!./panel.js', '!./kit.js']))
 
 const name = new URLSearchParams(location.search).get('name') ?? DEMOS[0].name
 const demo = DEMOS.find((d) => d.name === name)
@@ -19,19 +20,29 @@ if (!demo || !load) {
   document.getElementById('title').textContent = demo.title
   document.getElementById('hint').hidden = demo.orbit === false
 
-  // The canvas fills the window. It is sized here, before the demo runs, and resized before any
-  // demo resize handler (see fitScene) runs as listeners fire in registration order.
+  // the canvas fills the window (CSS); each demo's View sizes its drawing buffer to match
   const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('canvas'))
-  const resize = () => {
-    canvas.width = window.innerWidth
-    canvas.height = window.innerHeight
-  }
-  window.addEventListener('resize', resize)
-  resize()
+  showFps(/** @type {HTMLElement} */ (document.getElementById('fps')))
 
   const gui = new Panel({ title: 'Controls' })
   const { default: run } = await load()
-  await run({ canvas, gui, info })
+  const view = await run({ canvas, gui, info })
+  if (import.meta.env.DEV && view) Object.assign(window, { view })
   // demos without controls don't need an empty panel
   if (gui.isEmpty) gui.destroy()
+}
+
+// Frames per second, counted from the page's animation frames and shown once a second.
+function showFps(el) {
+  let frames = 0, last = performance.now()
+  const tick = (now) => {
+    frames++
+    if (now - last >= 1000) {
+      el.textContent = `${Math.round(frames * 1000 / (now - last))} fps`
+      frames = 0
+      last = now
+    }
+    requestAnimationFrame(tick)
+  }
+  requestAnimationFrame(tick)
 }
