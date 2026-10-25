@@ -4,7 +4,10 @@
 import { ATTRIBUTES } from './shaders.js'
 
 /** @import { Geometry } from '../geometry/Geometry.js' */
-/** @import { Texture } from '../material/Texture.js' */
+/** @import { Texture, DataImage } from '../material/Texture.js' */
+
+// uploads bind textures here, out of the way of the units programs sample from
+const UPLOAD_UNIT = 15
 
 /**
  * @typedef {object} MeshBuffers
@@ -230,12 +233,22 @@ export class Resources {
         this.counts.textures--
       })
     }
+    gl.activeTexture(gl.TEXTURE0 + UPLOAD_UNIT)
     gl.bindTexture(gl.TEXTURE_2D, entry.texture)
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, texture.flipY)
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
-    // sRGB textures are stored as sRGB so sampling returns linear values, filtered correctly
-    const internal = texture.colorSpace === 'srgb' ? gl.SRGB8_ALPHA8 : gl.RGBA8
-    gl.texImage2D(gl.TEXTURE_2D, 0, internal, gl.RGBA, gl.UNSIGNED_BYTE, /** @type {TexImageSource} */ (texture.image))
+    const image = texture.image
+    if ('data' in image) {
+      // raw pixels: bytes as usual, floats (HDR) as half floats, which filter everywhere
+      const d = /** @type {DataImage} */ (image)
+      const float = d.data instanceof Float32Array
+      const internal = float ? gl.RGBA16F : texture.colorSpace === 'srgb' ? gl.SRGB8_ALPHA8 : gl.RGBA8
+      gl.texImage2D(gl.TEXTURE_2D, 0, internal, d.width, d.height, 0, gl.RGBA, float ? gl.FLOAT : gl.UNSIGNED_BYTE, d.data)
+    } else {
+      // sRGB textures are stored as sRGB so sampling returns linear values, filtered correctly
+      const internal = texture.colorSpace === 'srgb' ? gl.SRGB8_ALPHA8 : gl.RGBA8
+      gl.texImage2D(gl.TEXTURE_2D, 0, internal, gl.RGBA, gl.UNSIGNED_BYTE, /** @type {TexImageSource} */ (image))
+    }
     const wrap = { repeat: gl.REPEAT, clamp: gl.CLAMP_TO_EDGE, mirror: gl.MIRRORED_REPEAT }[texture.wrap]
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap)
@@ -286,6 +299,7 @@ export class Resources {
     if (this.#white) return this.#white
     const gl = this.gl
     this.#white = /** @type {WebGLTexture} */ (gl.createTexture())
+    gl.activeTexture(gl.TEXTURE0 + UPLOAD_UNIT)
     gl.bindTexture(gl.TEXTURE_2D, this.#white)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]))
     return this.#white

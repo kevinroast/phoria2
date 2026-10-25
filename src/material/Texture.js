@@ -1,11 +1,16 @@
 import { checkOneOf, checkOptions, describe, fail } from '../validate.js'
 
-/** @typedef {HTMLImageElement | HTMLCanvasElement | HTMLVideoElement | ImageBitmap | OffscreenCanvas} TextureImage */
+/**
+ * Raw pixels, RGBA, top row first: bytes for ordinary images, floats for HDR (linear radiance).
+ * @typedef {{ data: Uint8Array | Float32Array, width: number, height: number }} DataImage
+ */
+/** @typedef {HTMLImageElement | HTMLCanvasElement | HTMLVideoElement | ImageBitmap | OffscreenCanvas | DataImage} TextureImage */
 
 /**
  * @typedef {object} TextureOptions
  * @property {TextureImage} [image] the pixels; omit and give a url to load them
- * @property {string} [url] image to load (starts loading immediately in a browser)
+ * @property {string} [url] image to load (starts loading immediately in a browser); a .hdr file loads as
+ *   linear HDR radiance, for scene.environment
  * @property {'srgb' | 'linear'} [colorSpace] 'srgb' for colour maps (default), 'linear' for data
  *   maps such as normal and roughness maps
  * @property {'repeat' | 'clamp' | 'mirror'} [wrap] (default 'repeat')
@@ -102,8 +107,21 @@ export class Texture {
     return json
   }
 
+  /** HDR radiance rather than display colours - floats, tone mapped when drawn. @returns {boolean} */
+  get isHDR() {
+    return !!this.image && 'data' in this.image && this.image.data instanceof Float32Array
+  }
+
   /** @param {string} url @returns {Promise<Texture>} */
   async #load(url) {
+    if (/\.hdr($|[?#])/i.test(url)) {
+      const [{ parseHDR }, response] = await Promise.all([import('../hdr.js'), fetch(url)])
+      if (!response.ok) throw new Error(`Texture: failed to load '${url}' (${response.status})`)
+      this.image = parseHDR(await response.arrayBuffer())
+      this.colorSpace = 'linear'
+      this.needsUpdate()
+      return this
+    }
     if (typeof Image === 'undefined') {
       throw new Error(`Texture: can't load '${url}' - no Image support in this environment`)
     }

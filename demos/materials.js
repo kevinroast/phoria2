@@ -1,7 +1,7 @@
-import { Label, Lines, Mesh, PointLight, View, grid, sphere } from 'phoria2'
+import { Label, Lines, Mesh, PointLight, Texture, View, grid, sphere } from 'phoria2'
 
 // Material test: a 3x3 grid of spheres - roughness falls left to right, metalness rises bottom to
-// top. The studio environment gives the metals something to reflect.
+// top. The environment - built in, or an HDR photo of a studio - gives the metals something to reflect.
 export default function run({ canvas, gui }) {
   const view = new View({ canvas, orbit: true, background: '#1c1c20', camera: { position: [0, 3.5, 13], target: [0, 3.5, 0] } })
   view.scene.environment = 'studio'
@@ -25,7 +25,12 @@ export default function run({ canvas, gui }) {
   light.add(new Mesh({ geometry: sphere({ radius: 0.15 }), material: { color: '#ffffff', unlit: true } }))
 
   let f = gui.addFolder('Scene')
-  f.add(view.scene, 'environment', ['studio', 'none'])
+  // an HDR loads once and is kept, so switching back to it is instant
+  const hdr = new Texture({ url: 'hdr/studio_small_09_1k.hdr', colorSpace: 'linear', mipmaps: false })
+  const lighting = { environment: 'built-in studio' }
+  f.add(lighting, 'environment', ['built-in studio', 'HDR studio', 'none']).onChange((v) => {
+    view.scene.environment = v === 'HDR studio' ? hdr : v === 'none' ? 'none' : 'studio'
+  })
   f = gui.addFolder('Light')
   f.add(light.position, 'x', -25, 25, 0.1)
   f.add(light.position, 'y', -25, 25, 0.1)

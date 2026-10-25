@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DirectionalLight, Group, InstancedMesh, Label, Lines, Mesh, OrthographicCamera, PerspectiveCamera, Points, Raycaster,
-  Scene, box, cameraPreset, collect, grid,
+  Scene, box, cameraPreset, collect, grid, plane,
 } from '../src/index.js'
 import { explain } from '../src/explain.js'
 import { framingScale } from '../src/presets.js'
@@ -212,5 +212,20 @@ describe('explain', () => {
     expect(text).toContain('No warnings.')
     expect(info(ok, camera(), { autoLight: false })).toContain('no lights and autoLight is off')
     expect(info(ok, camera(), { width: 0 })).toContain('the canvas is 0 x 600')
+  })
+
+  it('reports shadows and the environment, and what stops shadows showing', () => {
+    const scene = new Scene({ environment: { image: { data: new Float32Array(4), width: 1, height: 1 }, url: 'studio.hdr' } })
+    const sun = scene.add(new DirectionalLight({ direction: [0, -1, 0], castShadow: true }))
+    expect(info(scene, camera())).toContain("environment 'studio.hdr' (HDR)")
+    const cube = scene.add(new Mesh({ geometry: box(1) }))
+    expect(info(scene, camera())).toContain('a light has castShadow but nothing casts')
+    cube.castShadow = true
+    expect(info(scene, camera())).toContain('nothing in view has receiveShadow')
+    scene.add(new Mesh({ geometry: plane(10), position: [0, -1, 0], receiveShadow: true }))
+    const text = info(scene, camera())
+    expect(text).toMatch(/Shadows: 1 caster, 1 receiver in view, [\d.e-]+ units per shadow texel/)
+    expect(text).toContain('No warnings.')
+    void sun
   })
 })

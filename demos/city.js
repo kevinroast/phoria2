@@ -6,14 +6,14 @@ const PALETTE = ['#d9d4c7', '#c2c8cf', '#a9b4c2', '#e2d2b8', '#9aa3ad', '#cfd8dc
 
 // An isometric city: every building is an instance of one box, so thousands draw in one call. The
 // camera switches between orthographic (the isometric look) and perspective - the view moves the
-// orbit control over to whichever is current. Time of day turns the sun and tints the sky.
+// orbit control over to whichever is current. Time of day turns the sun, swings the shadows and tints the sky.
 export default function run({ canvas, gui }) {
   const iso = new OrthographicCamera({ position: [60, 60, 60], target: [0, 0, 0], height: 100, near: 1, far: 500 })
   const persp = new PerspectiveCamera({ position: [70, 50, 70], target: [0, 0, 0], fov: 45, near: 1, far: 800 })
-  const view = new View({ canvas, camera: iso, orbit: { maxPitch: 1.45, minDistance: 10, maxDistance: 250 }, background: '#9fc4e8' })
+  const view = new View({ canvas, camera: persp, orbit: { maxPitch: 1.45, minDistance: 10, maxDistance: 250 }, background: '#9fc4e8' })
   const sky = view.scene.add(new HemisphereLight({ sky: '#cfe3ff', ground: '#5a5040', intensity: 0.7 }))
-  const sun = view.scene.add(new DirectionalLight({ intensity: 1.6 }))
-  view.scene.add(new Mesh({ geometry: plane(SPAN + 6), material: { color: '#3c4048', roughness: 1 }, pickable: false }))
+  const sun = view.scene.add(new DirectionalLight({ intensity: 1.6, castShadow: true }))
+  view.scene.add(new Mesh({ geometry: plane(SPAN + 6), material: { color: '#3c4048', roughness: 1 }, pickable: false, receiveShadow: true }))
 
   const lots = []
   for (let bx = 0; bx < BLOCKS; bx++) {
@@ -31,14 +31,14 @@ export default function run({ canvas, gui }) {
       }
     }
   }
-  const city = view.scene.add(new InstancedMesh({ geometry: box(1), material: { roughness: 0.75 }, count: lots.length }))
+  const city = view.scene.add(new InstancedMesh({ geometry: box(1), material: { roughness: 0.75 }, count: lots.length, castShadow: true, receiveShadow: true }))
   lots.forEach((b, i) => city.setInstance(i, {
     position: [b.x, b.height / 2, b.z], scale: [b.width, b.height, b.depth], color: PALETTE[i % PALETTE.length],
   }))
 
   // the sun swings over from east to west; low sun means warm light and a dusky sky
   const day = new Color('#9fc4e8'), dusk = new Color('#e8a37a'), noon = new Color('#ffffff'), evening = new Color('#ffb070')
-  const settings = { hour: 15, perspective: false }
+  const settings = { hour: 15, perspective: true }
   const setTime = () => {
     const a = (settings.hour - 6) / 12 * Math.PI, height = Math.sin(a)
     sun.direction.set(-Math.cos(a), -Math.max(0.08, height), -0.45)
@@ -52,6 +52,7 @@ export default function run({ canvas, gui }) {
 
   const f = gui.addFolder('City')
   f.add(settings, 'hour', 6, 18, 0.1).onChange(setTime)
+  f.add(sun, 'castShadow').name('shadows')
   f.add(settings, 'perspective').onChange((v) => {
     // keep looking at the same spot from the same direction
     const from = view.camera, to = v ? persp : iso

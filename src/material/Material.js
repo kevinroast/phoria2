@@ -13,13 +13,17 @@ import { Texture } from './Texture.js'
  * @property {ColorInput} [color] base colour (default white)
  * @property {MapInput | null} [map] colour texture
  * @property {number} [opacity] 0-1; below 1 renders in the transparent pass (default 1)
+ * @property {boolean} [transparent] blend at any opacity - for maps with soft alpha edges (default: opacity below 1)
+ * @property {number} [alphaTest] 0-1: drop pixels whose alpha is below it - cut-outs such as leaves (default 0)
  * @property {number} [roughness] 0 = mirror, 1 = matte (default 0.5)
  * @property {number} [metalness] 0-1 (default 0)
- * @property {MapInput | null} [roughnessMap]
- * @property {MapInput | null} [metalnessMap]
- * @property {MapInput | null} [normalMap]
- * @property {MapInput | null} [aoMap]
- * @property {MapInput | null} [emissiveMap]
+ * @property {MapInput | null} [roughnessMap] multiplies roughness by its green channel (glTF)
+ * @property {MapInput | null} [metalnessMap] multiplies metalness by its blue channel (glTF)
+ * @property {MapInput | null} [normalMap] tangent-space normals, +Y up (glTF/OpenGL convention)
+ * @property {number} [normalScale] strength of the normal map (default 1)
+ * @property {MapInput | null} [aoMap] ambient occlusion in its red channel; darkens environment and ambient light
+ * @property {number} [aoMapIntensity] 0-1 (default 1)
+ * @property {MapInput | null} [emissiveMap] multiplies the emissive colour
  * @property {ColorInput} [emissive] glow colour (default black)
  * @property {number} [emissiveIntensity] (default 1)
  * @property {boolean} [unlit] flat colour that ignores lights (default false)
@@ -37,10 +41,11 @@ import { Texture } from './Texture.js'
 const MAPS = ['map', 'roughnessMap', 'metalnessMap', 'normalMap', 'aoMap', 'emissiveMap']
 // data maps hold numbers, not colours
 const LINEAR_MAPS = new Set(['roughnessMap', 'metalnessMap', 'normalMap', 'aoMap'])
-const FLAGS = ['unlit', 'flatShading', 'doubleSided', 'vertexColors', 'depthWrite', 'depthTest', 'sizeAttenuation']
-const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiveIntensity: [0, Infinity], size: [0, Infinity], width: [0, Infinity] }
+const FLAGS = ['unlit', 'flatShading', 'doubleSided', 'vertexColors', 'depthWrite', 'depthTest', 'sizeAttenuation', 'transparent']
+const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiveIntensity: [0, Infinity], size: [0, Infinity], width: [0, Infinity],
+  alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1] }
 const DEFAULTS = {
-  name: '', opacity: 1, roughness: 0.5, metalness: 0, emissiveIntensity: 1, unlit: false, flatShading: false,
+  name: '', opacity: 1, alphaTest: 0, roughness: 0.5, metalness: 0, normalScale: 1, aoMapIntensity: 1, emissiveIntensity: 1, unlit: false, flatShading: false,
   doubleSided: false, vertexColors: false, blending: 'normal', depthWrite: true, depthTest: true,
   size: 1, sizeAttenuation: true, width: 1,
 }
@@ -50,7 +55,6 @@ const OPTIONS = ['name', 'color', 'emissive', ...MAPS, ...FLAGS, ...Object.keys(
 const HINTS = {
   type: "phoria2 has one material - drop 'type' and set 'unlit: true' for a flat colour",
   side: "use 'doubleSided: true'",
-  transparent: "no flag needed - an opacity below 1 makes a material transparent",
   wireframe: 'use new Lines({ geometry: edges(geometry) }) for a wireframe',
   shininess: "use 'roughness' (0 = mirror, 1 = matte)",
   specular: "use 'roughness' and 'metalness'",
@@ -67,6 +71,9 @@ const HINTS = {
 export class Material {
   name = ''
   /** @type {number} */ opacity = 1
+  /** Drop pixels with less alpha than this - hard-edged cut-outs, drawn with the opaque pass. @type {number} */ alphaTest = 0
+  /** @type {number} */ normalScale = 1
+  /** @type {number} */ aoMapIntensity = 1
   /** @type {number} */ roughness = 0.5
   /** @type {number} */ metalness = 0
   /** @type {number} */ emissiveIntensity = 1
@@ -83,6 +90,7 @@ export class Material {
 
   #color = new Color(0xffffff)
   #emissive = new Color(0x000000)
+  #transparent = false
   /** @type {Record<string, Texture | null>} */
   #maps = Object.fromEntries(MAPS.map((m) => [m, null]))
   /** @type {Set<() => void>} */
@@ -175,10 +183,12 @@ export class Material {
     return /** @type {[string, Texture][]} */ (Object.entries(this.#maps).filter(([, t]) => t))
   }
 
-  /** Rendered in the transparent pass. @returns {boolean} */
+  /** Rendered in the transparent pass: an opacity below 1, additive blending, or set for maps with soft alpha. @returns {boolean} */
   get transparent() {
-    return this.opacity < 1 || this.blending === 'additive'
+    return this.#transparent || this.opacity < 1 || this.blending === 'additive'
   }
+  /** @param {boolean} v */
+  set transparent(v) { this.#transparent = !!v }
 
   /**
    * Which shader features this material needs - renderers compile one program per distinct key.
@@ -187,6 +197,7 @@ export class Material {
   get variant() {
     const parts = [this.unlit ? 'unlit' : 'lit']
     for (const [slot] of this.textures) parts.push(slot)
+    if (this.alphaTest > 0) parts.push('cutout')
     if (this.flatShading) parts.push('flat')
     if (this.vertexColors) parts.push('vcolor')
     return parts.join('+')
@@ -224,6 +235,7 @@ export class Material {
     for (const [key, value] of Object.entries(DEFAULTS)) {
       if (this[key] !== value) json[key] = this[key]
     }
+    if (this.#transparent) json.transparent = true
     if (this.#color.getHex() !== 0xffffff) json.color = this.#color.getStyle()
     if (this.#emissive.getHex() !== 0) json.emissive = this.#emissive.getStyle()
     for (const [slot, t] of this.textures) {

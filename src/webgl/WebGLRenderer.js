@@ -4,11 +4,14 @@ import { checkOneOf, checkOptions, fail, warnOnce } from '../validate.js'
 import { Programs } from './programs.js'
 import { Resources } from './resources.js'
 import { MAX_DIRECTIONAL, MAX_PUNCTUAL } from './shaders.js'
+import { SHADOW_MAP_SIZE } from '../shadow.js'
 
 /** @import { FrameDescription, DrawItem, FrameLight } from '../frame.js' */
 /** @import { Scene } from '../scene/Scene.js' */
 /** @import { Camera } from '../scene/cameras.js' */
 /** @import { Material } from '../material/Material.js' */
+/** @import { Texture } from '../material/Texture.js' */
+/** @import { Environment, Passes } from './passes.js' */
 
 /** @typedef {'aces' | 'neutral' | 'none'} ToneMapping */
 
@@ -24,8 +27,9 @@ import { MAX_DIRECTIONAL, MAX_PUNCTUAL } from './shaders.js'
 
 const OPTIONS = ['canvas', 'antialias', 'toneMapping', 'exposure', 'pixelRatio']
 const TONE_MAPPING = { none: 0, aces: 1, neutral: 2 }
-// maps the WebGL 2 MVP doesn't draw yet - warned about once rather than silently ignored
-const LATER_MAPS = ['roughnessMap', 'metalnessMap', 'normalMap', 'aoMap', 'emissiveMap']
+// material maps and the shader feature each one switches on (all but emissive need lighting)
+const MAP_DEFINES = { roughnessMap: 'ROUGHNESS_MAP', metalnessMap: 'METALNESS_MAP', normalMap: 'NORMAL_MAP', aoMap: 'AO_MAP' }
+const MAP_UNIFORMS = { map: 'uMap', roughnessMap: 'uRoughnessMap', metalnessMap: 'uMetalnessMap', normalMap: 'uNormalMap', aoMap: 'uAoMap', emissiveMap: 'uEmissiveMap' }
 
 /**
  * Draws a scene with WebGL 2. The View creates one; use it directly to drive your own loop:
@@ -43,9 +47,20 @@ export class WebGLRenderer {
   pixelRatio = 1
   /** Counts from the last frame and the GPU caches. */
   info = { drawCalls: 0, triangles: 0, programs: 0, geometries: 0, textures: 0 }
+  /**
+   * Called when something the last frame couldn't draw yet is ready - the code for HDR
+   * environments, backgrounds and shadows, which loads the first time a scene has one. The View
+   * redraws then. @type {(() => void) | null}
+   */
+  onReady = null
 
   #programs
   #resources
+  /** HDR environments, panorama backgrounds and shadows - loaded the first time a frame has one. @type {Passes | null} */
+  #passes = null
+  #passesLoading = false
+  /** This frame's prefiltered environment, when it is an HDR image. @type {Environment | null} */ #environment = null
+  /** This frame's shadow map, when something casts. @type {{ texture: WebGLTexture, matrix: Float32Array, texel: number, bias: number } | null} */ #shadow = null
   #frameNumber = 0
   #lost = false
   /** @type {Float32Array} */ #normalMatrix = new Float32Array(9)
@@ -82,6 +97,7 @@ export class WebGLRenderer {
       this.#lost = false
       this.#programs.reset()
       this.#resources.reset()
+      this.#passes?.reset()
     }
     this.canvas.addEventListener('webglcontextlost', lost)
     this.canvas.addEventListener('webglcontextrestored', restored)
@@ -123,18 +139,36 @@ export class WebGLRenderer {
     this.info.drawCalls = 0
     this.info.triangles = 0
 
+    const env = frame.environment
+    const bg = frame.background
+    const passes = this.#loadPasses(!!frame.shadow || (typeof env === 'object' && !!env.image) || (!!bg && !('getHex' in bg) && !!bg.image))
+    this.#environment = passes && typeof env === 'object' ? passes.environment(env) : null
+    if (passes && typeof env === 'object' && env.image && !this.#environment) {
+      warnOnce(env, env.isHDR ? "this device can't render to float textures, which HDR environments need - lighting without it"
+        : "'environment' needs an HDR image (a .hdr file) - lighting without it")
+    }
+    // the light's view first, into its own depth texture
+    const shadow = passes ? frame.shadow : null
+    if (shadow && passes) {
+      const map = passes.shadowMap(shadow)
+      this.#shadow = { ...map, texel: 1 / SHADOW_MAP_SIZE, bias: shadow.texelSize * 1.5 }
+    } else {
+      this.#shadow = null
+    }
+
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight)
-    const bg = frame.background
     if (bg && 'getHex' in bg) {
       const [r, g, b] = bg.toSRGB()
       gl.clearColor(r, g, b, 1)
     } else {
-      if (bg) warnOnce(frame.camera.camera, 'texture backgrounds come with environment lighting (slice 4) - drawing a transparent background for now')
       gl.clearColor(0, 0, 0, 0)
     }
     gl.depthMask(true)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+    if (passes && bg && !('getHex' in bg) && bg.image) {
+      passes.background(frame, /** @type {Texture} */ (bg), { exposure: this.exposure, toneMapping: TONE_MAPPING[this.toneMapping] })
+    }
     gl.enable(gl.DEPTH_TEST)
     gl.depthFunc(gl.LEQUAL)
 
@@ -152,6 +186,20 @@ export class WebGLRenderer {
     this.info.geometries = this.#resources.counts.geometries
     this.info.textures = this.#resources.counts.textures
     return frame
+  }
+
+  /**
+   * The extra passes, once loaded; the first call that needs them starts loading them.
+   * @param {boolean} needed @returns {Passes | null}
+   */
+  #loadPasses(needed) {
+    if (this.#passes || !needed || this.#passesLoading) return this.#passes
+    this.#passesLoading = true
+    import('./passes.js').then(({ Passes }) => {
+      this.#passes = new Passes(this.gl, this.#programs, this.#resources)
+      this.onReady?.()
+    })
+    return null
   }
 
   /** Free every GPU resource this renderer made, and stop listening for context loss. */
@@ -219,11 +267,9 @@ export class WebGLRenderer {
     const { node, geometry, material, worldMatrix, instances } = item
     const mode = /** @type {any} */ (node).drawMode
     const kind = mode === 'points' ? 'points' : mode === 'lines' ? 'lines' : 'mesh'
-    for (const slot of LATER_MAPS) {
-      if (material[slot]) warnOnce(material, `${slot} isn't drawn yet - it comes with product-viewer materials (slice 4)`)
-    }
+    const shadowed = kind === 'mesh' && !!this.#shadow && node.receiveShadow && !material.unlit
 
-    const defines = this.#defines(kind, material, geometry.colors !== null, !!instances)
+    const defines = this.#defines(kind, material, geometry.colors !== null, !!instances, shadowed)
     const program = this.#programs.get(kind, defines)
     gl.useProgram(program.program)
 
@@ -240,6 +286,19 @@ export class WebGLRenderer {
       program.set('uScale', frame.camera.projection[5] * gl.drawingBufferHeight / 2)
       if (kind === 'mesh' && !material.unlit) {
         for (const [name, value] of Object.entries(this.#lights)) program.set(name, value)
+        const env = this.#environment
+        if (env) {
+          program.set('uEnvMap', env.prefiltered)
+          program.set('uEnvMaxLod', env.maxLod)
+          program.set('uEnvSH', env.sh)
+          program.set('uEnvIntensity', frame.environmentIntensity)
+        }
+        if (shadowed && this.#shadow) {
+          program.set('uShadowMap', this.#shadow.texture)
+          program.set('uShadowMatrix', this.#shadow.matrix)
+          program.set('uShadowTexel', this.#shadow.texel)
+          program.set('uShadowBias', this.#shadow.bias)
+        }
       }
     }
 
@@ -257,13 +316,17 @@ export class WebGLRenderer {
     program.set('uEmissive', [e[0] * k, e[1] * k, e[2] * k])
     program.set('uRoughness', material.roughness)
     program.set('uMetalness', material.metalness)
-    const map = material.map
-    if (map) {
-      program.set('uMap', this.#resources.texture(map))
-      program.set('uUvTransform', [map.repeat[0], map.repeat[1], map.offset[0], map.offset[1]])
-    } else {
-      program.set('uUvTransform', [1, 1, 0, 0])
-    }
+    program.set('uNormalScale', material.normalScale)
+    program.set('uAoMapIntensity', material.aoMapIntensity)
+    program.set('uAlphaTest', material.alphaTest)
+    /** @type {[string, Texture][]} */
+    const maps = kind === 'mesh' ? material.textures : material.map ? [['map', material.map]] : []
+    // GL textures first (uploads use a unit of their own), then bind them to the samplers
+    const bound = maps.map(([slot, texture]) => [MAP_UNIFORMS[slot], this.#resources.texture(texture)])
+    for (const [name, texture] of bound) program.set(name, texture)
+    // one UV transform for every map: the first map's (glTF models share theirs)
+    const first = maps[0]?.[1]
+    program.set('uUvTransform', first ? [first.repeat[0], first.repeat[1], first.offset[0], first.offset[1]] : [1, 1, 0, 0])
 
     // render state
     gl.depthMask(!transparent && material.depthWrite)
@@ -323,15 +386,22 @@ export class WebGLRenderer {
 
   /**
    * @param {'mesh' | 'points' | 'lines'} kind @param {Material} material
-   * @param {boolean} hasColors @param {boolean} instanced
+   * @param {boolean} hasColors @param {boolean} instanced @param {boolean} shadowed
    * @returns {string[]}
    */
-  #defines(kind, material, hasColors, instanced) {
+  #defines(kind, material, hasColors, instanced, shadowed) {
     const d = []
     if (material.vertexColors && hasColors) d.push('VERTEX_COLORS')
     if (kind === 'mesh') {
-      if (!material.unlit) d.push('LIT')
+      if (!material.unlit) {
+        d.push('LIT')
+        for (const [slot, define] of Object.entries(MAP_DEFINES)) if (material[slot]) d.push(define)
+        if (this.#environment) d.push('ENV_MAP')
+        if (shadowed) d.push('SHADOW')
+      }
       if (material.map) d.push('MAP')
+      if (material.emissiveMap) d.push('EMISSIVE_MAP')
+      if (material.alphaTest > 0) d.push('ALPHA_TEST')
       if (material.flatShading) d.push('FLAT_SHADING')
       if (material.doubleSided) d.push('DOUBLE_SIDED')
       if (instanced) d.push('INSTANCED')

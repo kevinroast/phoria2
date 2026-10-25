@@ -1,6 +1,8 @@
 // Shader programs, compiled on first use and cached by kind and feature defines.
 import { shaderSource } from './shaders.js'
 
+/** @import { ShaderKind } from './shaders.js' */
+
 /**
  * @typedef {object} Program
  * @property {WebGLProgram} program
@@ -22,15 +24,16 @@ export class Programs {
   }
 
   /**
-   * @param {'mesh' | 'points' | 'lines'} kind
+   * @param {ShaderKind | string} kind a drawable kind, or a pass's name when it brings its sources
    * @param {string[]} defines
+   * @param {[string, string]} [sources] a pass's vertex and fragment shaders
    * @returns {Program}
    */
-  get(kind, defines) {
+  get(kind, defines, sources) {
     const key = `${kind}|${defines.join(',')}`
     let p = this.#cache.get(key)
     if (!p) {
-      p = this.#build(key, ...shaderSource(kind, defines))
+      p = this.#build(key, ...shaderSource(sources ?? /** @type {ShaderKind} */ (kind), defines))
       this.#cache.set(key, p)
     }
     return p
@@ -80,7 +83,8 @@ export class Programs {
       const info = /** @type {WebGLActiveInfo} */ (gl.getActiveUniform(program, i))
       const name = info.name.replace(/\[0\]$/, '')
       const loc = gl.getUniformLocation(program, info.name)
-      setters.set(name, setterFor(gl, info.type, loc, info.type === gl.SAMPLER_2D ? unit++ : 0))
+      const sampler = info.type === gl.SAMPLER_2D || info.type === gl.SAMPLER_2D_SHADOW
+      setters.set(name, setterFor(gl, info.type, loc, sampler ? unit++ : 0))
     }
     return {
       program,
@@ -104,7 +108,8 @@ function setterFor(gl, type, loc, unit) {
     case gl.BOOL: return (v) => gl.uniform1i(loc, v)
     case gl.FLOAT_MAT3: return (v) => gl.uniformMatrix3fv(loc, false, v)
     case gl.FLOAT_MAT4: return (v) => gl.uniformMatrix4fv(loc, false, v)
-    case gl.SAMPLER_2D: return (texture) => {
+    case gl.SAMPLER_2D:
+    case gl.SAMPLER_2D_SHADOW: return (texture) => {
       gl.activeTexture(gl.TEXTURE0 + unit)
       gl.bindTexture(gl.TEXTURE_2D, texture)
       gl.uniform1i(loc, unit)

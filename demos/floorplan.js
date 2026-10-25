@@ -51,10 +51,6 @@ export default function run({ canvas, gui, info }) {
     scene.add(new Mesh({ geometry: box({ width: 0.8, height: 1.9, depth: 2.6 }), material: { color: '#5b6b82', roughness: 0.6 }, position: [x, 0.95, 0], data: { cooling: true } }))
     scene.add(new Label({ text: `CRAC-${x < 0 ? 1 : 2}`, position: [x, 2.2, 0], className: 'demo-tag', overlap: 'show' }))
   }
-  // aisle names on the floor
-  for (const { z, name } of [{ z: -2.3, name: 'Hot aisle' }, { z: 0, name: 'Cold aisle' }, { z: 2.3, name: 'Hot aisle' }]) {
-    scene.add(new Label({ text: name, position: [0, 0.01, z], className: 'demo-floor', overlap: 'show' }))
-  }
 
   const settings = { metric: 'temperature', view: 'isometric', live: true, pulse: true }
   const hall = scene.add(new InstancedMesh({

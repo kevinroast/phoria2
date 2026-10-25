@@ -85,8 +85,19 @@ export function explain(info) {
   // lights
   const lightKinds = new Map()
   for (const l of frame.lights) lightKinds.set(l.kind, (lightKinds.get(l.kind) ?? 0) + 1)
-  lines.push(`Lights: ${lightKinds.size ? [...lightKinds].map(([k, n]) => `${n} ${k}`).join(', ') : 'none'}` +
-    `${frame.environment !== 'none' ? `; environment '${frame.environment}'` : ''}`)
+  const env = frame.environment
+  const envText = typeof env === 'string' ? (env !== 'none' ? `; environment '${env}'` : '')
+    : `; environment ${env.url ? `'${env.url}'` : 'image'} (${!env.image ? 'loading' : env.isHDR ? 'HDR' : 'not HDR - ignored; use a .hdr file'})`
+  lines.push(`Lights: ${lightKinds.size ? [...lightKinds].map(([k, n]) => `${n} ${k}`).join(', ') : 'none'}${envText}`)
+  // shadows: one directional light casts; things opt in to casting and receiving
+  const receivers = items.filter((i) => /** @type {any} */ (i.node).receiveShadow).length
+  if (frame.shadow) {
+    lines.push(`Shadows: ${plural(frame.shadow.casters.length, 'caster')}, ${plural(receivers, 'receiver')} in view, ` +
+      `${fmt(frame.shadow.texelSize)} units per shadow texel`)
+    if (!receivers) warnings.push('shadows are cast but nothing in view has receiveShadow: true - set it on the ground and other surfaces')
+  } else if (frame.lights.some((l) => l.castShadow)) {
+    warnings.push('a light has castShadow but nothing casts - set castShadow: true on the meshes too')
+  }
   const lit = items.filter((i) => !i.material.unlit && /** @type {any} */ (i.node).drawMode === 'triangles')
   if (lit.length && !frame.lights.length && frame.environment === 'none' && !info.autoLight) {
     warnings.push(`${plural(lit.length, 'lit object')} but no lights and autoLight is off - they draw black; add a light, set scene.environment = 'studio' or use unlit materials`)

@@ -146,8 +146,14 @@ describe('Material and Texture', () => {
     expect(m.variant).toBe('lit')
     expect(new Material({ unlit: true, flatShading: true }).variant).toBe('unlit+flat')
     expect(() => new Material({ roughness: 2 })).toThrow("'roughness' must be 0-1")
-    expect(() => new Material({ opacity: 0.5, transparent: true })).toThrow('no flag needed')
     expect(new Material({ opacity: 0.5 }).transparent).toBe(true)
+    // maps with soft alpha edges ask for blending at full opacity; cut-outs stay opaque
+    const leaf = new Material({ transparent: true })
+    expect([leaf.transparent, leaf.toJSON()]).toEqual([true, { transparent: true }])
+    const cutout = new Material({ alphaTest: 0.5, normalScale: -1, aoMapIntensity: 0.5 })
+    expect([cutout.transparent, cutout.variant]).toEqual([false, 'lit+cutout'])
+    expect(cutout.toJSON()).toEqual({ alphaTest: 0.5, normalScale: -1, aoMapIntensity: 0.5 })
+    expect(() => new Material({ aoMapIntensity: 2 })).toThrow("'aoMapIntensity' must be 0-1")
     m.color = 'red'
     expect(m.color.getStyle()).toBe('#ff0000')
   })

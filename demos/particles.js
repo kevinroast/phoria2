@@ -18,8 +18,8 @@ const PRESETS = {
     onParticle: bounce,
   },
   flame: {
-    rate: 220, origin: [0, 0.3, 0], originSpread: 0.4, velocity: [0, 1.5, 0], velocitySpread: 0.4,
-    gravity: [0, 1, 0], drag: 0.6, lifetime: [0.8, 1.4], color: ['#b8641e', '#902800', '#3a0a00', '#000000'], size: 0.8,
+    rate: 300, origin: [0, 0.3, 0], originSpread: 0.4, velocity: [0, 1.5, 0], velocitySpread: 0.4,
+    gravity: [0, 1.9, 0], drag: 0.2, lifetime: [0.8, 1.4], color: ['#b8641e', '#902800', '#3a0a00', '#000000'], size: 0.8,
     onParticle: null,
   },
   snow: {

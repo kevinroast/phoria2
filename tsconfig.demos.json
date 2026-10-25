@@ -10,7 +10,8 @@
     "paths": {
       "phoria2": ["./src/index.js"],
       "phoria2/particles": ["./src/particles/index.js"],
-      "phoria2/charts": ["./src/charts/index.js"]
+      "phoria2/charts": ["./src/charts/index.js"],
+      "phoria2/gltf": ["./src/gltf/index.js"]
     }
   }
 }

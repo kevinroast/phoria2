@@ -161,6 +161,8 @@ export class View {
     }
 
     this.renderer = new WebGLRenderer({ canvas: this.canvas, antialias: options.antialias, toneMapping: options.toneMapping, exposure: options.exposure })
+    // shadows and HDR environments load their code on first use, then want another frame
+    this.renderer.onReady = () => this.invalidate()
     if (options.autoLight !== undefined) this.autoLight = !!options.autoLight
     if (options.maxDelta !== undefined) this.maxDelta = options.maxDelta
     if (options.renderMode !== undefined) this.renderMode = checkOneOf('View', 'renderMode', options.renderMode, ['auto', 'always', 'manual'])

@@ -24,6 +24,10 @@
       "types": "./dist/types/charts/index.d.ts",
       "import": "./dist/charts.js"
     },
+    "./gltf": {
+      "types": "./dist/types/gltf/index.d.ts",
+      "import": "./dist/gltf.js"
+    },
     "./charts/schema.json": "./schema/chart.schema.json"
   },
   "scripts": {

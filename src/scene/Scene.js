@@ -1,6 +1,6 @@
 import { Color } from '../value/Color.js'
 import { Texture } from '../material/Texture.js'
-import { checkOneOf, describe, fail } from '../validate.js'
+import { checkNumber, describe, fail } from '../validate.js'
 import { NODE_OPTIONS, Node, beginWalk, endWalk } from './Node.js'
 
 /** @import { NodeOptions } from './Node.js' */
@@ -11,8 +11,10 @@ import { NODE_OPTIONS, Node, beginWalk, endWalk } from './Node.js'
 
 /**
  * @typedef {NodeOptions & {
- *   background?: ColorInput | Texture | null,
- *   environment?: EnvironmentPreset | Texture | TextureOptions,
+ *   background?: ColorInput | Texture | TextureOptions | null,
+ *   environment?: EnvironmentPreset | string | Texture | TextureOptions,
+ *   environmentIntensity?: number,
+ *   backgroundBlur?: number,
  * }} SceneOptions
  */
 
@@ -22,51 +24,68 @@ import { NODE_OPTIONS, Node, beginWalk, endWalk } from './Node.js'
  */
 export class Scene extends Node {
   static type = 'scene'
-  static get OPTIONS() { return [...NODE_OPTIONS, 'background', 'environment'] }
+  static get OPTIONS() { return [...NODE_OPTIONS, 'background', 'environment', 'environmentIntensity', 'backgroundBlur'] }
   static HINTS = {
     fog: "fog isn't supported - see API-DESIGN.md's non-goals",
     lights: "add lights as children: scene.add(new DirectionalLight({ ... }))",
+    envMap: "use 'environment': 'studio', or an .hdr url",
+    environmentMap: "use 'environment': 'studio', or an .hdr url",
+    backgroundBlurriness: "use 'backgroundBlur' (0-1)",
   }
 
   /** @type {Color | Texture | null} null = transparent */
   #background = null
   /** Image-based lighting for materials. @type {EnvironmentPreset | Texture} */
   #environment = 'none'
+  /** Scales the environment's light. */
+  environmentIntensity = 1
+  /** 0-1: how blurred a panorama background is drawn - a soft backdrop that doesn't compete. */
+  backgroundBlur = 0
 
   /** @param {SceneOptions} [options] */
   constructor(options = {}) {
     super(options)
     if (options.background !== undefined) this.#setBackground(options.background)
     if (options.environment !== undefined) this.#setEnvironment(options.environment)
+    if (options.environmentIntensity !== undefined) this.environmentIntensity = /** @type {number} */ (checkNumber('Scene', 'environmentIntensity', options.environmentIntensity))
+    if (options.backgroundBlur !== undefined) this.backgroundBlur = /** @type {number} */ (checkNumber('Scene', 'backgroundBlur', options.backgroundBlur))
   }
 
-  /** Colour, texture, or null for transparent. Assign any colour input. @returns {Color | Texture | null} */
+  /**
+   * A colour, a panorama (an equirectangular texture - often the environment itself), or null for
+   * transparent. Assign any colour input. @returns {Color | Texture | null}
+   */
   get background() { return this.#background }
-  /** @param {ColorInput | Texture | null} v */
+  /** @param {ColorInput | Texture | TextureOptions | null} v */
   set background(v) {
     this.#setBackground(v)
   }
 
-  /** @param {ColorInput | Texture | null} v */
+  /** @param {ColorInput | Texture | TextureOptions | null} v */
   #setBackground(v) {
     if (v == null) this.#background = null
     else if (v instanceof Texture) this.#background = v
+    else if (typeof v === 'object' && !Array.isArray(v) && !ArrayBuffer.isView(v)) this.#background = new Texture(/** @type {TextureOptions} */ (v))
     else this.#background = Color.fromInput(/** @type {ColorInput} */ (v), 'Scene')
   }
 
-  /** 'studio' (built in, no download), 'none', or an equirectangular HDR texture. @returns {EnvironmentPreset | Texture} */
+  /**
+   * Light from all around, reflected by every lit material: 'studio' (built in, no download),
+   * 'none', or an equirectangular HDR image - a .hdr url or a Texture. @returns {EnvironmentPreset | Texture}
+   */
   get environment() { return this.#environment }
-  /** @param {EnvironmentPreset | Texture | TextureOptions} v */
+  /** @param {EnvironmentPreset | string | Texture | TextureOptions} v */
   set environment(v) {
     this.#setEnvironment(v)
   }
 
-  /** @param {EnvironmentPreset | Texture | TextureOptions} v */
+  /** @param {EnvironmentPreset | string | Texture | TextureOptions} v */
   #setEnvironment(v) {
-    if (typeof v === 'string') this.#environment = /** @type {EnvironmentPreset} */ (checkOneOf('Scene', 'environment', v, ['studio', 'none']))
+    if (v === 'studio' || v === 'none') this.#environment = v
+    else if (typeof v === 'string' && /[./]/.test(v)) this.#environment = new Texture({ url: v, colorSpace: 'linear', mipmaps: false })
     else if (v instanceof Texture) this.#environment = v
-    else if (v && typeof v === 'object') this.#environment = new Texture({ colorSpace: 'linear', .../** @type {TextureOptions} */ (v) })
-    else fail('Scene', `'environment' must be 'studio', 'none' or a texture, got ${describe(v)}`)
+    else if (v && typeof v === 'object') this.#environment = new Texture({ colorSpace: 'linear', mipmaps: false, .../** @type {TextureOptions} */ (v) })
+    else fail('Scene', `'environment' must be 'studio', 'none', an .hdr url or a texture, got ${describe(v)}`)
   }
 
   /**
@@ -99,7 +118,8 @@ export class Scene extends Node {
 
   /** @returns {Record<string, unknown>} */
   cloneOptions() {
-    return { ...super.cloneOptions(), background: this.#background, environment: this.#environment }
+    return { ...super.cloneOptions(), background: this.#background, environment: this.#environment,
+      environmentIntensity: this.environmentIntensity, backgroundBlur: this.backgroundBlur }
   }
 
   /** @returns {Record<string, unknown>} */
@@ -114,6 +134,8 @@ export class Scene extends Node {
       const env = typeof this.#environment === 'string' ? this.#environment : this.#environment.toJSON()
       if (env) json.environment = env
     }
+    if (this.environmentIntensity !== 1) json.environmentIntensity = this.environmentIntensity
+    if (this.backgroundBlur) json.backgroundBlur = this.backgroundBlur
     return json
   }
 }

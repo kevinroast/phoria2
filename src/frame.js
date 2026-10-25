@@ -2,7 +2,9 @@
 // a renderer draws a FrameDescription, so renderers are replaceable and frames testable without a GPU.
 import { Mat4 } from './value/Mat4.js'
 import { Vec3 } from './value/Vec3.js'
+import { Box3 } from './value/Box3.js'
 import { warnOnce } from './validate.js'
+import { fitShadow } from './shadow.js'
 
 /** @import { Scene } from './scene/Scene.js' */
 /** @import { Camera } from './scene/cameras.js' */
@@ -59,6 +61,15 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  */
 
 /**
+ * The shadow-casting directional light's view of the scene: what to draw into its depth map.
+ * @typedef {object} ShadowFrame
+ * @property {FrameLight} light
+ * @property {Mat4} viewProjection world to the light's clip space
+ * @property {number} texelSize world units per shadow map texel
+ * @property {DrawItem[]} casters drawn into the map, whether or not the camera sees them
+ */
+
+/**
  * The hovered thing to tint: a whole node, or one of its instances or points.
  * @typedef {object} FrameHighlight
  * @property {Node} node
@@ -76,6 +87,9 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  * @property {FrameLabel[]} labels
  * @property {Color | Texture | null} background
  * @property {Scene['environment']} environment
+ * @property {number} environmentIntensity
+ * @property {number} backgroundBlur 0-1
+ * @property {ShadowFrame | null} shadow the shadow-casting light's view, when there is one and something casts
  * @property {{ drawn: number, culled: number }} stats
  * @property {FrameHighlight | null} highlight set by the View for hover highlighting
  * @property {any[]} overlays HTML elements carried by the nodes drawn (node.overlay)
@@ -107,6 +121,9 @@ export function collect(scene, camera) {
     labels: [],
     background: scene.background,
     environment: scene.environment,
+    environmentIntensity: scene.environmentIntensity,
+    backgroundBlur: scene.backgroundBlur,
+    shadow: null,
     stats: { drawn: 0, culled: 0 },
     highlight: null,
     overlays: [],
@@ -114,6 +131,12 @@ export function collect(scene, camera) {
     tooltips: false,
   }
   let punctual = 0, directional = 0
+  // shadows: what casts (seen or not - a shadow can fall into view from off screen) and what
+  // receives; only looked at further when a light casts
+  /** @type {any[]} */
+  const casters = []
+  /** @type {any[]} */
+  const receivers = []
 
   /** @param {any} node */
   const visit = (node) => {
@@ -124,6 +147,8 @@ export function collect(scene, camera) {
     if (node.tooltip) frame.interactive = frame.tooltips = true
     else if (node.highlight || node.onHover || node.onClick) frame.interactive = true
     if (node.isDrawable) {
+      if (node.castShadow && node.drawMode !== 'points' && node.drawMode !== 'lines') casters.push(node)
+      if (node.receiveShadow) receivers.push(node)
       const item = drawItem(node, view, planes)
       if (item) {
         // point sprites with a map nearly always have soft alpha edges, so they blend too
@@ -169,6 +194,21 @@ export function collect(scene, camera) {
   }
   visit(scene)
 
+  // one shadow map, for the first directional light that casts; it goes first, so the shader
+  // knows which light the map belongs to
+  const sun = frame.lights.findIndex((l) => l.kind === 'directional' && l.castShadow)
+  const items = sun >= 0 ? /** @type {DrawItem[]} */ (casters.map((n) => drawItem(n, view, null)).filter(Boolean)) : []
+  if (items.length) {
+    const light = frame.lights[sun]
+    const bounds = (/** @type {any} */ n) => n.expandBounds(new Box3())
+    const fit = fitShadow(/** @type {Vec3} */ (light.direction), items.map((c) => bounds(c.node)), receivers.map(bounds))
+    if (fit) {
+      frame.lights.splice(sun, 1)
+      frame.lights.unshift(light)
+      frame.shadow = { light, ...fit, casters: items }
+    }
+  }
+
   // opaque: front to back lets the depth test reject hidden pixels early; grouping by material
   // variant keeps shader switches down
   frame.opaque.sort((x, y) => x.node.renderOrder - y.node.renderOrder ||
@@ -180,7 +220,7 @@ export function collect(scene, camera) {
 }
 
 /**
- * @param {Drawable} node @param {Mat4} view @param {Float32Array[]} planes
+ * @param {Drawable} node @param {Mat4} view @param {Float32Array[] | null} planes null: no culling
  * @returns {DrawItem | null} null when culled
  */
 function drawItem(node, view, planes) {
@@ -194,7 +234,7 @@ function drawItem(node, view, planes) {
   const scale = Math.max(Math.hypot(worldMatrix[0], worldMatrix[1], worldMatrix[2]),
     Math.hypot(worldMatrix[4], worldMatrix[5], worldMatrix[6]), Math.hypot(worldMatrix[8], worldMatrix[9], worldMatrix[10]))
   // instanced meshes spread their copies anywhere, so they aren't culled as a whole
-  if (node.frustumCulled && !instances && !sphereInFrustum(planes, center, box.getRadius() * scale)) return null
+  if (planes && node.frustumCulled && !instances && !sphereInFrustum(planes, center, box.getRadius() * scale)) return null
 
   // distance in front of the camera, along its view direction
   const depth = -(view[2] * center[0] + view[6] * center[1] + view[10] * center[2] + view[14])

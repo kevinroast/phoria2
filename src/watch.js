@@ -89,7 +89,11 @@ export class ChangeWatch {
     if (!bg) this.#push(-1)
     else if ('getHex' in bg) this.#pushAll(bg)
     else this.#texture(bg)
-    this.#strings.push(scene.environment)
+    const env = scene.environment
+    if (typeof env === 'string') this.#strings.push(env)
+    else this.#texture(env)
+    this.#push(scene.environmentIntensity)
+    this.#push(scene.backgroundBlur)
     this.#node(scene)
   }
 
@@ -116,6 +120,7 @@ export class ChangeWatch {
     this.#push(g.version)
     this.#push(g.drawCount ?? -1)
     this.#push(node.renderOrder)
+    this.#push((node.castShadow ? 1 : 0) | (node.receiveShadow ? 2 : 0))
     // per-instance labels come from these, so swapping either redraws
     this.#push(node.labels ? idOf(node.labels) : 0)
     this.#push(node.data && typeof node.data === 'object' ? idOf(node.data) : 0)
@@ -132,8 +137,11 @@ export class ChangeWatch {
     this.#push(m.metalness)
     this.#push(m.size)
     this.#push(m.width)
+    this.#push(m.alphaTest)
+    this.#push(m.normalScale)
+    this.#push(m.aoMapIntensity)
     this.#push((m.unlit ? 1 : 0) | (m.flatShading ? 2 : 0) | (m.doubleSided ? 4 : 0) | (m.vertexColors ? 8 : 0) |
-      (m.depthWrite ? 16 : 0) | (m.depthTest ? 32 : 0) | (m.sizeAttenuation ? 64 : 0) | (m.blending === 'additive' ? 128 : 0))
+      (m.depthWrite ? 16 : 0) | (m.depthTest ? 32 : 0) | (m.sizeAttenuation ? 64 : 0) | (m.blending === 'additive' ? 128 : 0) | (m.transparent ? 256 : 0))
     for (const [, texture] of m.textures) this.#texture(texture)
   }
 
@@ -160,6 +168,7 @@ export class ChangeWatch {
     if (light.ground) this.#pushAll(light.ground)
     if (light.direction) this.#pushAll(light.direction)
     if (light.target) this.#pushAll(light.target)
+    if (light.castShadow) this.#push(1)
     if ('range' in light) this.#push(light.range)
     if ('angle' in light) {
       this.#push(light.angle)

@@ -17,6 +17,7 @@ export const DEMOS = [
   { name: 'lights', title: 'coloured point lights orbiting a cube, with a child that follows its parent' },
   { name: 'textures', title: 'a texture per face - six textured planes in a group' },
   { name: 'models', title: 'hand-made models from raw points and polygons' },
+  { name: 'viewer', title: 'a glTF product viewer - full material maps, an HDR studio, shadows, animation' },
   { name: 'particles', title: 'particle emitters - fountain, flame and snow' },
   { name: 'scene-json', title: 'a scene as plain JSON - edit it, rebuild it, export it' },
   { section: 'Showcase', name: 'solar', title: 'a solar system - nested orbits, a sun that lights the planets, click to follow' },
