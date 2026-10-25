@@ -1,14 +1,16 @@
 import { Vec3 } from './value/Vec3.js'
-import { checkOptions, fail } from './validate.js'
+import { checkOneOf, checkOptions, fail } from './validate.js'
 
 /** @import { Camera } from './scene/cameras.js' */
 
 /**
  * @typedef {object} OrbitOptions
  * @property {boolean} [enabled] (default true)
+ * @property {'orbit' | 'map'} [mode] 'map' makes every drag pan and the view never turn - for plans and maps (default 'orbit')
  * @property {number} [rotateSpeed] radians per pixel of drag (default 0.005)
  * @property {number} [zoomSpeed] fraction of the distance per wheel step (default 0.1)
  * @property {boolean} [zoom] false to leave the wheel scrolling the page (default true)
+ * @property {boolean} [zoomToCursor] the wheel zooms towards the point under the pointer (default true)
  * @property {boolean} [pan] right-drag (or two-finger drag) pans (default true)
  * @property {number} [inertia] how much of a fling carries on after release: the fraction of its speed kept
  *   every 1/60 s - 0 stops dead, 0.95 glides a long way (default 0.85)
@@ -19,23 +21,27 @@ import { checkOptions, fail } from './validate.js'
  * @property {number} [maxPitch] radians above it (default just short of straight up)
  */
 
-const OPTIONS = ['enabled', 'rotateSpeed', 'zoomSpeed', 'zoom', 'pan', 'inertia', 'autoRotate', 'minDistance',
-  'maxDistance', 'minPitch', 'maxPitch']
+const OPTIONS = ['enabled', 'mode', 'rotateSpeed', 'zoomSpeed', 'zoom', 'zoomToCursor', 'pan', 'inertia', 'autoRotate',
+  'minDistance', 'maxDistance', 'minPitch', 'maxPitch']
 const LIMIT = Math.PI / 2 - 0.001
 // fastest fling, radians per second
 const MAX_FLING = 4
 
 /**
  * Mouse and touch camera control: drag (or one finger) orbits the camera around its target,
- * right-drag (or two fingers) pans, the wheel (or a pinch) zooms. A drag never counts as a click,
- * so picking on click keeps working. The View creates one with `orbit: true` and calls update()
+ * right-drag (or two fingers) pans, the wheel (or a pinch) zooms, towards the pointer. With
+ * `mode: 'map'` it is a map control - every drag pans. A drag never counts as a click, so picking
+ * on click keeps working. The View creates one with `orbit: true` and calls update()
  * each frame; standalone, call update(dt) yourself for inertia and auto-rotate.
  */
 export class OrbitControl {
   enabled = true
+  /** 'map' makes every drag pan. @type {'orbit' | 'map'} */
+  mode = 'orbit'
   rotateSpeed = 0.005
   zoomSpeed = 0.1
   zoom = true
+  zoomToCursor = true
   pan = true
   inertia = 0.85
   /** @type {boolean | number} */
@@ -64,6 +70,11 @@ export class OrbitControl {
   constructor(camera, element, options = {}) {
     checkOptions('OrbitControl', options, OPTIONS, {
       enableDamping: "use 'inertia' (0 to turn it off)",
+      enableRotate: "use mode: 'map' to make dragging pan instead of turning",
+      rotate: "use mode: 'map' to make dragging pan instead of turning",
+      enableZoom: "use 'zoom'",
+      enablePan: "use 'pan'",
+      screenSpacePanning: 'panning always follows the screen',
       dampingFactor: "use 'inertia': the fraction of speed kept each 1/60 s (default 0.85)",
       target: 'set camera.target - the control orbits around it',
     })
@@ -71,6 +82,7 @@ export class OrbitControl {
     this.camera = camera
     this.element = element
     Object.assign(this, options)
+    if (options.mode !== undefined) checkOneOf('OrbitControl', 'mode', options.mode, ['orbit', 'map'])
     camera.target ??= new Vec3()
 
     // touch-action: none stops the browser claiming touch drags for scrolling before we see them
@@ -142,6 +154,32 @@ export class OrbitControl {
     this.spherical = { ...s, distance: s.distance * factor }
   }
 
+  /**
+   * Zoom by a factor, keeping the point under the pointer still - where the pointer is, in -1..1
+   * across the view (x right, y up). The target moves with it, so orbiting then turns about there.
+   * @param {number} factor below 1 zooms in
+   * @param {number} x @param {number} y
+   */
+  zoomAt(factor, x, y) {
+    const before = this.#halfHeight()
+    this.zoomBy(factor)
+    // the zoom actually applied, after the distance limits
+    const k = 1 - this.#halfHeight() / before
+    if (!k) return
+    this.camera.updateWorld()
+    const m = this.camera.worldMatrix
+    const right = new Vec3(m[0], m[1], m[2]).normalize().multiplyScalar(x * before * this.camera.aspect * k)
+    const move = new Vec3(m[4], m[5], m[6]).normalize().multiplyScalar(y * before * k).add(right)
+    this.camera.position.add(move)
+    this.target.add(move)
+  }
+
+  // half the view's height at the target, in world units
+  #halfHeight() {
+    const cam = /** @type {any} */ (this.camera)
+    return cam.constructor.type === 'orthographic-camera' ? cam.height / 2 : this.spherical.distance * Math.tan(cam.fov * Math.PI / 360)
+  }
+
   /** Move the camera and target together by screen pixels; the scene follows the pointer. @param {number} dx @param {number} dy */
   panBy(dx, dy) {
     this.camera.updateWorld()
@@ -190,7 +228,9 @@ export class OrbitControl {
     this.#velocity = { yaw: 0, pitch: 0 }
     this.#lastMove = performance.now()
     this.#pinchDistance = this.#spread()
-    this.#panning = e.button === 2
+    // as a map control, every drag pans
+    this.#panning = e.button === 2 || this.mode === 'map'
+    if (this.#panning && !this.pan) this.#pointers.delete(e.pointerId)
   }
 
   /** @param {PointerEvent} e */
@@ -235,7 +275,10 @@ export class OrbitControl {
   #wheel(e) {
     if (!this.enabled || !this.zoom) return
     e.preventDefault()
-    this.zoomBy(1 + Math.sign(e.deltaY) * this.zoomSpeed)
+    const factor = 1 + Math.sign(e.deltaY) * this.zoomSpeed
+    if (!this.zoomToCursor) return this.zoomBy(factor)
+    const r = this.element.getBoundingClientRect()
+    this.zoomAt(factor, ((e.clientX - r.left) / r.width) * 2 - 1, 1 - ((e.clientY - r.top) / r.height) * 2)
   }
 
   #spread() {

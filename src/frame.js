@@ -1,17 +1,17 @@
 // The renderer contract: what to draw this frame, as plain data. The scene never talks to WebGL -
 // a renderer draws a FrameDescription, so renderers are replaceable and frames testable without a GPU.
 import { Mat4 } from './value/Mat4.js'
+import { Vec3 } from './value/Vec3.js'
 import { warnOnce } from './validate.js'
 
 /** @import { Scene } from './scene/Scene.js' */
-/** @import { Vec3 } from './value/Vec3.js' */
 /** @import { Camera } from './scene/cameras.js' */
 /** @import { Node } from './scene/Node.js' */
 /** @import { Color } from './value/Color.js' */
 /** @import { Texture } from './material/Texture.js' */
 /** @import { Geometry } from './geometry/Geometry.js' */
 /** @import { Material } from './material/Material.js' */
-/** @import { Drawable, InstancedMesh, Label } from './scene/drawables.js' */
+/** @import { Drawable, InstancedMesh, Label, LabelPlacement } from './scene/drawables.js' */
 /** @import { Light, HemisphereLight, DirectionalLight, PointLight, SpotLight } from './scene/lights.js' */
 
 // Nodes are told apart by markers (isDrawable, isLabel, lightKind) rather than instanceof, so
@@ -47,11 +47,24 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
 
 /**
  * @typedef {object} FrameLabel
- * @property {Label} node
+ * @property {any} key stable identity across frames: the Label node, or a key per instance or point
+ * @property {Node} node the Label, or the InstancedMesh or Points it labels
+ * @property {number | null} index the instance or point, for labels made from `labels`
+ * @property {string} text
+ * @property {Required<LabelPlacement>} style
  * @property {Vec3} position world
  * @property {[number, number]} ndc [x, y] in -1..1
  * @property {number} depth
  * @property {boolean} visible in front of the camera and inside the view
+ */
+
+/**
+ * The hovered thing to tint: a whole node, or one of its instances or points.
+ * @typedef {object} FrameHighlight
+ * @property {Node} node
+ * @property {number | null} index instance (InstancedMesh) or point (Points); null for the whole node
+ * @property {Color} color linear
+ * @property {number} amount 0-1, how far the colour moves towards it
  */
 
 /**
@@ -64,6 +77,7 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  * @property {Color | Texture | null} background
  * @property {Scene['environment']} environment
  * @property {{ drawn: number, culled: number }} stats
+ * @property {FrameHighlight | null} highlight set by the View for hover highlighting
  */
 
 /**
@@ -91,6 +105,7 @@ export function collect(scene, camera) {
     background: scene.background,
     environment: scene.environment,
     stats: { drawn: 0, culled: 0 },
+    highlight: null,
   }
   let punctual = 0, directional = 0
 
@@ -104,11 +119,13 @@ export function collect(scene, camera) {
         const blended = node.material.transparent || (node.drawMode === 'points' && node.material.map)
         ;(blended ? frame.transparent : frame.opaque).push(item)
         frame.stats.drawn++
+        if (node.labels) instanceLabels(node, viewProjection, frame.labels)
       } else {
         frame.stats.culled++
       }
     } else if (node.isLabel) {
-      frame.labels.push(label(node, viewProjection))
+      const position = node.worldPosition
+      frame.labels.push({ key: node, node, index: null, text: node.text, style: node, position, ...project(position, viewProjection) })
     } else if (node.lightKind) {
       addLight(/** @type {Light} */ (node))
     }
@@ -173,9 +190,54 @@ function drawItem(node, view, planes) {
   return { node, geometry, material, worldMatrix, instances, depth }
 }
 
-/** @param {Label} node @param {Mat4} viewProjection @returns {FrameLabel} */
-function label(node, viewProjection) {
-  const position = node.worldPosition
+// a stable key per labelled node, so label elements survive from frame to frame
+/** @type {WeakMap<object, number>} */
+const ids = new WeakMap()
+let nextId = 1
+
+/**
+ * Labels for every instance or point that has text, from the node's `labels` option.
+ * @param {any} node InstancedMesh or Points @param {Mat4} viewProjection @param {FrameLabel[]} out
+ */
+function instanceLabels(node, viewProjection, out) {
+  const { labels, worldMatrix: w } = node
+  let id = ids.get(node)
+  if (id === undefined) ids.set(node, id = nextId++)
+  const instanced = 'instanceMatrices' in node
+  const n = instanced ? node.count : node.geometry.drawnCount
+  let px = 0, py = 0, pz = 0
+  if (instanced) {
+    // where on each instance: the top centre or the centre of its geometry
+    const box = node.geometry.bounds, c = box.getCenter()
+    px = c[0]; py = labels.at === 'top' ? box.max[1] : c[1]; pz = c[2]
+  }
+  const data = Array.isArray(node.data) ? node.data : null
+  const byRow = typeof labels.priority === 'function'
+  for (let i = 0; i < n; i++) {
+    const row = data ? data[i] : null
+    const text = labels.text(row, i)
+    if (text === null || text === undefined || text === '') continue
+    let x, y, z
+    if (instanced) {
+      const m = node.instanceMatrices, o = i * 16
+      x = m[o] * px + m[o + 4] * py + m[o + 8] * pz + m[o + 12]
+      y = m[o + 1] * px + m[o + 5] * py + m[o + 9] * pz + m[o + 13]
+      z = m[o + 2] * px + m[o + 6] * py + m[o + 10] * pz + m[o + 14]
+    } else {
+      const p = node.geometry.positions
+      x = p[i * 3]; y = p[i * 3 + 1]; z = p[i * 3 + 2]
+    }
+    const position = new Vec3(
+      w[0] * x + w[4] * y + w[8] * z + w[12],
+      w[1] * x + w[5] * y + w[9] * z + w[13],
+      w[2] * x + w[6] * y + w[10] * z + w[14])
+    const style = byRow ? { ...labels, priority: labels.priority(row, i) } : labels
+    out.push({ key: `${id}:${i}`, node, index: i, text: String(text), style, position, ...project(position, viewProjection) })
+  }
+}
+
+/** Where a world position lands on screen. @param {Vec3} position @param {Mat4} viewProjection */
+function project(position, viewProjection) {
   const m = viewProjection
   const x = m[0] * position[0] + m[4] * position[1] + m[8] * position[2] + m[12]
   const y = m[1] * position[0] + m[5] * position[1] + m[9] * position[2] + m[13]
@@ -183,7 +245,7 @@ function label(node, viewProjection) {
   const w = m[3] * position[0] + m[7] * position[1] + m[11] * position[2] + m[15]
   const ndc = /** @type {[number, number]} */ ([x / w, y / w])
   const visible = w > 0 && Math.abs(ndc[0]) <= 1 && Math.abs(ndc[1]) <= 1 && z / w <= 1
-  return { node, position, ndc, depth: w, visible }
+  return { ndc, depth: w, visible }
 }
 
 // The six planes (a, b, c, d with the normal pointing inwards) of a view-projection matrix.

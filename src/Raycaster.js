@@ -20,6 +20,8 @@ import { Vec3 } from './value/Vec3.js'
  * @property {number | null} face triangle index (meshes), vertex index (points), segment index (lines)
  * @property {number | null} instance instance index (InstancedMesh)
  * @property {[number, number] | null} uv texture coordinate at the hit (meshes with uvs)
+ * @property {any} datum the node's data for what was hit: its row for an instance or point, or the
+ *   node's own data (null when it has none)
  */
 
 const inverse = new Float32Array(16)
@@ -142,7 +144,8 @@ export class Raycaster {
         w * t[best.i0 * 2 + 1] + best.u * t[best.i1 * 2 + 1] + best.v * t[best.i2 * 2 + 1],
       ]
     }
-    hits.push({ node: mesh, point, distance: point.distanceTo(this.ray.origin), normal, face: bestFace, instance, uv })
+    hits.push({ node: mesh, point, distance: point.distanceTo(this.ray.origin), normal, face: bestFace, instance, uv,
+      datum: mesh.datumAt(instance) })
   }
 
   /** @param {Points} node @param {Hit[]} hits */
@@ -155,7 +158,7 @@ export class Raycaster {
       const { distanceSq } = this.ray.distanceSqToPoint(a)
       if (distanceSq > limit) continue
       const distance = a.distanceTo(this.ray.origin)
-      if (!best || distance < best.distance) best = { node, point: a.clone(), distance, normal: null, face: i, instance: null, uv: null }
+      if (!best || distance < best.distance) best = { node, point: a.clone(), distance, normal: null, face: i, instance: null, uv: null, datum: node.datumAt(i) }
     }
     if (best) hits.push(best)
   }
@@ -171,7 +174,7 @@ export class Raycaster {
       b.set(p[i1 * 3], p[i1 * 3 + 1], p[i1 * 3 + 2]).applyMatrix4(w)
       const { distanceSq, t } = this.ray.distanceSqToSegment(a, b)
       if (distanceSq > limit) continue
-      if (!best || t < best.distance) best = { node, point: this.ray.at(t), distance: t, normal: null, face: s, instance: null, uv: null }
+      if (!best || t < best.distance) best = { node, point: this.ray.at(t), distance: t, normal: null, face: s, instance: null, uv: null, datum: node.datumAt(null) }
     }
     if (best) hits.push(best)
   }

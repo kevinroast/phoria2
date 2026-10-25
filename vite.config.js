@@ -41,8 +41,9 @@ export default defineConfig(({ mode }) => ({
         copyPublicDir: false,
         rollupOptions: {
           output: {
-            // everything the sub-paths share with the core goes in one predictable chunk
-            manualChunks: (id) => (/[\\/]src[\\/](?!particles)/.test(id) ? 'core' : undefined),
+            // everything the sub-paths share with the core goes in one predictable chunk; modules the
+            // View loads on demand (explain, toImage, the tooltip) keep chunks of their own
+            manualChunks: (id) => (/[\\/]src[\\/](?!particles|explain|snapshot|tooltip)/.test(id) ? 'core' : undefined),
             chunkFileNames: '[name].js',
           },
         },

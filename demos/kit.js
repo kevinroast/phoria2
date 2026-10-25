@@ -1,7 +1,7 @@
 import { Geometry, Points, Texture } from 'phoria2'
 
 // Small pieces several demos share: sprite textures drawn on a 2D canvas (white, so points' colours
-// tint them) and a starfield.
+// tint them), a starfield, seeded random numbers, a legend and file downloads.
 
 /** A soft round glow: opaque centre fading to nothing at the edge. */
 export function glow(size = 64, { core = 0 } = {}) {
@@ -51,4 +51,52 @@ function square(size) {
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = size
   return { canvas, ctx: /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d')) }
+}
+
+/** Seeded random numbers (mulberry32), so a demo's made-up data is the same every time. */
+export function random(seed = 1) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/**
+ * A legend in the bottom left: a swatch and name per item. With onToggle, clicking an item turns it
+ * off and on.
+ * @param {{ label: string, color: string }[]} items
+ * @param {{ title?: string, onToggle?: (index: number, on: boolean) => void }} [options]
+ */
+export function legend(items, { title, onToggle } = {}) {
+  const el = document.createElement('div')
+  el.className = 'demo-legend'
+  if (title) {
+    const h = document.createElement('div')
+    h.className = 'demo-legend-title'
+    h.textContent = title
+    el.append(h)
+  }
+  items.forEach(({ label, color }, i) => {
+    const item = document.createElement(onToggle ? 'button' : 'div')
+    item.className = 'demo-legend-item'
+    item.innerHTML = `<span class="demo-legend-swatch" style="background:${color}"></span>`
+    item.append(label)
+    if (onToggle) {
+      item.addEventListener('click', () => onToggle(i, !item.classList.toggle('off')))
+    }
+    el.append(item)
+  })
+  document.body.append(el)
+  return el
+}
+
+/** Save a Blob as a file. @param {Blob} blob @param {string} name */
+export function download(blob, name) {
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
 }

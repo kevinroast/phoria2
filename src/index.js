@@ -6,6 +6,7 @@ export * from './types.js'
 export { View } from './View.js'
 export { WebGLRenderer } from './webgl/WebGLRenderer.js'
 export { OrbitControl } from './OrbitControl.js'
+export { cameraPreset, CAMERA_PRESETS } from './presets.js'
 
 // scene graph
 export { Node, Group } from './scene/Node.js'
@@ -36,3 +37,14 @@ export { create } from './describe.js'
 export { Raycaster } from './Raycaster.js'
 export { collect, NullRenderer, LIGHT_LIMITS } from './frame.js'
 export { PhoriaError } from './validate.js'
+
+/** @typedef {import('./View.js').ViewOptions} ViewOptions */
+/** @typedef {import('./View.js').ViewEvent} ViewEvent */
+/** @typedef {import('./View.js').ViewHandler} ViewHandler */
+/** @typedef {import('./View.js').RenderMode} RenderMode */
+/** @typedef {import('./presets.js').CameraPreset} CameraPreset */
+/** @typedef {import('./tooltip.js').TooltipContent} TooltipContent */
+/** @typedef {import('./Raycaster.js').Hit} Hit */
+/** @typedef {import('./scene/drawables.js').LabelPlacement} LabelPlacement */
+/** @typedef {import('./scene/drawables.js').InstanceLabels} InstanceLabels */
+/** @typedef {import('./snapshot.js').ImageOptions} ImageOptions */

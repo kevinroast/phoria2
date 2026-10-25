@@ -244,6 +244,13 @@ export class WebGLRenderer {
     }
 
     program.set('uModel', worldMatrix)
+    const hl = frame.highlight
+    if (hl && hl.node === node) {
+      program.set('uHighlightIndex', hl.index ?? -1)
+      program.set('uHighlight', [hl.color[0], hl.color[1], hl.color[2], hl.amount])
+    } else {
+      program.set('uHighlightIndex', -2)
+    }
     program.set('uColor', material.color)
     program.set('uOpacity', material.opacity)
     const e = material.emissive, k = material.emissiveIntensity

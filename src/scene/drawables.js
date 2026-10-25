@@ -3,7 +3,7 @@ import { Color } from '../value/Color.js'
 import { Euler } from '../value/Euler.js'
 import { Quat } from '../value/Quat.js'
 import { Vec3 } from '../value/Vec3.js'
-import { checkNumber, describe, fail } from '../validate.js'
+import { checkNumber, checkOneOf, describe, fail } from '../validate.js'
 import { resolveGeometry, resolveMaterial } from '../resolve.js'
 import { NODE_OPTIONS, Node } from './Node.js'
 
@@ -22,14 +22,91 @@ import { NODE_OPTIONS, Node } from './Node.js'
  *   receiveShadow?: boolean,
  *   renderOrder?: number,
  *   frustumCulled?: boolean,
+ *   data?: unknown,
  * }} DrawableOptions
+ * data: what this node shows - picking hands it back as hit.datum. For InstancedMesh and Points an
+ * array is one row per instance or point, and hit.datum is the row that was hit.
  */
 
-const DRAWABLE_OPTIONS = [...NODE_OPTIONS, 'geometry', 'material', 'castShadow', 'receiveShadow', 'renderOrder', 'frustumCulled']
+/**
+ * Where a label sits and how it competes for space.
+ * @typedef {object} LabelPlacement
+ * @property {LabelPlace} [place] where the label goes relative to its point (default 'center')
+ * @property {[number, number]} [offset] extra shift in CSS pixels, +y down (default [0, 0])
+ * @property {string} [className] CSS class(es) for the label element
+ * @property {number} [priority] when labels overlap, the higher priority stays (default 0)
+ * @property {'hide' | 'show'} [overlap] 'hide' drops this label when a higher-priority one is in the way;
+ *   'show' always shows it (default 'hide')
+ * @property {boolean} [occlude] hide the label when geometry is in front of its point (default false)
+ */
+/** @typedef {'center' | 'above' | 'below' | 'left' | 'right'} LabelPlace */
+
+/**
+ * One label per instance or point, from its row of data.
+ * @typedef {Omit<LabelPlacement, 'priority'> & {
+ *   text: (datum: any, index: number) => string | number | null | undefined,
+ *   priority?: number | ((datum: any, index: number) => number),
+ *   at?: 'top' | 'center',
+ * }} InstanceLabels
+ * text: the label for a row - return null for none. priority: a number, or one per row (say, by
+ * status, so problems win the space). at: the instance's top (default) or centre; points always
+ * label the point itself.
+ */
+
+export const LABEL_PLACES = /** @type {LabelPlace[]} */ (['center', 'above', 'below', 'left', 'right'])
+const PLACEMENT_OPTIONS = ['place', 'offset', 'className', 'priority', 'overlap', 'occlude']
+const LABEL_HINTS = {
+  anchor: "use place: 'center' | 'above' | 'below' | 'left' | 'right' (where the label goes)",
+  position: 'labels per instance sit on their instance - offset moves them in pixels',
+  zIndex: "use 'priority': higher stays when labels overlap",
+  collision: "use overlap: 'hide' | 'show'",
+}
+
+/**
+ * Validated placement options, with defaults filled in.
+ * @param {string} owner @param {Record<string, any>} o
+ * @returns {Required<LabelPlacement>}
+ */
+function placement(owner, o) {
+  const offset = o.offset ?? [0, 0]
+  if (!Array.isArray(offset) || offset.length !== 2 || !offset.every(Number.isFinite)) {
+    fail(owner, `'offset' must be [x, y] in pixels, got ${describe(offset)}`)
+  }
+  return {
+    place: o.place === undefined ? 'center' : checkOneOf(owner, 'place', o.place, LABEL_PLACES),
+    offset: /** @type {[number, number]} */ ([offset[0], offset[1]]),
+    className: o.className ? String(o.className) : '',
+    priority: o.priority === undefined ? 0 : checkNumber(owner, 'priority', o.priority),
+    overlap: o.overlap === undefined ? 'hide' : checkOneOf(owner, 'overlap', o.overlap, ['hide', 'show']),
+    occlude: !!o.occlude,
+  }
+}
+
+/** @param {string} owner @param {unknown} v @returns {(InstanceLabels & Required<Omit<LabelPlacement, 'priority'>> & { priority: number | ((datum: any, index: number) => number) }) | null} */
+function instanceLabels(owner, v) {
+  if (v == null) return null
+  if (typeof v !== 'object' || typeof (/** @type {any} */ (v)).text !== 'function') {
+    fail(owner, `'labels' must be { text: (datum, index) => string, ... }, got ${describe(v)}`)
+  }
+  const o = /** @type {Record<string, any>} */ (v)
+  for (const key of Object.keys(o)) {
+    if (key !== 'text' && key !== 'at' && !PLACEMENT_OPTIONS.includes(key)) {
+      fail(owner, `unknown labels option '${key}'${LABEL_HINTS[key] ? ` - ${LABEL_HINTS[key]}` : ` - expected text, at, ${PLACEMENT_OPTIONS.join(', ')}`}`)
+    }
+  }
+  const at = o.at === undefined ? 'top' : checkOneOf(owner, 'labels.at', o.at, ['top', 'center'])
+  const byRow = typeof o.priority === 'function'
+  const style = placement(owner, byRow ? { ...o, priority: 0 } : o)
+  return { text: o.text, at, ...style, priority: byRow ? o.priority : style.priority }
+}
+
+const DRAWABLE_OPTIONS = [...NODE_OPTIONS, 'geometry', 'material', 'castShadow', 'receiveShadow', 'renderOrder', 'frustumCulled', 'data']
 
 const DRAWABLE_HINTS = {
   mesh: "pass 'geometry' and 'material' directly",
   materials: "one 'material' per node - use a Group of meshes for several",
+  userData: "use 'data' for what this node shows - picking returns it as hit.datum",
+  rows: "use 'data' - one row per instance or point",
 }
 
 /** Base for nodes with geometry and a material: Mesh, InstancedMesh, Points and Lines. */
@@ -45,6 +122,8 @@ export class Drawable extends Node {
   renderOrder = 0
   /** Skip drawing when outside the camera's view. */
   frustumCulled = true
+  /** What this node shows: one row per instance or point for InstancedMesh and Points. Picking returns it as hit.datum. */
+  data = /** @type {any} */ (null)
 
   /** @param {DrawableOptions} options */
   constructor(options) {
@@ -59,7 +138,20 @@ export class Drawable extends Node {
     if (options.receiveShadow !== undefined) this.receiveShadow = !!options.receiveShadow
     if (options.renderOrder !== undefined) this.renderOrder = checkNumber(owner, 'renderOrder', options.renderOrder)
     if (options.frustumCulled !== undefined) this.frustumCulled = !!options.frustumCulled
+    if (options.data !== undefined) this.data = options.data
     this.checkGeometry()
+  }
+
+  /**
+   * The data for a hit: this node's row at `index` when data is an array and the node draws many
+   * things (instances, points), otherwise the data itself.
+   * @param {number | null} index
+   * @returns {any}
+   */
+  datumAt(index) {
+    const many = 'instanceMatrices' in this || this.drawMode === 'points'
+    if (many && Array.isArray(this.data)) return index === null ? null : this.data[index] ?? null
+    return this.data ?? null
   }
 
   /** True for anything with geometry and a material - lets renderers test without importing this class. */
@@ -91,6 +183,7 @@ export class Drawable extends Node {
       receiveShadow: this.receiveShadow,
       renderOrder: this.renderOrder,
       frustumCulled: this.frustumCulled,
+      data: this.data,
     }
   }
 
@@ -102,6 +195,7 @@ export class Drawable extends Node {
     if (this.receiveShadow) json.receiveShadow = true
     if (this.renderOrder) json.renderOrder = this.renderOrder
     if (!this.frustumCulled) json.frustumCulled = false
+    if (this.data != null) json.data = this.data
     return json
   }
 
@@ -144,7 +238,7 @@ const INSTANCE_OPTIONS = new Set(['position', 'rotation', 'quaternion', 'scale',
  */
 export class InstancedMesh extends Mesh {
   static type = 'instanced-mesh'
-  static get OPTIONS() { return [...DRAWABLE_OPTIONS, 'count', 'instances', 'instanceMatrices', 'instanceColors'] }
+  static get OPTIONS() { return [...DRAWABLE_OPTIONS, 'count', 'instances', 'instanceMatrices', 'instanceColors', 'labels'] }
 
   /** How many instances are drawn (at most the count it was created with). */
   count = 0
@@ -154,14 +248,18 @@ export class InstancedMesh extends Mesh {
   instanceColors = null
   /** Bumped when instance data changes, so renderers re-upload. */
   version = 0
+  /** A label per instance, from its row of data. @type {ReturnType<typeof instanceLabels>} */
+  labels = null
 
   /**
-   * @param {DrawableOptions & { count: number, instances?: InstanceOptions[], instanceMatrices?: ArrayLike<number>,
-   *   instanceColors?: ArrayLike<number> }} options instanceMatrices/instanceColors are raw data, as toJSON() writes
+   * @param {DrawableOptions & { count?: number, instances?: InstanceOptions[], instanceMatrices?: ArrayLike<number>,
+   *   instanceColors?: ArrayLike<number>, labels?: InstanceLabels | null }} options count defaults to the number
+   *   of instances or rows of data; instanceMatrices/instanceColors are raw data, as toJSON() writes
    */
   constructor(options) {
     super(options)
-    const count = options.count ?? options.instances?.length
+    this.labels = instanceLabels('InstancedMesh', options.labels)
+    const count = options.count ?? options.instances?.length ?? (Array.isArray(options.data) ? options.data.length : undefined)
     if (!Number.isInteger(count) || count < 0) fail('InstancedMesh', `'count' must be a whole number, got ${describe(count)}`)
     this.count = count
     this.instanceMatrices = new Float32Array(count * 16)
@@ -241,7 +339,7 @@ export class InstancedMesh extends Mesh {
 
   /** @returns {Record<string, unknown>} */
   cloneOptions() {
-    return { ...super.cloneOptions(), count: this.count }
+    return { ...super.cloneOptions(), count: this.count, labels: this.labels }
   }
 
   clone(options) {
@@ -261,6 +359,21 @@ export class InstancedMesh extends Mesh {
 /** Each vertex drawn as a square point sprite: star fields, particles, scatter plots. */
 export class Points extends Drawable {
   static type = 'points'
+  static get OPTIONS() { return [...DRAWABLE_OPTIONS, 'labels'] }
+
+  /** A label per point, from its row of data. @type {ReturnType<typeof instanceLabels>} */
+  labels = null
+
+  /** @param {DrawableOptions & { labels?: InstanceLabels | null }} options */
+  constructor(options) {
+    super(options)
+    this.labels = instanceLabels(this.constructor.name, options?.labels)
+  }
+
+  /** @returns {Record<string, unknown>} */
+  cloneOptions() {
+    return { ...super.cloneOptions(), labels: this.labels }
+  }
 
   /** @returns {'points'} */
   get drawMode() {
@@ -287,7 +400,7 @@ export class Lines extends Drawable {
 }
 
 /**
- * @typedef {NodeOptions & { text: string, className?: string }} LabelOptions
+ * @typedef {NodeOptions & LabelPlacement & { text: string | number }} LabelOptions
  */
 
 /**
@@ -296,11 +409,22 @@ export class Lines extends Drawable {
  */
 export class Label extends Node {
   static type = 'label'
-  static get OPTIONS() { return [...NODE_OPTIONS, 'text', 'className'] }
+  static get OPTIONS() { return [...NODE_OPTIONS, 'text', ...PLACEMENT_OPTIONS] }
+  static get HINTS() { return LABEL_HINTS }
 
   text = ''
   /** CSS class(es) for the label element. */
   className = ''
+  /** Where the label goes relative to its point. @type {LabelPlace} */
+  place = 'center'
+  /** Extra shift in CSS pixels, +y down. @type {[number, number]} */
+  offset = [0, 0]
+  /** When labels overlap, the higher priority stays. */
+  priority = 0
+  /** 'hide' gives way to higher-priority labels; 'show' always shows. @type {'hide' | 'show'} */
+  overlap = 'hide'
+  /** Hide the label when geometry is in front of its point. */
+  occlude = false
 
   /** @param {LabelOptions} options */
   constructor(options) {
@@ -309,7 +433,7 @@ export class Label extends Node {
       fail('Label', `'text' is required, got ${describe(options?.text)}`)
     }
     this.text = String(options.text)
-    if (options.className) this.className = String(options.className)
+    Object.assign(this, placement('Label', options))
   }
 
   /** Lets renderers spot labels without importing this class. */
@@ -319,11 +443,20 @@ export class Label extends Node {
 
   /** @returns {Record<string, unknown>} */
   cloneOptions() {
-    return { ...super.cloneOptions(), text: this.text, className: this.className }
+    return { ...super.cloneOptions(), text: this.text, className: this.className, place: this.place,
+      offset: [...this.offset], priority: this.priority, overlap: this.overlap, occlude: this.occlude }
   }
 
   /** @returns {Record<string, unknown>} */
   jsonOptions() {
-    return { text: this.text, ...(this.className ? { className: this.className } : {}) }
+    /** @type {Record<string, unknown>} */
+    const json = { text: this.text }
+    if (this.className) json.className = this.className
+    if (this.place !== 'center') json.place = this.place
+    if (this.offset[0] || this.offset[1]) json.offset = [...this.offset]
+    if (this.priority) json.priority = this.priority
+    if (this.overlap !== 'hide') json.overlap = this.overlap
+    if (this.occlude) json.occlude = true
+    return json
   }
 }

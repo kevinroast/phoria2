@@ -46,11 +46,13 @@ uniform mat3 uNormalMatrix;
 uniform mat4 uView;
 uniform mat4 uProjection;
 uniform vec4 uUvTransform; // repeat xy, offset zw
+uniform int uHighlightIndex; // -2 none, -1 the whole node, otherwise the instance
 
 out vec3 vWorldPosition;
 out vec3 vNormal;
 out vec2 vUv;
 out vec3 vColor;
+flat out float vHighlight;
 
 ${COMMON}
 
@@ -58,10 +60,12 @@ void main() {
   mat4 model = uModel;
   mat3 normalMatrix = uNormalMatrix;
   vColor = vec3(1.0);
+  vHighlight = uHighlightIndex == -1 ? 1.0 : 0.0;
 #ifdef INSTANCED
   model = uModel * instanceMatrix;
   normalMatrix = transpose(inverse(mat3(model)));
   vColor *= instanceColor;
+  if (gl_InstanceID == uHighlightIndex) vHighlight = 1.0;
 #endif
 #ifdef VERTEX_COLORS
   vColor *= srgbToLinear(color);
@@ -81,7 +85,9 @@ in vec3 vWorldPosition;
 in vec3 vNormal;
 in vec2 vUv;
 in vec3 vColor;
+flat in float vHighlight;
 
+uniform vec4 uHighlight;     // linear colour, and how far to move towards it
 uniform vec3 uColor;         // linear
 uniform float uOpacity;
 uniform vec3 uEmissive;      // linear, intensity applied
@@ -254,6 +260,7 @@ void main() {
 #else
   vec3 color = base.rgb + uEmissive;
 #endif
+  color = mix(color, uHighlight.rgb, vHighlight * uHighlight.a);
 
   // premultiplied alpha, so the canvas composites correctly over the page
   fragColor = vec4(linearToSrgb(color) * base.a, base.a);
@@ -269,8 +276,10 @@ uniform mat4 uView;
 uniform mat4 uProjection;
 uniform float uSize;        // pixels (with the pixel ratio applied), or world units when attenuated
 uniform float uScale;       // projection focal term x half the buffer height: world size -> pixels at depth 1
+uniform int uHighlightIndex; // -2 none, -1 every point, otherwise the point
 
 out vec3 vColor;
+flat out float vHighlight;
 
 ${COMMON}
 
@@ -278,7 +287,9 @@ void main() {
   vec4 viewPosition = uView * uModel * vec4(position, 1.0);
   gl_Position = uProjection * viewPosition;
 #ifdef SIZE_ATTENUATION
-  gl_PointSize = uSize * uScale / max(-viewPosition.z, 1e-4);
+  // perspective shrinks with distance; an orthographic projection (w row 0, 0, 0, 1) doesn't
+  float depth = uProjection[3][3] == 1.0 ? 1.0 : max(-viewPosition.z, 1e-4);
+  gl_PointSize = uSize * uScale / depth;
 #else
   gl_PointSize = uSize;
 #endif
@@ -286,12 +297,15 @@ void main() {
 #ifdef VERTEX_COLORS
   vColor = srgbToLinear(color);
 #endif
+  vHighlight = uHighlightIndex == -1 || gl_VertexID == uHighlightIndex ? 1.0 : 0.0;
 }
 `
 
 const POINTS_FRAGMENT = /* glsl */ `
 precision highp float;
 in vec3 vColor;
+flat in float vHighlight;
+uniform vec4 uHighlight;
 uniform vec3 uColor;
 uniform float uOpacity;
 #ifdef MAP
@@ -313,6 +327,7 @@ void main() {
   base.a *= 1.0 - smoothstep(1.0 - edge, 1.0, r);
 #endif
   if (base.a <= 0.0) discard;
+  base.rgb = mix(base.rgb, uHighlight.rgb, vHighlight * uHighlight.a);
   fragColor = vec4(linearToSrgb(base.rgb) * base.a, base.a);
 }
 `

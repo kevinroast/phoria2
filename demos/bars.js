@@ -6,47 +6,54 @@ const SERIES = [['North', '#4e79a7'], ['South', '#f28e2b'], ['East', '#59a14f'],
 const sales = (s, m) => Math.round(20 + 12 * Math.sin(m / 2 + s * 1.3) + s * 6 + ((m * 7 + s * 3) % 5) * 3)
 const HEIGHT_PER_UNIT = 0.08
 
-// A 3D bar chart: one InstancedMesh draws every bar, HTML labels name the axes, and the bar under
-// the pointer is picked to highlight it and show its value.
-export default function run({ canvas, gui }) {
-  const view = new View({ canvas, orbit: true, background: '#1c1c20', camera: { position: [4, 9, 12], target: [0, 1.5, 0] } })
+// A 3D bar chart: one InstancedMesh draws every bar, with the rows of data bound to it. Hovering
+// highlights a bar and shows its row in a tooltip; value labels sit on the bars and give way to
+// each other when they would overlap, nearest first.
+export default function run({ canvas, gui, info }) {
+  const rows = SERIES.flatMap(([region], s) => MONTHS.map((month, m) => ({ region, month, s, m, sales: sales(s, m) })))
+
+  const view = new View({
+    canvas, orbit: true, background: '#1c1c20', camera: { position: [4, 9, 12], target: [0, 1.5, 0] },
+    highlight: '#ffffff',
+    tooltip: (hit) => hit.datum && { title: `${hit.datum.region}, ${hit.datum.month}`, rows: { Sales: `${hit.datum.sales}k` } },
+  })
   view.scene.environment = 'studio'
   view.scene.add(new DirectionalLight({ direction: [-1, -2, -1.5] }))
   view.scene.add(new Lines({ geometry: grid({ size: 14, divisions: 14 }), material: { color: '#3a3a40' }, pickable: false }))
 
-  const bars = SERIES.flatMap((_, s) => MONTHS.map((_, m) => ({ s, m, value: sales(s, m), x: m - 5.5, z: (1.5 - s) * 1.2 })))
-  const chart = view.scene.add(new InstancedMesh({ geometry: box(1), material: { roughness: 0.5 }, count: bars.length }))
-  bars.forEach((b, i) => chart.setColor(i, SERIES[b.s][1]))
+  const chart = view.scene.add(new InstancedMesh({
+    geometry: box(1), material: { roughness: 0.5 }, data: rows,
+    // the value on top of each bar, hidden when a nearer bar is in front of it
+    labels: { text: (row) => row.sales, place: 'above', className: 'demo-value', occlude: true },
+  }))
+  const x = (row) => row.m - 5.5, z = (row) => (1.5 - row.s) * 1.2
+  rows.forEach((row, i) => chart.setColor(i, SERIES[row.s][1]))
 
   // grow the bars from the floor; a zero height would leave the normals undefined
-  const place = (grow) => bars.forEach((b, i) => {
-    const h = Math.max(0.001, b.value * HEIGHT_PER_UNIT * grow)
-    chart.setInstance(i, { position: [b.x, h / 2, b.z], scale: [0.7, h, 0.7] })
+  const place = (grow) => rows.forEach((row, i) => {
+    const h = Math.max(0.001, row.sales * HEIGHT_PER_UNIT * grow)
+    chart.setInstance(i, { position: [x(row), h / 2, z(row)], scale: [0.7, h, 0.7] })
   })
 
-  MONTHS.forEach((name, m) => view.scene.add(new Label({ text: name, position: [m - 5.5, 0, 3.1], className: 'demo-tick' })))
-  SERIES.forEach(([name], s) => view.scene.add(new Label({ text: name, position: [-7, 0, (1.5 - s) * 1.2], className: 'demo-tick' })))
+  // axis labels always show; the value labels give way around them
+  MONTHS.forEach((name, m) => view.scene.add(new Label({ text: name, position: [m - 5.5, 0, 3.1], className: 'demo-tick', overlap: 'show' })))
+  SERIES.forEach(([name], s) => view.scene.add(new Label({ text: name, position: [-6.6, 0, (1.5 - s) * 1.2], place: 'left', className: 'demo-tick', overlap: 'show' })))
 
-  const tip = view.scene.add(new Label({ text: '', className: 'demo-label', visible: false }))
-  let hovered = -1
-  canvas.addEventListener('pointermove', (e) => {
-    const hit = view.pick(e)
-    const i = hit?.node === chart ? hit.instance : -1
-    if (i === hovered) return
-    if (hovered >= 0) chart.setColor(hovered, SERIES[bars[hovered].s][1])
-    hovered = i
-    tip.visible = i >= 0
-    if (i < 0) return
-    const b = bars[i]
-    chart.setColor(i, '#ffffff')
-    tip.text = `${SERIES[b.s][0]}, ${MONTHS[b.m]}: ${b.value}k`
-    tip.position.set(b.x, b.value * HEIGHT_PER_UNIT + 0.5, b.z)
+  view.on('click', (hit) => {
+    info.textContent = hit?.datum ? `${hit.datum.region} sold ${hit.datum.sales}k in ${hit.datum.month}` : 'Click a bar'
   })
+  info.textContent = 'Click a bar'
 
   let age = 0
-  const actions = { replay() { age = 0 } }
+  const labels = chart.labels
+  const settings = {
+    replay() { age = 0 },
+    get values() { return !!chart.labels },
+    set values(v) { chart.labels = v ? labels : null },
+  }
   const f = gui.addFolder('Chart')
-  f.add(actions, 'replay')
+  f.add(settings, 'replay')
+  f.add(settings, 'values').name('value labels')
   f.add(chart.material, 'roughness', 0, 1, 0.01)
   f.add(chart.material, 'metalness', 0, 1, 0.01)
 
