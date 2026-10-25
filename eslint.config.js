@@ -3,7 +3,8 @@ import globals from 'globals'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'dist-demos']),
+  // eval/runs holds pages written by agents under test - theirs, not ours
+  globalIgnores(['dist', 'dist-demos', 'eval/runs']),
   {
     files: ['**/*.js'],
     extends: [js.configs.recommended],
@@ -17,7 +18,7 @@ export default defineConfig([
   },
   {
     // build and measurement scripts run in Node
-    files: ['scripts/**/*.mjs', 'perf/**/*.mjs'],
+    files: ['scripts/**/*.mjs', 'perf/**/*.mjs', 'eval/**/*.mjs'],
     extends: [js.configs.recommended],
     languageOptions: { globals: globals.node },
   },

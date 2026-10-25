@@ -1,17 +1,17 @@
 {
   "view app": {
-    "limit": 45.5,
+    "limit": 46,
     "target": 40,
-    "why": "slice 7 (maps, environment and shadow hooks: 43.0 KB) and slice 6 (shared contexts, GPU picking hooks, exact hits: 44.9 KB)"
+    "why": "slice 7 (maps, environment and shadow hooks: 43.0 KB), slice 6 (shared contexts, GPU picking hooks, exact hits: 44.9 KB), parallel compiling (45.3 KB), and the agent eval's fixes - errors naming the option, the padding warning, the fitted default camera (45.6 KB)"
   },
   "chart app": {
-    "limit": 64,
+    "limit": 64.5,
     "target": 50,
-    "why": "the charts sub-path is 17 KB against its 10 KB target (API-DESIGN.md section 26), plus the core's growth"
+    "why": "the charts sub-path is 17 KB against its 10 KB target (API-DESIGN.md section 26), plus the core's growth and inline container legends (64.2 KB)"
   },
   "product viewer": {
     "limit": 55,
     "target": 55,
-    "why": "the original budget; 51.5 KB at slice 6"
+    "why": "the original budget; 52.3 KB after the agent eval's fixes"
   }
 }

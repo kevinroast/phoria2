@@ -44,7 +44,7 @@ export default function run({ canvas, gui, info }) {
     for (const m of model.meshes) m.castShadow = m.receiveShadow = settings.shadows
     scene.add(model)
     if (settings.playing) model.play()
-    view.frame(model, { padding: 1.5 })
+    view.frame(model, { padding: 0.5 })
     const maps = new Set()
     for (const m of model.meshes) for (const [slot] of m.material.textures) maps.add(slot)
     info.textContent = `${model.animations.length ? `${model.animations.length} animation(s), ` : ''}maps: ${[...maps].join(', ') || 'none'}`

@@ -67,17 +67,19 @@ export const didYouMean = (name, candidates) => {
  * @param {object} options
  * @param {Iterable<string>} known
  * @param {Record<string, string>} [hints] option name -> message for common mistakes
+ * @param {string} [name] the option these are, when nested (e.g. 'framing'), so errors say which
  */
-export function checkOptions(owner, options, known, hints = {}) {
+export function checkOptions(owner, options, known, hints = {}, name) {
   if (options == null) return
-  if (typeof options !== 'object' || Array.isArray(options)) {
-    fail(owner, `expected an options object, got ${describe(options)}`)
-  }
   const keys = new Set(known)
+  if (typeof options !== 'object' || Array.isArray(options)) {
+    const expected = name ? `'${name}' must be an options object - { ${[...keys].join(', ')} }` : 'expected an options object'
+    fail(owner, `${expected}, got ${describe(options)}`)
+  }
   for (const key of Object.keys(options)) {
     if (keys.has(key)) continue
     if (hints[key]) fail(owner, hints[key])
-    fail(owner, `unknown option '${key}'${didYouMean(key, keys)}`)
+    fail(owner, `unknown option '${name ? `${name}.${key}` : key}'${didYouMean(key, keys)}`)
   }
 }
 

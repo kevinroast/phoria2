@@ -28,7 +28,7 @@ export default function run({ canvas, gui }) {
     const box = geometry.bounds, s = 2 / (box.getRadius() || 1), c = box.getCenter()
     const model = turntable.add(new Mesh({ geometry, material, scale: s, position: [-c.x * s, -box.min[1] * s, -c.z * s] }))
     model.add(new Lines({ geometry: edges(geometry), material: { color: '#000000', opacity: 0.4 }, visible: settings.edges }))
-    view.frame(model, { padding: 1.4 })
+    view.frame(model, { padding: 0.4 })
   }
   const pick = () => {
     settings.smooth = MODELS[settings.model].smooth

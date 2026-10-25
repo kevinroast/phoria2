@@ -213,7 +213,9 @@ export class Chart extends Group {
       const host = typeof container === 'string' ? document.querySelector(container) : container
       if (!host) fail('chart()', `legend container ${describe(container)} not found`)
       el.classList.remove(`phoria-legend-${o?.position ?? 'top-right'}`)
-      el.style.position = 'static'
+      // laid out in the page's flow: a row that wraps, as tall as it needs - not the floating box
+      Object.assign(el.style, { position: 'static', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center',
+        columnGap: '12px', maxHeight: 'none', overflow: 'visible' })
       host.replaceChildren(el)
     } else {
       this.overlay = el

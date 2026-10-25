@@ -131,3 +131,14 @@ describe('suggest', () => {
     expect(suggest('zzz', ['color', 'opacity'])).toBeUndefined()
   })
 })
+
+describe('option checks', () => {
+  it('name a nested option in their errors, with what it takes', async () => {
+    const { checkOptions } = await import('../src/validate.js')
+    expect(() => checkOptions('View', 'both', ['keep', 'aspect'], {}, 'framing'))
+      .toThrow("View: 'framing' must be an options object - { keep, aspect }, got 'both'")
+    expect(() => checkOptions('View', { keeep: 'both' }, ['keep', 'aspect'], {}, 'framing'))
+      .toThrow("View: unknown option 'framing.keeep' - did you mean 'keep'?")
+    expect(() => checkOptions('Mesh', 'x', ['geometry'])).toThrow('Mesh: expected an options object')
+  })
+})

@@ -12,7 +12,7 @@ import { Scene } from './scene/Scene.js'
 import { Camera, PerspectiveCamera } from './scene/cameras.js'
 import { DirectionalLight, HemisphereLight } from './scene/lights.js'
 import { WebGLRenderer } from './webgl/WebGLRenderer.js'
-import { checkOneOf, checkOptions, describe, fail } from './validate.js'
+import { checkOneOf, checkOptions, describe, fail, warnOnce } from './validate.js'
 
 /** @import { OrbitOptions } from './OrbitControl.js' */
 /** @import { CameraPreset, FramingKeep } from './presets.js' */
@@ -38,13 +38,15 @@ import { checkOneOf, checkOptions, describe, fail } from './validate.js'
  * @property {Scene} [scene] default: a new Scene (from a description: create({ type: 'scene', ... }))
  * @property {Camera | CameraPreset | (CameraOptions & { fov?: number })} [camera] a camera, a preset
  *   ('perspective', 'isometric', 'top', 'front', 'side' - fitted to the scene on the first frame), or
- *   PerspectiveCamera options
+ *   PerspectiveCamera options. Default: 'perspective' - a three-quarter view from the front right
+ *   and above, fitted to the scene
  * @property {boolean | OrbitOptions} [orbit] mouse/touch camera control (default false)
  * @property {ColorInput | null} [background] shortcut for scene.background
  * @property {RenderMode} [renderMode] when to draw (default 'auto': only when something changed)
- * @property {{ keep?: FramingKeep, aspect?: number }} [framing] what stays in view when the canvas changes shape:
- *   keep 'height' (default - the width varies), 'width', or 'both' (nothing framed is ever cut off). aspect is
- *   the width / height the camera was set up for (default: the canvas's shape when the camera was set or framed)
+ * @property {FramingKeep | { keep?: FramingKeep, aspect?: number }} [framing] what stays in view when the canvas
+ *   changes shape: 'height' (default - the width varies), 'width', or 'both' (nothing framed is ever cut off); or
+ *   { keep, aspect }, where aspect is the width / height the camera was set up for (default: the canvas's shape
+ *   when the camera was set or framed)
  * @property {ColorInput | null} [highlight] tint whatever is under the pointer with this colour (default none)
  * @property {(hit: Hit) => TooltipContent} [tooltip] what to show for the thing under the pointer - see tooltip()
  * @property {number} [pixelRatio] default min(devicePixelRatio, 2)
@@ -127,6 +129,8 @@ export class View {
   #pixelRatio = 1
   #explicitPixelRatio = false
   #autoFrame = false
+  // where a preset camera started, so fitting it on the first frame never undoes the app's own move
+  /** @type {number[] | null} */ #autoFrameFrom = null
   // framing kept as the canvas changes shape: what to keep, the shape it was set for, and the
   // scale applied so far, so further changes stay relative (zooming by hand still works)
   /** @type {FramingKeep} */ #keep = 'height'
@@ -170,9 +174,14 @@ export class View {
     } else if (typeof options.camera === 'string') {
       this.#camera = cameraPreset(options.camera)
       this.#autoFrame = true
+    } else if (options.camera === undefined) {
+      // a three-quarter view, fitted to whatever the scene holds on its first frame
+      this.#camera = cameraPreset('perspective')
+      this.#autoFrame = true
     } else {
       this.#camera = new PerspectiveCamera({ position: [0, 1.5, 6], target: [0, 0, 0], ...options.camera })
     }
+    if (this.#autoFrame) this.#autoFrameFrom = cameraPlace(this.#camera)
 
     const context = options.context === undefined ? 'auto' : checkOneOf('View', 'context', options.context, ['auto', 'own', 'shared'])
     const shared = context === 'shared' || (context === 'auto' && ownContexts >= OWN_CONTEXTS)
@@ -194,6 +203,10 @@ export class View {
       this.#pixelRatio = options.pixelRatio
       this.#explicitPixelRatio = true
     }
+    if (options.orbit !== undefined && options.orbit !== false && options.orbit !== true &&
+      (typeof options.orbit !== 'object' || Array.isArray(options.orbit) || options.orbit === null)) {
+      fail('View', `'orbit' must be true, false or orbit options such as { autoRotate: true }, got ${describe(options.orbit)}`)
+    }
     if (options.orbit) {
       const orbit = options.orbit === true ? {} : options.orbit
       // a plan view pans like a map unless told otherwise
@@ -205,8 +218,9 @@ export class View {
     this.#labels = new LabelLayer(this.canvas)
 
     if (options.framing !== undefined) {
-      const f = options.framing
-      checkOptions('View', f, ['keep', 'aspect'])
+      // 'both' is short for { keep: 'both' }
+      const f = typeof options.framing === 'string' ? { keep: options.framing } : options.framing
+      checkOptions('View', f, ['keep', 'aspect'], {}, 'framing')
       if (f.keep !== undefined) this.#keep = checkOneOf('View', 'framing.keep', f.keep, ['height', 'width', 'both'])
       if (f.aspect !== undefined) {
         if (!(f.aspect > 0)) fail('View', `framing.aspect is a width / height above 0, got ${describe(f.aspect)}`)
@@ -243,6 +257,7 @@ export class View {
       camera.target ??= this.controls.target.clone()
       this.controls.camera = camera
     }
+    if (this.#autoFrame) this.#autoFrameFrom = cameraPlace(camera)
     this.invalidate()
   }
 
@@ -348,10 +363,9 @@ export class View {
   #render(wait) {
     if (this.#autoFrame) {
       const bounds = this.scene.bounds
-      if (!bounds.isEmpty()) {
-        this.#autoFrame = false
-        this.frame(bounds)
-      }
+      // the app moved the camera itself: leave it where it put it
+      if (!samePlace(cameraPlace(this.camera), this.#autoFrameFrom)) this.#autoFrame = false
+      else if (!bounds.isEmpty()) this.frame(bounds)
     }
     this.scene.updateWorldTree()
     const frame = collect(this.scene, this.camera)
@@ -386,12 +400,18 @@ export class View {
    * Move the camera so a node, a box or (with no argument) the whole scene fills the view,
    * keeping the viewing direction. The orbit target moves to its centre.
    * @param {Node | Box3} [target] (default the scene)
-   * @param {{ padding?: number }} [options] 1 is a tight fit (default 1.2)
+   * @param {{ padding?: number }} [options] the margin around it, as a fraction of its size: 0 is a tight
+   *   fit, 0.2 (the default) leaves a fifth
    * @returns {this}
    */
-  frame(target = this.scene, { padding = 1.2 } = {}) {
+  frame(target = this.scene, { padding = 0.2 } = {}) {
+    if (!(padding >= 0)) fail('View', `frame() padding is the margin around, as a fraction of the size (0.2 = 20%), got ${describe(padding)}`)
+    if (padding >= 1) warnOnce(this, `frame() padding ${padding} leaves a margin of ${Math.round(padding * 100)}% - it is a fraction of the size (0.2 = 20%)`)
     const box = target instanceof Box3 ? target : target.bounds
+    // an explicit frame replaces the preset camera's fit on the first frame
+    this.#autoFrame = false
     if (box.isEmpty()) return this
+    const scale = 1 + padding
     const center = box.getCenter()
     const radius = Math.max(box.getRadius(), 1e-3)
     const cam = /** @type {any} */ (this.camera)
@@ -399,12 +419,12 @@ export class View {
     if (direction.len() === 0) direction.set(0, 0.3, 1).normalize()
     if (cam.constructor.type === 'orthographic-camera') {
       // fit the box's sphere to the narrower of the view's height and width
-      cam.height = radius * 2 * padding * Math.max(1, 1 / (cam.aspect || 1))
+      cam.height = radius * 2 * scale * Math.max(1, 1 / (cam.aspect || 1))
       cam.position.copy(center).add(direction.clone().multiplyScalar(radius * 4))
       cam.far = Math.max(cam.far, radius * 10)
     } else {
       const fit = Math.min(cam.fov, cam.fov * cam.aspect) * Math.PI / 360
-      const distance = radius / Math.sin(fit) * padding
+      const distance = radius / Math.sin(fit) * scale
       cam.position.copy(center).add(direction.clone().multiplyScalar(distance))
       // keep the near/far range sensible for the model's size
       cam.near = Math.max(1e-3, distance / 1000)
@@ -817,6 +837,13 @@ export class View {
       { kind: 'directional', node: sun, color: sun.color, intensity: sun.intensity, direction: sun.worldDirection })
   }
 }
+
+/** Where a camera is and looks, to tell whether the app has moved it. @param {any} camera @returns {number[]} */
+function cameraPlace(camera) {
+  return [...camera.position, ...(camera.target ?? []), camera.fov ?? camera.height]
+}
+/** @param {number[]} a @param {number[] | null} b */
+const samePlace = (a, b) => !!b && a.length === b.length && a.every((v, i) => v === b[i])
 
 /**
  * A node's handlers of one kind and its ancestors', nearest first.
