@@ -72,10 +72,13 @@ export default function run({ canvas, gui }) {
   const text = /** @type {HTMLTextAreaElement} */ (panel.querySelector('textarea'))
   const status = /** @type {HTMLElement} */ (panel.querySelector('.json-status'))
 
+  // how far the turntable has turned, so a rebuilt scene carries on from there rather than jumping back
+  let spin = 0
   const apply = () => {
     try {
       const scene = create(JSON.parse(text.value))
       if (!(scene instanceof Scene)) throw new Error(`the top level must be { type: 'scene', ... }, got '${/** @type {any} */ (scene.constructor).type}'`)
+      scene.find('turntable')?.rotateY(spin)
       view.scene = scene
       status.textContent = 'OK'
       status.classList.remove('error')
@@ -123,7 +126,8 @@ export default function run({ canvas, gui }) {
   const settings = { mistake: 'colour, not color' }
   const f = gui.addFolder('Description')
   f.add({ reset: () => startAgain(START) }, 'reset').name('start again')
-  f.add({ exportJSON: () => show(view.scene.toJSON()) }, 'exportJSON').name('export scene.toJSON()')
+  // the export has the turntable's turn in it, so the count starts again from there
+  f.add({ exportJSON: () => { spin = 0; show(view.scene.toJSON()) } }, 'exportJSON').name('export scene.toJSON()')
   f.add(settings, 'mistake', Object.keys(MISTAKES))
   f.add({
     make: () => {
@@ -133,5 +137,8 @@ export default function run({ canvas, gui }) {
     },
   }, 'make').name('make this mistake')
 
-  return view.start((dt) => view.scene.find('turntable')?.rotateY(0.4 * dt))
+  return view.start((dt) => {
+    spin += 0.4 * dt
+    view.scene.find('turntable')?.rotateY(0.4 * dt)
+  })
 }

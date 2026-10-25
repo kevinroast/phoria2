@@ -21,6 +21,7 @@ export const DEMOS = [
   { name: 'scene-json', title: 'a scene as plain JSON - edit it, add to it, rebuild it, export it' },
   { section: 'Showcase', name: 'solar', title: 'a solar system - nested orbits, planets painted in code, a sun that lights them, click to follow' },
   { name: 'galaxy', title: 'a spiral galaxy - 60,000 additive stars, old and young, round a glowing core' },
+  { name: 'graph', title: 'a memory graph of 1,500 glowing points and thousands of additive links - sparks, hover to light a neighbourhood' },
   { name: 'fireworks', title: 'fireworks over a city across the water - rockets with physics, four burst shapes, reflections' },
   { name: 'paint', title: 'a paint cannon - click the wall to aim; drops splat and drip into its canvas textures', orbit: false },
   { name: 'space', title: 'Cobra Mk IIIs over a gas giant as a comet flies by - and an Elite mode in green vector lines', orbit: false },

@@ -8,7 +8,8 @@ import { glow, random } from './kit.js'
 // is just a set of Emitter options - origin and spread, velocity, gravity, drag, lifetime and the
 // colours a particle fades through - plus onParticle, called for every particle each frame.
 
-const WATER = 0.5, BASIN = 1.95
+// the water's height and edge, and the outside and top of the stone rim round it
+const WATER = 0.5, BASIN = 1.95, RIM = 2.22, RIM_TOP = 0.66
 // how high each set's particles go
 const ROOM = { fountain: 3.2, flame: 3.6, snow: 0 }
 const PRESETS = {
@@ -16,13 +17,17 @@ const PRESETS = {
     rate: 420, origin: [0, 1.45, 0], originSpread: 0.06, velocity: [0, 5.2, 0], velocitySpread: [1.2, 0.6, 1.2],
     gravity: [0, -9.8, 0], drag: 0, lifetime: [2.5, 3], color: ['#e6f6ff', '#7cc4ff', '#2a6cff'], size: 0.13,
     blending: 'additive',
-    // drops landing in the basin join the water; those that miss bounce off the paving
+    // drops landing in the water or on the rim are gone; those that miss splash on the paving - a
+    // bounce or two, losing most of their speed, then gone
     onParticle: (p) => {
       const r = Math.hypot(p.position.x, p.position.z)
-      if (r < BASIN && p.position.y < WATER) return false
-      if (p.position.y < 0 && p.velocity.y < 0) {
+      if (r < RIM && p.position.y < (r < BASIN ? WATER : RIM_TOP)) return false
+      if (p.position.y < 0) {
+        if (p.velocity.y > -1) return false
         p.position.y = 0
-        p.velocity.y *= -0.3
+        p.velocity.y *= -0.25
+        p.velocity.x *= 0.3
+        p.velocity.z *= 0.3
       }
     },
   },
