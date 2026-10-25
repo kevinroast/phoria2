@@ -1,8 +1,7 @@
 import * as mat3 from '../math/mat3.js'
 import { collect } from '../frame.js'
 import { checkOneOf, checkOptions, fail, warnOnce } from '../validate.js'
-import { Programs } from './programs.js'
-import { Resources } from './resources.js'
+import { GLContext } from './context.js'
 import { MAX_DIRECTIONAL, MAX_PUNCTUAL } from './shaders.js'
 import { SHADOW_MAP_SIZE } from '../shadow.js'
 
@@ -11,21 +10,25 @@ import { SHADOW_MAP_SIZE } from '../shadow.js'
 /** @import { Camera } from '../scene/cameras.js' */
 /** @import { Material } from '../material/Material.js' */
 /** @import { Texture } from '../material/Texture.js' */
-/** @import { Environment, Passes } from './passes.js' */
+/** @import { Environment } from './passes.js' */
+/** @import { GPUHit } from './picking.js' */
 
 /** @typedef {'aces' | 'neutral' | 'none'} ToneMapping */
 
 /**
  * @typedef {object} WebGLRendererOptions
  * @property {HTMLCanvasElement | OffscreenCanvas} canvas
- * @property {boolean} [antialias] multisampling (default true)
+ * @property {boolean} [shared] draw with the page's one shared WebGL context and copy the picture to
+ *   this canvas, instead of giving the canvas a context of its own - for pages with many views
+ *   (browsers allow about 16 live contexts). The View decides this; see its 'context' option.
+ * @property {boolean} [antialias] multisampling (default true; a shared context always has it)
  * @property {ToneMapping} [toneMapping] how lit colours are mapped to the screen: 'neutral' keeps colours
  *   true (Khronos PBR Neutral, the default), 'aces' is filmic, 'none' clips
  * @property {number} [exposure] (default 1)
  * @property {number} [pixelRatio] drawing buffer pixels per CSS pixel (default 1; View sets it)
  */
 
-const OPTIONS = ['canvas', 'antialias', 'toneMapping', 'exposure', 'pixelRatio']
+const OPTIONS = ['canvas', 'shared', 'antialias', 'toneMapping', 'exposure', 'pixelRatio']
 const TONE_MAPPING = { none: 0, aces: 1, neutral: 2 }
 // material maps and the shader feature each one switches on (all but emissive need lighting)
 const MAP_DEFINES = { roughnessMap: 'ROUGHNESS_MAP', metalnessMap: 'METALNESS_MAP', normalMap: 'NORMAL_MAP', aoMap: 'AO_MAP' }
@@ -40,8 +43,7 @@ const MAP_UNIFORMS = { map: 'uMap', roughnessMap: 'uRoughnessMap', metalnessMap:
  *     renderer.render(scene, camera)
  */
 export class WebGLRenderer {
-  /** @type {HTMLCanvasElement | OffscreenCanvas} */ canvas
-  /** @type {WebGL2RenderingContext} */ gl
+  /** The canvas the picture ends up on. @type {HTMLCanvasElement | OffscreenCanvas} */ canvas
   /** @type {ToneMapping} */ toneMapping = 'neutral'
   exposure = 1
   pixelRatio = 1
@@ -54,18 +56,14 @@ export class WebGLRenderer {
    */
   onReady = null
 
-  #programs
-  #resources
-  /** HDR environments, panorama backgrounds and shadows - loaded the first time a frame has one. @type {Passes | null} */
-  #passes = null
-  #passesLoading = false
+  /** The context drawn with: the canvas's own, or the page's shared one. @type {GLContext} */
+  #gpu
+  /** With a shared context: the canvas's 2D context, which the picture is copied into. @type {CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null} */
+  #copy = null
   /** This frame's prefiltered environment, when it is an HDR image. @type {Environment | null} */ #environment = null
   /** This frame's shadow map, when something casts. @type {{ texture: WebGLTexture, matrix: Float32Array, texel: number, bias: number } | null} */ #shadow = null
-  #frameNumber = 0
-  #lost = false
   /** @type {Float32Array} */ #normalMatrix = new Float32Array(9)
   /** @type {Record<string, any>} */ #lights = {}
-  /** @type {() => void} */ #removeListeners
 
   /** @param {WebGLRendererOptions} options */
   constructor(options) {
@@ -76,35 +74,25 @@ export class WebGLRenderer {
     if (options.exposure !== undefined) this.exposure = options.exposure
     if (options.pixelRatio !== undefined) this.pixelRatio = options.pixelRatio
 
-    const gl = this.canvas.getContext('webgl2', {
-      antialias: options.antialias ?? true,
-      alpha: true,
-      premultipliedAlpha: true,
-      powerPreference: 'high-performance',
-    })
-    if (!gl) fail('WebGLRenderer', 'WebGL 2 is not available in this browser or on this device')
-    this.gl = /** @type {WebGL2RenderingContext} */ (gl)
-    this.#programs = new Programs(this.gl)
-    this.#resources = new Resources(this.gl)
+    if (options.shared) {
+      this.#gpu = GLContext.shared()
+      const copy = this.canvas.getContext('2d')
+      if (!copy) fail('WebGLRenderer', "a shared renderer's canvas needs a 2D context - give it a canvas that has no WebGL context yet")
+      this.#copy = /** @type {CanvasRenderingContext2D} */ (copy)
+    } else {
+      this.#gpu = new GLContext(this.canvas, { antialias: options.antialias })
+    }
+    this.#gpu.users.add(this)
+  }
 
-    // a lost context (GPU reset, too many contexts) is restored by the browser; every GPU object
-    // is then recreated from the CPU-side data on the next frame
-    const lost = (e) => {
-      e.preventDefault()
-      this.#lost = true
-    }
-    const restored = () => {
-      this.#lost = false
-      this.#programs.reset()
-      this.#resources.reset()
-      this.#passes?.reset()
-    }
-    this.canvas.addEventListener('webglcontextlost', lost)
-    this.canvas.addEventListener('webglcontextrestored', restored)
-    this.#removeListeners = () => {
-      this.canvas.removeEventListener('webglcontextlost', lost)
-      this.canvas.removeEventListener('webglcontextrestored', restored)
-    }
+  /** The WebGL 2 context drawn with - shared with other renderers when `shared` is set. @returns {WebGL2RenderingContext} */
+  get gl() {
+    return this.#gpu.gl
+  }
+
+  /** Drawing with the page's shared context? */
+  get shared() {
+    return this.#gpu.isShared
   }
 
   /**
@@ -133,15 +121,21 @@ export class WebGLRenderer {
 
   /** @param {FrameDescription} frame @returns {FrameDescription} */
   renderFrame(frame) {
-    if (this.#lost) return frame
-    const gl = this.gl
-    this.#frameNumber++
+    const gpu = this.#gpu
+    if (gpu.lost) return frame
+    const gl = gpu.gl
+    gpu.frame++
+    // what this frame touches counts as this renderer's, for freeing a shared context's copies
+    gpu.resources.owner = this
     this.info.drawCalls = 0
     this.info.triangles = 0
+    const width = this.canvas.width, height = this.canvas.height
+    // a shared context draws into the bottom-left corner of its buffer, then copies that out
+    if (gpu.isShared) gpu.fit(width, height)
 
     const env = frame.environment
     const bg = frame.background
-    const passes = this.#loadPasses(!!frame.shadow || (typeof env === 'object' && !!env.image) || (!!bg && !('getHex' in bg) && !!bg.image))
+    const passes = gpu.loadPasses(!!frame.shadow || (typeof env === 'object' && !!env.image) || (!!bg && !('getHex' in bg) && !!bg.image))
     this.#environment = passes && typeof env === 'object' ? passes.environment(env) : null
     if (passes && typeof env === 'object' && env.image && !this.#environment) {
       warnOnce(env, env.isHDR ? "this device can't render to float textures, which HDR environments need - lighting without it"
@@ -157,7 +151,7 @@ export class WebGLRenderer {
     }
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight)
+    gl.viewport(0, 0, width, height)
     if (bg && 'getHex' in bg) {
       const [r, g, b] = bg.toSRGB()
       gl.clearColor(r, g, b, 1)
@@ -165,7 +159,11 @@ export class WebGLRenderer {
       gl.clearColor(0, 0, 0, 0)
     }
     gl.depthMask(true)
+    // clear only this view's corner of a shared buffer
+    gl.enable(gl.SCISSOR_TEST)
+    gl.scissor(0, 0, width, height)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+    gl.disable(gl.SCISSOR_TEST)
     if (passes && bg && !('getHex' in bg) && bg.image) {
       passes.background(frame, /** @type {Texture} */ (bg), { exposure: this.exposure, toneMapping: TONE_MAPPING[this.toneMapping] })
     }
@@ -182,32 +180,62 @@ export class WebGLRenderer {
     gl.disable(gl.BLEND)
     gl.bindVertexArray(null)
 
-    this.info.programs = this.#programs.count
-    this.info.geometries = this.#resources.counts.geometries
-    this.info.textures = this.#resources.counts.textures
+    if (this.#copy) {
+      // the picture is the buffer's bottom-left corner; as an image, y runs down from the top
+      const copy = this.#copy, source = gpu.canvas
+      copy.globalCompositeOperation = 'copy'
+      copy.drawImage(source, 0, source.height - height, width, height, 0, 0, width, height)
+    }
+
+    this.info.programs = gpu.programs.count
+    this.info.geometries = gpu.resources.counts.geometries
+    this.info.textures = gpu.resources.counts.textures
     return frame
   }
 
   /**
-   * The extra passes, once loaded; the first call that needs them starts loading them.
-   * @param {boolean} needed @returns {Passes | null}
+   * What is drawn at a pixel of a frame this renderer drew, found on the GPU: the drawable, which
+   * instance, point or segment, and where. Undefined while the picking code loads (onReady fires
+   * when it has) or while the context is lost - pick on the CPU meanwhile.
+   * @param {FrameDescription} frame
+   * @param {number} x @param {number} y CSS pixels from the canvas's top left
+   * @returns {GPUHit | null | undefined}
    */
-  #loadPasses(needed) {
-    if (this.#passes || !needed || this.#passesLoading) return this.#passes
-    this.#passesLoading = true
-    import('./passes.js').then(({ Passes }) => {
-      this.#passes = new Passes(this.gl, this.#programs, this.#resources)
-      this.onReady?.()
-    })
-    return null
+  pick(frame, x, y) {
+    const gpu = this.#gpu
+    if (gpu.lost) return undefined
+    const picker = gpu.loadPicker()
+    if (!picker) return undefined
+    gpu.resources.owner = this
+    const r = this.pixelRatio
+    return picker.pick(frame, x * r, y * r, this.canvas.width, this.canvas.height, r)
   }
 
-  /** Free every GPU resource this renderer made, and stop listening for context loss. */
-  dispose() {
-    this.#programs.dispose()
-    this.#resources.reset()
-    this.#removeListeners()
-    this.gl.getExtension('WEBGL_lose_context')?.loseContext()
+  /**
+   * pick() without waiting for the GPU: resolves once it has finished. Undefined while the picking
+   * code loads; null while an earlier request is still out.
+   * @param {FrameDescription} frame
+   * @param {number} x @param {number} y CSS pixels from the canvas's top left
+   * @returns {Promise<GPUHit | null> | null | undefined}
+   */
+  pickAsync(frame, x, y) {
+    const gpu = this.#gpu
+    if (gpu.lost) return undefined
+    const picker = gpu.loadPicker()
+    if (!picker) return undefined
+    gpu.resources.owner = this
+    const r = this.pixelRatio
+    return picker.pickAsync(frame, x * r, y * r, this.canvas.width, this.canvas.height, r)
+  }
+
+  /**
+   * Free the GPU resources this renderer made. With its own context that is everything (the
+   * context is released); with the shared one, the copies of what `scene` draws that no other
+   * renderer still uses - and everything, once the last renderer goes.
+   * @param {Scene} [scene] what it drew
+   */
+  dispose(scene) {
+    this.#gpu.release(this, scene)
   }
 
   /** @param {FrameDescription} frame */
@@ -270,20 +298,20 @@ export class WebGLRenderer {
     const shadowed = kind === 'mesh' && !!this.#shadow && node.receiveShadow && !material.unlit
 
     const defines = this.#defines(kind, material, geometry.colors !== null, !!instances, shadowed)
-    const program = this.#programs.get(kind, defines)
+    const program = this.#gpu.programs.get(kind, defines)
     gl.useProgram(program.program)
 
     // per-frame values, once per program per frame
-    if (program.frame !== this.#frameNumber) {
-      program.frame = this.#frameNumber
+    if (program.frame !== this.#gpu.frame) {
+      program.frame = this.#gpu.frame
       program.set('uView', frame.camera.view)
       program.set('uProjection', frame.camera.projection)
       program.set('uCameraPosition', frame.camera.position)
       program.set('uExposure', this.exposure)
       program.set('uToneMapping', TONE_MAPPING[this.toneMapping])
-      program.set('uResolution', [gl.drawingBufferWidth, gl.drawingBufferHeight])
+      program.set('uResolution', [this.canvas.width, this.canvas.height])
       program.set('uNear', frame.camera.near)
-      program.set('uScale', frame.camera.projection[5] * gl.drawingBufferHeight / 2)
+      program.set('uScale', frame.camera.projection[5] * this.canvas.height / 2)
       if (kind === 'mesh' && !material.unlit) {
         for (const [name, value] of Object.entries(this.#lights)) program.set(name, value)
         const env = this.#environment
@@ -322,7 +350,7 @@ export class WebGLRenderer {
     /** @type {[string, Texture][]} */
     const maps = kind === 'mesh' ? material.textures : material.map ? [['map', material.map]] : []
     // GL textures first (uploads use a unit of their own), then bind them to the samplers
-    const bound = maps.map(([slot, texture]) => [MAP_UNIFORMS[slot], this.#resources.texture(texture)])
+    const bound = maps.map(([slot, texture]) => [MAP_UNIFORMS[slot], this.#gpu.resources.texture(texture)])
     for (const [name, texture] of bound) program.set(name, texture)
     // one UV transform for every map: the first map's (glTF models share theirs)
     const first = maps[0]?.[1]
@@ -341,7 +369,7 @@ export class WebGLRenderer {
     if (kind === 'lines') {
       gl.disable(gl.CULL_FACE)
       program.set('uWidth', material.width * this.pixelRatio)
-      const buffers = this.#resources.lines(geometry)
+      const buffers = this.#gpu.resources.lines(geometry)
       gl.bindVertexArray(buffers.vao)
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Math.min(buffers.count, Math.floor(geometry.drawnCount / 2)))
       this.info.drawCalls++
@@ -351,7 +379,7 @@ export class WebGLRenderer {
     if (kind === 'points') {
       gl.disable(gl.CULL_FACE)
       program.set('uSize', material.sizeAttenuation ? material.size : material.size * this.pixelRatio)
-      const buffers = this.#resources.mesh(geometry, null, false)
+      const buffers = this.#gpu.resources.mesh(geometry, null, false)
       gl.bindVertexArray(buffers.vao)
       gl.drawArrays(gl.POINTS, 0, geometry.drawnCount)
       this.info.drawCalls++
@@ -369,7 +397,7 @@ export class WebGLRenderer {
       // a mirroring transform (negative scale) reverses the winding
       gl.frontFace(determinant3(worldMatrix) < 0 ? gl.CW : gl.CCW)
     }
-    const buffers = this.#resources.mesh(geometry, instances, true)
+    const buffers = this.#gpu.resources.mesh(geometry, instances, true)
     gl.bindVertexArray(buffers.vao)
     const count = instances ? instances.count : 1
     const elements = geometry.drawnCount - geometry.drawnCount % 3

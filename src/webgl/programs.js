@@ -106,6 +106,7 @@ function setterFor(gl, type, loc, unit) {
     case gl.FLOAT_VEC4: return (v) => gl.uniform4fv(loc, v)
     case gl.INT:
     case gl.BOOL: return (v) => gl.uniform1i(loc, v)
+    case gl.UNSIGNED_INT: return (v) => gl.uniform1ui(loc, v)
     case gl.FLOAT_MAT3: return (v) => gl.uniformMatrix3fv(loc, false, v)
     case gl.FLOAT_MAT4: return (v) => gl.uniformMatrix4fv(loc, false, v)
     case gl.SAMPLER_2D:

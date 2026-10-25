@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>phoria2 perf</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; padding: 16px; background: #16161a; color: #e6e6ea; font: 14px/1.5 system-ui, sans-serif; }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      p { margin: 0 0 12px; color: #9a9aa6; }
+      button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid #44444f; background: #26262d; color: inherit; cursor: pointer; }
+      table { border-collapse: collapse; margin-top: 14px; font-variant-numeric: tabular-nums; }
+      th, td { padding: 4px 12px; border-bottom: 1px solid #2c2c34; text-align: right; }
+      th:first-child, td:first-child { text-align: left; }
+      td.win { color: #7fd99a; }
+      #stage { position: fixed; left: 0; top: 0; width: 800px; height: 600px; opacity: 0.02; pointer-events: none; }
+      #stage canvas { position: absolute; display: block; }
+    </style>
+  </head>
+  <body>
+    <h1>phoria2 perf harness</h1>
+    <p>The same scenes in phoria2 and three.js, 800 x 600 at pixel ratio 1. Frame times wait for the GPU. <code>npm run perf</code> runs this headless and saves the results.</p>
+    <button id="run">Run</button> <span id="status"></span>
+    <table id="results"></table>
+    <div id="stage"></div>
+    <script type="module" src="/perf/bench.js"></script>
+  </body>
+</html>

@@ -92,6 +92,9 @@ out vec3 vNormal;
 out vec2 vUv;
 out vec3 vColor;
 flat out float vHighlight;
+#ifdef PICK
+flat out uint vPickElement; // which instance, point or segment, for GPU picking
+#endif
 
 ${COMMON}
 
@@ -102,7 +105,10 @@ void main() {
   vHighlight = uHighlightIndex == -1 ? 1.0 : 0.0;
 #ifdef INSTANCED
   model = uModel * instanceMatrix;
-  normalMatrix = transpose(inverse(mat3(model)));
+  // the cofactor matrix: the inverse transpose up to scale, from three cross products, and
+  // flipped back for mirroring transforms
+  mat3 m = mat3(model);
+  normalMatrix = mat3(cross(m[1], m[2]), cross(m[2], m[0]), cross(m[0], m[1])) * sign(dot(m[0], cross(m[1], m[2])));
   vColor *= instanceColor;
   if (gl_InstanceID == uHighlightIndex) vHighlight = 1.0;
 #endif
@@ -114,6 +120,9 @@ void main() {
   vNormal = normalMatrix * normal;
   vUv = uv * uUvTransform.xy + uUvTransform.zw;
   gl_Position = uProjection * uView * world;
+#ifdef PICK
+  vPickElement = uint(gl_InstanceID);
+#endif
 }
 `
 
@@ -393,7 +402,7 @@ void main() {
 }
 `
 
-const POINTS_VERTEX = /* glsl */ `
+export const POINTS_VERTEX = /* glsl */ `
 layout(location = 0) in vec3 position;
 layout(location = 3) in vec3 color;
 
@@ -406,6 +415,9 @@ uniform int uHighlightIndex; // -2 none, -1 every point, otherwise the point
 
 out vec3 vColor;
 flat out float vHighlight;
+#ifdef PICK
+flat out uint vPickElement; // which instance, point or segment, for GPU picking
+#endif
 
 ${COMMON}
 
@@ -424,6 +436,9 @@ void main() {
   vColor = srgbToLinear(color);
 #endif
   vHighlight = uHighlightIndex == -1 || gl_VertexID == uHighlightIndex ? 1.0 : 0.0;
+#ifdef PICK
+  vPickElement = uint(gl_VertexID);
+#endif
 }
 `
 
@@ -458,7 +473,7 @@ void main() {
 }
 `
 
-const LINES_VERTEX = /* glsl */ `
+export const LINES_VERTEX = /* glsl */ `
 layout(location = 0) in vec3 segmentStart;
 layout(location = 1) in vec3 segmentEnd;
 layout(location = 2) in vec3 segmentColorStart;
@@ -473,6 +488,9 @@ uniform float uWidth;       // pixels, already scaled by the pixel ratio
 uniform float uNear;
 
 out vec3 vColor;
+#ifdef PICK
+flat out uint vPickElement; // which instance, point or segment, for GPU picking
+#endif
 
 ${COMMON}
 
@@ -502,6 +520,9 @@ void main() {
   vec2 offset = normal * corner.y * uWidth * 0.5 + dir * (corner.x * 2.0 - 1.0) * uWidth * 0.5;
   clip.xy += offset / (uResolution * 0.5) * clip.w;
   gl_Position = clip;
+#ifdef PICK
+  vPickElement = uint(gl_InstanceID);
+#endif
 
   vColor = vec3(1.0);
 #ifdef VERTEX_COLORS

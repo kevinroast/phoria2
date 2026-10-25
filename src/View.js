@@ -7,6 +7,7 @@ import { ChangeWatch } from './watch.js'
 import { Box3 } from './value/Box3.js'
 import { Color } from './value/Color.js'
 import { Vec3 } from './value/Vec3.js'
+import { Mat4 } from './value/Mat4.js'
 import { Scene } from './scene/Scene.js'
 import { Camera, PerspectiveCamera } from './scene/cameras.js'
 import { DirectionalLight, HemisphereLight } from './scene/lights.js'
@@ -48,6 +49,10 @@ import { checkOneOf, checkOptions, describe, fail } from './validate.js'
  * @property {(hit: Hit) => TooltipContent} [tooltip] what to show for the thing under the pointer - see tooltip()
  * @property {number} [pixelRatio] default min(devicePixelRatio, 2)
  * @property {boolean} [antialias] (default true)
+ * @property {'auto' | 'own' | 'shared'} [context] which WebGL context draws it: 'own' gives the canvas one of
+ *   its own; 'shared' draws with the page's one shared context and copies the picture over, so a page can hold
+ *   any number of views (browsers allow about 16 live contexts). 'auto' (default): own for the first four
+ *   views on a page, shared after that
  * @property {ToneMapping} [toneMapping] 'neutral' keeps colours true (default), 'aces' is filmic, 'none' clips
  * @property {number} [exposure] (default 1)
  * @property {boolean} [autoLight] light a scene that has no lights, with one console note (default true)
@@ -58,7 +63,7 @@ import { checkOneOf, checkOptions, describe, fail } from './validate.js'
 /** @typedef {(hit: Hit | null, event: PointerEvent | MouseEvent | null) => void} ViewHandler */
 
 const OPTIONS = ['canvas', 'scene', 'camera', 'orbit', 'background', 'renderMode', 'framing', 'highlight', 'tooltip', 'pixelRatio',
-  'antialias', 'toneMapping', 'exposure', 'autoLight', 'maxDelta']
+  'antialias', 'context', 'toneMapping', 'exposure', 'autoLight', 'maxDelta']
 const HINTS = {
   renderer: 'the View makes its renderer - read it from view.renderer',
   controls: "use orbit: true (or orbit options); the control is then view.controls",
@@ -76,6 +81,12 @@ const EVENT_HINTS = {
 }
 // how far the highlight colour is mixed in
 const HIGHLIGHT_AMOUNT = 0.45
+// views that get a WebGL context of their own before 'auto' starts sharing one
+const OWN_CONTEXTS = 4
+// above this many things to test (instances, triangles, points, segments), picking goes to the
+// GPU; below it, rays on the CPU are quicker than a GPU round trip
+const GPU_PICKING = 5000
+let ownContexts = 0
 
 /**
  * The one object most apps touch: it owns the canvas, renderer, camera, controls, loop and pointer
@@ -106,6 +117,7 @@ export class View {
   // time runs from the start, so update handlers (transitions, particles) work without start()
   #running = true
   #disposed = false
+  #ownContext = false
   #rafId = 0
   #lastTime = 0
   #dirty = true
@@ -134,6 +146,8 @@ export class View {
   /** @type {Color | null} */ #highlight = null
   /** @type {{ x: number, y: number, clientX: number, clientY: number, event: PointerEvent } | null} */ #pointer = null
   #pickPending = false
+  // a hover pick is out on the GPU
+  #hoverBusy = false
   #dragging = false
   /** @type {Hit | null} */ #hovered = null
   // used for scenes without lights; never added to the scene itself
@@ -160,9 +174,19 @@ export class View {
       this.#camera = new PerspectiveCamera({ position: [0, 1.5, 6], target: [0, 0, 0], ...options.camera })
     }
 
-    this.renderer = new WebGLRenderer({ canvas: this.canvas, antialias: options.antialias, toneMapping: options.toneMapping, exposure: options.exposure })
+    const context = options.context === undefined ? 'auto' : checkOneOf('View', 'context', options.context, ['auto', 'own', 'shared'])
+    const shared = context === 'shared' || (context === 'auto' && ownContexts >= OWN_CONTEXTS)
+    this.renderer = new WebGLRenderer({ canvas: this.canvas, shared, antialias: options.antialias, toneMapping: options.toneMapping, exposure: options.exposure })
+    if (!shared) {
+      this.#ownContext = true
+      ownContexts++
+    }
     // shadows and HDR environments load their code on first use, then want another frame
-    this.renderer.onReady = () => this.invalidate()
+    this.renderer.onReady = () => {
+      // picking may have just arrived, so look under the pointer again
+      this.#pickPending = true
+      this.invalidate()
+    }
     if (options.autoLight !== undefined) this.autoLight = !!options.autoLight
     if (options.maxDelta !== undefined) this.maxDelta = options.maxDelta
     if (options.renderMode !== undefined) this.renderMode = checkOneOf('View', 'renderMode', options.renderMode, ['auto', 'always', 'manual'])
@@ -386,13 +410,55 @@ export class View {
   }
 
   /**
-   * The nearest hit under a canvas position - CSS pixels from the canvas's top left, or a pointer event.
+   * The nearest hit under a canvas position - CSS pixels from the canvas's top left, or a pointer
+   * event. Found on the GPU from the last frame drawn (one pass, however many instances), then made
+   * exact on the CPU; on the CPU alone until the picking code has loaded.
    * @param {number | MouseEvent} x
    * @param {number} [y]
    * @returns {Hit | null}
    */
   pick(x, y) {
-    return this.pickAll(x, y)[0] ?? null
+    if (typeof x === 'object') {
+      const rect = this.canvas.getBoundingClientRect()
+      y = x.clientY - rect.top
+      x = x.clientX - rect.left
+    }
+    const frame = this.#gpuFrame()
+    const found = frame ? this.renderer.pick(frame, x, /** @type {number} */ (y)) : undefined
+    if (found === undefined) return this.pickAll(x, y)[0] ?? null
+    return found && this.#exact(found, frame)
+  }
+
+  /** The last frame, when it is big enough that picking on the GPU pays. */
+  #gpuFrame() {
+    const frame = this.lastFrame
+    if (!frame) return null
+    let work = 0
+    for (const { node, geometry, instances } of [...frame.opaque, ...frame.transparent]) {
+      const mode = /** @type {any} */ (node).drawMode
+      work += instances ? instances.count : mode === 'points' ? geometry.drawnCount : mode === 'lines' ? geometry.drawnCount / 2 : geometry.drawnCount / 3
+    }
+    return work > GPU_PICKING ? frame : null
+  }
+
+  /**
+   * A GPU hit made exact: the ray against just that instance, point or segment, for the point,
+   * face, normal and uv.
+   * @param {import('./webgl/picking.js').GPUHit} found @param {FrameDescription} frame
+   * @returns {Hit}
+   */
+  #exact(found, frame) {
+    const node = /** @type {any} */ (found.item.node)
+    const raycaster = new Raycaster().setFromCamera(found.ndc, this.camera)
+    const hit = raycaster.intersectElement(node, found.element)
+    if (hit) return hit
+    // the ray grazed an edge the GPU drew: place the hit at the depth the GPU found
+    const inverse = new Mat4().copy(frame.camera.viewProjection).invert()
+    const point = new Vec3(found.ndc[0], found.ndc[1], found.ndc[2]).applyMatrix4(inverse)
+    const instanced = 'instanceMatrices' in node, element = found.element
+    const indexed = instanced || node.drawMode !== 'triangles'
+    return { node, point, distance: point.distanceTo(raycaster.ray.origin), normal: null, face: indexed && !instanced ? element : null,
+      instance: instanced ? element : null, uv: null, datum: node.datumAt(indexed ? element : null) }
   }
 
   /** Every hit under a canvas position, nearest first. @param {number | MouseEvent} x @param {number} [y] @returns {Hit[]} */
@@ -511,14 +577,19 @@ export class View {
     return explain({
       notes,
       width: this.#width, height: this.#height, pixelRatio: this.#pixelRatio, renderMode: this.renderMode, running: this.#running,
+      sharedContext: this.renderer.shared,
       frame, labels: this.#labelStats, bounds: this.scene.bounds, nodes, autoLight: this.autoLight,
       contextLost: !!this.renderer.gl?.isContextLost?.(),
       interaction: { hover: this.#handlers.hover.size, click: this.#handlers.click.size, tooltip: !!this.#tooltipContent, highlight: !!this.#highlight },
     })
   }
 
-  /** Stop the loop, remove listeners, labels and the tooltip, and free GPU resources. */
+  /**
+   * Stop the loop, remove listeners, labels and the tooltip, and free GPU resources - the context
+   * itself when the view has its own, or what only this view drew when it shares one.
+   */
   dispose() {
+    if (this.#disposed) return
     this.#disposed = true
     this.#running = false
     cancelAnimationFrame(this.#rafId)
@@ -526,7 +597,8 @@ export class View {
     this.controls?.dispose()
     this.#labels.dispose()
     this.#tooltip?.dispose()
-    this.renderer.dispose()
+    this.renderer.dispose(this.scene)
+    if (this.#ownContext) ownContexts--
   }
 
   // widen or narrow the view so the framing chosen with `framing.keep` survives a change of shape
@@ -579,12 +651,34 @@ export class View {
       !!this.lastFrame?.interactive
   }
 
-  // pick under the pointer and tell everyone when the thing under it changes
+  // pick under the pointer and tell everyone when the thing under it changes - on the GPU without
+  // waiting for it in big scenes, so hovering never stalls a frame
   #updateHover() {
     this.#pickPending = false
     if (!this.#needsHover()) return
     const p = this.#pointer
-    const hit = p && !this.#dragging ? this.pick(p.x, p.y) : null
+    if (!p || this.#dragging) return this.#setHovered(null)
+    const frame = this.#gpuFrame()
+    if (frame && this.#hoverBusy) {
+      // look again when the request out now lands
+      this.#pickPending = true
+      return
+    }
+    const request = frame ? this.renderer.pickAsync(frame, p.x, p.y) : undefined
+    if (!request) return this.#setHovered(this.pick(p.x, p.y))
+    this.#hoverBusy = true
+    request.then((found) => {
+      this.#hoverBusy = false
+      if (this.#disposed) return
+      // the pointer may have gone, or moved on (then a newer pick is due)
+      this.#setHovered(found && this.#pointer ? this.#exact(found, frame) : null)
+      this.#schedule()
+    })
+  }
+
+  /** @param {Hit | null} hit */
+  #setHovered(hit) {
+    const p = this.#pointer
     const before = this.#hovered
     const same = before === hit || (before && hit && before.node === hit.node && before.instance === hit.instance &&
       (/** @type {any} */ (hit.node).drawMode !== 'points' || before.face === hit.face))
@@ -592,7 +686,7 @@ export class View {
     if (p && hit && this.#tooltip) this.#tooltip.show(hit, p.clientX, p.clientY)
     else this.#tooltip?.hide()
     if (same) return
-    if (this.#highlightFor(before) || this.#highlightFor(hit)) this.#dirty = true
+    if (this.#highlightFor(before) || this.#highlightFor(hit)) this.invalidate()
     if (this.#handlers.click.size || this.lastFrame?.interactive) this.canvas.style.cursor = hit && this.#clickable(hit) ? 'pointer' : ''
     // node handlers: those that lose the pointer hear null, those that gain or keep it hear the hit
     const was = handlersAbove(before?.node, 'onHover'), now = handlersAbove(hit?.node, 'onHover')

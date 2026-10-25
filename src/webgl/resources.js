@@ -5,6 +5,7 @@ import { ATTRIBUTES } from './shaders.js'
 
 /** @import { Geometry } from '../geometry/Geometry.js' */
 /** @import { Texture, DataImage } from '../material/Texture.js' */
+/** @import { Scene } from '../scene/Scene.js' */
 
 // uploads bind textures here, out of the way of the units programs sample from
 const UPLOAD_UNIT = 15
@@ -48,6 +49,11 @@ export class Resources {
   /** @type {WebGLBuffer | null} */ #corners = null
   /** Counts for renderer.info. */
   counts = { geometries: 0, textures: 0 }
+  /** The renderer drawing right now - what it touches is marked as used by it. @type {object | null} */
+  owner = null
+  // which renderers have drawn each geometry, instanced mesh and texture (a shared context frees
+  // one only when no renderer still draws it)
+  /** @type {WeakMap<object, Set<object>>} */ #usedBy = new WeakMap()
 
   /** @param {WebGL2RenderingContext} gl */
   constructor(gl) {
@@ -64,6 +70,7 @@ export class Resources {
    */
   mesh(geometry, instances, withNormals) {
     const key = instances ?? geometry
+    this.#mark(key)
     const cache = withNormals ? this.#triangles : this.#points
     let entry = cache.get(key)
     if (entry && entry.version === geometry.version && (!instances || entry.instanceVersion === instances.version)) return entry
@@ -164,6 +171,7 @@ export class Resources {
    * @returns {MeshBuffers}
    */
   lines(geometry) {
+    this.#mark(geometry)
     let entry = this.#lines.get(geometry)
     if (entry && entry.version === geometry.version) return entry
     if (entry) this.#free(entry)
@@ -220,6 +228,7 @@ export class Resources {
    */
   texture(texture) {
     if (!texture.image) return this.#whiteTexture()
+    this.#mark(texture)
     const gl = this.gl
     let entry = this.#textures.get(texture)
     if (entry && entry.version === texture.version) return entry.texture
@@ -227,11 +236,7 @@ export class Resources {
       entry = { texture: /** @type {WebGLTexture} */ (gl.createTexture()), version: -1 }
       this.#textures.set(texture, entry)
       this.counts.textures++
-      texture.onDispose(() => {
-        gl.deleteTexture(entry.texture)
-        this.#textures.delete(texture)
-        this.counts.textures--
-      })
+      texture.onDispose(() => this.#freeTexture(texture))
     }
     gl.activeTexture(gl.TEXTURE0 + UPLOAD_UNIT)
     gl.bindTexture(gl.TEXTURE_2D, entry.texture)
@@ -264,12 +269,63 @@ export class Resources {
     return entry.texture
   }
 
+  /**
+   * A renderer is done with a scene: free the GPU copies of its geometry and textures that no
+   * other renderer still draws.
+   * @param {object} owner @param {Scene} scene
+   */
+  release(owner, scene) {
+    /** @type {Set<object>} */
+    const keys = new Set()
+    const env = /** @type {any} */ (scene).environment, bg = /** @type {any} */ (scene).background
+    if (env && typeof env === 'object') keys.add(env)
+    if (bg && 'version' in bg) keys.add(bg)
+    scene.traverse((n) => {
+      const d = /** @type {any} */ (n)
+      if (!d.isDrawable) return
+      keys.add(d.geometry)
+      if ('instanceMatrices' in d) keys.add(d)
+      for (const [, t] of d.material.textures) keys.add(t)
+    })
+    for (const key of keys) {
+      const users = this.#usedBy.get(key)
+      if (!users?.delete(owner) || users.size) continue
+      this.#usedBy.delete(key)
+      for (const cache of [this.#triangles, this.#points, this.#lines]) {
+        const entry = cache.get(key)
+        if (!entry) continue
+        this.#free(entry)
+        cache.delete(key)
+        this.counts.geometries--
+      }
+      this.#freeTexture(/** @type {Texture} */ (key))
+    }
+  }
+
+  /** @param {object} key */
+  #mark(key) {
+    if (!this.owner) return
+    let users = this.#usedBy.get(key)
+    if (!users) this.#usedBy.set(key, users = new Set())
+    users.add(this.owner)
+  }
+
+  /** @param {Texture} texture */
+  #freeTexture(texture) {
+    const entry = this.#textures.get(texture)
+    if (!entry) return
+    this.gl.deleteTexture(entry.texture)
+    this.#textures.delete(texture)
+    this.counts.textures--
+  }
+
   /** Forget everything - after a lost context, when every GL object is already gone. */
   reset() {
     this.#triangles = new WeakMap()
     this.#points = new WeakMap()
     this.#lines = new WeakMap()
     this.#textures = new WeakMap()
+    this.#usedBy = new WeakMap()
     this.#white = null
     this.#corners = null
     this.counts = { geometries: 0, textures: 0 }

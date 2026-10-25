@@ -232,6 +232,9 @@ export class Mesh extends Drawable {
  */
 
 const INSTANCE_OPTIONS = new Set(['position', 'rotation', 'quaternion', 'scale', 'color'])
+// reused by setInstance, so updating every instance of a large mesh each frame allocates nothing
+const scratch = { position: new Vec3(), scale: new Vec3(), quaternion: new Quat(), rotation: new Euler() }
+const scratchMatrix = new Float32Array(16)
 
 /**
  * Many copies of one geometry and material, drawn together. Set each copy with setInstance().
@@ -264,7 +267,9 @@ export class InstancedMesh extends Mesh {
     if (!Number.isInteger(count) || count < 0) fail('InstancedMesh', `'count' must be a whole number, got ${describe(count)}`)
     this.count = count
     this.instanceMatrices = new Float32Array(count * 16)
-    for (let i = 0; i < count; i++) mat4.identity(this.instanceMatrices.subarray(i * 16, i * 16 + 16))
+    // identity matrices: just the diagonal, written straight in
+    const m = this.instanceMatrices
+    for (let o = 0; o < m.length; o += 16) m[o] = m[o + 5] = m[o + 10] = m[o + 15] = 1
     options.instances?.forEach((inst, i) => this.setInstance(i, inst))
     if (options.instanceMatrices) {
       if (options.instanceMatrices.length !== count * 16) fail('InstancedMesh', `'instanceMatrices' needs ${count * 16} numbers (16 per instance)`)
@@ -284,19 +289,38 @@ export class InstancedMesh extends Mesh {
    */
   setInstance(i, options) {
     this.#checkIndex(i)
-    for (const key of Object.keys(options)) {
+    for (const key in options) {
       if (!INSTANCE_OPTIONS.has(key)) fail('InstancedMesh', `unknown instance option '${key}' - expected position, rotation, quaternion, scale or color`)
     }
-    const position = options.position !== undefined ? Vec3.fromInput(options.position, 'InstancedMesh') : new Vec3()
-    const scale = options.scale !== undefined ? Vec3.fromInput(options.scale, 'InstancedMesh') : new Vec3(1, 1, 1)
-    const q = new Quat()
+    const { position, scale, quaternion: q } = scratch
+    if (options.position !== undefined) position.copy(options.position, 'InstancedMesh')
+    else position.set(0, 0, 0)
+    if (options.scale !== undefined) {
+      if (typeof options.scale === 'number') scale.set(options.scale, options.scale, options.scale)
+      else scale.copy(options.scale, 'InstancedMesh')
+    } else scale.set(1, 1, 1)
+    q.set(0, 0, 0, 1)
     if (options.quaternion) q.copy(options.quaternion, 'InstancedMesh').normalize()
     else if (options.rotation) {
-      const r = options.rotation instanceof Euler ? options.rotation : new Euler().copy(/** @type {any} */ (options.rotation), 'InstancedMesh')
+      const r = options.rotation instanceof Euler ? options.rotation : scratch.rotation.copy(/** @type {any} */ (options.rotation), 'InstancedMesh')
       q.setFromEuler(r.x, r.y, r.z)
     }
     mat4.fromRotationTranslationScale(this.instanceMatrices.subarray(i * 16, i * 16 + 16), q, position, scale)
     if (options.color !== undefined) this.#setColor(i, options.color)
+    this.version++
+    return this
+  }
+
+  /**
+   * Say instanceMatrices or instanceColors were written directly - the fast path for large data:
+   * write the arrays (16 numbers a matrix, column-major; linear rgb), then call this once.
+   *
+   *     const m = bars.instanceMatrices
+   *     for (let i = 0; i < n; i++) m[i * 16 + 5] = heights[i]   // y scale
+   *     bars.needsUpdate()
+   * @returns {this}
+   */
+  needsUpdate() {
     this.version++
     return this
   }
@@ -329,11 +353,23 @@ export class InstancedMesh extends Mesh {
 
   /** @param {Box3} box */
   expandBounds(box) {
+    if (!this.count || !this.geometry.vertexCount) return box
     const local = this.geometry.bounds
-    const m = new Float32Array(16)
+    // each instance's box from the geometry's centre and half size: the centre moves with the
+    // matrix, and the half size grows by the matrix's absolute values - no allocation per instance
+    const cx = (local.min[0] + local.max[0]) / 2, cy = (local.min[1] + local.max[1]) / 2, cz = (local.min[2] + local.max[2]) / 2
+    const ex = (local.max[0] - local.min[0]) / 2, ey = (local.max[1] - local.min[1]) / 2, ez = (local.max[2] - local.min[2]) / 2
+    const w = this.worldMatrix, im = this.instanceMatrices, m = scratchMatrix
     for (let i = 0; i < this.count; i++) {
-      mat4.multiply(m, this.worldMatrix, this.instanceMatrices.subarray(i * 16, i * 16 + 16))
-      box.union(local.clone().applyMatrix4(m))
+      mat4.multiply(m, w, im.subarray(i * 16, i * 16 + 16))
+      const x = m[0] * cx + m[4] * cy + m[8] * cz + m[12]
+      const y = m[1] * cx + m[5] * cy + m[9] * cz + m[13]
+      const z = m[2] * cx + m[6] * cy + m[10] * cz + m[14]
+      const hx = Math.abs(m[0]) * ex + Math.abs(m[4]) * ey + Math.abs(m[8]) * ez
+      const hy = Math.abs(m[1]) * ex + Math.abs(m[5]) * ey + Math.abs(m[9]) * ez
+      const hz = Math.abs(m[2]) * ex + Math.abs(m[6]) * ey + Math.abs(m[10]) * ez
+      box.expandByXYZ(x - hx, y - hy, z - hz)
+      box.expandByXYZ(x + hx, y + hy, z + hz)
     }
     return box
   }

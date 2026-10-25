@@ -15,4 +15,10 @@ export default defineConfig([
     files: ['vite.config.js'],
     languageOptions: { globals: globals.node },
   },
+  {
+    // build and measurement scripts run in Node
+    files: ['scripts/**/*.mjs', 'perf/**/*.mjs'],
+    extends: [js.configs.recommended],
+    languageOptions: { globals: globals.node },
+  },
 ])

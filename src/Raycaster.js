@@ -74,6 +74,41 @@ export class Raycaster {
     return hits.filter((h) => h.distance >= this.near && h.distance <= this.far).sort((x, y) => x.distance - y.distance)
   }
 
+  /**
+   * Where the ray meets one instance, point or segment of a drawable - the CPU half of GPU picking,
+   * which finds what is under the pointer and leaves the exact point, face and uv to this.
+   * @param {Node} node a Mesh, InstancedMesh, Points or Lines
+   * @param {number} element the instance, point or segment (ignored for a plain Mesh)
+   * @returns {Hit | null}
+   */
+  intersectElement(node, element) {
+    node.updateWorld()
+    const n = /** @type {any} */ (node)
+    /** @type {Hit[]} */
+    const hits = []
+    if (n.drawMode === 'triangles' && n.instanceMatrices) {
+      if (element >= n.count) return null
+      mat4.multiply(instanceWorld, n.worldMatrix, n.instanceMatrices.subarray(element * 16, element * 16 + 16))
+      this.#mesh(n, instanceWorld, element, hits)
+    } else if (n.drawMode === 'triangles') {
+      this.#mesh(n, n.worldMatrix, null, hits)
+    } else if (n.drawMode === 'points') {
+      const p = n.geometry.positions
+      if (element >= n.geometry.drawnCount) return null
+      const point = new Vec3(p[element * 3], p[element * 3 + 1], p[element * 3 + 2]).applyMatrix4(n.worldMatrix)
+      hits.push({ node: n, point, distance: point.distanceTo(this.ray.origin), normal: null, face: element, instance: null, uv: null, datum: n.datumAt(element) })
+    } else if (n.drawMode === 'lines') {
+      const g = n.geometry, p = g.positions, idx = g.indices
+      const i0 = idx ? idx[element * 2] : element * 2, i1 = idx ? idx[element * 2 + 1] : element * 2 + 1
+      if (i1 >= g.vertexCount) return null
+      a.set(p[i0 * 3], p[i0 * 3 + 1], p[i0 * 3 + 2]).applyMatrix4(n.worldMatrix)
+      b.set(p[i1 * 3], p[i1 * 3 + 1], p[i1 * 3 + 2]).applyMatrix4(n.worldMatrix)
+      const { t } = this.ray.distanceSqToSegment(a, b)
+      hits.push({ node: n, point: this.ray.at(t), distance: t, normal: null, face: element, instance: null, uv: null, datum: n.datumAt(element) })
+    }
+    return hits[0] ?? null
+  }
+
   /** @param {Node} node @param {Hit[]} hits */
   #visit(node, hits) {
     if (!node.visible || !node.pickable) return

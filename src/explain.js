@@ -19,6 +19,7 @@ import { Box3 } from './value/Box3.js'
  * @property {number} nodes
  * @property {boolean} autoLight
  * @property {boolean} contextLost
+ * @property {boolean} [sharedContext] drawn with the page's shared WebGL context
  * @property {{ hover: number, click: number, tooltip: boolean, highlight: boolean }} interaction
  * @property {string[]} [notes] lines from nodes that describe themselves, such as charts
  */
@@ -47,7 +48,7 @@ export function explain(info) {
 
   lines.push(`View ${info.width} x ${info.height} CSS px at pixel ratio ${fmt(info.pixelRatio)}; ` +
     `draws ${info.renderMode === 'auto' ? 'when something changes' : info.renderMode === 'always' ? 'every frame' : 'only on view.render()'}; ` +
-    `loop ${info.running ? 'running' : 'stopped'}`)
+    `loop ${info.running ? 'running' : 'stopped'}${info.sharedContext ? '; shared WebGL context' : ''}`)
   lines.push(`Camera: ${ortho ? `orthographic, ${fmt(cam.height)} units high` : `perspective, fov ${fmt(cam.fov)}`}, ` +
     `at ${vec(cam.position)}${cam.target ? ` looking at ${vec(cam.target)}` : ''}, near ${fmt(cam.near)}, far ${fmt(cam.far)}`)
 

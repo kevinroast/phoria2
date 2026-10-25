@@ -37,13 +37,16 @@
     "preview": "vite preview --outDir dist-demos",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.demos.json",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "size": "node scripts/size.mjs",
+    "perf": "node perf/run.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.3.0",
     "gl-matrix": "^3.4.4",
     "globals": "^17.6.0",
+    "three": "0.186.1",
     "typescript": "^7.0.2",
     "vite": "^8.0.12",
     "vitest": "^5.0.5"
