@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>phoria2</title>
+    <link rel="icon" type="image/png" href="flower.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/demos/demos.css" />
+  </head>
+  <body class="gallery">
+    <div class="header">
+      <img src="flower.png" width="214" height="263" alt="" />
+      <div>
+        <h1>Phoria</h1>
+        <p>pho&middot;ri&middot;a (f&ocirc;r-)</p>
+        <p>n. The relative directions of the eyes during binocular fixation on a given object</p>
+      </div>
+    </div>
+    <div class="content">
+      <canvas id="canvas" width="384" height="256"></canvas>
+      <ul class="demos" id="demos"></ul>
+    </div>
+    <div class="about">
+      <p><b>What's all this then?</b> - phoria is a JavaScript library for simple 3D graphics on a
+        canvas 2D context. It does not use WebGL, so it runs anywhere an HTML5 canvas does. phoria2 is a
+        modern rewrite of the original 2013 library - ES modules, Vite, and the same friendly API.
+        Vector and matrix maths by <a href="https://glmatrix.net">gl-matrix</a>.</p>
+    </div>
+    <div class="credits">Copyright &copy; Kevin Roast 2013-2026</div>
+    <script type="module" src="/demos/gallery.js"></script>
+  </body>
+</html>
