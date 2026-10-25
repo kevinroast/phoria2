@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   DirectionalLight, Group, InstancedMesh, Label, Lines, Mesh, OrthographicCamera, PerspectiveCamera, Points, Raycaster,
-  Scene, box, cameraPreset, collect, grid, plane,
+  Box3, Scene, Vec3, box, cameraPreset, collect, grid, mat4, plane, vec4,
 } from '../src/index.js'
 import { explain } from '../src/explain.js'
-import { framingScale } from '../src/presets.js'
+import { fitBox, framingScale } from '../src/presets.js'
 import { layoutLabels, placeBox } from '../src/labelLayout.js'
 import { OrbitControl } from '../src/OrbitControl.js'
 import { ChangeWatch } from '../src/watch.js'
@@ -159,6 +159,57 @@ describe('framing', () => {
     expect(framingScale('width', 1.5, 3)).toBe(0.5)
     expect(framingScale('both', 1.5, 3)).toBe(1)
     expect(framingScale('both', 1.5, 0)).toBe(1)
+  })
+})
+
+describe('fitBox', () => {
+  // how far out the box's furthest corner lands, in clip space - 1 is the edge of the view
+  const reach = (b, cam) => {
+    cam.updateWorld()
+    const vp = mat4.multiply(new Float32Array(16), cam.projectionMatrix, cam.viewMatrix)
+    let most = 0
+    for (let i = 0; i < 8; i++) {
+      const p = vec4.transformMat4(new Float32Array(4), [i & 1 ? b.max[0] : b.min[0], i & 2 ? b.max[1] : b.min[1], i & 4 ? b.max[2] : b.min[2], 1], vp)
+      most = Math.max(most, Math.abs(p[0] / p[3]), Math.abs(p[1] / p[3]))
+    }
+    return most
+  }
+  // a perspective camera placed as frame() places it
+  const fitted = (b, from, { fov = 45, aspect = 1.5, padding = 0 } = {}) => {
+    const direction = new Vec3(from[0], from[1], from[2]).normalize()
+    const distance = fitBox(b, direction, { fov, aspect, padding })
+    const center = b.getCenter()
+    return { distance, camera: new PerspectiveCamera({ fov, aspect, position: center.clone().add(direction.multiplyScalar(distance)), target: center }) }
+  }
+
+  it('puts every corner just inside the view', () => {
+    const cube = new Box3([-1, 0, -1], [1, 2, 1])
+    expect(reach(cube, fitted(cube, [0.6, 0.45, 1]).camera)).toBeCloseTo(1, 3)
+    // padding leaves a margin
+    expect(reach(cube, fitted(cube, [0.6, 0.45, 1], { padding: 0.25 }).camera)).toBeLessThan(0.85)
+  })
+
+  it('brings a flat, wide box closer than the sphere round it would', () => {
+    const floor = new Box3([-13, 0, -13], [13, 1, 13])
+    const { distance, camera } = fitted(floor, [0, 1.2, 1])
+    expect(reach(floor, camera)).toBeCloseTo(1, 3)
+    const sphere = floor.getRadius() / Math.sin(45 * Math.PI / 360)
+    expect(distance).toBeLessThan(sphere * 0.8)
+  })
+
+  it('handles a view straight down', () => {
+    const plan = new Box3([-10, 0, -5], [10, 0, 5])
+    const { distance, camera } = fitted(plan, [0, 1, 0])
+    expect(Number.isFinite(distance)).toBe(true)
+    expect(reach(plan, camera)).toBeCloseTo(1, 3)
+  })
+
+  it('gives an orthographic height that fits the box at the aspect', () => {
+    const plan = new Box3([-10, 0, -5], [10, 0, 5])
+    // from above, the plan is 20 across and 10 deep: a 2:1 view fits it at height 10, a square one needs 20
+    expect(fitBox(plan, [0, 1, 0], { aspect: 2 })).toBeCloseTo(10)
+    expect(fitBox(plan, [0, 1, 0], { aspect: 1 })).toBeCloseTo(20)
+    expect(fitBox(plan, [0, 1, 0], { aspect: 2, padding: 0.2 })).toBeCloseTo(12)
   })
 })
 

@@ -118,6 +118,14 @@ describe('graph management', () => {
     close(b.max, [6, 4, 1])
   })
 
+  it('counts a label as the point it is pinned to, so framing leaves room for it', () => {
+    const g = new Group({ position: [5, 0, 0] })
+    g.add(new Mesh({ geometry: box(2) }), new Label({ text: 'Sales', position: [0, 3, 0] }))
+    close(g.bounds.max, [6, 3, 1])
+    // a label on its own has a point for bounds
+    close(new Label({ text: 'x', position: [1, 2, 3] }).bounds.min, [1, 2, 3])
+  })
+
   it('clones deeply, sharing geometry and material', () => {
     const m = new Mesh({ name: 'm', geometry: box(1), material: { color: 'red' }, position: [1, 2, 3], userData: { id: 7 } })
     m.add(new Label({ text: 'hi' }))

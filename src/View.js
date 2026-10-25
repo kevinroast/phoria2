@@ -1,7 +1,7 @@
 import { collect } from './frame.js'
 import { LabelLayer } from './labels.js'
 import { OrbitControl } from './OrbitControl.js'
-import { cameraPreset, framingScale } from './presets.js'
+import { cameraPreset, fitBox, framingScale } from './presets.js'
 import { Raycaster } from './Raycaster.js'
 import { ChangeWatch } from './watch.js'
 import { Box3 } from './value/Box3.js'
@@ -18,6 +18,7 @@ import { checkOneOf, checkOptions, describe, fail, warnOnce } from './validate.j
 /** @import { CameraPreset, FramingKeep } from './presets.js' */
 /** @import { Hit } from './Raycaster.js' */
 /** @import { FrameDescription, FrameHighlight } from './frame.js' */
+/** @import { Texture, TextureOptions } from './material/Texture.js' */
 /** @import { LabelStats } from './labels.js' */
 /** @import { ImageOptions } from './snapshot.js' */
 /** @import { Tooltip, TooltipContent } from './tooltip.js' */
@@ -41,7 +42,7 @@ import { checkOneOf, checkOptions, describe, fail, warnOnce } from './validate.j
  *   PerspectiveCamera options. Default: 'perspective' - a three-quarter view from the front right
  *   and above, fitted to the scene
  * @property {boolean | OrbitOptions} [orbit] mouse/touch camera control (default false)
- * @property {ColorInput | null} [background] shortcut for scene.background
+ * @property {ColorInput | Texture | TextureOptions | null} [background] shortcut for scene.background: a colour or a panorama
  * @property {RenderMode} [renderMode] when to draw (default 'auto': only when something changed)
  * @property {FramingKeep | { keep?: FramingKeep, aspect?: number }} [framing] what stays in view when the canvas
  *   changes shape: 'height' (default - the width varies), 'width', or 'both' (nothing framed is ever cut off); or
@@ -411,20 +412,17 @@ export class View {
     // an explicit frame replaces the preset camera's fit on the first frame
     this.#autoFrame = false
     if (box.isEmpty()) return this
-    const scale = 1 + padding
     const center = box.getCenter()
     const radius = Math.max(box.getRadius(), 1e-3)
     const cam = /** @type {any} */ (this.camera)
     const direction = cam.position.clone().sub(cam.target ?? new Vec3()).normalize()
     if (direction.len() === 0) direction.set(0, 0.3, 1).normalize()
     if (cam.constructor.type === 'orthographic-camera') {
-      // fit the box's sphere to the narrower of the view's height and width
-      cam.height = radius * 2 * scale * Math.max(1, 1 / (cam.aspect || 1))
+      cam.height = fitBox(box, direction, { aspect: cam.aspect, padding })
       cam.position.copy(center).add(direction.clone().multiplyScalar(radius * 4))
       cam.far = Math.max(cam.far, radius * 10)
     } else {
-      const fit = Math.min(cam.fov, cam.fov * cam.aspect) * Math.PI / 360
-      const distance = radius / Math.sin(fit) * scale
+      const distance = fitBox(box, direction, { aspect: cam.aspect, fov: cam.fov, padding })
       cam.position.copy(center).add(direction.clone().multiplyScalar(distance))
       // keep the near/far range sensible for the model's size
       cam.near = Math.max(1e-3, distance / 1000)

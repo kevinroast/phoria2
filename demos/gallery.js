@@ -15,7 +15,9 @@ for (const { section, name, title } of DEMOS) {
     sections.append(heading, list)
   }
   const li = document.createElement('li')
-  li.innerHTML = `<a href="demo.html?name=${name}"><span class="name">${name}</span><span class="title">${title}</span></a>`
+  // the picture is made by npm run thumbs; a card without one just has no picture
+  li.innerHTML = `<a href="demo.html?name=${name}"><img class="thumb" src="thumbs/${name}.webp" alt="" width="480" height="300" loading="lazy"><span class="name">${name}</span><span class="title">${title}</span></a>`
+  li.querySelector('img')?.addEventListener('error', (e) => /** @type {HTMLElement} */ (e.target).remove())
   list.append(li)
 }
 

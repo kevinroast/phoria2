@@ -39,8 +39,8 @@ export function networkMark(ctx, host) {
   nodesMesh.count = 0
   // links in up to three widths; each segment carries its link's row
   const linkNodes = WIDTHS.map((width) => new Lines({ geometry: new Geometry({ positions: [0, 0, 0, 0, 0, 0] }), material: { width, vertexColors: true }, data: [] }))
-  const active = new Lines({ geometry: new Geometry({ positions: [0, 0, 0, 0, 0, 0] }), material: { width: 4, color: '#7fd3ff' }, pickable: false, visible: false })
-  const packets = linkCh.flow ? new Points({ geometry: new Geometry({ positions: [0, 0, 0] }), material: { size: 0.035 * Math.min(...ctx.box), color: '#bff0ff' }, pickable: false }) : null
+  const active = new Lines({ geometry: new Geometry({ positions: [] }), material: { width: 4, color: '#7fd3ff' }, pickable: false, visible: false })
+  const packets = linkCh.flow ? new Points({ geometry: new Geometry({ positions: [] }), material: { size: 0.022 * Math.min(...ctx.box), color: '#bff0ff' }, pickable: false }) : null
   /** @type {{ a: number, b: number, speed: number, phase: number }[]} */
   let flows = []
   /** the drawn node positions, by row index, as of the last apply */
@@ -151,7 +151,7 @@ export function networkMark(ctx, host) {
       if (a >= 0 && b >= 0) p.push(...at[a], ...at[b])
     }
     active.geometry.dispose()
-    active.geometry = new Geometry({ positions: p.length ? p : [0, 0, 0, 0, 0, 0] })
+    active.geometry = new Geometry({ positions: p })
   }
 
   /** A node's colour, dimmed while another node and its neighbours are highlighted. @param {number} k @param {number[]} rgb */

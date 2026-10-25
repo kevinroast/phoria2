@@ -49,7 +49,8 @@ function network(rand) {
 export default function run({ canvas, gui, info }) {
   const { nodes, links } = network(random(11))
   const view = new View({
-    canvas, orbit: true, background: '#14161c', camera: 'perspective', highlight: '#ffffff',
+    // looking down from above and in front, so the rings read as a map; frame() below sets the distance
+    canvas, orbit: true, background: '#14161c', camera: { position: [0, 26, 15], target: [0, 2, 0] }, highlight: '#ffffff',
     tooltip: (hit) => hit.datum && {
       title: hit.datum.name,
       rows: { Type: TYPES[hit.datum.type], Status: STATUS[hit.datum.status].label, Load: `${hit.datum.load}%`, Links: hit.datum.links.length, Address: hit.datum.ip },
@@ -111,6 +112,8 @@ export default function run({ canvas, gui, info }) {
 
   legend(Object.values(STATUS).map((s) => ({ label: s.label, color: s.color })), { title: 'Status' })
 
+  view.frame(scene, { padding: 0.08 })
+
   const settings = { traffic: true, labels: 'problems first' }
   const f = gui.addFolder('Network')
   f.add(settings, 'traffic').onChange((v) => { packets.visible = v })
@@ -119,7 +122,6 @@ export default function run({ canvas, gui, info }) {
     // the label text reads a variable the View can't watch, so ask for a redraw
     view.invalidate()
   })
-  f.add({ fit: () => view.frame() }, 'fit').name('fit to view')
 
   return view.start((dt) => {
     if (!settings.traffic) return

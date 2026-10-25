@@ -406,7 +406,8 @@ function scalesFor(spec, box) {
   const size = ch.size
   if (size?.field) {
     const unit = Math.min(...box) / 40
-    const range = spec.mark === 'network' ? [unit * 0.9, unit * 2.6] : [unit * 0.5, unit * 2]
+    // network nodes stay small beside their links, so the links read as the connections they are
+    const range = spec.mark === 'network' ? [unit * 0.6, unit * 1.8] : [unit * 0.5, unit * 2]
     out.size = scaleLinear({ domain: extent(rows.map((r) => size.get(r))), range: /** @type {[number, number]} */ (size.scale.range ?? range) })
   }
   return out

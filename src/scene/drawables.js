@@ -478,6 +478,11 @@ export class Label extends Node {
     return true
   }
 
+  /** @internal A label counts as the point it is pinned to, so framing leaves room for axis ticks and titles. @param {Box3} box */
+  expandBounds(box) {
+    return box.expandByPoint(this.worldPosition)
+  }
+
   /** @returns {Record<string, unknown>} */
   cloneOptions() {
     return { ...super.cloneOptions(), text: this.text, className: this.className, place: this.place,

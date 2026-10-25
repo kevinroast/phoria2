@@ -36,7 +36,8 @@ export default function run({ canvas, gui, info }) {
   const spec = {
     mark: 'network', data,
     color: { field: 'status', title: 'Status', scale: { domain: Object.keys(STATUS), range: Object.values(STATUS) } },
-    size: 'rps', label: { field: 'id', priority: 'severity' },
+    // small nodes, so the links between them show
+    size: { field: 'rps', scale: { range: [0.08, 0.26] } }, label: { field: 'id', priority: 'severity' },
     link: { width: 'rps', flow: 'rps' },
     tooltip: ['id', 'tier', 'status', { field: 'rps', title: 'requests/s' }],
     legend: { position: 'bottom-right' },

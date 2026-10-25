@@ -454,6 +454,7 @@ body.gallery {
 .demo-grid a {
   display: block;
   height: 100%;
+  overflow: hidden;
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -462,6 +463,17 @@ body.gallery {
   color: var(--text);
   text-shadow: none;
   transition: border-color 0.15s;
+}
+
+.demo-grid .thumb {
+  display: block;
+  width: calc(100% + 28px);
+  height: auto;
+  margin: -12px -14px 10px;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: 13px 13px 0 0;
+  background: #0e0e10;
 }
 
 .demo-grid a:hover {
@@ -566,6 +578,40 @@ body.gallery {
   color: var(--text);
   font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
   tab-size: 2;
+}
+
+.json-snippets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.json-snippets button {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.json-snippets button::before {
+  content: '+ ';
+  opacity: 0.6;
+}
+
+.json-snippets button:hover:not(:disabled) {
+  border-color: #8fd19e;
+}
+
+.json-snippets button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.json-snippets button:disabled::before {
+  content: '\2713  ';
 }
 
 .json-status {
@@ -717,4 +763,34 @@ button.demo-legend-item {
   min-height: 0;
   width: 100%;
   display: block;
+}
+
+/* a demo's own source, beside the scene */
+.code-panel {
+  position: fixed;
+  z-index: 5;
+  left: 16px;
+  bottom: 16px;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 10px 14px 12px;
+  background: var(--float);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+}
+
+.code-panel p {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.code-panel pre {
+  margin: 0;
+  overflow-x: auto;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
 }

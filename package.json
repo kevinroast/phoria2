@@ -39,7 +39,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.demos.json",
     "lint": "eslint .",
     "size": "node scripts/size.mjs",
-    "perf": "node perf/run.mjs"
+    "perf": "node perf/run.mjs",
+    "thumbs": "node scripts/thumbs.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

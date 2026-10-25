@@ -1,6 +1,6 @@
 // Every demo, in gallery order. `name` is the module in demos/ and the ?name= of demo.html. A
-// `section` starts a new heading in the gallery. `orbit: false` marks demos that drive the camera
-// themselves, so the page doesn't advertise mouse orbiting.
+// `section` starts a new heading in the gallery. `orbit: false` marks demos without mouse orbiting -
+// they drive the camera, or use the mouse for something else - so the page doesn't advertise it.
 export const DEMOS = [
   { section: 'Charts and diagrams', name: 'bars', title: 'a bar chart from a spec - axes, legend, value labels, animated updates' },
   { name: 'scatter', title: 'a 3D scatter of customers from a spec - legend, tooltips, flat projections' },
@@ -10,19 +10,18 @@ export const DEMOS = [
   { name: 'dashboard', title: 'eight chart tiles, each its own view, idle until touched' },
   { name: 'topology', title: 'a network topology built by hand - status colours, hover to trace links, live traffic' },
   { name: 'floorplan', title: 'a data hall floor plan - isometric or plan view, rack heat map, image export' },
-  { name: 'city', title: 'an isometric city of instanced buildings - orthographic or perspective' },
-  { section: 'Features', name: 'hello', title: 'the minimal scene: a lit cube, a grid and a label' },
-  { name: 'drawmodes', title: 'one geometry drawn solid, as edges and as points - and see-through' },
+  { name: 'city', title: 'a city as data - 1,500 instanced buildings coloured by energy use, occupancy, age or use, with tooltips' },
+  { section: 'Features', name: 'hello', title: 'the minimal scene, with the whole program beside it' },
   { name: 'materials', title: 'roughness and metalness under a movable light and the studio environment' },
-  { name: 'lights', title: 'coloured point lights orbiting a cube, with a child that follows its parent' },
-  { name: 'textures', title: 'a texture per face - six textured planes in a group' },
-  { name: 'models', title: 'hand-made models from raw points and polygons' },
+  { name: 'lights', title: 'lights in two moods - sunset and neon - and a swinging lamp that carries its spot light' },
+  { name: 'textures', title: 'photo textures with normal and ARM maps, a live canvas screen, nearest and linear filtering' },
+  { name: 'models', title: 'hand-made models from raw points and polygons - drawn solid, as edges and as points' },
   { name: 'viewer', title: 'a glTF product viewer - full material maps, an HDR studio, shadows, animation' },
-  { name: 'particles', title: 'particle emitters - fountain, flame and snow' },
-  { name: 'scene-json', title: 'a scene as plain JSON - edit it, rebuild it, export it' },
-  { section: 'Showcase', name: 'solar', title: 'a solar system - nested orbits, a sun that lights the planets, click to follow' },
-  { name: 'galaxy', title: 'a spiral galaxy of 50,000 additive points' },
-  { name: 'fireworks', title: 'fireworks - rockets with physics, trails and sparkling bursts' },
-  { name: 'paint', title: 'a paint gun - particles splat into a canvas texture on the wall' },
-  { name: 'space', title: 'Cobra Mk IIIs and a comet - a short flight with a moving light', orbit: false },
+  { name: 'particles', title: 'particle emitters in three set pieces - a fountain, a brazier and falling snow' },
+  { name: 'scene-json', title: 'a scene as plain JSON - edit it, add to it, rebuild it, export it' },
+  { section: 'Showcase', name: 'solar', title: 'a solar system - nested orbits, planets painted in code, a sun that lights them, click to follow' },
+  { name: 'galaxy', title: 'a spiral galaxy - 60,000 additive stars, old and young, round a glowing core' },
+  { name: 'fireworks', title: 'fireworks over a city across the water - rockets with physics, four burst shapes, reflections' },
+  { name: 'paint', title: 'a paint cannon - click the wall to aim; drops splat and drip into its canvas textures', orbit: false },
+  { name: 'space', title: 'Cobra Mk IIIs over a gas giant as a comet flies by - and an Elite mode in green vector lines', orbit: false },
 ]
