@@ -24,8 +24,9 @@ import { NODE_OPTIONS, Node } from './Node.js'
  *   frustumCulled?: boolean,
  *   data?: unknown,
  * }} DrawableOptions
- * data: what this node shows - picking hands it back as hit.datum. For InstancedMesh and Points an
- * array is one row per instance or point, and hit.datum is the row that was hit.
+ * data: what this node shows - picking hands it back as hit.datum. An array is one row per instance
+ * (InstancedMesh), point (Points) or segment (Lines); on a Mesh, an array as long as its vertices is
+ * a row per vertex, and a hit gives the nearest vertex's row (a surface).
  */
 
 /**
@@ -35,9 +36,9 @@ import { NODE_OPTIONS, Node } from './Node.js'
  * @property {[number, number]} [offset] extra shift in CSS pixels, +y down (default [0, 0])
  * @property {string} [className] CSS class(es) for the label element
  * @property {number} [priority] when labels overlap, the higher priority stays (default 0)
- * @property {'hide' | 'show'} [overlap] 'hide' drops this label when a higher-priority one is in the way;
- *   'show' always shows it (default 'hide')
- * @property {boolean} [occlude] hide the label when geometry is in front of its point (default false)
+ * @property {'hide' | 'dim' | 'show'} [overlap] when the label is covered - by a higher-priority label, or by
+ *   geometry with occlude - 'hide' drops it, 'dim' draws it faint and behind; 'show' always shows it (default 'hide')
+ * @property {boolean} [occlude] the label counts as covered when geometry is in front of its point (default false)
  */
 /** @typedef {'center' | 'above' | 'below' | 'left' | 'right'} LabelPlace */
 
@@ -59,7 +60,7 @@ const LABEL_HINTS = {
   anchor: "use place: 'center' | 'above' | 'below' | 'left' | 'right' (where the label goes)",
   position: 'labels per instance sit on their instance - offset moves them in pixels',
   zIndex: "use 'priority': higher stays when labels overlap",
-  collision: "use overlap: 'hide' | 'show'",
+  collision: "use overlap: 'hide' | 'dim' | 'show'",
 }
 
 /**
@@ -77,7 +78,7 @@ function placement(owner, o) {
     offset: /** @type {[number, number]} */ ([offset[0], offset[1]]),
     className: o.className ? String(o.className) : '',
     priority: o.priority === undefined ? 0 : checkNumber(owner, 'priority', o.priority),
-    overlap: o.overlap === undefined ? 'hide' : checkOneOf(owner, 'overlap', o.overlap, ['hide', 'show']),
+    overlap: o.overlap === undefined ? 'hide' : checkOneOf(owner, 'overlap', o.overlap, ['hide', 'dim', 'show']),
     occlude: !!o.occlude,
   }
 }
@@ -144,12 +145,12 @@ export class Drawable extends Node {
 
   /**
    * The data for a hit: this node's row at `index` when data is an array and the node draws many
-   * things (instances, points), otherwise the data itself.
+   * things (instances, points, line segments), otherwise the data itself.
    * @param {number | null} index
    * @returns {any}
    */
   datumAt(index) {
-    const many = 'instanceMatrices' in this || this.drawMode === 'points'
+    const many = 'instanceMatrices' in this || this.drawMode !== 'triangles'
     if (many && Array.isArray(this.data)) return index === null ? null : this.data[index] ?? null
     return this.data ?? null
   }
@@ -421,9 +422,9 @@ export class Label extends Node {
   offset = [0, 0]
   /** When labels overlap, the higher priority stays. */
   priority = 0
-  /** 'hide' gives way to higher-priority labels; 'show' always shows. @type {'hide' | 'show'} */
+  /** When covered by a higher-priority label (or geometry, with occlude): 'hide' drops it, 'dim' fades it, 'show' always shows it. @type {'hide' | 'dim' | 'show'} */
   overlap = 'hide'
-  /** Hide the label when geometry is in front of its point. */
+  /** The label counts as covered when geometry is in front of its point. */
   occlude = false
 
   /** @param {LabelOptions} options */

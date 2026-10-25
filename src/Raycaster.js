@@ -144,8 +144,13 @@ export class Raycaster {
         w * t[best.i0 * 2 + 1] + best.u * t[best.i1 * 2 + 1] + best.v * t[best.i2 * 2 + 1],
       ]
     }
-    hits.push({ node: mesh, point, distance: point.distanceTo(this.ray.origin), normal, face: bestFace, instance, uv,
-      datum: mesh.datumAt(instance) })
+    // a row per vertex (a surface): the row of the hit triangle's nearest corner
+    let datum = mesh.datumAt(instance)
+    if (instance === null && Array.isArray(mesh.data) && mesh.data.length === g.vertexCount) {
+      const w0 = 1 - best.u - best.v
+      datum = mesh.data[w0 >= best.u && w0 >= best.v ? best.i0 : best.u >= best.v ? best.i1 : best.i2] ?? null
+    }
+    hits.push({ node: mesh, point, distance: point.distanceTo(this.ray.origin), normal, face: bestFace, instance, uv, datum })
   }
 
   /** @param {Points} node @param {Hit[]} hits */
@@ -174,7 +179,7 @@ export class Raycaster {
       b.set(p[i1 * 3], p[i1 * 3 + 1], p[i1 * 3 + 2]).applyMatrix4(w)
       const { distanceSq, t } = this.ray.distanceSqToSegment(a, b)
       if (distanceSq > limit) continue
-      if (!best || t < best.distance) best = { node, point: this.ray.at(t), distance: t, normal: null, face: s, instance: null, uv: null, datum: node.datumAt(null) }
+      if (!best || t < best.distance) best = { node, point: this.ray.at(t), distance: t, normal: null, face: s, instance: null, uv: null, datum: node.datumAt(s) }
     }
     if (best) hits.push(best)
   }

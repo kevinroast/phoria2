@@ -34,6 +34,7 @@ export { vec2, vec3, vec4, mat3, mat4, quat, RADIANS, EPSILON } from './math.js'
 
 // descriptions, picking, frames
 export { create } from './describe.js'
+export { registerType } from './registry.js'
 export { Raycaster } from './Raycaster.js'
 export { collect, NullRenderer, LIGHT_LIMITS } from './frame.js'
 export { PhoriaError } from './validate.js'

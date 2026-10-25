@@ -99,6 +99,7 @@ export class ChangeWatch {
     this.#push(node.visible ? 1 : 0)
     // hidden subtrees aren't drawn, so their insides don't matter until they show again
     if (!node.visible) return
+    this.#push(node.overlay ? idOf(node.overlay) : 0)
     this.#pushAll(node.position)
     this.#pushAll(node.quaternion)
     this.#pushAll(node.scale)

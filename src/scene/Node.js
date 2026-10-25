@@ -2,13 +2,16 @@ import * as mat3 from '../math/mat3.js'
 import * as mat4 from '../math/mat4.js'
 import * as quat from '../math/quat.js'
 import { Box3 } from '../value/Box3.js'
+import { Color } from '../value/Color.js'
 import { Euler } from '../value/Euler.js'
 import { Mat4 } from '../value/Mat4.js'
 import { Quat } from '../value/Quat.js'
 import { Vec3 } from '../value/Vec3.js'
 import { checkOptions, describe, fail } from '../validate.js'
 
-/** @import { Vec3Input } from '../types.js' */
+/** @import { ColorInput, Vec3Input } from '../types.js' */
+/** @import { Hit } from '../Raycaster.js' */
+/** @import { Camera } from './cameras.js' */
 
 /**
  * Per-frame behaviour: `(node, dt, t) => void`, with dt and t in seconds.
@@ -28,10 +31,17 @@ import { checkOptions, describe, fail } from '../validate.js'
  * @property {Node[]} [children]
  * @property {Record<string, unknown>} [userData] anything of your own
  * @property {UpdateHandler | UpdateHandler[]} [onUpdate]
+ * @property {((hit: Hit) => any) | null} [tooltip] tooltip for anything picked in this subtree; nearer nodes win, and
+ *   all win over the View's
+ * @property {ColorInput | null} [highlight] hover tint for this subtree, over the View's
+ * @property {((hit: Hit | null) => void) | null} [onHover] called as the thing under the pointer in this subtree changes
+ *   (null when it leaves the subtree)
+ * @property {((hit: Hit) => void) | null} [onClick] called when something in this subtree is clicked
+ * @property {((camera: Camera) => boolean) | null} [showFrom] draw this subtree only for cameras this returns true for
  */
 
 export const NODE_OPTIONS = ['name', 'position', 'rotation', 'quaternion', 'scale', 'visible', 'pickable',
-  'matrixAutoUpdate', 'children', 'userData', 'onUpdate']
+  'matrixAutoUpdate', 'children', 'userData', 'onUpdate', 'tooltip', 'highlight', 'onHover', 'onClick', 'showFrom']
 
 // three.js habits that would otherwise fail with a plain "unknown option"
 export const NODE_HINTS = {
@@ -84,6 +94,18 @@ export class Node {
   worldMatrix = new Mat4()
   /** Anything of your own; copied by clone() and kept in toJSON() when it is plain data. */
   userData = {}
+  /** Tooltip for anything picked in this subtree (nearest wins, over the View's). @type {((hit: Hit) => any) | null} */
+  tooltip = null
+  /** Hover tint for this subtree, over the View's. @type {Color | null} */
+  highlight = null
+  /** Called as the thing under the pointer in this subtree changes; null when it leaves. @type {((hit: Hit | null) => void) | null} */
+  onHover = null
+  /** Called when something in this subtree is clicked. @type {((hit: Hit) => void) | null} */
+  onClick = null
+  /** Draw this subtree only for cameras this returns true for - per frame, without changing the scene. @type {((camera: Camera) => boolean) | null} */
+  showFrom = null
+  /** An HTML element shown over the canvas while this node is drawn (a chart's legend). @type {HTMLElement | null} */
+  overlay = null
 
   /** @type {Node | null} */
   #parent = null
@@ -110,6 +132,13 @@ export class Node {
     if (options.matrixAutoUpdate !== undefined) this.matrixAutoUpdate = !!options.matrixAutoUpdate
     if (options.userData !== undefined) this.userData = options.userData
     if (options.onUpdate) [options.onUpdate].flat().forEach((fn) => this.onUpdate(fn))
+    for (const key of ['tooltip', 'onHover', 'onClick', 'showFrom']) {
+      const fn = options[key]
+      if (fn === undefined || fn === null) continue
+      if (typeof fn !== 'function') fail(owner, `'${key}' must be a function, got ${describe(fn)}`)
+      this[key] = fn
+    }
+    if (options.highlight != null) this.highlight = Color.fromInput(options.highlight, owner)
     if (options.children) for (const child of options.children) this.add(child)
   }
 
@@ -361,6 +390,11 @@ export class Node {
       scale: this.scale.toArray(),
       visible: this.visible,
       pickable: this.pickable,
+      tooltip: this.tooltip,
+      highlight: this.highlight,
+      onHover: this.onHover,
+      onClick: this.onClick,
+      showFrom: this.showFrom,
     }
   }
 

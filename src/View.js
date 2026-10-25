@@ -1,7 +1,7 @@
 import { collect } from './frame.js'
 import { LabelLayer } from './labels.js'
 import { OrbitControl } from './OrbitControl.js'
-import { cameraPreset } from './presets.js'
+import { cameraPreset, framingScale } from './presets.js'
 import { Raycaster } from './Raycaster.js'
 import { ChangeWatch } from './watch.js'
 import { Box3 } from './value/Box3.js'
@@ -14,7 +14,7 @@ import { WebGLRenderer } from './webgl/WebGLRenderer.js'
 import { checkOneOf, checkOptions, describe, fail } from './validate.js'
 
 /** @import { OrbitOptions } from './OrbitControl.js' */
-/** @import { CameraPreset } from './presets.js' */
+/** @import { CameraPreset, FramingKeep } from './presets.js' */
 /** @import { Hit } from './Raycaster.js' */
 /** @import { FrameDescription, FrameHighlight } from './frame.js' */
 /** @import { LabelStats } from './labels.js' */
@@ -41,6 +41,9 @@ import { checkOneOf, checkOptions, describe, fail } from './validate.js'
  * @property {boolean | OrbitOptions} [orbit] mouse/touch camera control (default false)
  * @property {ColorInput | null} [background] shortcut for scene.background
  * @property {RenderMode} [renderMode] when to draw (default 'auto': only when something changed)
+ * @property {{ keep?: FramingKeep, aspect?: number }} [framing] what stays in view when the canvas changes shape:
+ *   keep 'height' (default - the width varies), 'width', or 'both' (nothing framed is ever cut off). aspect is
+ *   the width / height the camera was set up for (default: the canvas's shape when the camera was set or framed)
  * @property {ColorInput | null} [highlight] tint whatever is under the pointer with this colour (default none)
  * @property {(hit: Hit) => TooltipContent} [tooltip] what to show for the thing under the pointer - see tooltip()
  * @property {number} [pixelRatio] default min(devicePixelRatio, 2)
@@ -54,7 +57,7 @@ import { checkOneOf, checkOptions, describe, fail } from './validate.js'
 /** @typedef {'click' | 'hover'} ViewEvent */
 /** @typedef {(hit: Hit | null, event: PointerEvent | MouseEvent | null) => void} ViewHandler */
 
-const OPTIONS = ['canvas', 'scene', 'camera', 'orbit', 'background', 'renderMode', 'highlight', 'tooltip', 'pixelRatio',
+const OPTIONS = ['canvas', 'scene', 'camera', 'orbit', 'background', 'renderMode', 'framing', 'highlight', 'tooltip', 'pixelRatio',
   'antialias', 'toneMapping', 'exposure', 'autoLight', 'maxDelta']
 const HINTS = {
   renderer: 'the View makes its renderer - read it from view.renderer',
@@ -63,6 +66,9 @@ const HINTS = {
   onClick: "use view.on('click', (hit) => ...)",
   onHover: "use view.on('hover', (hit) => ...)",
   frameloop: "use renderMode: 'auto' | 'always' | 'manual'",
+  keep: "use framing: { keep: 'width' | 'height' | 'both' }",
+  fit: "use framing: { keep: 'both' } to keep everything framed in view as the canvas changes shape",
+  aspect: "the canvas sets the aspect; framing: { aspect } says which shape the camera was set up for",
 }
 const EVENT_HINTS = {
   mouseover: 'hover', mouseenter: 'hover', mousemove: 'hover', pointermove: 'hover', pointerover: 'hover', pointerenter: 'hover',
@@ -97,7 +103,8 @@ export class View {
   lastFrame = null
 
   /** @type {((dt: number, t: number) => void) | null} */ #onFrame = null
-  #running = false
+  // time runs from the start, so update handlers (transitions, particles) work without start()
+  #running = true
   #disposed = false
   #rafId = 0
   #lastTime = 0
@@ -108,6 +115,11 @@ export class View {
   #pixelRatio = 1
   #explicitPixelRatio = false
   #autoFrame = false
+  // framing kept as the canvas changes shape: what to keep, the shape it was set for, and the
+  // scale applied so far, so further changes stay relative (zooming by hand still works)
+  /** @type {FramingKeep} */ #keep = 'height'
+  #designed = 0
+  #applied = 1
   #watch = new ChangeWatch()
   /** @type {(() => void)[]} */ #cleanup = []
   #labels
@@ -117,6 +129,8 @@ export class View {
   // the tooltip's code loads when first asked for, so apps without one don't carry it
   /** @type {Tooltip | null} */ #tooltip = null
   /** @type {((hit: Hit) => TooltipContent) | null} */ #tooltipContent = null
+  #tooltipClass = ''
+  #tooltipLoading = false
   /** @type {Color | null} */ #highlight = null
   /** @type {{ x: number, y: number, clientX: number, clientY: number, event: PointerEvent } | null} */ #pointer = null
   #pickPending = false
@@ -164,6 +178,15 @@ export class View {
     if (options.tooltip !== undefined) this.tooltip(options.tooltip)
     this.#labels = new LabelLayer(this.canvas)
 
+    if (options.framing !== undefined) {
+      const f = options.framing
+      checkOptions('View', f, ['keep', 'aspect'])
+      if (f.keep !== undefined) this.#keep = checkOneOf('View', 'framing.keep', f.keep, ['height', 'width', 'both'])
+      if (f.aspect !== undefined) {
+        if (!(f.aspect > 0)) fail('View', `framing.aspect is a width / height above 0, got ${describe(f.aspect)}`)
+        this.#designed = f.aspect
+      }
+    }
     this.resize()
     this.#listen()
     this.#schedule()
@@ -186,6 +209,9 @@ export class View {
     if (!(camera instanceof Camera)) fail('View', `'camera' must be a camera or a preset name, got ${describe(camera)}`)
     this.#camera = camera
     if (this.#height) camera.aspect = this.#width / this.#height
+    // a new camera is framed for the canvas as it is now
+    this.#designed = camera.aspect
+    this.#applied = 1
     if (this.controls) {
       // the control orbits the camera's target, so give it one where the old camera was looking
       camera.target ??= this.controls.target.clone()
@@ -222,8 +248,18 @@ export class View {
   }
 
   /**
-   * Run the animation loop: fn(dt, t) is called each frame (seconds) and the scene's update
-   * handlers run. In 'auto' mode a frame is still only drawn if something changed.
+   * A layer over the canvas for HTML of your own - a title, a key, buttons. It tracks the canvas and
+   * doesn't take pointer events itself; give children `pointer-events: auto` to make them clickable.
+   * @returns {HTMLDivElement}
+   */
+  get overlay() {
+    return this.#labels.root
+  }
+
+  /**
+   * Call fn(dt, t) every frame (seconds), for app-level animation, and resume time if it was
+   * stopped. Time - and the scene's update handlers - run from the start anyway; in 'auto' mode a
+   * frame is still only drawn when something changed.
    * @param {(dt: number, t: number) => void} [fn]
    * @returns {this}
    */
@@ -237,13 +273,13 @@ export class View {
     return this
   }
 
-  /** Pause time: the frame function and update handlers stop. The view still redraws on changes. @returns {this} */
+  /** Freeze time: the frame function and update handlers stop until start(). The view still redraws on changes. @returns {this} */
   stop() {
     this.#running = false
     return this
   }
 
-  /** Is the animation loop running? */
+  /** Is time running (not stopped)? */
   get running() {
     return this.#running
   }
@@ -288,7 +324,9 @@ export class View {
     frame.highlight = this.#highlightFor(this.#hovered)
     this.#occlude(frame)
     this.renderer.renderFrame(frame)
-    this.#labelStats = this.#labels.update(frame.labels)
+    this.#labelStats = this.#labels.update(frame.labels, frame.overlays)
+    // a node with its own tooltip needs the tooltip's code
+    if (frame.tooltips && !this.#tooltip) this.#loadTooltip()
     this.lastFrame = frame
     this.#dirty = false
     // things may have moved under a still pointer
@@ -305,6 +343,7 @@ export class View {
     this.#height = h
     this.renderer.setSize(w, h, this.#pixelRatio)
     this.camera.aspect = w / h
+    this.#keepFraming()
     this.#dirty = true
   }
 
@@ -337,6 +376,9 @@ export class View {
       cam.far = Math.max(cam.far, distance * 10)
     }
     cam.target = center
+    // framed for the canvas as it is now
+    this.#designed = cam.aspect
+    this.#applied = 1
     this.invalidate()
     return this
   }
@@ -406,20 +448,30 @@ export class View {
    */
   tooltip(content, { className } = {}) {
     if (content !== null && typeof content !== 'function') fail('View', `tooltip() takes a function (hit) => text, or null, got ${describe(content)}`)
-    this.#tooltip?.dispose()
-    this.#tooltip = null
     this.#tooltipContent = content
-    if (content) {
-      import('./tooltip.js').then(({ Tooltip }) => {
-        // unless it was replaced or removed while loading
-        if (this.#tooltipContent !== content || this.#disposed) return
-        this.#tooltip = new Tooltip(content, className)
-        this.#pickPending = true
-        this.#schedule()
-      })
-    }
+    if (className !== undefined) this.#tooltipClass = className
+    if (this.#tooltip) this.#tooltip.el.className = `phoria-tooltip${this.#tooltipClass ? ` ${this.#tooltipClass}` : ''}`
+    if (content) this.#loadTooltip()
     this.#pickPending = true
     return this
+  }
+
+  // the tooltip's code loads when first needed, so apps without one don't carry it
+  #loadTooltip() {
+    if (this.#tooltipLoading) return
+    this.#tooltipLoading = true
+    import('./tooltip.js').then(({ Tooltip }) => {
+      if (this.#disposed) return
+      this.#tooltip = new Tooltip((hit) => this.#tooltipFor(hit)?.(hit), this.#tooltipClass)
+      this.#pickPending = true
+      this.#schedule()
+    })
+  }
+
+  /** The nearest node tooltip above the hit, or the View's. @param {Hit} hit */
+  #tooltipFor(hit) {
+    for (let n = /** @type {any} */ (hit.node); n; n = n.parent) if (n.tooltip) return n.tooltip
+    return this.#tooltipContent
   }
 
   /**
@@ -448,8 +500,14 @@ export class View {
     const { explain } = await import('./explain.js')
     const frame = this.render()
     let nodes = 0
-    this.scene.traverse(() => { nodes++ })
+    const notes = []
+    this.scene.traverse((n) => {
+      nodes++
+      // nodes that can describe themselves (charts) add a line each
+      if (n !== this.scene && typeof (/** @type {any} */ (n)).explain === 'function') notes.push(/** @type {any} */ (n).explain())
+    })
     return explain({
+      notes,
       width: this.#width, height: this.#height, pixelRatio: this.#pixelRatio, renderMode: this.renderMode, running: this.#running,
       frame, labels: this.#labelStats, bounds: this.scene.bounds, nodes, autoLight: this.autoLight,
       contextLost: !!this.renderer.gl?.isContextLost?.(),
@@ -469,11 +527,29 @@ export class View {
     this.renderer.dispose()
   }
 
+  // widen or narrow the view so the framing chosen with `framing.keep` survives a change of shape
+  #keepFraming() {
+    const cam = /** @type {any} */ (this.#camera)
+    if (!this.#designed) this.#designed = cam.aspect
+    const scale = framingScale(this.#keep, this.#designed, cam.aspect)
+    const k = scale / this.#applied
+    this.#applied = scale
+    if (Math.abs(k - 1) < 1e-9) return
+    if (cam.constructor.type === 'orthographic-camera') cam.height *= k
+    else if (cam.target) {
+      const offset = cam.position.clone().sub(cam.target).multiplyScalar(k)
+      cam.position.copy(cam.target).add(offset)
+    } else {
+      // no target to move away from: widen the field of view instead
+      cam.fov = Math.min(170, 2 * Math.atan(Math.tan(cam.fov * Math.PI / 360) * k) * 360 / Math.PI)
+    }
+  }
+
   // One requestAnimationFrame per frame at most, and none while the canvas is off screen or (in
   // manual mode) while there is nothing to do.
   #schedule() {
     if (this.#rafId || this.#disposed || !this.#onScreen) return
-    if (this.renderMode === 'manual' && !this.#running && !this.#dirty && !this.#pickPending) return
+    if (this.renderMode === 'manual' && !(this.#running && this.#onFrame) && !this.#dirty && !this.#pickPending) return
     this.#rafId = requestAnimationFrame(this.#tick)
   }
 
@@ -493,11 +569,12 @@ export class View {
       (this.renderMode === 'auto' && this.#watch.changed(this.scene, this.camera))
     if (draw) this.render()
     // in manual mode, sleep until something asks for a frame
-    if (this.renderMode !== 'manual' || this.#running || this.#dirty || this.#pickPending) this.#schedule()
+    if (this.renderMode !== 'manual' || (this.#running && this.#onFrame) || this.#dirty || this.#pickPending) this.#schedule()
   }
 
   #needsHover() {
-    return this.#handlers.hover.size > 0 || !!this.#tooltipContent || !!this.#highlight || this.#handlers.click.size > 0
+    return this.#handlers.hover.size > 0 || !!this.#tooltipContent || !!this.#highlight || this.#handlers.click.size > 0 ||
+      !!this.lastFrame?.interactive
   }
 
   // pick under the pointer and tell everyone when the thing under it changes
@@ -513,17 +590,34 @@ export class View {
     if (p && hit && this.#tooltip) this.#tooltip.show(hit, p.clientX, p.clientY)
     else this.#tooltip?.hide()
     if (same) return
-    if (this.#highlight) this.#dirty = true
-    if (this.#handlers.click.size) this.canvas.style.cursor = hit ? 'pointer' : ''
+    if (this.#highlightFor(before) || this.#highlightFor(hit)) this.#dirty = true
+    if (this.#handlers.click.size || this.lastFrame?.interactive) this.canvas.style.cursor = hit && this.#clickable(hit) ? 'pointer' : ''
+    // node handlers: those that lose the pointer hear null, those that gain or keep it hear the hit
+    const was = handlersAbove(before?.node, 'onHover'), now = handlersAbove(hit?.node, 'onHover')
+    for (const fn of was) if (!now.includes(fn)) fn(null)
+    for (const fn of now) fn(hit)
     for (const fn of this.#handlers.hover) fn(hit, p?.event ?? null)
+  }
+
+  /** Does clicking this hit do anything? @param {Hit} hit */
+  #clickable(hit) {
+    return this.#handlers.click.size > 0 || handlersAbove(hit.node, 'onClick').length > 0
   }
 
   /** @param {Hit | null} hit @returns {FrameHighlight | null} */
   #highlightFor(hit) {
-    if (!hit || !this.#highlight) return null
+    if (!hit) return null
+    let color = this.#highlight
+    for (let n = /** @type {any} */ (hit.node); n; n = n.parent) {
+      if (n.highlight) {
+        color = n.highlight
+        break
+      }
+    }
+    if (!color) return null
     const node = /** @type {any} */ (hit.node)
     const index = hit.instance ?? (node.drawMode === 'points' ? hit.face : null)
-    return { node, index, color: this.#highlight, amount: HIGHLIGHT_AMOUNT }
+    return { node, index, color, amount: HIGHLIGHT_AMOUNT }
   }
 
   // hide labels that asked to be hidden behind geometry, by casting a ray to each
@@ -569,8 +663,9 @@ export class View {
       this.#schedule()
     }
     const click = (e) => {
-      if (!this.#handlers.click.size) return
+      if (!this.#handlers.click.size && !this.lastFrame?.interactive) return
       const hit = this.pick(e)
+      if (hit) for (const fn of handlersAbove(hit.node, 'onClick')) fn(hit)
       for (const fn of this.#handlers.click) fn(hit, e)
     }
     canvas.addEventListener('pointermove', move)
@@ -615,6 +710,16 @@ export class View {
       { kind: 'hemisphere', node: hemi, color: hemi.sky, ground: hemi.ground, intensity: hemi.intensity },
       { kind: 'directional', node: sun, color: sun.color, intensity: sun.intensity, direction: sun.worldDirection })
   }
+}
+
+/**
+ * A node's handlers of one kind and its ancestors', nearest first.
+ * @param {any} node @param {'onHover' | 'onClick'} key @returns {Function[]}
+ */
+function handlersAbove(node, key) {
+  const list = []
+  for (let n = node; n; n = n.parent) if (n[key]) list.push(n[key])
+  return list
 }
 
 /** @param {HTMLCanvasElement | string | undefined} canvas @returns {HTMLCanvasElement} */

@@ -20,6 +20,7 @@ import { Box3 } from './value/Box3.js'
  * @property {boolean} autoLight
  * @property {boolean} contextLost
  * @property {{ hover: number, click: number, tooltip: boolean, highlight: boolean }} interaction
+ * @property {string[]} [notes] lines from nodes that describe themselves, such as charts
  */
 
 const fmt = (n) => (Math.abs(n) >= 1e4 || (n !== 0 && Math.abs(n) < 1e-3) ? n.toExponential(2) : String(+n.toFixed(2)))
@@ -63,6 +64,7 @@ export function explain(info) {
   const drawn = [...kinds].map(([kind, k]) => `${k.n} ${kind}${k.items ? ` (${k.items.toLocaleString('en')} ${kind === 'points' ? 'points' : 'instances'})` : ''}`)
   lines.push(`Scene: ${plural(info.nodes, 'node')}; drew ${frame.stats.drawn}${drawn.length ? ` - ${drawn.join(', ')}` : ''}; ` +
     `${frame.stats.culled} outside the view`)
+  for (const note of info.notes ?? []) lines.push(note)
 
   // how much of the view the scene fills
   if (!bounds.isEmpty()) {
@@ -95,8 +97,8 @@ export function explain(info) {
 
   if (info.labels && info.labels.total) {
     const s = info.labels
-    lines.push(`Labels: ${s.shown} shown, ${s.overlapped} hidden by overlap, ${s.occluded} behind geometry, ${s.offscreen} off screen`)
-    if (s.overlapped > s.shown * 3) warnings.push(`${s.overlapped} labels are hidden by overlap - give the important ones a higher priority, label fewer things, or use overlap: 'show'`)
+    lines.push(`Labels: ${s.shown} shown, ${s.dimmed ? `${s.dimmed} dimmed (covered by labels or geometry), ` : ''}${s.overlapped} hidden by overlap, ${s.occluded} hidden behind geometry, ${s.offscreen} off screen`)
+    if (s.overlapped > s.shown * 3) warnings.push(`${s.overlapped} labels are hidden by overlap - give the important ones a higher priority, label fewer things, or use overlap: 'dim' or 'show'`)
     if (s.offscreen === s.total) warnings.push('every label is off screen - check their positions, or call view.frame()')
   }
 

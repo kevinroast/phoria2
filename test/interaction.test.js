@@ -4,6 +4,7 @@ import {
   Scene, box, cameraPreset, collect, grid,
 } from '../src/index.js'
 import { explain } from '../src/explain.js'
+import { framingScale } from '../src/presets.js'
 import { layoutLabels, placeBox } from '../src/labelLayout.js'
 import { OrbitControl } from '../src/OrbitControl.js'
 import { ChangeWatch } from '../src/watch.js'
@@ -44,13 +45,31 @@ describe('labels', () => {
 
   it('hides overlapping labels by priority, then nearness, and always shows overlap: show', () => {
     const at = (left, priority = 0, depth = 1, overlap = 'hide') => ({ left, top: 0, width: 50, height: 20, priority, overlap, depth })
-    expect(layoutLabels([at(0), at(30)])).toEqual([true, false])
-    expect(layoutLabels([at(0), at(30, 1)])).toEqual([false, true])
-    expect(layoutLabels([at(0, 0, 5), at(30, 0, 2)])).toEqual([false, true])
-    expect(layoutLabels([at(0, 5), at(30, 0, 1, 'show')])).toEqual([false, true])
+    // 30px apart, two 50px labels share 40% - too much for a label newly showing
+    expect(layoutLabels([at(0), at(30)])).toEqual(['show', 'hide'])
+    expect(layoutLabels([at(0), at(30, 1)])).toEqual(['hide', 'show'])
+    expect(layoutLabels([at(0, 0, 5), at(30, 0, 2)])).toEqual(['hide', 'show'])
+    expect(layoutLabels([at(0, 5), at(30, 0, 1, 'show')])).toEqual(['hide', 'show'])
     // apart, both show; 'show' labels show even when they overlap each other
-    expect(layoutLabels([at(0), at(100)])).toEqual([true, true])
-    expect(layoutLabels([at(0, 0, 1, 'show'), at(10, 0, 1, 'show')])).toEqual([true, true])
+    expect(layoutLabels([at(0), at(100)])).toEqual(['show', 'show'])
+    expect(layoutLabels([at(0, 0, 1, 'show'), at(10, 0, 1, 'show')])).toEqual(['show', 'show'])
+  })
+
+  it('lets labels touch a little, keeps labels that were showing, and dims instead of hiding', () => {
+    const at = (left, extra = {}) => ({ left, top: 0, width: 50, height: 20, priority: 0, overlap: 'hide', depth: 1, ...extra })
+    // sharing 10% is fine
+    expect(layoutLabels([at(0), at(45)])).toEqual(['show', 'show'])
+    // a label already showing holds on at 40% shared, and wins a tie against a new one
+    expect(layoutLabels([at(0, { priority: 1 }), at(30, { sticky: true })])).toEqual(['show', 'show'])
+    expect(layoutLabels([at(0), at(30, { sticky: true })])).toEqual(['hide', 'show'])
+    // but not at 80%
+    expect(layoutLabels([at(0, { priority: 1 }), at(10, { sticky: true })])).toEqual(['show', 'hide'])
+    // a dimmed label is drawn faint, and doesn't block the next one
+    expect(layoutLabels([at(0), at(30, { overlap: 'dim' }), at(55)])).toEqual(['show', 'dim', 'show'])
+    // covered by geometry: always loses, by its own rule, and blocks nothing; 'show' shows anyway
+    expect(layoutLabels([at(0, { covered: true }), at(10)])).toEqual(['hide', 'show'])
+    expect(layoutLabels([at(0, { covered: true, overlap: 'dim', priority: 1 }), at(10)])).toEqual(['dim', 'show'])
+    expect(layoutLabels([at(0, { covered: true, overlap: 'show' })])).toEqual(['show'])
   })
 
   it('makes one label per instance from its data, at the top of each instance', () => {
@@ -127,6 +146,19 @@ describe('camera presets', () => {
     expect(cameraPreset('perspective')).toBeInstanceOf(PerspectiveCamera)
     expect(() => cameraPreset(/** @type {any} */ ('plan'))).toThrow("use 'top'")
     expect(() => cameraPreset(/** @type {any} */ ('isometrc'))).toThrow("did you mean 'isometric'")
+  })
+})
+
+describe('framing', () => {
+  it('keeps the framed height, width, or everything as the canvas changes shape', () => {
+    // set up for 1.5:1, shown in a square
+    expect(framingScale('height', 1.5, 1)).toBe(1)
+    expect(framingScale('width', 1.5, 1)).toBe(1.5)
+    expect(framingScale('both', 1.5, 1)).toBe(1.5)
+    // shown wider than designed: 'width' zooms in to keep the width; 'both' keeps the height
+    expect(framingScale('width', 1.5, 3)).toBe(0.5)
+    expect(framingScale('both', 1.5, 3)).toBe(1)
+    expect(framingScale('both', 1.5, 0)).toBe(1)
   })
 })
 

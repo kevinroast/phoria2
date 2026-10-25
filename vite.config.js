@@ -3,11 +3,12 @@ import { defineConfig } from 'vite'
 
 const root = import.meta.dirname
 
-// The package entry points: 'phoria2' (the core) and 'phoria2/particles'. The library build emits one
-// ES module per entry (dist/phoria2.js, dist/particles.js).
+// The package entry points: 'phoria2' (the core), 'phoria2/particles' and 'phoria2/charts'. The library
+// build emits one ES module per entry (dist/phoria2.js, dist/particles.js, dist/charts.js).
 const ENTRIES = {
   phoria2: 'src/index.js',
   particles: 'src/particles/index.js',
+  charts: 'src/charts/index.js',
 }
 
 // Default build is the library. `--mode demos` builds the demo gallery as a static site instead.
@@ -19,6 +20,7 @@ export default defineConfig(({ mode }) => ({
     alias: [
       { find: /^phoria2$/, replacement: resolve(root, ENTRIES.phoria2) },
       { find: /^phoria2\/particles$/, replacement: resolve(root, ENTRIES.particles) },
+      { find: /^phoria2\/charts$/, replacement: resolve(root, ENTRIES.charts) },
     ],
   },
   build: mode === 'demos'
@@ -43,7 +45,7 @@ export default defineConfig(({ mode }) => ({
           output: {
             // everything the sub-paths share with the core goes in one predictable chunk; modules the
             // View loads on demand (explain, toImage, the tooltip) keep chunks of their own
-            manualChunks: (id) => (/[\\/]src[\\/](?!particles|explain|snapshot|tooltip)/.test(id) ? 'core' : undefined),
+            manualChunks: (id) => (/[\\/]src[\\/](?!particles|charts|explain|snapshot|tooltip)/.test(id) ? 'core' : undefined),
             chunkFileNames: '[name].js',
           },
         },

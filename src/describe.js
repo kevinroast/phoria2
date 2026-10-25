@@ -10,6 +10,7 @@ import { Scene } from './scene/Scene.js'
 import { InstancedMesh, Label, Lines, Mesh, Points } from './scene/drawables.js'
 import { OrthographicCamera, PerspectiveCamera } from './scene/cameras.js'
 import { AmbientLight, DirectionalLight, HemisphereLight, PointLight, SpotLight } from './scene/lights.js'
+import { registeredTypes } from './registry.js'
 
 /** Generator types usable in geometry descriptions: { type: 'box', size: 2 }. */
 export const GEOMETRY_TYPES = ['box', 'sphere', 'plane', 'cylinder', 'torus', 'icosphere', 'axes', 'grid']
@@ -17,10 +18,15 @@ export const GEOMETRY_TYPES = ['box', 'sphere', 'plane', 'cylinder', 'torus', 'i
 // Built on first use, not at module load, so these modules can import each other in any order.
 /** @type {Map<string, new (options: any) => Node> | null} */
 let types = null
-const typeMap = () => types ??= new Map([
-  Node, Group, Scene, Mesh, InstancedMesh, Points, Lines, Label, PerspectiveCamera, OrthographicCamera,
-  AmbientLight, HemisphereLight, DirectionalLight, PointLight, SpotLight,
-].map((Class) => [Class.type, Class]))
+const typeMap = () => {
+  types ??= new Map([
+    Node, Group, Scene, Mesh, InstancedMesh, Points, Lines, Label, PerspectiveCamera, OrthographicCamera,
+    AmbientLight, HemisphereLight, DirectionalLight, PointLight, SpotLight,
+  ].map((Class) => [Class.type, Class]))
+  // plus types registered by sub-paths, such as 'chart' from phoria2/charts
+  for (const [type, Class] of registeredTypes()) types.set(type, Class)
+  return types
+}
 
 // The names people coming from three.js will type
 const THREE_TYPES = {
@@ -29,6 +35,8 @@ const THREE_TYPES = {
   AmbientLight: 'ambient-light', HemisphereLight: 'hemisphere-light', DirectionalLight: 'directional-light',
   PointLight: 'point-light', SpotLight: 'spot-light', Scene: 'scene', light: 'directional-light', camera: 'perspective-camera',
 }
+// sub-path types that aren't registered until their module is imported
+const SUBPATH_TYPES = { chart: "import { chart } from 'phoria2/charts' first, which registers 'chart'", emitter: "'emitter' descriptions aren't supported yet - use new Emitter() from 'phoria2/particles'" }
 
 // geometry names people reach for, and three.js geometry classes
 const GEOMETRY_ALIASES = {
@@ -67,7 +75,7 @@ export function create(description) {
   }
   const Class = typeMap().get(type)
   if (!Class) {
-    const three = THREE_TYPES[type], misplaced = notANode(type)
+    const three = THREE_TYPES[type], misplaced = notANode(type) ?? SUBPATH_TYPES[type]
     fail('create()', `unknown type '${type}' - ${three ? `use '${three}'` : misplaced ?? `expected one of ${[...typeMap().keys()].join(', ')}${didYouMean(type, typeMap().keys())}`}`)
   }
   if (Array.isArray(options.children)) options.children = options.children.map((c) => create(c))

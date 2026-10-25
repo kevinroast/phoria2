@@ -41,6 +41,7 @@ function paintLabel(ctx, el, frame, scale) {
   const x = (r.left - frame.left) * scale, y = (r.top - frame.top) * scale
   const w = r.width * scale, h = r.height * scale
   ctx.save()
+  ctx.globalAlpha = parseFloat(el.style.opacity || cs.opacity) || 1
   if (!/rgba\(.*,\s*0\)$|transparent/.test(cs.backgroundColor)) {
     ctx.fillStyle = cs.backgroundColor
     ctx.beginPath()

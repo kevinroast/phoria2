@@ -2,9 +2,13 @@
 // `section` starts a new heading in the gallery. `orbit: false` marks demos that drive the camera
 // themselves, so the page doesn't advertise mouse orbiting.
 export const DEMOS = [
-  { section: 'Charts and diagrams', name: 'bars', title: 'a 3D bar chart - bound data, tooltips, value labels that give way' },
-  { name: 'scatter', title: 'a 3D scatter of customers - tooltips, a legend, flat projections' },
-  { name: 'topology', title: 'a network topology - status colours, hover to trace links, live traffic' },
+  { section: 'Charts and diagrams', name: 'bars', title: 'a bar chart from a spec - axes, legend, value labels, animated updates' },
+  { name: 'scatter', title: 'a 3D scatter of customers from a spec - legend, tooltips, flat projections' },
+  { name: 'timeseries', title: 'visitors over time - stacked areas, ribbons in depth or lines, with live data' },
+  { name: 'surface', title: 'latency by hour and day as a heat-coloured surface that tweens to new data' },
+  { name: 'network', title: 'a service dependency map - force or tiered layout, flowing traffic, failures' },
+  { name: 'dashboard', title: 'eight chart tiles, each its own view, idle until touched' },
+  { name: 'topology', title: 'a network topology built by hand - status colours, hover to trace links, live traffic' },
   { name: 'floorplan', title: 'a data hall floor plan - isometric or plan view, rack heat map, image export' },
   { name: 'city', title: 'an isometric city of instanced buildings - orthographic or perspective' },
   { section: 'Features', name: 'hello', title: 'the minimal scene: a lit cube, a grid and a label' },

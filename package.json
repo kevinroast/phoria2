@@ -6,7 +6,8 @@
   "license": "MIT",
   "type": "module",
   "files": [
-    "dist"
+    "dist",
+    "schema"
   ],
   "sideEffects": false,
   "types": "./dist/types/index.d.ts",
@@ -18,7 +19,12 @@
     "./particles": {
       "types": "./dist/types/particles/index.d.ts",
       "import": "./dist/particles.js"
-    }
+    },
+    "./charts": {
+      "types": "./dist/types/charts/index.d.ts",
+      "import": "./dist/charts.js"
+    },
+    "./charts/schema.json": "./schema/chart.schema.json"
   },
   "scripts": {
     "dev": "vite",

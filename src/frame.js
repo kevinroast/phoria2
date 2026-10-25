@@ -78,6 +78,9 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  * @property {Scene['environment']} environment
  * @property {{ drawn: number, culled: number }} stats
  * @property {FrameHighlight | null} highlight set by the View for hover highlighting
+ * @property {any[]} overlays HTML elements carried by the nodes drawn (node.overlay)
+ * @property {boolean} interactive some node has a tooltip, highlight or pointer handler
+ * @property {boolean} tooltips some node has its own tooltip
  */
 
 /**
@@ -106,12 +109,20 @@ export function collect(scene, camera) {
     environment: scene.environment,
     stats: { drawn: 0, culled: 0 },
     highlight: null,
+    overlays: [],
+    interactive: false,
+    tooltips: false,
   }
   let punctual = 0, directional = 0
 
   /** @param {any} node */
   const visit = (node) => {
     if (!node.visible) return
+    // per-camera visibility decides what this frame draws, without touching the scene
+    if (node.showFrom && !node.showFrom(camera)) return
+    if (node.overlay) frame.overlays.push(node.overlay)
+    if (node.tooltip) frame.interactive = frame.tooltips = true
+    else if (node.highlight || node.onHover || node.onClick) frame.interactive = true
     if (node.isDrawable) {
       const item = drawItem(node, view, planes)
       if (item) {

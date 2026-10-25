@@ -40,3 +40,20 @@ export function cameraPreset(name, { target = [0, 0, 0], distance = 10 } = {}) {
     ? new PerspectiveCamera({ fov: 45, position, target: [target[0], target[1], target[2]] })
     : new OrthographicCamera({ height: distance, position, target: [target[0], target[1], target[2]], far: Math.max(1000, distance * 20) })
 }
+
+/** @typedef {'height' | 'width' | 'both'} FramingKeep */
+
+/**
+ * How much bigger (or smaller) the view must be to keep a camera's framing when the canvas's shape
+ * changes from `designed` (the aspect the framing was set for) to `aspect`. 'height' keeps the
+ * framed height (the width varies - the default for any camera); 'width' keeps the framed width;
+ * 'both' keeps everything framed in view, widening for narrower canvases and keeping the height for
+ * wider ones.
+ * @param {FramingKeep} keep @param {number} designed @param {number} aspect
+ * @returns {number} the factor for an orthographic camera's height, or a perspective camera's distance
+ */
+export function framingScale(keep, designed, aspect) {
+  if (keep === 'height' || !(aspect > 0) || !(designed > 0)) return 1
+  const ratio = designed / aspect
+  return keep === 'width' ? ratio : Math.max(1, ratio)
+}
