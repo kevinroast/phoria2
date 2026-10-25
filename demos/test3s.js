@@ -1,6 +1,7 @@
 import {
-  DistantLight, Entity, OrbitControl, PointLight, RADIANS, Scene, SoftwareRenderer, generateSphere,
+  DistantLight, Entity, OrbitControl, PointLight, RADIANS, Scene, generateSphere,
 } from 'phoria2'
+import { SoftwareRenderer } from 'phoria2/canvas'
 import { animate, fitScene } from './shell.js'
 
 // The prototype software renderer rasterising a finely tesselated lit sphere into an ImageData buffer.

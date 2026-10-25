@@ -1,8 +1,14 @@
-import { vec2, vec3 } from 'gl-matrix'
+import { vec2, vec3 } from './math.js'
+
+/** @import { Polygon, Vec2Like, Vec3Like } from './types.js' */
 
 // Intersection and coordinate conversion helpers, contributed to phoria by Ruan Moolman.
 
-// Planar (x,y,z) -> polar [radius, theta (from the z axis), phi (from the x axis)].
+/**
+ * Planar (x, y, z) to polar [radius, theta (from the z axis), phi (from the x axis)].
+ * @param {Vec3Like} planar
+ * @returns {Float32Array}
+ */
 export function calculatePolarFromPlanar(planar) {
   const r = vec3.length(planar)
   let phi
@@ -14,7 +20,7 @@ export function calculatePolarFromPlanar(planar) {
   return vec3.fromValues(r, Math.acos(planar[2] / r), phi)
 }
 
-// Polar -> planar, rounded to 2 decimal places.
+/** Polar to planar, rounded to 2 decimal places. @param {Vec3Like} polar @returns {Float32Array} */
 export function calculatePlanarFromPolar([r, theta, phi]) {
   const round = (n) => Math.round(n * 100) / 100
   return vec3.fromValues(
@@ -23,9 +29,16 @@ export function calculatePlanarFromPolar([r, theta, phi]) {
     round(r * Math.cos(theta)))
 }
 
-// Where a line meets a plane, or null if they are parallel.
-//   plane: normal . (p - planePoint) = 0,  line: linePoint + s * lineVector
-//   =>  s = normal . (planePoint - linePoint) / normal . lineVector
+/**
+ * Where a line meets a plane, or null if they are parallel.
+ *   plane: normal . (p - planePoint) = 0,  line: linePoint + s * lineVector
+ *   =>  s = normal . (planePoint - linePoint) / normal . lineVector
+ * @param {Vec3Like} planeNormal
+ * @param {Vec3Like} planePoint
+ * @param {Vec3Like} lineVector
+ * @param {Vec3Like} linePoint
+ * @returns {Float32Array | null}
+ */
 export function planeLineIntersection(planeNormal, planePoint, lineVector, linePoint) {
   const dot = vec3.dot(lineVector, planeNormal)
   if (dot === 0) return null
@@ -34,9 +47,15 @@ export function planeLineIntersection(planeNormal, planePoint, lineVector, lineP
   return vec3.scaleAndAdd(vec3.create(), linePoint, lineVector, s)
 }
 
-// Is a point on a polygon's plane inside the polygon? Projects onto the axis-aligned plane that
-// best preserves the shape (dropping the dominant normal component) then counts crossings of a
-// test ray: odd = inside.
+/**
+ * Is a point on a polygon's plane inside the polygon? Projects onto the axis-aligned plane that
+ * best preserves the shape (dropping the dominant normal component) then counts crossings of a
+ * test ray: odd = inside.
+ * @param {Polygon} polygon with its _worldnormal set
+ * @param {Float32Array[]} points world coordinates
+ * @param {Vec3Like} intersection
+ * @returns {boolean}
+ */
 export function intersectionInsidePolygon(polygon, points, intersection) {
   const n = polygon._worldnormal
   const ax = Math.abs(n[0]), ay = Math.abs(n[1]), az = Math.abs(n[2])
@@ -55,7 +74,11 @@ export function intersectionInsidePolygon(polygon, points, intersection) {
   return crossings % 2 === 1
 }
 
-// Does the ray p + u*v (u >= 0) cross the line section p1-p2?
+/**
+ * Does the ray p + u*v (u >= 0) cross the line section p1-p2?
+ * @param {Vec2Like} p1 @param {Vec2Like} p2 @param {Vec2Like} p @param {Vec2Like} v
+ * @returns {boolean}
+ */
 export function sectionLineIntersect2D(p1, p2, p, v) {
   const s = vec2.subtract(vec2.create(), p2, p1)
   const cross = s[0] * v[1] - s[1] * v[0]

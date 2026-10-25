@@ -1,5 +1,4 @@
-import { vec3 } from 'gl-matrix'
-import { EPSILON } from '../math.js'
+import { EPSILON, vec3 } from '../math.js'
 import { DistantLight, PointLight } from '../entity/lights.js'
 
 // scratch vectors for the lighting calculations - avoids allocating per polygon

@@ -1,7 +1,8 @@
 import {
-  CanvasRenderer, DistantLight, Entity, OrbitControl, RADIANS, Scene, addMouseEvents,
-  calculateClickPointAndVector, generateTesselatedPlane, generateUnitCube, getIntersectedObjects,
+  DistantLight, Entity, OrbitControl, RADIANS, Scene, addMouseEvents, calculateClickPointAndVector,
+  generateTesselatedPlane, generateUnitCube, getIntersectedObjects,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { animate, fitScene } from './shell.js'
 
 // Object picking - click a spinning cube to select it and flash it white.

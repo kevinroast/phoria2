@@ -1,13 +1,29 @@
-import { vec3 } from 'gl-matrix'
-import { PIO2, RADIANS } from './math.js'
+import { PIO2, RADIANS, vec3 } from './math.js'
 
-// Mouse and touch camera control: left-drag (or one-finger drag) orbits the camera around its
-// look-at point, right-drag pans, the wheel zooms. Works directly on scene.camera, re-reading it
-// at the start of every gesture, so code that also moves the camera (keys, triggers) can coexist.
-//
-//   const orbit = new OrbitControl(canvas, scene, { minDistance: 2 })
-//   orbit.enabled = false   // suspend
-//   orbit.dispose()         // remove listeners
+/** @import { Scene } from './scene.js' */
+
+/**
+ * @typedef {object} OrbitOptions
+ * @property {boolean} [enabled]
+ * @property {number} [rotateSpeed] radians per pixel of drag (default 0.006)
+ * @property {number} [zoomSpeed] fraction of the distance per wheel step (default 0.08)
+ * @property {boolean} [zoom] false to leave the wheel scrolling the page
+ * @property {boolean} [pan] right-drag pans (default true)
+ * @property {number} [minDistance] (default 0.1)
+ * @property {number} [maxDistance] (default Infinity)
+ * @property {number} [minPitch] radians (default just above straight down)
+ * @property {number} [maxPitch] radians (default just below straight up)
+ */
+
+/**
+ * Mouse and touch camera control: left-drag (or one-finger drag) orbits the camera around its
+ * look-at point, right-drag pans, the wheel zooms. Works directly on scene.camera, re-reading it
+ * at the start of every gesture, so code that also moves the camera (keys, triggers) can coexist.
+ *
+ *     const orbit = new OrbitControl(canvas, scene, { minDistance: 2 })
+ *     orbit.enabled = false   // suspend
+ *     orbit.dispose()         // remove listeners
+ */
 export class OrbitControl {
   enabled = true
   // radians per pixel of drag
@@ -23,13 +39,21 @@ export class OrbitControl {
   minPitch = -PIO2 + 0.01
   maxPitch = PIO2 - 0.01
 
+  /** @type {HTMLElement} */
   #element
+  /** @type {Scene} */
   #scene
+  /** @type {number | null} */
   #pointerId = null
   #dragged = false
   // replaced while a drag is in progress with one that removes its listeners
   #endDrag = () => {}
 
+  /**
+   * @param {HTMLElement} element usually the canvas
+   * @param {Scene} scene
+   * @param {OrbitOptions} [options]
+   */
   constructor(element, scene, options = {}) {
     this.#element = element
     this.#scene = scene
@@ -55,7 +79,11 @@ export class OrbitControl {
     el.style.cursor = ''
   }
 
-  // Camera position relative to the look-at point as { yaw, pitch, distance }.
+  /**
+   * Camera position relative to the look-at point. Setting it moves the camera, clamped to the
+   * pitch and distance limits.
+   * @type {{ yaw: number, pitch: number, distance: number }}
+   */
   get spherical() {
     const { position: p, lookat: t } = this.#scene.camera
     const x = p.x - t.x, y = p.y - t.y, z = p.z - t.z
@@ -72,17 +100,19 @@ export class OrbitControl {
     position.z = lookat.z + distance * Math.cos(pitch) * Math.cos(yaw)
   }
 
+  /** Orbit by angles in radians. @param {number} dYaw @param {number} dPitch */
   rotate(dYaw, dPitch) {
     const s = this.spherical
     this.spherical = { yaw: s.yaw + dYaw, pitch: s.pitch + dPitch, distance: s.distance }
   }
 
+  /** Scale the distance to the look-at point, e.g. 0.9 to move closer. @param {number} factor */
   zoomBy(factor) {
     const s = this.spherical
     this.spherical = { ...s, distance: s.distance * factor }
   }
 
-  // Move the camera and its look-at point together, by screen pixels.
+  /** Move the camera and its look-at point together, by screen pixels. @param {number} dx @param {number} dy */
   panBy(dx, dy) {
     const { camera, perspective } = this.#scene
     const { position: p, lookat: t } = camera

@@ -1,7 +1,8 @@
 import {
-  CanvasRenderer, DistantLight, Entity, OrbitControl, RADIANS, Scene, combine, generatePyramid,
-  generateSphere, generateTesselatedPlane, generateUnitCube, loadImages, vec3,
+  DistantLight, Entity, OrbitControl, RADIANS, Scene, combine, generatePyramid, generateSphere,
+  generateTesselatedPlane, generateUnitCube, loadImages, vec3,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { animate, fitScene } from './shell.js'
 
 // UV coordinates selecting parts of a texture: a tiled plane, quarters of a texture on cube faces,

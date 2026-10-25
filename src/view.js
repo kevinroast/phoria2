@@ -1,14 +1,39 @@
-import { vec2, vec3 } from 'gl-matrix'
+import { vec2, vec3 } from './math.js'
 import { intersectionInsidePolygon, planeLineIntersection } from './intersect.js'
+
+/** @import { Scene } from './scene.js' */
+/** @import { Entity } from './entity/Entity.js' */
+/** @import { Vec3Like } from './types.js' */
+
+/**
+ * Live pointer drag state from addMouseEvents().
+ * @typedef {object} MouseTracker
+ * @property {number} velocityH accumulated horizontal drag, typically used as an angle
+ * @property {number} velocityV accumulated vertical drag
+ * @property {number} velocityLastH
+ * @property {number} velocityLastV
+ * @property {number} positionX current pointer position, element pixels
+ * @property {number} positionY
+ * @property {number} clickPositionX last press position, element pixels
+ * @property {number} clickPositionY
+ * @property {(e: PointerEvent) => void} [onMouseMove]
+ * @property {(e: PointerEvent) => void} [onMouseUp]
+ * @property {(e: PointerEvent) => void} [onMouseDown]
+ */
 
 // View helpers: drag tracking for rotating a view with the mouse or touch, and reverse object
 // selection (picking) - contributed to phoria by Ruan Moolman.
 
 const trackers = new WeakMap()
 
-// Track pointer drags on an element. Returns a live state object - velocityH/velocityV accumulate
-// the drag distance and are typically used as rotation angles; clickPositionX/Y is the last press
-// position in element (canvas pixel) coordinates. fnOnClick is added as a click listener.
+/**
+ * Track pointer drags on an element. Returns a live state object - velocityH/velocityV accumulate
+ * the drag distance and are typically used as rotation angles; clickPositionX/Y is the last press
+ * position in element (canvas pixel) coordinates. fnOnClick is added as a click listener.
+ * @param {HTMLElement & { width?: number, height?: number }} el
+ * @param {(e: MouseEvent) => void} [fnOnClick]
+ * @returns {MouseTracker}
+ */
 export function addMouseEvents(el, fnOnClick) {
   const mouse = {
     velocityH: 0,
@@ -60,6 +85,7 @@ export function addMouseEvents(el, fnOnClick) {
   return mouse
 }
 
+/** @param {HTMLElement} el @param {(e: MouseEvent) => void} [fnOnClick] */
 export function removeMouseEvents(el, fnOnClick) {
   const mouse = trackers.get(el)
   if (!mouse) return
@@ -71,10 +97,17 @@ export function removeMouseEvents(el, fnOnClick) {
   trackers.delete(el)
 }
 
+/** @param {HTMLElement} el @returns {MouseTracker | undefined} */
 export const getMouse = (el) => trackers.get(el)
 
-// World space ray for a viewport position: { clickPoint, clickVector }. clickPoint lies on the
-// plane through the camera lookat point facing the camera.
+/**
+ * World space ray for a viewport position. clickPoint lies on the plane through the camera's
+ * look-at point, facing the camera; clickVector points from the camera through it.
+ * @param {Scene} scene processed by modelView() at least once
+ * @param {number} mousex viewport x
+ * @param {number} mousey viewport y
+ * @returns {{ clickPoint: Float32Array, clickVector: Float32Array }}
+ */
 export function calculateClickPointAndVector(scene, mousex, mousey) {
   const { camera, viewport, perspective } = scene
   const camLookAt = vec3.fromValues(camera.lookat.x, camera.lookat.y, camera.lookat.z)
@@ -105,7 +138,13 @@ export function calculateClickPointAndVector(scene, mousex, mousey) {
   }
 }
 
-// Solid entity polygons hit by a ray, nearest first: [{ entity, polygonIndex, intersectionPoint, distance }]
+/**
+ * Solid entity polygons hit by a ray, nearest first.
+ * @param {Scene} scene
+ * @param {Vec3Like} clickPoint
+ * @param {Vec3Like} clickVector
+ * @returns {{ entity: Entity, polygonIndex: number, intersectionPoint: Float32Array, distance: number }[]}
+ */
 export function getIntersectedObjects(scene, clickPoint, clickVector) {
   const intersections = []
   for (const entity of scene.renderlist) {

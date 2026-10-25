@@ -1,8 +1,9 @@
 import {
-  CanvasRenderer, DistantLight, EmitterEntity, Entity, OrbitControl, PointLight, Scene,
-  generateRadialGradientBitmap, generateSphere, generateTesselatedPlane, generateUnitCube,
-  loadImages,
+  DistantLight, Entity, OrbitControl, PointLight, Scene, generateRadialGradientBitmap,
+  generateSphere, generateTesselatedPlane, generateUnitCube, loadImages,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
+import { EmitterEntity } from 'phoria2/particles'
 import { animate, fitScene } from './shell.js'
 
 const DENSITY = 3

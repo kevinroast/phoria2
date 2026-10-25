@@ -3,7 +3,8 @@ import { Panel } from './panel.js'
 
 // Host for a single demo: demo.html?name=test0 loads demos/test0.js and calls its default export
 // with { canvas, gui, info }. Each demo owns its scene and animation loop from there.
-const modules = import.meta.glob(['./*.js', '!./main.js', '!./shell.js', '!./registry.js', '!./gallery.js', '!./panel.js'])
+/** @typedef {(ctx: { canvas: HTMLCanvasElement, gui: Panel, info: HTMLElement }) => unknown} DemoRun */
+const modules = /** @type {Record<string, () => Promise<{ default: DemoRun }>>} */ (import.meta.glob(['./*.js', '!./main.js', '!./shell.js', '!./registry.js', '!./gallery.js', '!./panel.js']))
 
 const name = new URLSearchParams(location.search).get('name') ?? DEMOS[0].name
 const demo = DEMOS.find((d) => d.name === name)
@@ -20,7 +21,7 @@ if (!demo || !load) {
 
   // The canvas fills the window. It is sized here, before the demo runs, and resized before any
   // demo resize handler (see fitScene) runs as listeners fire in registration order.
-  const canvas = document.getElementById('canvas')
+  const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('canvas'))
   const resize = () => {
     canvas.width = window.innerWidth
     canvas.height = window.innerHeight

@@ -1,7 +1,8 @@
 import {
-  CanvasRenderer, Entity, OrbitControl, PointLight, RADIANS, Scene, generatePyramid,
-  generateTesselatedPlane, mat4, quat, vec3,
+  Entity, OrbitControl, PointLight, RADIANS, Scene, generatePyramid, generateTesselatedPlane, mat4,
+  quat, vec3,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { animate, fitScene } from './shell.js'
 
 // Rotate an object about the WORLD or its LOCAL X/Y/Z axes using quaternions, lit by a movable

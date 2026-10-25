@@ -1,7 +1,8 @@
 import {
-  CanvasRenderer, Entity, OrbitControl, PointLight, RADIANS, Scene, generateIcosahedron,
-  generateTesselatedPlane, generateUnitCube, loadImage, subdivide,
+  Entity, OrbitControl, PointLight, RADIANS, Scene, generateIcosahedron, generateTesselatedPlane,
+  generateUnitCube, loadImage, subdivide,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { animate, fitScene } from './shell.js'
 
 // Transparent polygons, plain and textured: a see-through textured cube with a transparent child

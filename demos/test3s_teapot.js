@@ -1,6 +1,5 @@
-import {
-  DistantLight, Entity, OrbitControl, PointLight, RADIANS, Scene, SoftwareRenderer,
-} from 'phoria2'
+import { DistantLight, Entity, OrbitControl, PointLight, RADIANS, Scene } from 'phoria2'
+import { SoftwareRenderer } from 'phoria2/canvas'
 import { teapot as teapotModel } from './data/test3s_teapot-data.js'
 import { animate, fitScene } from './shell.js'
 
@@ -19,7 +18,6 @@ export default function run({ canvas, gui }) {
       drawmode: 'solid',
       shademode: 'lightsource',
       fillmode: 'inflate',
-      hiddenangle: -Math.PI,
     },
   })
   teapot.scaleN(2)

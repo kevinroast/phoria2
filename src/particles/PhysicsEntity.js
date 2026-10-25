@@ -1,17 +1,26 @@
 import { vec3FromXYZ } from '../math.js'
-import { Entity } from './Entity.js'
-import { Positional } from './Positional.js'
+import { Entity } from '../entity/Entity.js'
+import { Positional } from '../entity/Positional.js'
 
-// Very basic physics: a velocity changed by impulse and constant forces and optionally gravity,
-// applied to the entity matrix each frame.
+/** @import { EntityDescription, XYZ } from '../types.js' */
+
+/**
+ * Very basic physics: a velocity changed by impulse and constant forces and optionally gravity,
+ * applied to the entity matrix each frame.
+ */
 export class PhysicsEntity extends Positional(Entity) {
+  /** @type {XYZ} */
   static GRAVITY = { x: 0, y: -9.8, z: 0 }
 
-  // {x,y,z} current velocity
+  /** @type {XYZ} */
   velocity = { x: 0, y: 0, z: 0 }
-  // true to apply PhysicsEntity.GRAVITY each frame
+  /** True to apply PhysicsEntity.GRAVITY each frame. */
   gravity = true
+  /** Expiry time (as Date.now()) for emitted particles, 0 for none. */
+  _gravetime = 0
+  /** @type {XYZ | null} */
   _force = { x: 0, y: 0, z: 0 }
+  /** @type {XYZ | null} */
   _acceleration = null
 
   constructor() {
@@ -20,8 +29,13 @@ export class PhysicsEntity extends Positional(Entity) {
     this.onScene(this.transformToScene)
   }
 
-  // Entity options plus { velocity, position, force, gravity }. Position is informational
-  // (for scene callbacks etc.) not render data.
+  /**
+   * Entity options plus velocity, position, force and gravity. Position is informational (for scene
+   * callbacks etc.), not render data.
+   * @param {EntityDescription & { velocity?: XYZ, position?: XYZ, force?: XYZ, gravity?: boolean }} desc
+   * @param {PhysicsEntity} [e]
+   * @returns {PhysicsEntity}
+   */
   static create(desc, e = new this()) {
     super.create(desc, e)
     if (desc.velocity) e.velocity = desc.velocity
@@ -31,12 +45,12 @@ export class PhysicsEntity extends Positional(Entity) {
     return e
   }
 
-  // One-off force {x,y,z}, applied on the next frame only.
+  /** A one-off force, applied on the next frame only. @param {XYZ} f */
   impulse(f) {
     this._acceleration = f
   }
 
-  // Constant force {x,y,z}, applied every frame.
+  /** A constant force, applied every frame. @param {XYZ} f */
   force(f) {
     this._force = f
   }
@@ -46,6 +60,7 @@ export class PhysicsEntity extends Positional(Entity) {
     const time = 1 / 60
     const tt = time * time
     const v = this.velocity
+    /** @param {XYZ} f */
     const addForce = (f) => {
       v.x += f.x * tt
       v.y += f.y * tt
@@ -60,6 +75,7 @@ export class PhysicsEntity extends Positional(Entity) {
     this.translate(vec3FromXYZ(v))
   }
 
+  /** @param {unknown} scene @param {Float32Array} matLocal */
   transformToScene(scene, matLocal) {
     this.updatePosition(matLocal)
   }

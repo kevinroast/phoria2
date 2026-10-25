@@ -1,6 +1,8 @@
 import {
-  CanvasRenderer, DistantLight, EmitterEntity, Entity, Scene, generateRadialGradientBitmap, generateTesselatedPlane,
+  DistantLight, Entity, Scene, generateRadialGradientBitmap, generateTesselatedPlane,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
+import { EmitterEntity } from 'phoria2/particles'
 import { animate, fitScene } from './shell.js'
 
 // Scene triggers chaining a sequence of actions - a comet flies past, climbs, then explodes.

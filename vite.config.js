@@ -3,13 +3,25 @@ import { defineConfig } from 'vite'
 
 const root = import.meta.dirname
 
-// Default build is the library (dist/phoria2.js). `--mode demos` builds the demo
-// gallery as a static site instead. In dev, demos import 'phoria2' straight from src/.
+// The package entry points: 'phoria2' and its sub-paths. The library build emits one ES module per
+// entry (dist/phoria2.js, dist/canvas.js, dist/particles.js) sharing chunks between them.
+const ENTRIES = {
+  phoria2: 'src/index.js',
+  canvas: 'src/canvas/index.js',
+  particles: 'src/particles/index.js',
+}
+
+// Default build is the library. `--mode demos` builds the demo gallery as a static site instead.
+// In dev, demos import 'phoria2' and its sub-paths straight from src/.
 export default defineConfig(({ mode }) => ({
   // relative base so the demo site works from any folder on a static host
   base: mode === 'demos' ? './' : '/',
   resolve: {
-    alias: { phoria2: resolve(root, 'src/index.js') },
+    alias: [
+      { find: /^phoria2$/, replacement: resolve(root, ENTRIES.phoria2) },
+      { find: /^phoria2\/canvas$/, replacement: resolve(root, ENTRIES.canvas) },
+      { find: /^phoria2\/particles$/, replacement: resolve(root, ENTRIES.particles) },
+    ],
   },
   build: mode === 'demos'
     ? {
@@ -23,13 +35,19 @@ export default defineConfig(({ mode }) => ({
       }
     : {
         lib: {
-          entry: resolve(root, 'src/index.js'),
+          entry: Object.fromEntries(Object.entries(ENTRIES).map(([name, file]) => [name, resolve(root, file)])),
           formats: ['es'],
-          fileName: 'phoria2',
+          fileName: (format, name) => `${name}.js`,
         },
         sourcemap: true,
         copyPublicDir: false,
-        rollupOptions: { external: ['gl-matrix'] },
+        rollupOptions: {
+          output: {
+            // everything the sub-paths share with the core goes in one predictable chunk
+            manualChunks: (id) => (/[\\/]src[\\/](?!canvas|particles)/.test(id) ? 'core' : undefined),
+            chunkFileNames: '[name].js',
+          },
+        },
       },
   test: {
     include: ['test/**/*.test.js'],

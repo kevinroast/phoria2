@@ -1,7 +1,8 @@
 import {
-  CanvasRenderer, DistantLight, EmitterEntity, Entity, OrbitControl, Scene,
-  generateRadialGradientBitmap, generateTesselatedPlane,
+  DistantLight, Entity, OrbitControl, Scene, generateRadialGradientBitmap, generateTesselatedPlane,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
+import { EmitterEntity } from 'phoria2/particles'
 import { animate, fitScene } from './shell.js'
 
 // Sprite particles drawn with additive blending - a flame effect.

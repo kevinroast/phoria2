@@ -1,7 +1,9 @@
 import {
-  CanvasRenderer, DistantLight, EmitterEntity, Entity, OrbitControl, PointLight, RADIANS, Scene,
-  clone, generateTesselatedPlane, mat4, vec4,
+  DistantLight, Entity, OrbitControl, PointLight, RADIANS, Scene, clone, generateTesselatedPlane,
+  mat4, vec4,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
+import { EmitterEntity } from 'phoria2/particles'
 import { animate, fitScene } from './shell.js'
 
 // Particles that are point lights - each one lights the floor as it falls.

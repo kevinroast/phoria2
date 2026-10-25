@@ -1,4 +1,5 @@
-import { CanvasRenderer, Entity, OrbitControl, PointLight, RADIANS, Scene } from 'phoria2'
+import { Entity, OrbitControl, PointLight, RADIANS, Scene } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { animate, fitScene } from './shell.js'
 
 // The Elite Cobra Mk III, lit by a point light - set its yaw, pitch and roll from the controls.

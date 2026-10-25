@@ -1,37 +1,54 @@
 import { combine } from '../util.js'
-import { BaseEntity } from './BaseEntity.js'
-import { Entity } from './Entity.js'
+import { BaseEntity } from '../entity/BaseEntity.js'
+import { Entity } from '../entity/Entity.js'
+import { Positional } from '../entity/Positional.js'
 import { PhysicsEntity } from './PhysicsEntity.js'
-import { Positional } from './Positional.js'
 
+/** @import { BaseEntityDescription, Style, XYZ } from '../types.js' */
+
+/**
+ * Called as each particle is created, before it joins the emitter. `this` is the emitter.
+ * @typedef {(this: EmitterEntity, particle: PhysicsEntity) => void} ParticleHandler
+ */
+
+/**
+ * @typedef {BaseEntityDescription & {
+ *   position?: XYZ, positionRnd?: XYZ, velocity?: XYZ, velocityRnd?: XYZ,
+ *   rate?: number, maximum?: number, lifetime?: number, lifetimeRnd?: number,
+ *   gravity?: boolean, style?: Style, onParticle?: ParticleHandler | ParticleHandler[],
+ * }} EmitterDescription
+ */
+
+/** @param {XYZ} base @param {XYZ} rnd @returns {XYZ} */
 const jitter = (base, rnd) => ({
   x: base.x + Math.random() * rnd.x - rnd.x * 0.5,
   y: base.y + Math.random() * rnd.y - rnd.y * 0.5,
   z: base.z + Math.random() * rnd.z - rnd.z * 0.5,
 })
 
-// Emits particle PhysicsEntity children at a given rate, with randomised start position, velocity
-// and lifetime. The emitter itself is not rendered; its style and textures are shared by all its
-// particles. onParticle handlers can decorate each particle as it is created.
-//
-// Description options (defaults):
-//   position {0,0,0}, positionRnd {0,0,0}   particle start position and its randomness
-//   velocity {0,1,0}, velocityRnd {0,0,0}   particle start velocity and its randomness
-//   rate 0                                  particles per second
-//   maximum 1000                            particle limit, zero for unlimited
-//   lifetime 0, lifetimeRnd 0               particle lifetime in ms, zero for unlimited
-//   gravity true                            apply gravity to particles
-//   style                                   particle rendering style (see Entity)
-//   onParticle function(particle) this = emitter
+/**
+ * Emits particle PhysicsEntity children at a given rate, with randomised start position, velocity
+ * and lifetime. The emitter itself is not rendered; its style and textures are shared by all its
+ * particles. onParticle handlers can decorate each particle as it is created.
+ */
 export class EmitterEntity extends Positional(BaseEntity) {
+  /** Randomness applied to the particle start position. @type {XYZ} */
   positionRnd = { x: 0, y: 0, z: 0 }
+  /** Particle start velocity. @type {XYZ} */
   velocity = { x: 0, y: 1, z: 0 }
+  /** Randomness applied to the start velocity. @type {XYZ} */
   velocityRnd = { x: 0, y: 0, z: 0 }
+  /** Particles per second. */
   rate = 0
+  /** Particle limit, zero for unlimited. */
   maximum = 1000
+  /** Particle lifetime in ms, zero for unlimited. */
   lifetime = 0
+  /** Randomness applied to the lifetime, in ms. */
   lifetimeRnd = 0
+  /** Apply gravity to particles. */
   gravity = true
+  /** Shared by every particle. @type {Style} */
   style = Entity.createStyle({
     drawmode: 'point',
     shademode: 'plain',
@@ -39,7 +56,9 @@ export class EmitterEntity extends Positional(BaseEntity) {
     linewidth: 5,
     linescale: 2,
   })
+  /** Shared by every particle. @type {CanvasImageSource[]} */
   textures = []
+  /** @type {ParticleHandler[]} */
   onParticleHandlers = []
   _lastEmitTime = Date.now()
 
@@ -48,6 +67,7 @@ export class EmitterEntity extends Positional(BaseEntity) {
     this.onScene(this.emitParticles)
   }
 
+  /** @param {EmitterDescription} desc @param {EmitterEntity} [e] @returns {EmitterEntity} */
   static create(desc, e = new this()) {
     super.create(desc, e)
     if (desc.position) e.position = desc.position
@@ -64,17 +84,19 @@ export class EmitterEntity extends Positional(BaseEntity) {
     return e
   }
 
+  /** @param {ParticleHandler | ParticleHandler[]} fn @returns {this} */
   onParticle(fn) {
     this.onParticleHandlers = this.onParticleHandlers.concat(fn)
     return this
   }
 
+  /** @param {unknown} scene @param {Float32Array} matLocal */
   emitParticles(scene, matLocal) {
     this.updatePosition(matLocal)
 
     // expire particles past their lifetime - assumes every direct child is a particle
     const now = Date.now()
-    const { children } = this
+    const children = /** @type {PhysicsEntity[]} */ (this.children)
     for (let i = children.length - 1; i >= 0; i--) {
       if (children[i]._gravetime && now > children[i]._gravetime) children.splice(i, 1)
     }

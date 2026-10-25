@@ -1,7 +1,8 @@
 import {
-  CanvasRenderer, DistantLight, Entity, OrbitControl, RADIANS, Scene, generateTesselatedPlane,
-  generateUnitCube, loadImages,
+  DistantLight, Entity, OrbitControl, RADIANS, Scene, generateTesselatedPlane, generateUnitCube,
+  loadImages,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { animate, fitScene } from './shell.js'
 
 // A cube with a different texture on each face. Space reverses the texture order.

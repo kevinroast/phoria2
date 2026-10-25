@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { vec4 } from 'gl-matrix'
+import { vec4 } from '../src/math.js'
 import { clone, combine, merge, sortEdges, sortPoints, sortPolygons } from '../src/util.js'
 
 describe('merge', () => {

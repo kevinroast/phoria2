@@ -1,5 +1,4 @@
-import { vec3 } from 'gl-matrix'
-import { TWOPI } from '../math.js'
+import { TWOPI, vec3 } from '../math.js'
 import { averagePolyVertex } from '../util.js'
 import { Renderer } from './Renderer.js'
 
@@ -281,7 +280,15 @@ export class CanvasRenderer extends Renderer {
   // Clip to the screen triangle then draw the whole image through the affine transform that maps
   // the texture triangle onto it. Transformation code originally by Thatcher Ulrich. Affine only, so
   // no perspective correction: http://tulrich.com/geekstuff/canvas/perspective.html
-  renderTexturedTriangle(ctx, bitmap, vs, [sx0, sy0, sx1, sy1, sx2, sy2], opacity) {
+  /**
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {CanvasImageSource} bitmap
+   * @param {number[][]} vs screen space triangle
+   * @param {number[]} t texture space triangle [sx0, sy0, sx1, sy1, sx2, sy2]
+   * @param {number} opacity
+   */
+  renderTexturedTriangle(ctx, bitmap, vs, t, opacity) {
+    const [sx0, sy0, sx1, sy1, sx2, sy2] = t
     const [x0, y0] = vs[0], [x1, y1] = vs[1], [x2, y2] = vs[2]
     tracePath(ctx, vs)
     ctx.clip()

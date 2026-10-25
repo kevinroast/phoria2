@@ -1,6 +1,6 @@
-import {
-  CanvasRenderer, DistantLight, EmitterEntity, Entity, PointLight, Scene, generateRadialGradientBitmap,
-} from 'phoria2'
+import { DistantLight, Entity, PointLight, Scene, generateRadialGradientBitmap } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
+import { EmitterEntity } from 'phoria2/particles'
 import { animate, fitScene } from './shell.js'
 
 // Cobra Mk III

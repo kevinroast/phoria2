@@ -1,6 +1,7 @@
 import {
-  CanvasRenderer, DistantLight, Entity, OrbitControl, RADIANS, Scene, generateTesselatedPlane,
+  DistantLight, Entity, OrbitControl, RADIANS, Scene, generateTesselatedPlane,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { head as headModel } from './data/test2-data.js'
 import { animate, fitScene } from './shell.js'
 

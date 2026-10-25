@@ -1,7 +1,7 @@
 import {
-  CanvasRenderer, DistantLight, Entity, OrbitControl, RADIANS, Scene, generateTesselatedPlane,
-  generateUnitCube,
+  DistantLight, Entity, OrbitControl, RADIANS, Scene, generateTesselatedPlane, generateUnitCube,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { animate, fitScene } from './shell.js'
 
 // A lit cube spinning on a wireframe grid - the minimal phoria scene.

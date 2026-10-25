@@ -1,7 +1,8 @@
 import {
-  CanvasRenderer, DistantLight, Entity, OrbitControl, PointLight, RADIANS, Scene, generateSphere,
+  DistantLight, Entity, OrbitControl, PointLight, RADIANS, Scene, generateSphere,
   generateTesselatedPlane,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { animate, fitScene } from './shell.js'
 
 // A sphere drawn as lightsourced points, with depth scaled point size.

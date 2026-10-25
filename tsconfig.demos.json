@@ -1,0 +1,16 @@
+{
+  // Type-checks the demos against the library's JSDoc types - the demos are real consumers of the
+  // API, so this catches both demo mistakes and gaps in the types.
+  "extends": "./tsconfig.json",
+  "include": ["demos"],
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["vite/client"],
+    "paths": {
+      "phoria2": ["./src/index.js"],
+      "phoria2/canvas": ["./src/canvas/index.js"],
+      "phoria2/particles": ["./src/particles/index.js"]
+    }
+  }
+}

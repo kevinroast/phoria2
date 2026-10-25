@@ -1,6 +1,7 @@
 import {
-  CanvasRenderer, DistantLight, Entity, RADIANS, Scene, addMouseEvents, generateTesselatedPlane, generateUnitCube,
+  DistantLight, Entity, RADIANS, Scene, addMouseEvents, generateTesselatedPlane, generateUnitCube,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { animate, fitScene } from './shell.js'
 
 // Incremental rotation of a cube about its local axes, eased towards the GUI angles or a mouse drag.

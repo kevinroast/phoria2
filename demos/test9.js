@@ -1,7 +1,9 @@
 import {
-  CanvasRenderer, EmitterEntity, Entity, OrbitControl, PhysicsEntity, RADIANS, Scene, TWOPI,
-  generateRadialGradientBitmap, generateTesselatedPlane, mat4, vec4,
+  Entity, OrbitControl, RADIANS, Scene, TWOPI, generateRadialGradientBitmap,
+  generateTesselatedPlane, mat4, vec4,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
+import { EmitterEntity, PhysicsEntity } from 'phoria2/particles'
 import { animate, fitScene } from './shell.js'
 
 const Rnd = (s) => Math.random() * s
@@ -125,10 +127,12 @@ export default function run({ canvas }) {
       emitter.textures.push(bitmaps[0])
 
       const emitterHandle = new PhysicsEntity()
-      emitterHandle.explodeY = 7 + Rnd(3)
+      // per-firework state lives in the closure rather than as ad-hoc properties on the entity
+      const explodeY = 7 + Rnd(3)
+      let exploded = 0
       emitterHandle.onScene(function () {
-        if (!this.exploded && this.explodeY < this.worldposition[1]) {
-          this.exploded = Date.now()
+        if (!exploded && explodeY < this.worldposition[1]) {
+          exploded = Date.now()
           emitter.velocity = { x: 0, y: -0.2, z: 0 }
           emitter.velocityRnd = { x: 0.4 + Rnd(0.2), y: 0.4 + Rnd(0.2), z: 0.4 + Rnd(0.2) }
           emitter.gravity = false
@@ -139,7 +143,7 @@ export default function run({ canvas }) {
           emitter.style.shademode = 'callback'
           emitter.textures[0] = bitmaps[~~Rnd(bitmaps.length - 1) + 1]
         }
-        if (Date.now() - this.exploded > 200) {
+        if (exploded && Date.now() - exploded > 200) {
           emitter.rate = 0
           // remove once the last particle has gone
           if (emitter.children.length === 0) {

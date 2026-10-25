@@ -1,7 +1,8 @@
 import {
-  CanvasRenderer, DistantLight, Entity, OrbitControl, PointLight, RADIANS, Scene, generateSphere,
+  DistantLight, Entity, OrbitControl, PointLight, RADIANS, Scene, generateSphere,
   generateTesselatedPlane,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { animate, fitScene } from './shell.js'
 
 // A sphere with specular point lighting - the light can be moved and recoloured from the controls.
@@ -19,7 +20,7 @@ export default function run({ canvas, gui }) {
       drawmode: 'wireframe',
       shademode: 'plain',
       linewidth: 0.5,
-      objectsortmode: 'unsorted',
+      objectsortmode: 'back',
     },
   }))
 

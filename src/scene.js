@@ -1,20 +1,32 @@
-import { mat3, mat4, vec3, vec4 } from 'gl-matrix'
-import { EPSILON, RADIANS } from './math.js'
+import { EPSILON, RADIANS, mat3, mat4, vec3, vec4 } from './math.js'
 import { merge, sortEdges, sortPoints, sortPolygons } from './util.js'
 import { Entity } from './entity/Entity.js'
 import { BaseLight } from './entity/lights.js'
+
+/** @import { BaseEntity } from './entity/BaseEntity.js' */
+/** @import { Trigger, XYZ } from './types.js' */
+
+/**
+ * Adjusts the camera vectors before the lookAt matrix is built, e.g. to orbit the camera.
+ * `this` is the scene.
+ * @typedef {(this: Scene, position: Float32Array, lookat: Float32Array, up: Float32Array) => void} CameraHandler
+ */
 
 // The scene: camera, perspective and viewport settings plus the graph of entities to process.
 // Call modelView() once per frame to run the transformation pipeline, then hand the scene to a
 // renderer: renderer.render(scene).
 export class Scene {
+  /** @type {{ up: XYZ, lookat: XYZ, position: XYZ }} */
   camera = {
     up: { x: 0.0, y: 1.0, z: 0.0 },
     lookat: { x: 0.0, y: 0.0, z: 0.0 },
     position: { x: 0.0, y: 0.0, z: -10.0 },
   }
 
-  // near/far are distances from the camera view plane and always positive
+  /**
+   * Vertical field of view in degrees; near/far are distances from the camera and always positive.
+   * @type {{ fov: number, aspect: number, near: number, far: number }}
+   */
   perspective = {
     // vertical field of view in degrees
     fov: 35.0,
@@ -23,31 +35,46 @@ export class Scene {
     far: 10000.0,
   }
 
-  // typically the size of the canvas
+  /** Typically the size of the canvas. @type {{ x: number, y: number, width: number, height: number }} */
   viewport = { x: 0, y: 0, width: 1024, height: 1024 }
 
-  // root entities - manipulate directly e.g. push/splice
+  /** Root entities - manipulate directly, e.g. push/splice. @type {BaseEntity[]} */
   graph = []
 
-  // [{ trigger: function(cameraPosition, lookat, up) this = scene }] run once per frame after
-  // the scene is processed. A trigger returns true when finished, removing it from the list; it can
-  // also add new triggers to chain a sequence of actions.
+  /**
+   * Run once per frame after the scene is processed. A trigger returns true when finished, removing
+   * it from the list; it can also add new triggers to chain a sequence of actions.
+   * @type {Trigger[]}
+   */
   triggerHandlers = []
 
-  // function(cameraPosition, lookat, up) this = scene - adjust the camera vectors before the
-  // lookAt matrix is built, e.g. to orbit the camera
+  /** @type {CameraHandler[]} */
   onCameraHandlers = []
 
-  // read only, set by modelView(): flattened list of entities to render, and the lights found
+  /** Read only, set by modelView(): the flattened list of entities to render. @type {Entity[]} */
   renderlist = []
+  /** Read only, set by modelView(): the lights found in the graph. @type {BaseLight[]} */
   lights = []
 
+  /** @type {Record<string, BaseEntity>} */
   _entities = {}
   _lastTime = 0
+  /** @type {Float32Array | null} */
   _cameraPosition = null
   _perspectiveScale = 0.0
 
-  // Object literal description: { camera, perspective, viewport, graph, onCamera }
+  /**
+   * Create a scene from an object literal description. Camera, perspective and viewport are
+   * merged over the defaults.
+   * @param {{
+   *   camera?: Partial<Scene['camera']>,
+   *   perspective?: Partial<Scene['perspective']>,
+   *   viewport?: Partial<Scene['viewport']>,
+   *   graph?: BaseEntity[],
+   *   onCamera?: CameraHandler | CameraHandler[],
+   * }} desc
+   * @returns {Scene}
+   */
   static create(desc) {
     const s = new Scene()
     if (desc.camera) s.camera = merge(s.camera, desc.camera)
@@ -58,22 +85,29 @@ export class Scene {
     return s
   }
 
-  // Entity by id, as of the last modelView() - for trigger handlers that don't want to walk the graph.
+  /**
+   * Entity by id, as of the last modelView() - for trigger handlers that don't want to walk the graph.
+   * @param {string} id
+   * @returns {BaseEntity | undefined}
+   */
   findEntity(id) {
     return this._entities[id]
   }
 
+  /** @param {CameraHandler | CameraHandler[]} fn @returns {this} */
   onCamera(fn) {
     this.onCameraHandlers = this.onCameraHandlers.concat(fn)
     return this
   }
 
-  // The transformation pipeline:
-  //  . camera and perspective matrices from the scene description
-  //  . local transforms combined with parent transforms down the graph
-  //  . world -> camera -> clip space, flagging vertices outside the frustum
-  //  . perspective divide to NDC, then to viewport
-  //  . Z-sort points/edges/polygons and transform polygon normals for lighting
+  /**
+   * Run the transformation pipeline for one frame, then pass the scene to a renderer:
+   *  - camera and perspective matrices from the scene description
+   *  - local transforms combined with parent transforms down the graph
+   *  - world -> camera -> clip space, flagging vertices outside the frustum
+   *  - perspective divide to NDC, then to viewport
+   *  - Z-sort points/edges/polygons and transform polygon normals for lighting
+   */
   modelView() {
     // seconds since the last frame
     const now = Date.now()
@@ -140,7 +174,12 @@ export class Scene {
     }
   }
 
-  // Transform one entity's vertices; returns false if it is entirely clipped.
+  /**
+   * Transform one entity's vertices; returns false if it is entirely clipped.
+   * @param {Entity} obj
+   * @param {Float32Array} matLocal
+   * @param {{ camera: Float32Array, perspective: Float32Array, matNormals: Float32Array, vpx: number, vpy: number, vpw: number, vph: number }} frame
+   */
   #processEntity(obj, matLocal, { camera, perspective, matNormals, vpx, vpy, vpw, vph }) {
     const { style } = obj
     const len = obj.points.length

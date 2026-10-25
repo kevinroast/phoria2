@@ -1,48 +1,45 @@
-import { vec4 } from 'gl-matrix'
+import { vec4 } from '../math.js'
 import { calcNormalVector, combine } from '../util.js'
 import { BaseEntity } from './BaseEntity.js'
 
-// The main renderable 3D object: vertices, edges, polygons and textures plus a style object that
-// selects how the renderer draws it.
-//
-// Style options:
-//   color: [128,128,128]          RGB colour of the surface, 0-255
-//   specular: 0                   specular power if non-zero - e.g. 16 or 64
-//   diffuse: 1.0                  material diffusion, generally 0-1
-//   emit: 0.0                     material emission (glow) 0-1
-//   opacity: 1.0                  0-1
-//   drawmode: 'solid'             'point' | 'wireframe' | 'solid'
-//   shademode: 'lightsource'      'plain' | 'lightsource' | 'sprite' | 'callback' (last two for points)
-//   fillmode: 'inflate'           'fill' | 'filltwice' | 'inflate' | 'fillstroke' | 'hiddenline'
-//   objectsortmode: 'sorted'      coarse object sort - 'sorted' | 'front' | 'back'
-//   geometrysortmode: 'automatic' point/edge/polygon sort - 'sorted' | 'automatic' | 'none'
-//   linewidth: 1.0                wireframe line or point size
-//   linescale: 0.0                depth based line scaling factor, zero for none
-//   doublesided: false            true to skip the hidden surface test
-//   texture: undefined            default texture index for polygons that don't specify one
-//   sprite: undefined             texture index for shademode 'sprite'
-//   compositeOperation: undefined canvas globalCompositeOperation for the entity
+/** @import { Edge, EntityDescription, Polygon, RenderHandler, Style, XYZ } from '../types.js' */
+
+/**
+ * The main renderable 3D object: vertices, edges, polygons and textures, plus a style object that
+ * selects how the renderer draws it (see the Style type for every option and its default).
+ */
 export class Entity extends BaseEntity {
-  // [{x,y,z}] vertices
+  /** @type {XYZ[]} */
   points = []
-  // [{a,b}] wireframe edges as pairs of vertex indices
+  /** Wireframe edges as pairs of vertex indices. @type {Edge[]} */
   edges = []
-  // [{vertices:[...], color?, texture?, uvs?, emit?, opacity?}] - minimum 3 vertices per polygon
+  /** @type {Polygon[]} */
   polygons = []
-  // texture images available to polygons by index
+  /** Images available to polygons and sprites by index. @type {CanvasImageSource[]} */
   textures = []
+  /** @type {Style} */
   style = Entity.createStyle()
-  // function(ctx, x, y, w) this = entity - called for points when shademode is 'callback'
+  /** Called for each point when shademode is 'callback'. @type {RenderHandler[]} */
   onRenderHandlers = []
 
   // per-frame pipeline buffers, sized in initCoordinateBuffers()
+  /** @type {Float32Array[] | null} */
   _worldcoords = null
+  /** @type {Float32Array[] | null} */
   _cameracoords = null
+  /** @type {Float32Array[] | null} screen x, y, clip z, w */
   _coords = null
+  /** @type {Uint32Array | null} 1 where a vertex is outside the view frustum */
   _clip = null
   _averagez = 0
 
-  // Object literal description: BaseEntity options plus { points, edges, polygons, style, onRender }
+  /**
+   * Create an entity from an object literal description. Geometry from the generate* functions
+   * can be spread straight in: Entity.create({ ...generateUnitCube(), style: { color } })
+   * @param {EntityDescription} desc
+   * @param {Entity} [e] instance to apply the description to - subclasses pass their own
+   * @returns {Entity}
+   */
   static create(desc, e = new this()) {
     super.create(desc, e)
     if (desc.points) e.points = desc.points
@@ -55,8 +52,13 @@ export class Entity extends BaseEntity {
     return e
   }
 
-  // A complete default style, optionally combined with overrides.
+  /**
+   * A complete default style, optionally combined with overrides.
+   * @param {Style} [s]
+   * @returns {Style}
+   */
   static createStyle(s) {
+    /** @type {Style} */
     const style = {
       color: [128, 128, 128],
       diffuse: 1.0,
@@ -74,12 +76,13 @@ export class Entity extends BaseEntity {
     return s ? combine(style, s) : style
   }
 
+  /** @param {RenderHandler | RenderHandler[]} fn @returns {this} */
   onRender(fn) {
     this.onRenderHandlers = this.onRenderHandlers.concat(fn)
     return this
   }
 
-  // Face normals from the first three vertices of each polygon, stored as polygon.normal.
+  /** Face normals from the first three vertices of each polygon, stored as polygon.normal. */
   generatePolygonNormals() {
     const { points, polygons } = this
     for (const poly of polygons) {
@@ -91,7 +94,7 @@ export class Entity extends BaseEntity {
     }
   }
 
-  // (Re)allocate the per-vertex pipeline buffers when the vertex count grows.
+  /** (Re)allocate the per-vertex pipeline buffers when the vertex count grows. */
   initCoordinateBuffers() {
     const len = this.points.length
     const vec4s = () => Array.from({ length: len }, () => vec4.create())
@@ -101,7 +104,10 @@ export class Entity extends BaseEntity {
     if (this._clip === null || this._clip.length < len) this._clip = new Uint32Array(len)
   }
 
-  // Screen space bounding rectangle: { minx, miny, maxx, maxy }
+  /**
+   * Screen space bounding rectangle, as of the last frame.
+   * @returns {{ minx: number, miny: number, maxx: number, maxy: number }}
+   */
   getScreenBounds() {
     let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity
     for (const p of this._coords) {
@@ -113,7 +119,10 @@ export class Entity extends BaseEntity {
     return { minx, miny, maxx, maxy }
   }
 
-  // World space bounding box: { minx, miny, minz, maxx, maxy, maxz }
+  /**
+   * World space bounding box, as of the last frame.
+   * @returns {{ minx: number, miny: number, minz: number, maxx: number, maxy: number, maxz: number }}
+   */
   getWorldBounds() {
     let minx = Infinity, miny = Infinity, minz = Infinity
     let maxx = -Infinity, maxy = -Infinity, maxz = -Infinity
@@ -128,9 +137,14 @@ export class Entity extends BaseEntity {
     return { minx, miny, maxx, maxy, minz, maxz }
   }
 
-  // Attach (or update) debug output for an entity: { showId, showAxis, showPosition }
+  /**
+   * Attach (or update) debug output drawn at an entity: its id, world position and axes.
+   * @param {BaseEntity & { worldposition?: Float32Array }} entity
+   * @param {{ showId?: boolean, showAxis?: boolean, showPosition?: boolean }} config
+   */
   static debug(entity, config) {
     const id = 'Phoria.Debug' + (entity.id ? ' ' + entity.id : '')
+    /** @type {any} - an Entity carrying its debug config */
     let debugEntity = entity.children.find((c) => c.id === id)
 
     if (!debugEntity) {

@@ -1,7 +1,8 @@
 import {
-  CanvasRenderer, DistantLight, Entity, OrbitControl, PointLight, RADIANS, Scene,
-  generateTesselatedPlane, importGeometryWavefront,
+  DistantLight, Entity, OrbitControl, PointLight, RADIANS, Scene, generateTesselatedPlane,
+  importGeometryWavefront,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { animate, fitScene } from './shell.js'
 
 // The Wavefront .obj importer - a teapot loaded from teapot.obj, lit by a movable point light.

@@ -1,5 +1,12 @@
 // Asset loading helpers - all Promise based.
 
+/** @import { Geometry } from './types.js' */
+
+/**
+ * Load and decode an image.
+ * @param {string} url
+ * @returns {Promise<HTMLImageElement>}
+ */
 export async function loadImage(url) {
   const img = new Image()
   img.src = url
@@ -7,15 +14,24 @@ export async function loadImage(url) {
   return img
 }
 
+/** @param {string[]} urls @returns {Promise<HTMLImageElement[]>} */
 export const loadImages = (urls) => Promise.all(urls.map(loadImage))
 
-// Parse Wavefront .obj text into { points, polygons }. Polygons carry `uvs` when the file
-// has texture coordinates. Options:
-//   scale    scaling factor applied while reading vertices (default 1)
-//   scaleTo  rescale so the largest dimension is this size
-//   center   translate so the bounding box is centred on the origin
-//   reorder  reverse polygon vertex order (for files with back-to-front winding)
-export function parseWavefront(text, { scale = 1, scaleTo, center = false, reorder = false } = {}) {
+/**
+ * @typedef {object} WavefrontOptions
+ * @property {number} [scale] scaling factor applied while reading vertices (default 1)
+ * @property {number} [scaleTo] rescale so the largest dimension is this size
+ * @property {boolean} [center] translate so the bounding box is centred on the origin
+ * @property {boolean} [reorder] reverse polygon vertex order, for files with back-to-front winding
+ */
+
+/**
+ * Parse Wavefront .obj text. Polygons carry `uvs` when the file has texture coordinates.
+ * @param {string} text
+ * @param {WavefrontOptions} [options]
+ * @returns {Geometry}
+ */
+export function parseWavefront(text, { scale = 1, scaleTo = 0, center = false, reorder = false } = {}) {
   const points = [], polygons = [], uvs = []
   const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity]
 
@@ -74,15 +90,25 @@ export function parseWavefront(text, { scale = 1, scaleTo, center = false, reord
   return { points, polygons }
 }
 
-// Fetch and parse a Wavefront .obj file - see parseWavefront() for options.
+/**
+ * Fetch and parse a Wavefront .obj file.
+ * @param {WavefrontOptions & { url: string }} options
+ * @returns {Promise<Geometry>}
+ */
 export async function importGeometryWavefront({ url, ...options }) {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Failed to load ${url}: ${res.status} ${res.statusText}`)
   return parseWavefront(await res.text(), options)
 }
 
-// Canvas containing a radial gradient - quick sprite images of blurred spheres for particles,
-// explosions etc. Returned as a canvas, which drawImage() accepts directly.
+/**
+ * A radial gradient sprite - quick images of blurred spheres for particles, explosions etc.
+ * Returned as a canvas, which drawImage() and entity textures accept directly.
+ * @param {number} size radius in pixels; the canvas is twice this across
+ * @param {string} innerColour CSS colour at the centre
+ * @param {string} outerColour CSS colour at the edge
+ * @returns {HTMLCanvasElement}
+ */
 export function generateRadialGradientBitmap(size, innerColour, outerColour) {
   const canvas = document.createElement('canvas')
   const width = size << 1

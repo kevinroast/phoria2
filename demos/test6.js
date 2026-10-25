@@ -1,6 +1,5 @@
-import {
-  CanvasRenderer, Entity, OrbitControl, Scene, generateTesselatedPlane, mat4, vec4,
-} from 'phoria2'
+import { Entity, OrbitControl, Scene, generateTesselatedPlane, mat4, vec4 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { animate, fitScene } from './shell.js'
 
 // some random x/y data to construct our graph object from

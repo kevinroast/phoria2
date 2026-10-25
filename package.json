@@ -1,32 +1,44 @@
 {
   "name": "phoria2",
   "version": "2.0.0-alpha.0",
-  "description": "Simple 3D graphics on a canvas 2D context",
+  "description": "Small, friendly 3D for the web",
   "author": "Kevin Roast",
   "license": "MIT",
   "type": "module",
   "files": [
     "dist"
   ],
-  "module": "./dist/phoria2.js",
+  "sideEffects": false,
+  "types": "./dist/types/index.d.ts",
   "exports": {
-    ".": "./dist/phoria2.js"
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/phoria2.js"
+    },
+    "./canvas": {
+      "types": "./dist/types/canvas/index.d.ts",
+      "import": "./dist/canvas.js"
+    },
+    "./particles": {
+      "types": "./dist/types/particles/index.d.ts",
+      "import": "./dist/particles.js"
+    }
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && tsc -p tsconfig.json",
     "build:demos": "vite build --mode demos",
     "preview": "vite preview --outDir dist-demos",
     "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.demos.json",
     "lint": "eslint ."
-  },
-  "dependencies": {
-    "gl-matrix": "^3.4.4"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.3.0",
+    "gl-matrix": "^3.4.4",
     "globals": "^17.6.0",
+    "typescript": "^7.0.2",
     "vite": "^8.0.12",
     "vitest": "^5.0.5"
   }

@@ -1,5 +1,7 @@
 // Geometry generators. Each returns { points, edges, polygons } ready to hand to Entity.create().
 
+/** @import { Geometry, Polygon, XYZ } from './types.js' */
+
 const CUBE_EDGES = [
   { a: 0, b: 1 }, { a: 1, b: 2 }, { a: 2, b: 3 }, { a: 3, b: 0 },
   { a: 4, b: 5 }, { a: 5, b: 6 }, { a: 6, b: 7 }, { a: 7, b: 4 },
@@ -14,8 +16,15 @@ const boxPoints = (sx, sy, sz) => [
 const copyEdges = (edges) => edges.map(({ a, b }) => ({ a, b }))
 const polys = (...lists) => lists.map((vertices) => ({ vertices }))
 
-// Subdivided plane in the x-z plane, centred on the origin, `scale` units across.
-// `level` is reserved for future triangle subdivision and currently ignored.
+/**
+ * Subdivided plane in the x-z plane, centred on the origin, `scale` units across.
+ * @param {number} vsegs segments along z
+ * @param {number} hsegs segments along x
+ * @param {number} level reserved for future triangle subdivision, currently ignored
+ * @param {number} scale
+ * @param {boolean} [generateUVs]
+ * @returns {Geometry}
+ */
 export function generateTesselatedPlane(vsegs, hsegs, level, scale, generateUVs) {
   const points = [], edges = [], polygons = []
   const hinc = scale / hsegs, vinc = scale / vsegs
@@ -39,7 +48,11 @@ export function generateTesselatedPlane(vsegs, hsegs, level, scale, generateUVs)
   return { points, edges, polygons }
 }
 
-// 2x2x2 cube centred on the origin (the "unit" is the half-extent).
+/**
+ * Cube centred on the origin, 2 units across (the "unit" is the half-extent).
+ * @param {number} [scale] half-extent, default 1
+ * @returns {Geometry}
+ */
 export function generateUnitCube(scale = 1) {
   return {
     points: boxPoints(scale, scale, scale),
@@ -48,7 +61,11 @@ export function generateUnitCube(scale = 1) {
   }
 }
 
-// Square based pyramid 2 units wide and 1.5 units high, base on the x-z plane.
+/**
+ * Square based pyramid 2 units wide and 1.5 units high, base on the x-z plane.
+ * @param {number} [scale]
+ * @returns {Geometry}
+ */
 export function generatePyramid(scale = 1) {
   const s = scale
   return {
@@ -58,7 +75,11 @@ export function generatePyramid(scale = 1) {
   }
 }
 
-// Unit icosahedron - generator from "Tessellation of sphere" by C. Laugerotte.
+/**
+ * Unit icosahedron - generator from "Tessellation of sphere" by C. Laugerotte.
+ * @param {number} [scale]
+ * @returns {Geometry}
+ */
 export function generateIcosahedron(scale = 1) {
   const t = (1 + Math.sqrt(5)) / 2
   const tau = (t / Math.sqrt(1 + t * t)) * scale
@@ -81,9 +102,14 @@ export function generateIcosahedron(scale = 1) {
   }
 }
 
-// One level of normalised triangle subdivision (from the OpenGL guide's "Subdividing to Improve
-// a Polygonal Approximation to a Surface"). Works on triangles and quads; shared vertices are
-// not reused, so the result is larger than it strictly needs to be.
+/**
+ * One level of normalised triangle subdivision (from the OpenGL guide's "Subdividing to Improve a
+ * Polygonal Approximation to a Surface"). Works on triangles and quads; shared vertices are not
+ * reused, so the result is larger than it strictly needs to be.
+ * @param {XYZ[]} points
+ * @param {Polygon[]} polygons
+ * @returns {Geometry}
+ */
 export function subdivide(points, polygons) {
   const vertices = [], out = []
   const normalize = (v) => {
@@ -114,7 +140,13 @@ export function subdivide(points, polygons) {
   return { points: vertices, polygons: out }
 }
 
-// Cylinder along the y axis with `strips` quads around it and n-gon end caps.
+/**
+ * Cylinder along the y axis with `strips` quads around it and n-gon end caps.
+ * @param {number} radius
+ * @param {number} length
+ * @param {number} strips
+ * @returns {Geometry}
+ */
 export function generateCylinder(radius, length, strips) {
   const points = [], polygons = [], edges = []
   const inc = 2 * Math.PI / strips
@@ -135,7 +167,11 @@ export function generateCylinder(radius, length, strips) {
   return { points, edges, polygons }
 }
 
-// Box with independent half-extents along each axis.
+/**
+ * Box with independent half-extents along each axis.
+ * @param {{ scalex?: number, scaley?: number, scalez?: number }} [extents]
+ * @returns {Geometry}
+ */
 export function generateCuboid({ scalex = 1, scaley = 1, scalez = 1 } = {}) {
   return {
     points: boxPoints(scalex, scaley, scalez),
@@ -144,7 +180,14 @@ export function generateCuboid({ scalex = 1, scaley = 1, scalez = 1 } = {}) {
   }
 }
 
-// UV sphere - triangles for the top and bottom rings, quads for the strips between.
+/**
+ * UV sphere - triangles for the top and bottom rings, quads for the strips between.
+ * @param {number} scale radius
+ * @param {number} lats rings from pole to pole
+ * @param {number} longs segments around
+ * @param {boolean} [generateUVs]
+ * @returns {Geometry}
+ */
 export function generateSphere(scale, lats, longs, generateUVs) {
   const points = [], edges = [], polygons = [], uvs = []
 

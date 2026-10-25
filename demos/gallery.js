@@ -1,7 +1,7 @@
 import {
-  CanvasRenderer, Entity, OrbitControl, PointLight, RADIANS, Scene, generateTesselatedPlane,
-  generateUnitCube,
+  Entity, OrbitControl, PointLight, RADIANS, Scene, generateTesselatedPlane, generateUnitCube,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { DEMOS } from './registry.js'
 import { animate, fitScene } from './shell.js'
 
@@ -14,7 +14,7 @@ for (const { name, title } of DEMOS) {
 
 // The front page scene: a spinning cube with a bobbing child cube, lit by three coloured point
 // lights orbiting at different speeds.
-const canvas = document.getElementById('canvas')
+const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('canvas'))
 // match the canvas to its CSS frame - registered before fitScene() so it runs first on resize
 const sizeCanvas = () => {
   canvas.width = canvas.clientWidth

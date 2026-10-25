@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { vec3, vec4 } from 'gl-matrix'
+import { vec3, vec4 } from '../src/math.js'
 import {
   calculatePlanarFromPolar, calculatePolarFromPlanar, intersectionInsidePolygon, planeLineIntersection,
 } from '../src/intersect.js'

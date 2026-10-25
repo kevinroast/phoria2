@@ -1,15 +1,19 @@
-import { vec3 } from 'gl-matrix'
-import { vec3FromXYZ, vec3ToXYZ } from '../math.js'
+import { vec3, vec3FromXYZ, vec3ToXYZ } from '../math.js'
 import { BaseEntity } from './BaseEntity.js'
 import { Positional } from './Positional.js'
 
-// Base for lights. Note light colour components are 0.0-1.0, unlike material colours.
+/** @import { BaseEntityDescription, RGB, XYZ } from '../types.js' */
+/** @typedef {BaseEntityDescription & { color?: RGB, intensity?: number }} LightDescription */
+/** @typedef {'none' | 'linear' | 'squared'} AttenuationFactor */
+
+/** Base for lights. Light colour components are 0-1, unlike material colours. */
 export class BaseLight extends BaseEntity {
-  // [r,g,b] 0-1
+  /** [r, g, b] 0-1 @type {RGB} */
   color = [1.0, 1.0, 1.0]
-  // typically 0-1
+  /** Typically 0-1. */
   intensity = 1.0
 
+  /** @param {LightDescription} desc @param {BaseLight} [e] @returns {BaseLight} */
   static create(desc, e = new this()) {
     super.create(desc, e)
     if (desc.color) e.color = desc.color
@@ -18,11 +22,11 @@ export class BaseLight extends BaseEntity {
   }
 }
 
-// An infinitely distant light with no position, only a direction the light travels in.
+/** An infinitely distant light with no position, only the direction its light travels in. */
 export class DistantLight extends BaseLight {
-  // normalised {x,y,z}
+  /** Normalised direction the light travels in. @type {XYZ} */
   direction = { x: 0, y: 0, z: 1 }
-  // vec3 pointing back towards the light, as used by the lighting calculations
+  /** Points back towards the light, as used by the lighting calculations. @type {Float32Array | null} */
   worlddirection = null
 
   constructor() {
@@ -30,7 +34,7 @@ export class DistantLight extends BaseLight {
     this.onScene(this.transformToScene)
   }
 
-  // { color, intensity, direction } plus BaseEntity options
+  /** @param {LightDescription & { direction?: XYZ }} desc @param {DistantLight} [e] @returns {DistantLight} */
   static create(desc, e = new this()) {
     super.create(desc, e)
     if (desc.direction) {
@@ -45,11 +49,14 @@ export class DistantLight extends BaseLight {
   }
 }
 
-// A light at a position that shines equally in all directions, falling off with distance:
-// attenuationFactor 'none' (constant), 'linear' (distance) or 'squared' (distance squared).
+/**
+ * A light at a position that shines equally in all directions, falling off with distance:
+ * attenuationFactor 'none' (constant), 'linear' (distance) or 'squared' (distance squared).
+ */
 export class PointLight extends Positional(BaseLight) {
   position = { x: 0, y: 0, z: -1 }
   attenuation = 0.1
+  /** @type {AttenuationFactor} */
   attenuationFactor = 'linear'
 
   constructor() {
@@ -57,7 +64,11 @@ export class PointLight extends Positional(BaseLight) {
     this.onScene(this.transformToScene)
   }
 
-  // { position, color, intensity, attenuation, attenuationFactor } plus BaseEntity options
+  /**
+   * @param {LightDescription & { position?: XYZ, attenuation?: number, attenuationFactor?: AttenuationFactor }} desc
+   * @param {PointLight} [e]
+   * @returns {PointLight}
+   */
   static create(desc, e = new this()) {
     super.create(desc, e)
     if (desc.position) e.position = desc.position
@@ -66,6 +77,7 @@ export class PointLight extends Positional(BaseLight) {
     return e
   }
 
+  /** @type {import('../types.js').SceneHandler} */
   transformToScene(scene, matLocal) {
     this.updatePosition(matLocal)
   }

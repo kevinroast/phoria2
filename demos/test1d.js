@@ -1,7 +1,7 @@
 import {
-  CanvasRenderer, Entity, OrbitControl, PointLight, RADIANS, Scene, generateTesselatedPlane,
-  generateUnitCube,
+  Entity, OrbitControl, PointLight, RADIANS, Scene, generateTesselatedPlane, generateUnitCube,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { animate, fitScene } from './shell.js'
 
 // Live debug information - id, position and axes drawn for a cube and its animated child.

@@ -1,7 +1,7 @@
 import {
-  CanvasRenderer, Entity, OrbitControl, PointLight, RADIANS, Scene, generateSphere,
-  generateTesselatedPlane,
+  Entity, OrbitControl, PointLight, RADIANS, Scene, generateSphere, generateTesselatedPlane,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { animate, fitScene } from './shell.js'
 
 // Material test: a 3x3 grid of spheres - diffuse increases bottom to top, specular power left to right.

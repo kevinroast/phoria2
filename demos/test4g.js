@@ -1,7 +1,6 @@
-import {
-  CanvasRenderer, DistantLight, EmitterEntity, Entity, OrbitControl, Scene, clone,
-  generateTesselatedPlane,
-} from 'phoria2'
+import { DistantLight, Entity, OrbitControl, Scene, clone, generateTesselatedPlane } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
+import { EmitterEntity } from 'phoria2/particles'
 import { animate, fitScene } from './shell.js'
 
 // A particle emitter with gravity - particles fountain up and fall, cycling through colours.

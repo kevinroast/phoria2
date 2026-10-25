@@ -1,7 +1,8 @@
 import {
-  CanvasRenderer, EmitterEntity, Entity, OrbitControl, Scene, clone, generateTesselatedPlane,
-  generateUnitCube, loadImage,
+  Entity, OrbitControl, Scene, clone, generateTesselatedPlane, generateUnitCube, loadImage,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
+import { EmitterEntity } from 'phoria2/particles'
 import { animate, fitScene } from './shell.js'
 
 // Blob sprite for the liquid particles - a solid centre fading out at the edge.

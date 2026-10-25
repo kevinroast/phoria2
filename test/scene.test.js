@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { vec3 } from 'gl-matrix'
+import { vec3 } from '../src/math.js'
 import { Scene } from '../src/scene.js'
 import { Entity } from '../src/entity/Entity.js'
-import { EmitterEntity } from '../src/entity/EmitterEntity.js'
-import { PhysicsEntity } from '../src/entity/PhysicsEntity.js'
+import { EmitterEntity } from '../src/particles/EmitterEntity.js'
+import { PhysicsEntity } from '../src/particles/PhysicsEntity.js'
 import { DistantLight, PointLight } from '../src/entity/lights.js'
-import { Renderer } from '../src/renderer/Renderer.js'
+import { Renderer } from '../src/canvas/Renderer.js'
 import { generateUnitCube } from '../src/geometry.js'
 
 function makeScene() {

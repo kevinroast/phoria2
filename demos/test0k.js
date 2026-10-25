@@ -1,7 +1,8 @@
 import {
-  CanvasRenderer, DistantLight, Entity, OrbitControl, RADIANS, Scene, generateTesselatedPlane,
-  generateUnitCube, loadImages, vec3,
+  DistantLight, Entity, OrbitControl, RADIANS, Scene, generateTesselatedPlane, generateUnitCube,
+  loadImages, vec3,
 } from 'phoria2'
+import { CanvasRenderer } from 'phoria2/canvas'
 import { animate, fitScene } from './shell.js'
 
 // Move the camera around the scene - W/S forward and back, A/D strafe, left/right arrows turn,
