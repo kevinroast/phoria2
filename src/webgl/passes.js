@@ -182,7 +182,7 @@ export class Passes {
     gl.generateMipmap(gl.TEXTURE_2D)
 
     const prefiltered = this.#floatTexture(ENV_WIDTH, ENV_WIDTH / 2, ENV_LEVELS)
-    const program = this.programs.get('prefilter', [], PREFILTER)
+    const program = this.programs.ready('prefilter', [], PREFILTER)
     gl.useProgram(program.program)
     program.set('uSource', source)
     program.set('uSourceTexels', image.width * image.height)
@@ -219,7 +219,7 @@ export class Passes {
     const hdr = texture.isHDR
     const env = hdr ? this.environment(texture) : null
     if (hdr && !env) return
-    const program = this.programs.get('background', [], BACKGROUND)
+    const program = this.programs.ready('background', [], BACKGROUND)
     gl.useProgram(program.program)
     const blur = Math.min(Math.max(frame.backgroundBlur, 0), 1)
     if (env) {
@@ -267,13 +267,11 @@ export class Passes {
     gl.disable(gl.CULL_FACE)
     gl.enable(gl.POLYGON_OFFSET_FILL)
     gl.polygonOffset(1.5, 2)
-    const identity = mat4.create()
     for (const item of shadow.casters) {
       const instances = item.instances
-      const program = this.programs.get('depth', instances ? ['INSTANCED'] : [], DEPTH)
+      const program = this.programs.ready('depth', instances ? ['INSTANCED'] : [], DEPTH)
       gl.useProgram(program.program)
-      program.set('uView', identity)
-      program.set('uProjection', shadow.viewProjection)
+      program.set('uViewProjection', shadow.viewProjection)
       program.set('uModel', item.worldMatrix)
       const buffers = this.resources.mesh(item.geometry, instances, true)
       gl.bindVertexArray(buffers.vao)

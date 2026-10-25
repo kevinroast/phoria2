@@ -2,7 +2,6 @@ import * as mat3 from '../math/mat3.js'
 import { collect } from '../frame.js'
 import { checkOneOf, checkOptions, fail, warnOnce } from '../validate.js'
 import { GLContext } from './context.js'
-import { MAX_DIRECTIONAL, MAX_PUNCTUAL } from './shaders.js'
 import { SHADOW_MAP_SIZE } from '../shadow.js'
 
 /** @import { FrameDescription, DrawItem, FrameLight } from '../frame.js' */
@@ -48,7 +47,7 @@ export class WebGLRenderer {
   exposure = 1
   pixelRatio = 1
   /** Counts from the last frame and the GPU caches. */
-  info = { drawCalls: 0, triangles: 0, programs: 0, geometries: 0, textures: 0 }
+  info = { drawCalls: 0, triangles: 0, programs: 0, geometries: 0, textures: 0, compiling: 0 }
   /**
    * Called when something the last frame couldn't draw yet is ready - the code for HDR
    * environments, backgrounds and shadows, which loads the first time a scene has one. The View
@@ -64,6 +63,10 @@ export class WebGLRenderer {
   /** This frame's shadow map, when something casts. @type {{ texture: WebGLTexture, matrix: Float32Array, texel: number, bias: number } | null} */ #shadow = null
   /** @type {Float32Array} */ #normalMatrix = new Float32Array(9)
   /** @type {Record<string, any>} */ #lights = {}
+  /** This frame waits for shaders to compile rather than leaving things out. */
+  #wait = false
+  /** This frame's light counts and environment, compiled into the lit programs. @type {string[]} */ #lightDefines = []
+  #studio = false
 
   /** @param {WebGLRendererOptions} options */
   constructor(options) {
@@ -119,16 +122,25 @@ export class WebGLRenderer {
     return this.renderFrame(collect(scene, camera))
   }
 
-  /** @param {FrameDescription} frame @returns {FrameDescription} */
-  renderFrame(frame) {
+  /**
+   * Draw a frame. Shaders compile in the background where the browser allows, and what is still
+   * compiling is left out (info.compiling counts it; onReady fires when it's done) - unless `wait`
+   * is set, for a frame that must be complete, such as an image export.
+   * @param {FrameDescription} frame
+   * @param {{ wait?: boolean }} [options]
+   * @returns {FrameDescription}
+   */
+  renderFrame(frame, { wait = false } = {}) {
     const gpu = this.#gpu
     if (gpu.lost) return frame
     const gl = gpu.gl
     gpu.frame++
     // what this frame touches counts as this renderer's, for freeing a shared context's copies
     gpu.resources.owner = this
+    this.#wait = wait
     this.info.drawCalls = 0
     this.info.triangles = 0
+    this.info.compiling = 0
     const width = this.canvas.width, height = this.canvas.height
     // a shared context draws into the bottom-left corner of its buffer, then copies that out
     if (gpu.isShared) gpu.fit(width, height)
@@ -180,6 +192,7 @@ export class WebGLRenderer {
     gl.disable(gl.BLEND)
     gl.bindVertexArray(null)
 
+    if (this.info.compiling) gpu.whenCompiled()
     if (this.#copy) {
       // the picture is the buffer's bottom-left corner; as an image, y runs down from the top
       const copy = this.#copy, source = gpu.canvas
@@ -241,10 +254,13 @@ export class WebGLRenderer {
   /** @param {FrameDescription} frame */
   #gatherLights(frame) {
     const ambient = [0, 0, 0], sky = [0, 0, 0], ground = [0, 0, 0]
-    const dirDirection = new Float32Array(MAX_DIRECTIONAL * 3), dirColor = new Float32Array(MAX_DIRECTIONAL * 3)
-    const pos = new Float32Array(MAX_PUNCTUAL * 3), color = new Float32Array(MAX_PUNCTUAL * 3)
-    const range = new Float32Array(MAX_PUNCTUAL), direction = new Float32Array(MAX_PUNCTUAL * 3)
-    const cone = new Float32Array(MAX_PUNCTUAL * 2)
+    // sized to the lights there are: the programs are compiled for exactly that many
+    const directional = frame.lights.filter((l) => l.kind === 'directional').length
+    const punctual = frame.lights.filter((l) => l.kind === 'point' || l.kind === 'spot').length
+    const dirDirection = new Float32Array(directional * 3), dirColor = new Float32Array(directional * 3)
+    const pos = new Float32Array(punctual * 3), color = new Float32Array(punctual * 3)
+    const range = new Float32Array(punctual), direction = new Float32Array(punctual * 3)
+    const cone = new Float32Array(punctual * 2)
     let dirCount = 0, punctualCount = 0
     /** @param {number[] | Float32Array} out @param {number} offset @param {FrameLight} l @param {ArrayLike<number>} [c] */
     const addColor = (out, offset, l, c = l.color) => {
@@ -280,12 +296,13 @@ export class WebGLRenderer {
         }
       }
     }
+    this.#lightDefines = [`NUM_DIRECTIONAL ${dirCount}`, `NUM_PUNCTUAL ${punctualCount}`]
+    this.#studio = frame.environment === 'studio'
     this.#lights = {
       uAmbient: ambient, uHemisphereSky: sky, uHemisphereGround: ground,
-      uDirectionalCount: dirCount, uDirectionalDirection: dirDirection, uDirectionalColor: dirColor,
-      uPunctualCount: punctualCount, uPunctualPosition: pos, uPunctualColor: color, uPunctualRange: range,
+      uDirectionalDirection: dirDirection, uDirectionalColor: dirColor,
+      uPunctualPosition: pos, uPunctualColor: color, uPunctualRange: range,
       uPunctualDirection: direction, uPunctualCone: cone,
-      uEnvironment: frame.environment === 'studio' ? 1 : 0,
     }
   }
 
@@ -298,7 +315,16 @@ export class WebGLRenderer {
     const shadowed = kind === 'mesh' && !!this.#shadow && node.receiveShadow && !material.unlit
 
     const defines = this.#defines(kind, material, geometry.colors !== null, !!instances, shadowed)
-    const program = this.#gpu.programs.get(kind, defines)
+    const programs = this.#gpu.programs
+    const program = programs.get(kind, defines)
+    if (!programs.isReady(program)) {
+      if (!this.#wait) {
+        // still compiling: drawn once it's done, rather than holding up everything else
+        this.info.compiling++
+        return
+      }
+      programs.ready(kind, defines)
+    }
     gl.useProgram(program.program)
 
     // per-frame values, once per program per frame
@@ -306,6 +332,7 @@ export class WebGLRenderer {
       program.frame = this.#gpu.frame
       program.set('uView', frame.camera.view)
       program.set('uProjection', frame.camera.projection)
+      program.set('uViewProjection', frame.camera.viewProjection)
       program.set('uCameraPosition', frame.camera.position)
       program.set('uExposure', this.exposure)
       program.set('uToneMapping', TONE_MAPPING[this.toneMapping])
@@ -424,7 +451,9 @@ export class WebGLRenderer {
       if (!material.unlit) {
         d.push('LIT')
         for (const [slot, define] of Object.entries(MAP_DEFINES)) if (material[slot]) d.push(define)
+        d.push(...this.#lightDefines)
         if (this.#environment) d.push('ENV_MAP')
+        else if (this.#studio) d.push('STUDIO')
         if (shadowed) d.push('SHADOW')
       }
       if (material.map) d.push('MAP')

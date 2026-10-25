@@ -46,6 +46,7 @@ export class Picker {
   /** @type {{ framebuffer: WebGLFramebuffer, color: WebGLTexture, depth: WebGLRenderbuffer } | null} */ #target = null
   #pixels = new Uint32Array(REGION * REGION * 4)
   #projection = new Float32Array(16)
+  #viewProjection = new Float32Array(16)
   #normal = new Float32Array(9)
   /** A buffer the asynchronous read-back lands in. @type {WebGLBuffer | null} */ #pack = null
   #waiting = false
@@ -152,6 +153,7 @@ export class Picker {
     const cx = (x / width) * 2 - 1, cy = 1 - (y / height) * 2
     const zoom = new Float32Array([width / s, 0, 0, 0, 0, height / s, 0, 0, 0, 0, 1, 0, -cx * width / s, -cy * height / s, 0, 1])
     mat4.multiply(this.#projection, zoom, frame.camera.projection)
+    mat4.multiply(this.#viewProjection, this.#projection, frame.camera.view)
 
     items.forEach((item, i) => this.#draw(item, i + 1, frame, height, pixelRatio))
     gl.bindVertexArray(null)
@@ -214,10 +216,11 @@ export class Picker {
       if (material.sizeAttenuation) defines.push('SIZE_ATTENUATION')
       if (!material.map) defines.push('ROUND')
     }
-    const program = this.programs.get(`pick-${kind}`, defines, SOURCES[kind])
+    const program = this.programs.ready(`pick-${kind}`, defines, SOURCES[kind])
     gl.useProgram(program.program)
     program.set('uView', frame.camera.view)
     program.set('uProjection', this.#projection)
+    program.set('uViewProjection', this.#viewProjection)
     program.set('uModel', worldMatrix)
     program.set('uPickId', id)
     program.set('uHighlightIndex', -2)

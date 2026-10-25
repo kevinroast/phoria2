@@ -332,11 +332,20 @@ export class View {
     this.#onFrame?.(dt, this.time)
     this.controls?.update(dt)
     this.scene.update(dt, this.time)
-    return this.render()
+    return this.#render(true)
   }
 
-  /** Draw the current state now, without advancing time. @returns {FrameDescription} */
+  /**
+   * Draw the current state now, without advancing time. Shaders compile in the background on the
+   * first frames, and what is still compiling appears a frame or two later.
+   * @returns {FrameDescription}
+   */
   render() {
+    return this.#render(false)
+  }
+
+  /** @param {boolean} wait wait for shaders, for a complete frame (step, toImage) */
+  #render(wait) {
     if (this.#autoFrame) {
       const bounds = this.scene.bounds
       if (!bounds.isEmpty()) {
@@ -349,7 +358,7 @@ export class View {
     if (this.autoLight && frame.lights.length === 0) this.#addAutoLights(frame)
     frame.highlight = this.#highlightFor(this.#hovered)
     this.#occlude(frame)
-    this.renderer.renderFrame(frame)
+    this.renderer.renderFrame(frame, { wait })
     this.#labelStats = this.#labels.update(frame.labels, frame.overlays)
     // a node with its own tooltip needs the tooltip's code
     if (frame.tooltips && !this.#tooltip) this.#loadTooltip()
@@ -551,8 +560,9 @@ export class View {
    */
   async toImage(options) {
     const { snapshot } = await import('./snapshot.js')
-    // draw and read back in the same task, while the drawing buffer is still there
-    this.render()
+    // draw - complete, shaders and all - and read back in the same task, while the drawing
+    // buffer is still there
+    this.#render(true)
     return snapshot(this.canvas, this.#labels.shown, options ?? {})
   }
 

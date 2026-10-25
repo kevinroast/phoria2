@@ -18,9 +18,6 @@ export const ATTRIBUTES = {
   corner: 4,
 }
 
-export const MAX_DIRECTIONAL = 2
-export const MAX_PUNCTUAL = 4
-
 export const COMMON = /* glsl */ `
 vec3 srgbToLinear(vec3 c) {
   return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
@@ -82,8 +79,7 @@ layout(location = 8) in vec3 instanceColor;
 
 uniform mat4 uModel;
 uniform mat3 uNormalMatrix;
-uniform mat4 uView;
-uniform mat4 uProjection;
+uniform mat4 uViewProjection;
 uniform vec4 uUvTransform; // repeat xy, offset zw
 uniform int uHighlightIndex; // -2 none, -1 the whole node, otherwise the instance
 
@@ -98,28 +94,31 @@ flat out uint vPickElement; // which instance, point or segment, for GPU picking
 
 ${COMMON}
 
+// Matrices times vectors only - a matrix times a matrix per vertex is four times the work, and
+// with 100,000 instances the vertex stage is most of the frame.
 void main() {
-  mat4 model = uModel;
-  mat3 normalMatrix = uNormalMatrix;
   vColor = vec3(1.0);
   vHighlight = uHighlightIndex == -1 ? 1.0 : 0.0;
 #ifdef INSTANCED
-  model = uModel * instanceMatrix;
-  // the cofactor matrix: the inverse transpose up to scale, from three cross products, and
-  // flipped back for mirroring transforms
-  mat3 m = mat3(model);
-  normalMatrix = mat3(cross(m[1], m[2]), cross(m[2], m[0]), cross(m[0], m[1])) * sign(dot(m[0], cross(m[1], m[2])));
+  vec4 local = instanceMatrix * vec4(position, 1.0);
+  // the instance's normal matrix as its cofactor: the inverse transpose up to scale, from three
+  // cross products, flipped back for mirroring transforms
+  mat3 m = mat3(instanceMatrix);
+  vec3 n = mat3(cross(m[1], m[2]), cross(m[2], m[0]), cross(m[0], m[1])) * normal * sign(dot(m[0], cross(m[1], m[2])));
   vColor *= instanceColor;
   if (gl_InstanceID == uHighlightIndex) vHighlight = 1.0;
+#else
+  vec4 local = vec4(position, 1.0);
+  vec3 n = normal;
 #endif
 #ifdef VERTEX_COLORS
   vColor *= srgbToLinear(color);
 #endif
-  vec4 world = model * vec4(position, 1.0);
+  vec4 world = uModel * local;
   vWorldPosition = world.xyz;
-  vNormal = normalMatrix * normal;
+  vNormal = uNormalMatrix * n;
   vUv = uv * uUvTransform.xy + uUvTransform.zw;
-  gl_Position = uProjection * uView * world;
+  gl_Position = uViewProjection * world;
 #ifdef PICK
   vPickElement = uint(gl_InstanceID);
 #endif
@@ -172,7 +171,6 @@ uniform float uAoMapIntensity;
 uniform vec3 uAmbient;
 uniform vec3 uHemisphereSky;
 uniform vec3 uHemisphereGround;
-uniform int uEnvironment;    // 0 none, 1 studio (ENV_MAP: a prefiltered image instead)
 #ifdef ENV_MAP
 uniform sampler2D uEnvMap;   // equirectangular, prefiltered: each mip a step rougher
 uniform float uEnvMaxLod;
@@ -180,16 +178,19 @@ uniform vec3 uEnvSH[9];      // irradiance as spherical harmonics, already divid
 uniform float uEnvIntensity;
 #endif
 
-uniform int uDirectionalCount;
-uniform vec3 uDirectionalDirection[${MAX_DIRECTIONAL}]; // towards the light
-uniform vec3 uDirectionalColor[${MAX_DIRECTIONAL}];
-
-uniform int uPunctualCount;
-uniform vec3 uPunctualPosition[${MAX_PUNCTUAL}];
-uniform vec3 uPunctualColor[${MAX_PUNCTUAL}];
-uniform float uPunctualRange[${MAX_PUNCTUAL}];
-uniform vec3 uPunctualDirection[${MAX_PUNCTUAL}];      // spot: the way the light travels
-uniform vec2 uPunctualCone[${MAX_PUNCTUAL}];           // spot: cos(outer), cos(inner); point: (-2, -1)
+// light counts are compiled in (NUM_DIRECTIONAL, NUM_PUNCTUAL), so a simply lit scene runs only
+// the loops it needs - no slots for lights that aren't there
+#if NUM_DIRECTIONAL > 0
+uniform vec3 uDirectionalDirection[NUM_DIRECTIONAL]; // towards the light
+uniform vec3 uDirectionalColor[NUM_DIRECTIONAL];
+#endif
+#if NUM_PUNCTUAL > 0
+uniform vec3 uPunctualPosition[NUM_PUNCTUAL];
+uniform vec3 uPunctualColor[NUM_PUNCTUAL];
+uniform float uPunctualRange[NUM_PUNCTUAL];
+uniform vec3 uPunctualDirection[NUM_PUNCTUAL];      // spot: the way the light travels
+uniform vec2 uPunctualCone[NUM_PUNCTUAL];           // spot: cos(outer), cos(inner); point: (-2, -1)
+#endif
 
 #ifdef SHADOW
 uniform sampler2DShadow uShadowMap; // the first directional light's depth
@@ -343,8 +344,8 @@ void main() {
   vec3 f0 = mix(vec3(0.04), base.rgb, metalness);
 
   vec3 color = vec3(0.0);
-  for (int i = 0; i < ${MAX_DIRECTIONAL}; i++) {
-    if (i >= uDirectionalCount) break;
+#if NUM_DIRECTIONAL > 0
+  for (int i = 0; i < NUM_DIRECTIONAL; i++) {
     vec3 radiance = uDirectionalColor[i];
 #ifdef SHADOW
     // the shadow-casting light always comes first
@@ -352,8 +353,9 @@ void main() {
 #endif
     color += shade(n, v, uDirectionalDirection[i], radiance, diffuse, f0, a);
   }
-  for (int i = 0; i < ${MAX_PUNCTUAL}; i++) {
-    if (i >= uPunctualCount) break;
+#endif
+#if NUM_PUNCTUAL > 0
+  for (int i = 0; i < NUM_PUNCTUAL; i++) {
     vec3 toLight = uPunctualPosition[i] - vWorldPosition;
     float d = length(toLight);
     vec3 l = toLight / max(d, 1e-4);
@@ -365,6 +367,7 @@ void main() {
     float cone = smoothstep(uPunctualCone[i].x, uPunctualCone[i].y, cosAngle);
     color += shade(n, v, l, uPunctualColor[i] * falloff * cone, diffuse, f0, a);
   }
+#endif
 
   // ambient: flat, hemisphere and environment light
   vec3 irradiance = uAmbient + mix(uHemisphereGround, uHemisphereSky, n.y * 0.5 + 0.5);
@@ -376,15 +379,13 @@ void main() {
   vec3 r = reflect(-v, n);
   // rougher surfaces see a blurrier reflection: a lower mip, convolved for that roughness
   ambientSpecular = textureLod(uEnvMap, equirectUv(r), roughness * uEnvMaxLod).rgb * uEnvIntensity * brdf;
+#elif defined(STUDIO)
+  irradiance += studio(n) * 0.35;
+  vec3 r = reflect(-v, n);
+  // rougher surfaces see a blurrier reflection: lean it towards the surface normal
+  ambientSpecular = mix(studio(r), studio(n), roughness * roughness) * brdf;
 #else
-  if (uEnvironment == 1) {
-    irradiance += studio(n) * 0.35;
-    vec3 r = reflect(-v, n);
-    // rougher surfaces see a blurrier reflection: lean it towards the surface normal
-    ambientSpecular = mix(studio(r), studio(n), roughness * roughness) * brdf;
-  } else {
-    ambientSpecular = irradiance * brdf * 0.5;
-  }
+  ambientSpecular = irradiance * brdf * 0.5;
 #endif
   vec3 indirect = diffuse * irradiance + ambientSpecular;
 #ifdef AO_MAP
@@ -422,7 +423,7 @@ flat out uint vPickElement; // which instance, point or segment, for GPU picking
 ${COMMON}
 
 void main() {
-  vec4 viewPosition = uView * uModel * vec4(position, 1.0);
+  vec4 viewPosition = uView * (uModel * vec4(position, 1.0));
   gl_Position = uProjection * viewPosition;
 #ifdef SIZE_ATTENUATION
   // perspective shrinks with distance; an orthographic projection (w row 0, 0, 0, 1) doesn't
@@ -495,8 +496,8 @@ flat out uint vPickElement; // which instance, point or segment, for GPU picking
 ${COMMON}
 
 void main() {
-  vec4 a = uView * uModel * vec4(segmentStart, 1.0);
-  vec4 b = uView * uModel * vec4(segmentEnd, 1.0);
+  vec4 a = uView * (uModel * vec4(segmentStart, 1.0));
+  vec4 b = uView * (uModel * vec4(segmentEnd, 1.0));
   // clip the segment to the near plane so lines passing behind the camera stay correct
   float clipZ = -uNear;
   if (a.z > clipZ && b.z > clipZ) {

@@ -1,0 +1,103 @@
+{
+  "commit": "a51c9b2-dirty",
+  "done": true,
+  "results": [
+    {
+      "scene": "100k bars",
+      "metric": "build + first frame",
+      "unit": "ms",
+      "phoria2": 49.5,
+      "three": 53.29999998211861
+    },
+    {
+      "scene": "100k bars",
+      "metric": "frame",
+      "unit": "ms",
+      "phoria2": 1,
+      "three": 1
+    },
+    {
+      "scene": "100k bars",
+      "metric": "update every bar (CPU)",
+      "unit": "ms",
+      "phoria2": 3.4000000059604645,
+      "three": 3.300000011920929
+    },
+    {
+      "scene": "100k bars",
+      "metric": "update every bar + frame",
+      "unit": "ms",
+      "phoria2": 5.200000017881393,
+      "three": 4.9000000059604645
+    },
+    {
+      "scene": "100k bars",
+      "metric": "hover pick, main thread",
+      "unit": "ms",
+      "phoria2": 0.09999999403953552,
+      "three": 5.299999982118607
+    },
+    {
+      "scene": "100k bars",
+      "metric": "click pick, waited",
+      "unit": "ms",
+      "phoria2": 0.9000000059604645,
+      "three": 5.299999982118607
+    },
+    {
+      "scene": "1M points",
+      "metric": "build + first frame",
+      "unit": "ms",
+      "phoria2": 31.400000005960464,
+      "three": 38
+    },
+    {
+      "scene": "1M points",
+      "metric": "frame",
+      "unit": "ms",
+      "phoria2": 0.9000000059604645,
+      "three": 0.800000011920929
+    },
+    {
+      "scene": "20 views",
+      "metric": "build + first frames",
+      "unit": "ms",
+      "phoria2": 64.39999997615814,
+      "three": 199.30000001192093
+    },
+    {
+      "scene": "20 views",
+      "metric": "redraw all",
+      "unit": "ms",
+      "phoria2": 4.399999976158142,
+      "three": 2.699999988079071
+    },
+    {
+      "scene": "20 views",
+      "metric": "views that drew",
+      "unit": "count",
+      "phoria2": 20,
+      "three": 16
+    },
+    {
+      "scene": "20 views",
+      "metric": "WebGL contexts",
+      "unit": "count",
+      "phoria2": 5,
+      "three": 20
+    },
+    {
+      "scene": "20 views",
+      "metric": "contexts lost",
+      "unit": "count",
+      "phoria2": 0,
+      "three": 4
+    }
+  ],
+  "env": {
+    "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Ti (0x00002782) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "three": "186",
+    "date": "2026-10-25T18:06:44.681Z"
+  }
+}

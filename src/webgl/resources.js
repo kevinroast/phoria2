@@ -109,7 +109,7 @@ export class Resources {
     const attribute = (location, data, size, divisor = 0) => {
       const buffer = /** @type {WebGLBuffer} */ (gl.createBuffer())
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
-      gl.bufferData(gl.ARRAY_BUFFER, data, divisor ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW)
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW)
       gl.enableVertexAttribArray(location)
       gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0)
       if (divisor) gl.vertexAttribDivisor(location, divisor)
@@ -129,7 +129,7 @@ export class Resources {
     if (instances) {
       matrixBuffer = /** @type {WebGLBuffer} */ (gl.createBuffer())
       gl.bindBuffer(gl.ARRAY_BUFFER, matrixBuffer)
-      gl.bufferData(gl.ARRAY_BUFFER, instances.instanceMatrices, gl.DYNAMIC_DRAW)
+      gl.bufferData(gl.ARRAY_BUFFER, instances.instanceMatrices, gl.STATIC_DRAW)
       for (let i = 0; i < 4; i++) {
         const location = ATTRIBUTES.instanceMatrix + i
         gl.enableVertexAttribArray(location)

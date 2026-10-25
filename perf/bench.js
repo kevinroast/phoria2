@@ -1,6 +1,8 @@
 // The perf harness: the same scenes built in phoria2 and in three.js, timed the same way. Frame
-// times render and then read one pixel back, so they include the GPU's work, not just the calls
-// that queue it. Run from perf.html (the Run button, or ?auto), or headless with `npm run perf`.
+// times render and then read one pixel back from every context drawn, so they include the GPU's
+// work, not just the calls that queue it. Like for like: both tone map with Khronos PBR Neutral,
+// both draw round points, and a "first frame" is the first complete picture - for phoria2, whose
+// shaders compile in the background, the first frame with every program ready. Run from perf.html (the Run button, or ?auto), or headless with `npm run perf`.
 import * as P from 'phoria2'
 import * as THREE from 'three'
 
@@ -21,15 +23,20 @@ const sync = (gl) => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel)
 const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1]
 const nextFrame = () => new Promise((r) => setTimeout(r, 0))
 
-/** Median ms of fn() with the GPU waited for. @param {() => void} fn @param {WebGL2RenderingContext} gl */
-async function frames(fn, gl, n = 30) {
+/**
+ * Median ms of fn() with the GPU waited for.
+ * @param {() => void} fn @param {WebGL2RenderingContext | WebGL2RenderingContext[]} contexts every context drawn
+ */
+async function frames(fn, contexts, n = 30) {
+  const all = [contexts].flat()
+  const syncAll = () => all.forEach(sync)
   for (let i = 0; i < 3; i++) fn()
-  sync(gl)
+  syncAll()
   const times = []
   for (let i = 0; i < n; i++) {
     const t = performance.now()
     fn()
-    sync(gl)
+    syncAll()
     times.push(performance.now() - t)
     if (i % 10 === 9) await nextFrame()
   }
@@ -83,6 +90,16 @@ function fillBars(m, n, t = 0) {
 
 // --- phoria2 and three.js builders for the same scenes ---
 
+/** Draw until the picture is complete - every shader compiled - and the GPU done. @param {any} view */
+async function firstPicture(view) {
+  view.render()
+  while (view.renderer.info.compiling) {
+    await new Promise((r) => setTimeout(r, 1))
+    view.render()
+  }
+  sync(view.renderer.gl)
+}
+
 function phoriaView(c, camera = { position: [0, 140, 300], target: [0, 0, 0] }) {
   const view = new P.View({ canvas: c, renderMode: 'manual', pixelRatio: 1, autoLight: false, camera: { ...camera, far: 2000 } })
   view.scene.add(new P.HemisphereLight({ sky: '#ffffff', ground: '#444444', intensity: 0.6 }))
@@ -97,6 +114,8 @@ function phoriaBars(view, n) {
 }
 function threeRenderer(c) {
   const renderer = new THREE.WebGLRenderer({ canvas: c, antialias: true })
+  // phoria2's default tone mapping, so both do the same work per pixel
+  renderer.toneMapping = THREE.NeutralToneMapping
   renderer.setPixelRatio(1)
   renderer.setSize(parseFloat(c.style.width), parseFloat(c.style.height), false)
   const scene = new THREE.Scene()
@@ -116,6 +135,18 @@ function threeBars(scene, n) {
   scene.add(mesh)
   return mesh
 }
+/** A white disc, for three.js round points. */
+function roundSprite() {
+  const c = document.createElement('canvas')
+  c.width = c.height = 32
+  const ctx = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'))
+  ctx.fillStyle = '#fff'
+  ctx.beginPath()
+  ctx.arc(16, 16, 15.5, 0, Math.PI * 2)
+  ctx.fill()
+  return new THREE.CanvasTexture(c)
+}
+
 function disposeThree(t) {
   t.renderer.dispose()
   t.renderer.forceContextLoss()
@@ -130,8 +161,7 @@ async function bars() {
   let t0 = performance.now()
   const view = phoriaView(c)
   const pbars = phoriaBars(view, BARS)
-  view.render()
-  sync(view.renderer.gl)
+  await firstPicture(view)
   const pBuild = performance.now() - t0
   const pFrame = await frames(() => view.render(), view.renderer.gl)
   const pUpdate = await frames(() => {
@@ -209,8 +239,7 @@ async function points() {
   let t0 = performance.now()
   const view = phoriaView(c)
   view.scene.add(new P.Points({ geometry: new P.Geometry({ positions }), material: { color: '#9cf', size: 2, sizeAttenuation: false } }))
-  view.render()
-  sync(view.renderer.gl)
+  await firstPicture(view)
   const pBuild = performance.now() - t0
   const pFrame = await frames(() => view.render(), view.renderer.gl)
   view.dispose()
@@ -221,7 +250,8 @@ async function points() {
   const t = threeRenderer(c)
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  t.scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: '#9cf', size: 2, sizeAttenuation: false })))
+  // phoria2's points are round, so three's get a round sprite (its default is square)
+  t.scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: '#9cf', size: 2, sizeAttenuation: false, map: roundSprite(), alphaTest: 0.5 })))
   t.renderer.render(t.scene, t.camera)
   sync(t.gl)
   const tBuild = performance.now() - t0
@@ -246,14 +276,21 @@ async function views() {
   const tiles = grid((c) => {
     const view = phoriaView(c, { position: [0, 30, 60], target: [0, 0, 0] })
     phoriaBars(view, TILE_BARS)
-    view.render()
     return view
   })
-  sync(tiles[0].renderer.gl)
+  // all at once, as a dashboard would: start every view, then wait until every picture is complete
+  tiles.forEach((v) => v.render())
+  while (tiles.some((v) => v.renderer.info.compiling)) {
+    await new Promise((r) => setTimeout(r, 1))
+    tiles.forEach((v) => v.renderer.info.compiling && v.render())
+  }
+  new Set(tiles.map((v) => v.renderer.gl)).forEach(sync)
   const pBuild = performance.now() - t0
   const pLost = lostCount()
-  const pAll = await frames(() => tiles.forEach((v) => v.render()), tiles[VIEWS - 1].renderer.gl, 10)
-  const contexts = new Set(tiles.map((v) => v.renderer.gl)).size
+  const pContexts = [...new Set(tiles.map((v) => v.renderer.gl))]
+  const pAll = await frames(() => tiles.forEach((v) => v.render()), pContexts, 10)
+  const contexts = pContexts.length
+  const pDrawn = tiles.filter((v) => !v.renderer.gl.isContextLost()).length
   await new Promise((r) => setTimeout(r, 300))
   const pLostCount = pLost()
   tiles.forEach((v) => v.dispose())
@@ -269,16 +306,19 @@ async function views() {
     return t
   })
   const tLost = lostCount()
-  sync(threes[VIEWS - 1].gl)
+  threes.forEach((t) => sync(t.gl))
   const tBuild = performance.now() - t0
-  const tAll = await frames(() => threes.forEach((t) => t.renderer.render(t.scene, t.camera)), threes[VIEWS - 1].gl, 10)
+  // only contexts still alive draw; waiting on a lost one returns at once
+  const tAll = await frames(() => threes.forEach((t) => t.renderer.render(t.scene, t.camera)), threes.map((t) => t.gl), 10)
   await new Promise((r) => setTimeout(r, 300))
   const tLostCount = tLost()
+  const tDrawn = threes.filter((t) => !t.gl.isContextLost()).length
   threes.forEach(disposeThree)
   stage.replaceChildren()
 
   record(`${VIEWS} views`, 'build + first frames', 'ms', pBuild, tBuild)
   record(`${VIEWS} views`, 'redraw all', 'ms', pAll, tAll)
+  record(`${VIEWS} views`, 'views that drew', 'count', pDrawn, tDrawn)
   record(`${VIEWS} views`, 'WebGL contexts', 'count', contexts, VIEWS)
   record(`${VIEWS} views`, 'contexts lost', 'count', pLostCount, tLostCount)
 }

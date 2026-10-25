@@ -31,6 +31,7 @@ export class GLContext {
   /** Shared by several renderers, each copying its picture out. */
   isShared
   #passesLoading = false
+  #watchingCompiles = false
   #pickerLoading = false
   /** @type {() => void} */ #removeListeners
 
@@ -105,6 +106,28 @@ export class GLContext {
       for (const user of this.users) user.onReady?.()
     })
     return null
+  }
+
+  /**
+   * Programs are compiling in the background: tell every renderer on this context when they are
+   * all done, so it draws again with them.
+   */
+  whenCompiled() {
+    if (this.#watchingCompiles) return
+    this.#watchingCompiles = true
+    const check = () => {
+      if (this.lost || !this.users.size) {
+        this.#watchingCompiles = false
+        return
+      }
+      if (this.programs.compiling) {
+        setTimeout(check, 4)
+        return
+      }
+      this.#watchingCompiles = false
+      for (const user of this.users) user.onReady?.()
+    }
+    setTimeout(check, 4)
   }
 
   /**
