@@ -1,18 +1,19 @@
 import {
-  CanvasRenderer, DistantLight, Entity, RADIANS, Scene, combine, generatePyramid, generateSphere,
-  generateTesselatedPlane, generateUnitCube, loadImages, vec3,
+  CanvasRenderer, DistantLight, Entity, OrbitControl, RADIANS, Scene, combine, generatePyramid,
+  generateSphere, generateTesselatedPlane, generateUnitCube, loadImages, vec3,
 } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import { animate, fitScene } from './shell.js'
 
 // UV coordinates selecting parts of a texture: a tiled plane, quarters of a texture on cube faces,
 // a section of a wall texture on a pyramid, and lit and plain textured spheres.
-export default async function run({ canvas, gui }) {
+export default async function run({ canvas }) {
   const [wall, texture5] = await loadImages(['images/texture-wall.png', 'images/texture5.png'])
 
   const scene = new Scene()
   scene.camera.position = { x: 0.0, y: 20.0, z: -25.0 }
   scene.camera.lookat = { x: 0.0, y: 1.0, z: 0.0 }
   fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
   const renderer = new CanvasRenderer(canvas)
 
   // a subdivided plane to show the benefit of uv coords on a large object
@@ -76,11 +77,6 @@ export default async function run({ canvas, gui }) {
     intensity: 1.5,
   }))
 
-  addCameraControls(gui, scene)
-  const f = gui.addFolder('Camera Up').close()
-  f.add(scene.camera.up, 'x', -10, 10, 0.1)
-  f.add(scene.camera.up, 'y', -10, 10, 0.1)
-  f.add(scene.camera.up, 'z', -10, 10, 0.1)
 
   animate(() => {
     cube.rotateY(0.5 * RADIANS)

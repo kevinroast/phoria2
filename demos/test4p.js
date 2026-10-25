@@ -1,18 +1,18 @@
 import {
-  CanvasRenderer, DistantLight, EmitterEntity, Entity, PointLight, RADIANS, Scene, clone, generateTesselatedPlane,
-  mat4, vec4,
+  CanvasRenderer, DistantLight, EmitterEntity, Entity, OrbitControl, PointLight, RADIANS, Scene,
+  clone, generateTesselatedPlane, mat4, vec4,
 } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import { animate, fitScene } from './shell.js'
 
 // Particles that are point lights - each one lights the floor as it falls.
 export default function run({ canvas, gui }) {
   canvas.style.backgroundColor = '#000'
-  document.body.style.backgroundColor = '#444'
 
   const scene = new Scene()
   scene.camera.position = { x: 0.0, y: 5.0, z: -25.0 }
   scene.camera.lookat = { x: 0.0, y: 2.0, z: 0.0 }
   fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
   // swing the camera back and forth around the scene
   scene.onCamera((position) => {
     const rotMatrix = mat4.create()
@@ -68,12 +68,7 @@ export default function run({ canvas, gui }) {
   })
   scene.graph.push(emitter)
 
-  addCameraControls(gui, scene, { lookatOpen: false })
-  let f = gui.addFolder('Camera Up').close()
-  f.add(scene.camera.up, 'x', -10, 10, 0.1)
-  f.add(scene.camera.up, 'y', -10, 10, 0.1)
-  f.add(scene.camera.up, 'z', -10, 10, 0.1)
-  f = gui.addFolder('Emitter')
+  const f = gui.addFolder('Emitter')
   f.add(emitter, 'rate', 0, 250)
   const addXYZ = (prop, min, max, step) => {
     for (const k of ['x', 'y', 'z']) f.add(emitter[prop], k, min, max, step).name(`${prop}.${k}`)

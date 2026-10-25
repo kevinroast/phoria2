@@ -1,7 +1,7 @@
 import {
   CanvasRenderer, DistantLight, Entity, RADIANS, Scene, addMouseEvents, generateTesselatedPlane, generateUnitCube,
 } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import { animate, fitScene } from './shell.js'
 
 // Incremental rotation of a cube about its local axes, eased towards the GUI angles or a mouse drag.
 export default function run({ canvas, gui }) {
@@ -45,12 +45,7 @@ export default function run({ canvas, gui }) {
     ratio: 0.1,
   }
 
-  addCameraControls(gui, scene)
-  let f = gui.addFolder('Camera Up').close()
-  f.add(scene.camera.up, 'x', -10, 10, 0.1)
-  f.add(scene.camera.up, 'y', -10, 10, 0.1)
-  f.add(scene.camera.up, 'z', -10, 10, 0.1)
-  f = gui.addFolder('Spin Local Axis (or use mouse)')
+  const f = gui.addFolder('Spin Local Axis (or use mouse)')
   f.add(rot, 'x', -180, 180)
   f.add(rot, 'y', -180, 180)
   f.add(rot, 'z', -180, 180)

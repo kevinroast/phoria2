@@ -1,17 +1,18 @@
 import {
-  CanvasRenderer, DistantLight, Entity, RADIANS, Scene, generateTesselatedPlane, generateUnitCube, loadImages,
-  vec3,
+  CanvasRenderer, DistantLight, Entity, OrbitControl, RADIANS, Scene, generateTesselatedPlane,
+  generateUnitCube, loadImages, vec3,
 } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import { animate, fitScene } from './shell.js'
 
 // Move the camera around the scene - W/S forward and back, A/D strafe, left/right arrows turn,
 // up/down arrows raise and lower the lookat point.
-export default async function run({ canvas, gui }) {
+export default async function run({ canvas }) {
   const bitmaps = await loadImages([0, 1, 2, 3, 4, 5].map((i) => `images/texture${i}.png`))
 
   const scene = new Scene()
   scene.camera.position = { x: 0.0, y: 5.0, z: -15.0 }
   fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
   const renderer = new CanvasRenderer(canvas)
 
   // a grid to help visualise the camera position
@@ -95,11 +96,6 @@ export default async function run({ canvas, gui }) {
     }
   })
 
-  addCameraControls(gui, scene, { lookatOpen: false, positionOpen: false })
-  const f = gui.addFolder('Camera Up').close()
-  f.add(scene.camera.up, 'x', -10, 10, 0.1)
-  f.add(scene.camera.up, 'y', -10, 10, 0.1)
-  f.add(scene.camera.up, 'z', -10, 10, 0.1)
 
   animate(() => {
     cube.rotateY(0.5 * RADIANS)

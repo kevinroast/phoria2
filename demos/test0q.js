@@ -1,7 +1,8 @@
 import {
-  CanvasRenderer, Entity, PointLight, RADIANS, Scene, generatePyramid, generateTesselatedPlane, mat4, quat, vec3,
+  CanvasRenderer, Entity, OrbitControl, PointLight, RADIANS, Scene, generatePyramid,
+  generateTesselatedPlane, mat4, quat, vec3,
 } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import { animate, fitScene } from './shell.js'
 
 // Rotate an object about the WORLD or its LOCAL X/Y/Z axes using quaternions, lit by a movable
 // point light. Arrow keys and Z/X also rotate.
@@ -9,6 +10,7 @@ export default function run({ canvas, gui }) {
   const scene = new Scene()
   scene.camera.position = { x: 0.0, y: 5.0, z: -35.0 }
   fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
   const renderer = new CanvasRenderer(canvas)
 
   // a grid to help visualise the camera position
@@ -74,12 +76,7 @@ export default function run({ canvas, gui }) {
   const Y_AXIS = vec3.fromValues(0, 1, 0)
   const Z_AXIS = vec3.fromValues(0, 0, 1)
 
-  addCameraControls(gui, scene, { lookatOpen: false })
-  let f = gui.addFolder('Camera Up').close()
-  f.add(scene.camera.up, 'x', -10, 10, 0.1)
-  f.add(scene.camera.up, 'y', -10, 10, 0.1)
-  f.add(scene.camera.up, 'z', -10, 10, 0.1)
-  f = gui.addFolder('Light').close()
+  let f = gui.addFolder('Light').close()
   f.add(light.position, 'x', -25, 25, 0.1)
   f.add(light.position, 'y', -25, 25, 0.1)
   f.add(light.position, 'z', -25, 25, 0.1)

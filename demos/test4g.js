@@ -1,7 +1,8 @@
 import {
-  CanvasRenderer, DistantLight, EmitterEntity, Entity, Scene, clone, generateTesselatedPlane,
+  CanvasRenderer, DistantLight, EmitterEntity, Entity, OrbitControl, Scene, clone,
+  generateTesselatedPlane,
 } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import { animate, fitScene } from './shell.js'
 
 // A particle emitter with gravity - particles fountain up and fall, cycling through colours.
 export default function run({ canvas, gui }) {
@@ -9,6 +10,7 @@ export default function run({ canvas, gui }) {
   scene.camera.position = { x: 0.0, y: 5.0, z: -25.0 }
   scene.camera.lookat = { x: 0.0, y: 2.0, z: 0.0 }
   fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
   const renderer = new CanvasRenderer(canvas)
 
   // a grid to help visualise the camera position
@@ -43,12 +45,7 @@ export default function run({ canvas, gui }) {
   })
   scene.graph.push(emitter)
 
-  addCameraControls(gui, scene, { lookatOpen: false })
-  let f = gui.addFolder('Camera Up').close()
-  f.add(scene.camera.up, 'x', -10, 10, 0.1)
-  f.add(scene.camera.up, 'y', -10, 10, 0.1)
-  f.add(scene.camera.up, 'z', -10, 10, 0.1)
-  f = gui.addFolder('Emitter')
+  const f = gui.addFolder('Emitter')
   f.add(emitter, 'rate', 0, 250)
   f.add(emitter, 'lifetime', 0, 5000)
   f.add(emitter, 'lifetimeRnd', 0, 5000)

@@ -1,14 +1,15 @@
 import {
-  CanvasRenderer, DistantLight, Entity, RADIANS, Scene, addMouseEvents, calculateClickPointAndVector,
-  generateTesselatedPlane, generateUnitCube, getIntersectedObjects,
+  CanvasRenderer, DistantLight, Entity, OrbitControl, RADIANS, Scene, addMouseEvents,
+  calculateClickPointAndVector, generateTesselatedPlane, generateUnitCube, getIntersectedObjects,
 } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import { animate, fitScene } from './shell.js'
 
 // Object picking - click a spinning cube to select it and flash it white.
-export default function run({ canvas, gui, info }) {
+export default function run({ canvas, info }) {
   const scene = new Scene()
   scene.camera.position = { x: 0.0, y: 5.0, z: -15.0 }
   fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
   const renderer = new CanvasRenderer(canvas)
 
   // a grid to help visualise the camera position
@@ -91,11 +92,6 @@ export default function run({ canvas, gui, info }) {
     }
   })
 
-  addCameraControls(gui, scene)
-  const f = gui.addFolder('Camera Up').close()
-  f.add(scene.camera.up, 'x', -10, 10, 0.1)
-  f.add(scene.camera.up, 'y', -10, 10, 0.1)
-  f.add(scene.camera.up, 'z', -10, 10, 0.1)
 
   animate(() => {
     cube1.rotateY(0.5 * RADIANS)

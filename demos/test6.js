@@ -1,5 +1,7 @@
-import { CanvasRenderer, Entity, Scene, generateTesselatedPlane, mat4, vec4 } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import {
+  CanvasRenderer, Entity, OrbitControl, Scene, generateTesselatedPlane, mat4, vec4,
+} from 'phoria2'
+import { animate, fitScene } from './shell.js'
 
 // some random x/y data to construct our graph object from
 const DATA = [
@@ -29,7 +31,7 @@ function generateGraph(data, scale) {
 }
 
 // Data visualisation - a line graph in 3D on a grid, with the camera orbiting it.
-export default function run({ canvas, gui }) {
+export default function run({ canvas }) {
   canvas.style.backgroundColor = '#fff'
 
   const scene = new Scene()
@@ -37,6 +39,7 @@ export default function run({ canvas, gui }) {
   scene.camera.lookat = { x: 0.0, y: 2, z: 0 }
   scene.perspective.fov = 25
   fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
 
   // rotate the camera around the scene
   let rotation = 0.0
@@ -81,7 +84,6 @@ export default function run({ canvas, gui }) {
   graph.translateX(-5).translateZ(-0.5)
   scene.graph.push(graph)
 
-  addCameraControls(gui, scene)
 
   animate(() => {
     scene.modelView()

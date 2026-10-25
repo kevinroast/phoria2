@@ -1,5 +1,6 @@
 import {
-  CanvasRenderer, Entity, PointLight, RADIANS, Scene, generateTesselatedPlane, generateUnitCube,
+  CanvasRenderer, Entity, OrbitControl, PointLight, RADIANS, Scene, generateTesselatedPlane,
+  generateUnitCube,
 } from 'phoria2'
 import { DEMOS } from './registry.js'
 import { animate, fitScene } from './shell.js'
@@ -7,16 +8,26 @@ import { animate, fitScene } from './shell.js'
 const list = document.getElementById('demos')
 for (const { name, title } of DEMOS) {
   const li = document.createElement('li')
-  li.innerHTML = `<a href="demo.html?name=${name}"><span class="name">${name}</span>${title}</a>`
+  li.innerHTML = `<a href="demo.html?name=${name}"><span class="name">${name}</span><span class="title">${title}</span></a>`
   list.append(li)
 }
 
 // The front page scene: a spinning cube with a bobbing child cube, lit by three coloured point
 // lights orbiting at different speeds.
 const canvas = document.getElementById('canvas')
+// match the canvas to its CSS frame - registered before fitScene() so it runs first on resize
+const sizeCanvas = () => {
+  canvas.width = canvas.clientWidth
+  canvas.height = canvas.clientHeight
+}
+window.addEventListener('resize', sizeCanvas)
+sizeCanvas()
+
 const scene = new Scene()
 scene.camera.position = { x: 0.0, y: 5.0, z: -15.0 }
 fitScene(scene, canvas)
+// no wheel zoom here - the wheel should scroll the page
+new OrbitControl(canvas, scene, { zoom: false })
 const renderer = new CanvasRenderer(canvas)
 
 const plane = generateTesselatedPlane(16, 16, 0, 20)
@@ -35,7 +46,7 @@ const testCube = Entity.create({ ...generateUnitCube(1), style: { drawmode: 'sol
 scene.graph.push(testCube)
 const childCube = Entity.create({
   ...generateUnitCube(0.5),
-  style: { color: [0, 0, 0], drawmode: 'wireframe' },
+  style: { color: [230, 230, 230], drawmode: 'wireframe' },
 })
 testCube.children.push(childCube)
 

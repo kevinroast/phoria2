@@ -34,40 +34,14 @@ export function animate(frame) {
   return control
 }
 
-// Size the canvas to fill the window and keep it that way. Calls onResize(width, height) now and
-// on every window resize.
-export function fullscreenCanvas(canvas, onResize) {
-  document.body.classList.add('fullscreen')
-  const resize = () => {
-    canvas.width = window.innerWidth
-    canvas.height = window.innerHeight
-    onResize?.(canvas.width, canvas.height)
-  }
-  window.addEventListener('resize', resize)
-  resize()
-}
-
-// Point a scene's perspective and viewport at the canvas size.
+// Point a scene's perspective and viewport at the canvas size, and keep them matched as the
+// window (and so the canvas) resizes.
 export function fitScene(scene, canvas) {
-  scene.perspective.aspect = canvas.width / canvas.height
-  scene.viewport.width = canvas.width
-  scene.viewport.height = canvas.height
-}
-
-// Add the camera/perspective folders most v1 demos had in their dat.GUI panel.
-export function addCameraControls(gui, scene, { lookatOpen = true, positionOpen = true } = {}) {
-  let f = gui.addFolder('Perspective').close()
-  f.add(scene.perspective, 'fov', 5, 175)
-  f.add(scene.perspective, 'near', 1, 100)
-  f.add(scene.perspective, 'far', 1, 1000)
-  f = gui.addFolder('Camera LookAt')
-  f.add(scene.camera.lookat, 'x', -100, 100)
-  f.add(scene.camera.lookat, 'y', -100, 100)
-  f.add(scene.camera.lookat, 'z', -100, 100)
-  if (!lookatOpen) f.close()
-  f = gui.addFolder('Camera Position')
-  f.add(scene.camera.position, 'x', -100, 100)
-  f.add(scene.camera.position, 'y', -100, 100)
-  f.add(scene.camera.position, 'z', -100, 100)
-  if (!positionOpen) f.close()
+  const fit = () => {
+    scene.perspective.aspect = canvas.width / canvas.height
+    scene.viewport.width = canvas.width
+    scene.viewport.height = canvas.height
+  }
+  window.addEventListener('resize', fit)
+  fit()
 }

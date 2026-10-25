@@ -1,8 +1,8 @@
 import {
-  CanvasRenderer, Entity, PointLight, RADIANS, Scene, generateIcosahedron, generateTesselatedPlane,
-  generateUnitCube, loadImage, subdivide,
+  CanvasRenderer, Entity, OrbitControl, PointLight, RADIANS, Scene, generateIcosahedron,
+  generateTesselatedPlane, generateUnitCube, loadImage, subdivide,
 } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import { animate, fitScene } from './shell.js'
 
 // Transparent polygons, plain and textured: a see-through textured cube with a transparent child
 // sphere, lit by three coloured point lights orbiting the origin.
@@ -13,6 +13,7 @@ export default async function run({ canvas, gui }) {
   const scene = new Scene()
   scene.camera.position = { x: 0.0, y: 5.0, z: -15.0 }
   fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
   const renderer = new CanvasRenderer(canvas)
 
   // a grid to help visualise the camera position
@@ -69,12 +70,7 @@ export default async function run({ canvas, gui }) {
   const redLightObj = lightObj([1, 0, 0], 5)
   const greenLightObj = lightObj([0, 1, 0], 5)
 
-  addCameraControls(gui, scene)
-  let f = gui.addFolder('Camera Up').close()
-  f.add(scene.camera.up, 'x', -10, 10, 0.1)
-  f.add(scene.camera.up, 'y', -10, 10, 0.1)
-  f.add(scene.camera.up, 'z', -10, 10, 0.1)
-  f = gui.addFolder('Rendering')
+  const f = gui.addFolder('Rendering')
   f.add(childObj.style, 'shademode', ['plain', 'lightsource'])
   f.add(childObj.style, 'fillmode', ['fill', 'filltwice', 'inflate', 'fillstroke'])
 

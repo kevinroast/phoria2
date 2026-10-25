@@ -1,17 +1,18 @@
 import {
-  CanvasRenderer, DistantLight, EmitterEntity, Entity, Scene, generateRadialGradientBitmap, generateTesselatedPlane,
+  CanvasRenderer, DistantLight, EmitterEntity, Entity, OrbitControl, Scene,
+  generateRadialGradientBitmap, generateTesselatedPlane,
 } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import { animate, fitScene } from './shell.js'
 
 // Sprite particles drawn with additive blending - a flame effect.
 export default function run({ canvas, gui }) {
   canvas.style.backgroundColor = '#000'
-  document.body.style.backgroundColor = '#444'
 
   const scene = new Scene()
   scene.camera.position = { x: 0.0, y: 5.0, z: -25.0 }
   scene.camera.lookat = { x: 0.0, y: 2.0, z: 0.0 }
   fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
   const renderer = new CanvasRenderer(canvas)
 
   // a grid to help visualise the camera position
@@ -47,12 +48,7 @@ export default function run({ canvas, gui }) {
   emitter.textures.push(generateRadialGradientBitmap(32, 'rgba(128,64,32,1)', 'rgba(128,64,32,0)'))
   scene.graph.push(emitter)
 
-  addCameraControls(gui, scene, { lookatOpen: false })
-  let f = gui.addFolder('Camera Up').close()
-  f.add(scene.camera.up, 'x', -10, 10, 0.1)
-  f.add(scene.camera.up, 'y', -10, 10, 0.1)
-  f.add(scene.camera.up, 'z', -10, 10, 0.1)
-  f = gui.addFolder('Emitter')
+  const f = gui.addFolder('Emitter')
   f.add(emitter.style, 'linewidth', 8, 64)
   f.add(emitter, 'rate', 0, 250)
   f.add(emitter, 'lifetime', 0, 5000)

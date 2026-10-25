@@ -1,11 +1,14 @@
-import { DistantLight, Entity, PointLight, RADIANS, Scene, SoftwareRenderer, generateSphere } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import {
+  DistantLight, Entity, OrbitControl, PointLight, RADIANS, Scene, SoftwareRenderer, generateSphere,
+} from 'phoria2'
+import { animate, fitScene } from './shell.js'
 
 // The prototype software renderer rasterising a finely tesselated lit sphere into an ImageData buffer.
 export default function run({ canvas, gui }) {
   const scene = new Scene()
   scene.camera.position = { x: 0.0, y: 5.0, z: -15.0 }
   fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
   const renderer = new SoftwareRenderer(canvas)
 
   const sphere = Entity.create({
@@ -44,12 +47,7 @@ export default function run({ canvas, gui }) {
   })
   visibleLightObj.children.push(light)
 
-  addCameraControls(gui, scene)
-  let f = gui.addFolder('Camera Up').close()
-  f.add(scene.camera.up, 'x', -10, 10, 0.1)
-  f.add(scene.camera.up, 'y', -10, 10, 0.1)
-  f.add(scene.camera.up, 'z', -10, 10, 0.1)
-  f = gui.addFolder('Light')
+  const f = gui.addFolder('Light')
   f.add(light.position, 'x', -25, 25, 0.1)
   f.add(light.position, 'y', -25, 25, 0.1)
   f.add(light.position, 'z', -25, 25, 0.1)

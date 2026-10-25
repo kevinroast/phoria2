@@ -15,6 +15,11 @@ export class SoftwareRenderer extends Renderer {
   }
 
   render(scene) {
+    // the canvas was resized - the pixel buffer must match it
+    if (this._imagedata.width !== this.canvas.width || this._imagedata.height !== this.canvas.height) {
+      this._imagedata = this.ctx.createImageData(this.canvas.width, this.canvas.height)
+      this._data = this._imagedata.data
+    }
     this.sortObjects(scene)
     // TODO: only clear and put the dirty rectangle
     this.clearCanvasRect(0, 0, this.canvas.width, this.canvas.height)

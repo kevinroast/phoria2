@@ -1,8 +1,8 @@
 import {
-  CanvasRenderer, DistantLight, Entity, PointLight, RADIANS, Scene, generateTesselatedPlane,
-  importGeometryWavefront,
+  CanvasRenderer, DistantLight, Entity, OrbitControl, PointLight, RADIANS, Scene,
+  generateTesselatedPlane, importGeometryWavefront,
 } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import { animate, fitScene } from './shell.js'
 
 // The Wavefront .obj importer - a teapot loaded from teapot.obj, lit by a movable point light.
 export default async function run({ canvas, gui }) {
@@ -16,6 +16,7 @@ export default async function run({ canvas, gui }) {
   const scene = new Scene()
   scene.camera.position = { x: 0.0, y: 4.0, z: -15.0 }
   fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
   const renderer = new CanvasRenderer(canvas)
 
   // a grid to help visualise the camera position
@@ -66,12 +67,7 @@ export default async function run({ canvas, gui }) {
   })
   visibleLightObj.children.push(light)
 
-  addCameraControls(gui, scene)
-  let f = gui.addFolder('Camera Up').close()
-  f.add(scene.camera.up, 'x', -10, 10, 0.1)
-  f.add(scene.camera.up, 'y', -10, 10, 0.1)
-  f.add(scene.camera.up, 'z', -10, 10, 0.1)
-  f = gui.addFolder('Rendering').close()
+  let f = gui.addFolder('Rendering').close()
   f.add(teapot.style, 'shademode', ['plain', 'lightsource'])
   f.add(teapot.style, 'doublesided')
   f = gui.addFolder('Light')

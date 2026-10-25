@@ -1,15 +1,17 @@
 import {
-  CanvasRenderer, DistantLight, Entity, RADIANS, Scene, generateTesselatedPlane, generateUnitCube, loadImages,
+  CanvasRenderer, DistantLight, Entity, OrbitControl, RADIANS, Scene, generateTesselatedPlane,
+  generateUnitCube, loadImages,
 } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import { animate, fitScene } from './shell.js'
 
 // A cube with a different texture on each face. Space reverses the texture order.
-export default async function run({ canvas, gui }) {
+export default async function run({ canvas }) {
   const bitmaps = await loadImages([0, 1, 2, 3, 4, 5].map((i) => `images/texture${i}.png`))
 
   const scene = new Scene()
   scene.camera.position = { x: 0.0, y: 5.0, z: -15.0 }
   fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
   const renderer = new CanvasRenderer(canvas)
 
   // a grid to help visualise the camera position
@@ -33,11 +35,6 @@ export default async function run({ canvas, gui }) {
     direction: { x: 0, y: -0.5, z: 1 },
   }))
 
-  addCameraControls(gui, scene)
-  const f = gui.addFolder('Camera Up').close()
-  f.add(scene.camera.up, 'x', -10, 10, 0.1)
-  f.add(scene.camera.up, 'y', -10, 10, 0.1)
-  f.add(scene.camera.up, 'z', -10, 10, 0.1)
 
   document.addEventListener('keydown', (e) => {
     if (e.code === 'Space') {

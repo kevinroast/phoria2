@@ -1,10 +1,10 @@
 import {
   CanvasRenderer, DistantLight, EmitterEntity, Entity, Scene, generateRadialGradientBitmap, generateTesselatedPlane,
 } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import { animate, fitScene } from './shell.js'
 
 // Scene triggers chaining a sequence of actions - a comet flies past, climbs, then explodes.
-export default function run({ canvas, gui }) {
+export default function run({ canvas }) {
   const scene = new Scene()
   scene.camera.position = { x: -150, y: 15.0, z: -25.0 }
   scene.camera.lookat = { x: 0.0, y: 2.0, z: 0.0 }
@@ -108,11 +108,6 @@ export default function run({ canvas, gui }) {
     },
   })
 
-  addCameraControls(gui, scene, { lookatOpen: false, positionOpen: false })
-  const f = gui.addFolder('Camera Up').close()
-  f.add(scene.camera.up, 'x', -10, 10, 0.1)
-  f.add(scene.camera.up, 'y', -10, 10, 0.1)
-  f.add(scene.camera.up, 'z', -10, 10, 0.1)
 
   animate(() => {
     scene.modelView()

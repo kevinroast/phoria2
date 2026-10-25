@@ -1,10 +1,12 @@
 // Every demo, in gallery order. `name` is the module in demos/ and the ?name= of demo.html.
+// `orbit: false` marks demos that drive the camera (or the mouse) themselves, so the page
+// doesn't advertise mouse orbiting.
 export const DEMOS = [
   { name: 'test0', title: 'basic cube on grid' },
   { name: 'test0t', title: 'textured cube' },
   { name: 'test0uv', title: 'UV coordinates texturing' },
   { name: 'test0k', title: 'WASD and arrow keys move around scene' },
-  { name: 'test0r', title: 'incremental rotation - mouse control' },
+  { name: 'test0r', title: 'incremental rotation - mouse control', orbit: false },
   { name: 'test0q', title: 'World and Local axis rotation using quaternions' },
   { name: 'test0p', title: "object selection 'picking'" },
   { name: 'test1', title: 'animated point lights around a cube' },
@@ -22,8 +24,8 @@ export const DEMOS = [
   { name: 'test4t', title: 'sprite particles flame effect' },
   { name: 'test5', title: 'dynamic texturing - paint gun' },
   { name: 'test6', title: 'data visualisation - graph' },
-  { name: 'test7', title: 'scene triggers - a sequence of actions' },
-  { name: 'test8', title: 'scene triggers, particle field, spaceships' },
+  { name: 'test7', title: 'scene triggers - a sequence of actions', orbit: false },
+  { name: 'test8', title: 'scene triggers, particle field, spaceships', orbit: false },
   { name: 'test9', title: 'fireworks demo - scene triggers, particles' },
   { name: 'test_cobramk3', title: 'Cobra Mk III' },
   { name: 'test_quat', title: 'quaternion rotation' },

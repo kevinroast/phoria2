@@ -1,11 +1,15 @@
-import { CanvasRenderer, Entity, PointLight, RADIANS, Scene, generateSphere, generateTesselatedPlane } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import {
+  CanvasRenderer, Entity, OrbitControl, PointLight, RADIANS, Scene, generateSphere,
+  generateTesselatedPlane,
+} from 'phoria2'
+import { animate, fitScene } from './shell.js'
 
 // Material test: a 3x3 grid of spheres - diffuse increases bottom to top, specular power left to right.
 export default function run({ canvas, gui }) {
   const scene = new Scene()
   scene.camera.position = { x: 0.0, y: 5.0, z: -15.0 }
   fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
   const renderer = new CanvasRenderer(canvas)
 
   // a grid to help visualise the camera position
@@ -56,12 +60,7 @@ export default function run({ canvas, gui }) {
   })
   visibleLightObj.children.push(light)
 
-  addCameraControls(gui, scene)
-  let f = gui.addFolder('Camera Up').close()
-  f.add(scene.camera.up, 'x', -10, 10, 0.1)
-  f.add(scene.camera.up, 'y', -10, 10, 0.1)
-  f.add(scene.camera.up, 'z', -10, 10, 0.1)
-  f = gui.addFolder('Light')
+  const f = gui.addFolder('Light')
   f.add(light.position, 'x', -25, 25, 0.1)
   f.add(light.position, 'y', -25, 25, 0.1)
   f.add(light.position, 'z', -25, 25, 0.1)

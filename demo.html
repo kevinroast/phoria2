@@ -5,16 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>phoria2 demo</title>
     <link rel="icon" type="image/png" href="flower.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Saira:wght@100..900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/demos/demos.css" />
   </head>
   <body class="demo">
-    <canvas id="canvas" width="768" height="512"></canvas>
-    <div class="bar">
-      <a href="./">&lt;&lt; Phoria demos</a>
-      <span id="title"></span>
-      <span id="info"></span>
-      <span id="fps"></span>
+    <canvas id="canvas"></canvas>
+    <div class="hud hud-title">
+      <a class="back" href="./">&lsaquo; Phoria demos</a>
+      <h1 id="name"></h1>
+      <p id="title"></p>
+      <p id="hint" class="hint" hidden>Drag to orbit &middot; right-drag to pan &middot; scroll to zoom</p>
     </div>
+    <div class="hud hud-info" id="info"></div>
+    <div class="hud hud-fps" id="fps"></div>
     <script type="module" src="/demos/main.js"></script>
   </body>
 </html>

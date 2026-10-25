@@ -1,8 +1,9 @@
 import {
-  CanvasRenderer, DistantLight, EmitterEntity, Entity, PointLight, Scene, generateRadialGradientBitmap, generateSphere,
-  generateTesselatedPlane, generateUnitCube, loadImages,
+  CanvasRenderer, DistantLight, EmitterEntity, Entity, OrbitControl, PointLight, Scene,
+  generateRadialGradientBitmap, generateSphere, generateTesselatedPlane, generateUnitCube,
+  loadImages,
 } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import { animate, fitScene } from './shell.js'
 
 const DENSITY = 3
 
@@ -10,13 +11,14 @@ const sphere = (scale, generateUVs) => generateSphere(scale, DENSITY * 4, DENSIT
 
 // Benchmark: one of each kind of object - plain, textured, point and wireframe cubes and spheres,
 // sprite particles, distant and point lights - all spinning. Watch the FPS readout.
-export default async function run({ canvas, gui }) {
+export default async function run({ canvas }) {
   canvas.style.backgroundColor = '#333'
   const [wallTexture, cubeTexture] = await loadImages(['images/texture-wall.png', 'images/texture5.png'])
 
   const scene = new Scene()
   scene.camera.position = { x: 0.0, y: 15.0, z: -30.0 }
   fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
   const renderer = new CanvasRenderer(canvas)
 
   // a grid to help visualise the camera position
@@ -137,7 +139,6 @@ export default async function run({ canvas, gui }) {
     attenuation: 0.1,
   }))
 
-  addCameraControls(gui, scene)
 
   animate(() => {
     // spin everything except the grid

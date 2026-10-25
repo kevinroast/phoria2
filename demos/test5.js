@@ -1,7 +1,8 @@
 import {
-  CanvasRenderer, EmitterEntity, Entity, Scene, clone, generateTesselatedPlane, generateUnitCube, loadImage,
+  CanvasRenderer, EmitterEntity, Entity, OrbitControl, Scene, clone, generateTesselatedPlane,
+  generateUnitCube, loadImage,
 } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import { animate, fitScene } from './shell.js'
 
 // Blob sprite for the liquid particles - a solid centre fading out at the edge.
 function generateBlob(size) {
@@ -27,6 +28,7 @@ export default async function run({ canvas, gui, info }) {
   scene.camera.position = { x: -10, y: 12, z: -22.0 }
   scene.camera.lookat = { x: 6, y: 4, z: -1 }
   fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
   const renderer = new CanvasRenderer(canvas)
 
   // a grid to help visualise the camera position
@@ -128,12 +130,7 @@ export default async function run({ canvas, gui, info }) {
     if (e.code === 'Space') ctx.drawImage(wallImage, 0, 0)
   })
 
-  addCameraControls(gui, scene, { lookatOpen: false })
-  let f = gui.addFolder('Camera Up').close()
-  f.add(scene.camera.up, 'x', -10, 10, 0.1)
-  f.add(scene.camera.up, 'y', -10, 10, 0.1)
-  f.add(scene.camera.up, 'z', -10, 10, 0.1)
-  f = gui.addFolder('Emitter')
+  const f = gui.addFolder('Emitter')
   f.add(emitter, 'rate', 0, 250)
   f.add(emitter, 'lifetime', 0, 5000)
   f.add(emitter, 'lifetimeRnd', 0, 5000)

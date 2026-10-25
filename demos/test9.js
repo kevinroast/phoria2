@@ -1,8 +1,8 @@
 import {
-  CanvasRenderer, EmitterEntity, Entity, PhysicsEntity, RADIANS, Scene, TWOPI, generateRadialGradientBitmap,
-  generateTesselatedPlane, mat4, vec4,
+  CanvasRenderer, EmitterEntity, Entity, OrbitControl, PhysicsEntity, RADIANS, Scene, TWOPI,
+  generateRadialGradientBitmap, generateTesselatedPlane, mat4, vec4,
 } from 'phoria2'
-import { animate, fitScene, fullscreenCanvas } from './shell.js'
+import { animate, fitScene } from './shell.js'
 
 const Rnd = (s) => Math.random() * s
 
@@ -58,7 +58,8 @@ export default function run({ canvas }) {
   const scene = new Scene()
   scene.camera.position = { x: 0, y: 25.0, z: -60.0 }
   scene.camera.lookat = { x: 0.0, y: 15.0, z: 0.0 }
-  fullscreenCanvas(canvas, () => fitScene(scene, canvas))
+  fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
   const renderer = new CanvasRenderer(canvas)
 
   // a grid to help visualise the camera position

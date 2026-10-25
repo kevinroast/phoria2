@@ -1,11 +1,12 @@
-import { CanvasRenderer, Entity, PointLight, RADIANS, Scene } from 'phoria2'
-import { addCameraControls, animate, fitScene } from './shell.js'
+import { CanvasRenderer, Entity, OrbitControl, PointLight, RADIANS, Scene } from 'phoria2'
+import { animate, fitScene } from './shell.js'
 
 // The Elite Cobra Mk III, lit by a point light - set its yaw, pitch and roll from the controls.
 export default function run({ canvas, gui }) {
   const scene = new Scene()
   scene.camera.position = { x: 0.0, y: 5.0, z: -35.0 }
   fitScene(scene, canvas)
+  new OrbitControl(canvas, scene)
   const renderer = new CanvasRenderer(canvas)
 
   const cobra1 = Entity.create({
@@ -72,12 +73,7 @@ export default function run({ canvas, gui }) {
 
   const ypr = { yaw: 0, pitch: 0, roll: 0 }
 
-  addCameraControls(gui, scene, { lookatOpen: false })
-  let f = gui.addFolder('Camera Up').close()
-  f.add(scene.camera.up, 'x', -10, 10, 0.1)
-  f.add(scene.camera.up, 'y', -10, 10, 0.1)
-  f.add(scene.camera.up, 'z', -10, 10, 0.1)
-  f = gui.addFolder('Light').close()
+  let f = gui.addFolder('Light').close()
   f.add(light.position, 'x', -25, 25, 0.1)
   f.add(light.position, 'y', -25, 25, 0.1)
   f.add(light.position, 'z', -25, 25, 0.1)

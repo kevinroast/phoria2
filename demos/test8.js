@@ -1,7 +1,7 @@
 import {
   CanvasRenderer, DistantLight, EmitterEntity, Entity, PointLight, Scene, generateRadialGradientBitmap,
 } from 'phoria2'
-import { animate, fitScene, fullscreenCanvas } from './shell.js'
+import { animate, fitScene } from './shell.js'
 
 // Cobra Mk III
 const COBRA = {
@@ -55,7 +55,7 @@ export default function run({ canvas }) {
   const scene = new Scene()
   scene.camera.position = { x: -150, y: 15.0, z: -25.0 }
   scene.camera.lookat = { x: 0.0, y: 2.0, z: 0.0 }
-  fullscreenCanvas(canvas, () => fitScene(scene, canvas))
+  fitScene(scene, canvas)
   const renderer = new CanvasRenderer(canvas)
 
   const starfield = generateStarfield(2000, 5000)
