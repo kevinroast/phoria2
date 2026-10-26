@@ -26,7 +26,7 @@ export class Scene extends Node {
   static type = 'scene'
   static get OPTIONS() { return [...NODE_OPTIONS, 'background', 'environment', 'environmentIntensity', 'backgroundBlur'] }
   static HINTS = {
-    fog: "fog isn't supported - see API-DESIGN.md's non-goals",
+    fog: "fog isn't supported",
     lights: "add lights as children: scene.add(new DirectionalLight({ ... }))",
     envMap: "use 'environment': 'studio', or an .hdr url",
     environmentMap: "use 'environment': 'studio', or an .hdr url",

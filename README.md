@@ -106,7 +106,7 @@ export function SpinningBox({ color }) {
 ```
 
 A full example, with a chart that follows its data, is in
-[`examples/react`](https://github.com/kevinroast/kevs3d/tree/master/phoria2/examples/react).
+[`examples/react`](https://github.com/kevinroast/phoria2/tree/main/examples/react).
 
 ## What's in the package
 
@@ -124,8 +124,7 @@ Any browser with WebGL 2: current Chrome, Edge, Firefox and Safari (desktop and 
 ## Examples
 
 The demo gallery shows each feature and a few showcase scenes; its source is in
-[`demos/`](https://github.com/kevinroast/kevs3d/tree/master/phoria2/demos). The design and the
-reasoning behind the API are in [`API-DESIGN.md`](https://github.com/kevinroast/kevs3d/blob/master/phoria2/API-DESIGN.md).
+[`demos/`](https://github.com/kevinroast/phoria2/tree/main/demos).
 
 ## Licence
 

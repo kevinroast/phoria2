@@ -1,4 +1,4 @@
-// phoria2 - small, friendly 3D for the web. See API-DESIGN.md for the design this implements.
+// phoria2 - small, friendly 3D for the web.
 
 export * from './types.js'
 

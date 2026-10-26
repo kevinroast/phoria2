@@ -1,5 +1,5 @@
 :root {
-  /* The shared kevs3d palette (see project-template/src/index.css): shaded transparent black
+  /* The shared kevs3d palette: shaded transparent black
      panels, #333 borders, #eee text, warm off-white highlight. --float is a denser fill for
      panels that sit over a live (possibly light) scene rather than a dark backdrop. */
   --bg: #141414;

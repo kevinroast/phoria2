@@ -1,5 +1,5 @@
-// Geometry generators: plain functions returning a Geometry. Every shape follows the conventions in
-// API-DESIGN.md section 2 - +Y up, counter-clockwise front faces, outward normals, glTF UVs (v down).
+// Geometry generators: plain functions returning a Geometry. Every shape follows the same
+// conventions - +Y up, counter-clockwise front faces, outward normals, glTF UVs (v down).
 
 import { Geometry } from './Geometry.js'
 import { checkNumber, checkOptions, describe, fail } from '../validate.js'

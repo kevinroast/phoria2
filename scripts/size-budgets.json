@@ -7,7 +7,7 @@
   "chart app": {
     "limit": 64.5,
     "target": 50,
-    "why": "the charts sub-path is 17 KB against its 10 KB target (API-DESIGN.md section 26), plus the core's growth and inline container legends (64.2 KB)"
+    "why": "the charts sub-path is 17 KB against its 10 KB target, plus the core's growth and inline container legends (64.2 KB)"
   },
   "product viewer": {
     "limit": 55,
