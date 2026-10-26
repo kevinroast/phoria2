@@ -99,7 +99,7 @@ export default function run({ canvas, gui, info }) {
   const soft = glow()
   const emitter = scene.add(new Emitter({ max: 6000, material: { map: soft } }))
   const sets = { fountain, flame: brazier, snow: village }
-  const settings = { preset: 'fountain', burst: () => emitter.burst(400, { velocitySpread: 5 }) }
+  const settings = { preset: 'flame', burst: () => emitter.burst(400, { velocitySpread: 5 }) }
   const apply = () => {
     const { size, blending, ...options } = PRESETS[settings.preset]
     emitter.set(options)

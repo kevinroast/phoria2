@@ -7,7 +7,7 @@ business apps: charts, labelled scenes, diagrams, dashboards and product viewers
 - **Small**: about 46 KB gzipped for a lit, interactive scene; charts, particles and glTF are
   separate imports, and the heavier parts (shadows, HDR environments, GPU picking) load only when used.
 - **Idle when nothing changes**: a view draws only when something in it changed, so a dashboard of
-  many views costs nothing at rest.
+  many views only updates when needed.
 - **Tells you what to write**: every option is checked, and a mistake throws an error that names
   the fix - pass `colour` and you get `Material: use 'color'`. Written to be easy for coding
   agents too.

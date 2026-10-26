@@ -16,6 +16,15 @@ const WIDTH = 960, HEIGHT = 600, SCALE = 0.5
 const WAIT = { viewer: 7, fireworks: 6, paint: 7, particles: 5, space: 4.5, textures: 5, lights: 5 }
 // several views on one page: captured from the page, not one view's toImage()
 const PAGE = ['dashboard']
+// set a demo up for its picture first - scene-json aims off-centre to clear its editor panel, which
+// the picture leaves out: its turntable goes back to the start, with the objects side by side, and it
+// is framed in the middle from a little to the right and above
+const PREPARE = {
+  'scene-json': `view.scene.find('turntable').rotation.set(0, 0, 0)
+    view.camera.position.set(2.5, 4, 9)
+    view.camera.target.set(0, 0.9, 0)
+    view.frame(view.scene, { padding: 0.1 })`,
+}
 
 const root = resolve(import.meta.dirname, '..')
 const CANDIDATES = [
@@ -84,6 +93,10 @@ try {
   for (const name of names) {
     await send('Page.navigate', { url: `${base}demo.html?name=${name}` })
     await sleep((WAIT[name] ?? 3.5) * 1000)
+    if (PREPARE[name]) {
+      await evaluate(PREPARE[name])
+      await sleep(300)
+    }
     let data
     if (!PAGE.includes(name) && await evaluate('!!window.view?.toImage')) {
       // the view's own picture, scaled down and re-encoded in the page
