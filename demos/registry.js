@@ -1,6 +1,9 @@
 // Every demo, in gallery order. `name` is the module in demos/ and the ?name= of demo.html. A
 // `section` starts a new heading in the gallery. `orbit: false` marks demos without mouse orbiting -
 // they drive the camera, or use the mouse for something else - so the page doesn't advertise it.
+// where the code lives - the demos link to their own source there
+export const REPO = 'https://github.com/kevinroast/phoria2'
+
 export const DEMOS = [
   { section: 'Charts and diagrams', name: 'bars', title: 'a bar chart from a spec - axes, legend, value labels, animated updates' },
   { name: 'scatter', title: 'a 3D scatter of customers from a spec - legend, tooltips, flat projections' },

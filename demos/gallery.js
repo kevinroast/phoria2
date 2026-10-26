@@ -1,6 +1,21 @@
 import { Box3, DirectionalLight, Group, Lines, Mesh, PointLight, View, box, edges, grid, sphere } from 'phoria2'
 import { daisy } from './flower.js'
 import { DEMOS } from './registry.js'
+import { version } from '../package.json'
+
+// the header: the version, and an install command that copies itself
+document.getElementById('version').textContent = `v${version}`
+const install = /** @type {HTMLButtonElement} */ (document.querySelector('.install'))
+install.addEventListener('click', async () => {
+  const note = /** @type {HTMLElement} */ (install.querySelector('.install-note'))
+  try {
+    await navigator.clipboard.writeText('npm install phoria2')
+    note.textContent = 'copied'
+  } catch {
+    note.textContent = 'select to copy'
+  }
+  setTimeout(() => { note.textContent = 'copy' }, 1500)
+})
 
 // one heading and grid of links per section
 const sections = /** @type {HTMLElement} */ (document.getElementById('demo-sections'))

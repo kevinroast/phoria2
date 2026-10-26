@@ -1,4 +1,4 @@
-import { DEMOS } from './registry.js'
+import { DEMOS, REPO } from './registry.js'
 import { Panel } from './panel.js'
 
 // Host for a single demo: demo.html?name=hello loads demos/hello.js and calls its default export
@@ -19,6 +19,9 @@ if (!demo || !load) {
   document.getElementById('name').textContent = demo.name
   document.getElementById('title').textContent = demo.title
   document.getElementById('hint').hidden = demo.orbit === false
+  const source = /** @type {HTMLAnchorElement} */ (document.getElementById('source'))
+  source.href = `${REPO}/blob/main/demos/${demo.name}.js`
+  source.hidden = false
 
   // the canvas fills the window (CSS); each demo's View sizes its drawing buffer to match
   const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('canvas'))

@@ -18,6 +18,12 @@
           <h1>Phoria</h1>
           <p>pho&middot;ri&middot;a (f&ocirc;r-)</p>
           <p>n. The relative directions of the eyes during binocular fixation on a given object</p>
+          <div class="get-it">
+            <button type="button" class="install" title="Copy to the clipboard"><code>npm install phoria2</code><span class="install-note">copy</span></button>
+            <a class="get-link" href="https://github.com/kevinroast/phoria2"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>GitHub</a>
+            <a class="get-link" href="https://www.npmjs.com/package/phoria2">npm</a>
+            <span class="version" id="version"></span>
+          </div>
         </div>
       </header>
 
@@ -27,14 +33,27 @@
 
       <div id="demo-sections"></div>
 
-      <div class="about">
-        <p><b>phoria2</b> is a small, fast, Open Source JavaScript library for 3D on the web: a
-          WebGL 2 renderer with PBR materials, instancing, points, lines, labels, picking and
-          particles. An API small enough to learn in an afternoon. No runtime dependencies, ES modules,
-          and validation messages that tell you (or your coding agent) what to write.
-          It is a rewrite of <b>phoria</b>, a library from 2013 that rendered 3D on a 2D canvas context.</p>
+      <section class="about">
+        <h2 class="section-heading">About</h2>
+        <p class="about-lead"><b>phoria2</b> is a small, fast JavaScript library for 3D on the web - charts,
+          labelled scenes, dashboards and product viewers, on a WebGL 2 renderer with an API you can
+          learn in an afternoon.</p>
+        <ul class="about-points">
+          <li><b>Everything you need</b> PBR materials, instancing, points, lines, labels, picking,
+            shadows, particles and glTF models.</li>
+          <li><b>Light and quick</b> No runtime dependencies, plain ES modules, and views that only draw
+            when something changes.</li>
+          <li><b>Tells you what to write</b> Every option is checked, and a mistake comes back as an error
+            that names the fix - for you, or your coding agent.</li>
+          <li><b>Open source</b> MIT licensed. <code>npm install phoria2</code>, then find the code, the docs
+            and a React example on <a href="https://github.com/kevinroast/phoria2">GitHub</a>.</li>
+        </ul>
+      </section>
+      <div class="credits">
+        <p>A rewrite of <b>phoria</b>, a 2013 library that drew 3D on the canvas 2D context.</p>
+        <p>Copyright &copy; Kevin Roast 2013-2026 &middot; <a href="https://github.com/kevinroast/phoria2">GitHub</a> &middot;
+          <a href="https://www.npmjs.com/package/phoria2">npm</a></p>
       </div>
-      <div class="credits">Copyright &copy; Kevin Roast 2013-2026</div>
     </main>
     <script type="module" src="/demos/gallery.js"></script>
   </body>

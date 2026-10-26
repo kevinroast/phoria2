@@ -100,6 +100,19 @@ body.demo #canvas {
   color: var(--text-dim);
 }
 
+.hud-title .source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+}
+
+.hud-title .source-link[hidden] {
+  display: none;
+}
+
 .hud-title .hint {
   margin-top: 8px;
   font-size: 11px;
@@ -417,6 +430,57 @@ body.gallery {
   color: var(--text-dim);
 }
 
+.get-it {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.install,
+.get-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-shadow: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.install:hover,
+.get-link:hover {
+  border-color: var(--accent-dim);
+}
+
+.install code {
+  font: 12px ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: var(--accent);
+}
+
+.install-note {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.get-it .version {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.about code {
+  font: 0.92em ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: var(--text);
+}
+
 .canvas-frame {
   position: relative;
   height: 360px;
@@ -499,7 +563,7 @@ body.gallery {
 }
 
 .about {
-  max-width: 60em;
+  margin-top: 8px;
   color: var(--text-dim);
   line-height: 1.55;
 }
@@ -508,11 +572,49 @@ body.gallery {
   color: var(--text);
 }
 
+.about-lead {
+  margin: 0 0 16px;
+  font-size: 16px;
+  color: var(--text);
+}
+
+/* the same columns as the demo cards above, so the two line up */
+.about-points {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.about-points li {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-2);
+  font-size: 13px;
+}
+
+.about-points b {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--accent);
+}
+
 .credits {
   margin: 32px 0 8px;
   font-size: 12px;
   text-align: center;
   color: var(--text-dim);
+}
+
+.credits p {
+  margin: 4px 0;
 }
 
 @media (max-width: 600px) {
