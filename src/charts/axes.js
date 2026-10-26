@@ -99,7 +99,8 @@ export function chartFrame({ box, axes, theme, overlap }) {
       for (const t of values) {
         set.add(new Label({ text: a.scale.format(t), position: edge.at(a.scale(t), margin), place, className: cls('tick'), priority: 1, overlap }))
       }
-      set.add(new Label({ text: a.title, position: edge.title(margin), place, className: cls('title'), priority: 2, overlap }))
+      // an empty title (axis: { title: '' }) leaves the axis untitled
+      if (a.title) set.add(new Label({ text: a.title, position: edge.title(margin), place, className: cls('title'), priority: 2, overlap }))
     }
   }
   const bottom = (v) => v[1] >= -EDGE_ON

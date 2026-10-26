@@ -492,6 +492,23 @@ body.gallery {
   background: radial-gradient(circle at 50% 30%, #262626, #0d0d0d);
 }
 
+/* the hero names the call it is making, as code */
+.hero-caption {
+  position: absolute;
+  left: 16px;
+  bottom: 12px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.45);
+  font: 12px ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: #9dffb5;
+  pointer-events: none;
+}
+
+.hero-caption:empty {
+  display: none;
+}
+
 .canvas-frame canvas {
   display: block;
   width: 100%;

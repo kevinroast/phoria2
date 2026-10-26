@@ -12,10 +12,13 @@
 export function legend(scale, { title, theme, position = 'top-right', format, onToggle }) {
   const el = document.createElement('div')
   el.className = `phoria-legend phoria-legend-${position} phoria-${theme}`
-  const head = document.createElement('div')
-  head.className = 'phoria-legend-title'
-  head.textContent = title
-  el.append(head)
+  // an empty title leaves the legend untitled
+  if (title) {
+    const head = document.createElement('div')
+    head.className = 'phoria-legend-title'
+    head.textContent = title
+    el.append(head)
+  }
   if (scale.kind === 'categorical') {
     for (const { value, color } of scale.colors()) {
       const item = document.createElement('button')
