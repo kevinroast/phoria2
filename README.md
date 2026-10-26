@@ -27,6 +27,27 @@ Or straight from a CDN, with no build step:
 </script>
 ```
 
+To use more than the core - charts, particles or glTF - map each import to the package's own
+files, so they share one copy of the core (the CDN's ready-made `+esm` builds each bundle their
+own). Pin the version so a new release can't change your page:
+
+```html
+<script type="importmap">
+{
+  "imports": {
+    "phoria2": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.2/dist/phoria2.js",
+    "phoria2/charts": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.2/dist/charts.js",
+    "phoria2/particles": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.2/dist/particles.js",
+    "phoria2/gltf": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.2/dist/gltf.js"
+  }
+}
+</script>
+<script type="module">
+  import { View } from 'phoria2'
+  import { chart } from 'phoria2/charts'
+</script>
+```
+
 ## A first scene
 
 ```html
@@ -123,8 +144,8 @@ Any browser with WebGL 2: current Chrome, Edge, Firefox and Safari (desktop and 
 
 ## Examples
 
-The demo gallery shows each feature and a few showcase scenes; its source is in
-[`demos/`](https://github.com/kevinroast/phoria2/tree/main/demos).
+The [demo gallery](https://kevs3d.co.uk/phoria2/) shows each feature and a few showcase scenes;
+its source is in [`demos/`](https://github.com/kevinroast/phoria2/tree/main/demos).
 
 ## Licence
 
