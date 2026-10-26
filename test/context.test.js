@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Material, Mesh, PerspectiveCamera, Scene, Texture, box, sphere } from '../src/index.js'
 import { WebGLRenderer } from '../src/webgl/WebGLRenderer.js'
 
@@ -9,7 +9,7 @@ function fakeGL({ parallel = false } = {}) {
   const compiled = { done: false }
   const draws = { count: 0 }
   const live = new Set()
-  const lost = { count: 0 }
+  const lost = { count: 0, now: false, restores: 0 }
   const consts = new Map()
   const constant = (name) => {
     if (!consts.has(name)) consts.set(name, 1000 + consts.size)
@@ -30,11 +30,11 @@ function fakeGL({ parallel = false } = {}) {
     getShaderParameter: () => true,
     // 0x91b1 is COMPLETION_STATUS_KHR: is a program compiled yet?
     getProgramParameter: (_p, name) => (name === constant('ACTIVE_UNIFORMS') ? 0 : name === 0x91b1 ? compiled.done : true),
-    getExtension: (name) => (name === 'WEBGL_lose_context' ? { loseContext: () => { lost.count++; live.clear() } }
+    getExtension: (name) => (name === 'WEBGL_lose_context' ? { loseContext: () => { lost.count++; lost.now = true; live.clear() }, restoreContext: () => { lost.restores++; lost.now = false } }
       : name === 'KHR_parallel_shader_compile' && parallel ? {} : null),
     drawElements: () => draws.count++,
     drawArrays: () => draws.count++,
-    isContextLost: () => false,
+    isContextLost: () => lost.now,
   }
   const proxy = new Proxy(gl, {
     get: (target, key) => (key in target ? target[key] : typeof key === 'string' && /^[A-Z0-9_]+$/.test(key) ? constant(key) : () => {}),
@@ -55,10 +55,12 @@ const pixels = () => new Texture({ image: { data: new Uint8Array([255, 0, 0, 255
 describe('GPU resources', () => {
   afterEach(() => {
     delete globalThis.document
+    vi.useRealTimers()
   })
 
   it('a renderer with its own context frees everything on dispose', () => {
-    const { gl, live, lost } = fakeGL()
+    vi.useFakeTimers()
+    const { gl, live, lost, count } = fakeGL()
     const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
     renderer.setSize(10, 10)
     const scene = new Scene()
@@ -66,7 +68,42 @@ describe('GPU resources', () => {
     renderer.render(scene, camera())
     expect(live.size).toBeGreaterThan(0)
     renderer.dispose(scene)
+    // the scene's copies and the programs go at once; the context itself a moment later
+    expect([count('vertex array'), count('program'), lost.count]).toEqual([0, 0, 0])
+    vi.runAllTimers()
     expect([lost.count, live.size]).toEqual([1, 0])
+  })
+
+  it('a new renderer on the canvas straight after a dispose keeps its context (React StrictMode)', () => {
+    vi.useFakeTimers()
+    const { gl, lost, draws } = fakeGL()
+    const canvas = fakeCanvas(gl)
+    const first = new WebGLRenderer({ canvas })
+    first.setSize(10, 10)
+    const a = new Scene()
+    a.add(new Mesh({ geometry: box(1) }))
+    first.render(a, camera())
+    first.dispose(a)
+    const second = new WebGLRenderer({ canvas })
+    second.setSize(10, 10)
+    const b = new Scene()
+    b.add(new Mesh({ geometry: sphere(1) }))
+    vi.runAllTimers()
+    const before = draws.count
+    second.render(b, camera())
+    expect([lost.count, draws.count > before]).toEqual([0, true])
+  })
+
+  it('a new renderer on a canvas whose context was let go of and lost asks for it back', () => {
+    vi.useFakeTimers()
+    const { gl, lost } = fakeGL()
+    const canvas = fakeCanvas(gl)
+    const first = new WebGLRenderer({ canvas })
+    first.dispose(new Scene())
+    vi.runAllTimers()
+    expect(lost.count).toBe(1)
+    new WebGLRenderer({ canvas })
+    expect([lost.restores, gl.isContextLost()]).toEqual([1, false])
   })
 
   it('views sharing a context free only what no other view draws, and the last one frees the rest', () => {

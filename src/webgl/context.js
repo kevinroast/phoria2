@@ -42,6 +42,12 @@ export class GLContext {
   constructor(canvas, { antialias = true, shared: isShared = false } = {}) {
     this.canvas = canvas
     this.isShared = isShared
+    // a canvas let go of moments ago keeps its context, rather than losing it
+    const before = released.get(canvas)
+    if (before) {
+      clearTimeout(before.timer)
+      released.delete(canvas)
+    }
     const gl = canvas.getContext('webgl2', { antialias, alpha: true, premultipliedAlpha: true, powerPreference: 'high-performance' })
     if (!gl) fail('WebGLRenderer', 'WebGL 2 is not available in this browser or on this device')
     this.gl = /** @type {WebGL2RenderingContext} */ (gl)
@@ -67,6 +73,12 @@ export class GLContext {
     this.#removeListeners = () => {
       canvas.removeEventListener('webglcontextlost', lost)
       canvas.removeEventListener('webglcontextrestored', restored)
+    }
+    // ...or, let go of long enough ago that it was lost, asks for it back: drawing waits until the
+    // browser restores it, then goes ahead as after any lost context
+    if (before && gl.isContextLost()) {
+      this.lost = true
+      before.lose?.restoreContext()
     }
   }
 
@@ -148,21 +160,33 @@ export class GLContext {
   /**
    * A renderer is done with this context. Its scene's GPU copies are freed unless another renderer
    * still draws them; the last user frees everything, losing the context on purpose so the
-   * browser reclaims it at once.
+   * browser reclaims it. A canvas's own context is lost a moment later rather than at once: a new
+   * renderer on the same canvas before then - React's StrictMode mounts, disposes and mounts again
+   * in one go - keeps the live context, as a canvas only ever has the one.
    * @param {ContextUser} user
    * @param {Scene} [scene] what the renderer drew
    */
   release(user, scene) {
     this.users.delete(user)
-    if (this.users.size) {
-      if (scene) this.resources.release(user, scene)
-      return
-    }
+    if (scene) this.resources.release(user, scene)
+    if (this.users.size) return
     this.programs.dispose()
     this.resources.reset()
     this.passes?.reset()
     this.#removeListeners()
-    this.gl.getExtension('WEBGL_lose_context')?.loseContext()
-    if (this === shared) shared = null
+    const lose = this.gl.getExtension('WEBGL_lose_context')
+    if (this === shared) {
+      lose?.loseContext()
+      shared = null
+      return
+    }
+    released.set(this.canvas, { lose, timer: setTimeout(() => lose?.loseContext()) })
   }
 }
+
+/**
+ * Canvases whose last renderer let go of them, with the timer that will lose the context and the
+ * extension that does it (kept, as a lost context gives out no extensions to restore it with).
+ * @type {WeakMap<object, { lose: any, timer: ReturnType<typeof setTimeout> }>}
+ */
+const released = new WeakMap()

@@ -77,6 +77,37 @@ view.frame(model)
 model.play()                                        // its first animation
 ```
 
+## With React
+
+React owns the canvas; phoria2 draws on it. Make the view once, dispose of it on unmount, and
+change the scene in place when props change:
+
+```jsx
+import { useEffect, useRef } from 'react'
+import { View, Mesh, box } from 'phoria2'
+
+export function SpinningBox({ color }) {
+  const canvas = useRef(null)
+  const mesh = useRef(null)
+
+  useEffect(() => {
+    const view = new View({ canvas: canvas.current, orbit: true })
+    mesh.current = view.scene.add(new Mesh({ geometry: box(2) }))
+    view.start((dt) => mesh.current.rotateY(0.6 * dt))
+    return () => view.dispose()
+  }, [])
+
+  useEffect(() => {
+    mesh.current.material.color.set(color)
+  }, [color])
+
+  return <canvas ref={canvas} style={{ width: '100%', height: 320 }} />
+}
+```
+
+A full example, with a chart that follows its data, is in
+[`examples/react`](https://github.com/kevinroast/kevs3d/tree/master/phoria2/examples/react).
+
 ## What's in the package
 
 | Import | |
