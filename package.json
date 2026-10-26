@@ -1,7 +1,28 @@
 {
   "name": "phoria2",
-  "version": "2.0.0-alpha.0",
-  "description": "Small, friendly 3D for the web",
+  "version": "1.0.0-alpha.0",
+  "description": "Small, friendly 3D for the web - a WebGL 2 renderer with charts, labels, picking, particles and glTF",
+  "keywords": [
+    "3d",
+    "webgl",
+    "webgl2",
+    "3d-charts",
+    "data-visualization",
+    "charts",
+    "scene-graph",
+    "gltf",
+    "pbr",
+    "particles"
+  ],
+  "homepage": "https://github.com/kevinroast/kevs3d/tree/master/phoria2#readme",
+  "bugs": {
+    "url": "https://github.com/kevinroast/kevs3d/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kevinroast/kevs3d.git",
+    "directory": "phoria2"
+  },
   "author": "Kevin Roast",
   "license": "MIT",
   "type": "module",
@@ -40,7 +61,8 @@
     "lint": "eslint .",
     "size": "node scripts/size.mjs",
     "perf": "node perf/run.mjs",
-    "thumbs": "node scripts/thumbs.mjs"
+    "thumbs": "node scripts/thumbs.mjs",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run build && npm run size"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -5,7 +5,7 @@ import { Panel } from './panel.js'
 // with { canvas, gui, info }. Each demo owns its scene and animation loop from there, and returns
 // its View - in dev it is window.view, for poking at from the console.
 /** @typedef {(ctx: { canvas: HTMLCanvasElement, gui: Panel, info: HTMLElement }) => unknown} DemoRun */
-const modules = /** @type {Record<string, () => Promise<{ default: DemoRun }>>} */ (import.meta.glob(['./*.js', '!./main.js', '!./registry.js', '!./gallery.js', '!./panel.js', '!./kit.js', '!./planets.js']))
+const modules = /** @type {Record<string, () => Promise<{ default: DemoRun }>>} */ (import.meta.glob(['./*.js', '!./main.js', '!./registry.js', '!./gallery.js', '!./panel.js', '!./kit.js', '!./planets.js', '!./flower.js']))
 
 const name = new URLSearchParams(location.search).get('name') ?? DEMOS[0].name
 const demo = DEMOS.find((d) => d.name === name)

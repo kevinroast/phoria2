@@ -1,4 +1,5 @@
-import { Group, Lines, Mesh, PointLight, View, box, edges, grid, sphere } from 'phoria2'
+import { Box3, DirectionalLight, Group, Lines, Mesh, PointLight, View, box, edges, grid, sphere } from 'phoria2'
+import { daisy } from './flower.js'
 import { DEMOS } from './registry.js'
 
 // one heading and grid of links per section
@@ -42,4 +43,22 @@ view.start((dt, t) => {
     pivot.rotateY(speed * dt)
     pivot.position.y = Math.sin(t * 2)
   }
+})
+
+// The masthead's flower: a daisy turning slowly on a transparent canvas, so the page shows through
+const flowerView = new View({ canvas: '#flower', camera: { position: [0, 0.4, 6], target: [0, -1, 0], fov: 30 } })
+flowerView.scene.environment = 'studio'
+flowerView.scene.add(new DirectionalLight({ direction: [-0.4, -0.6, -1], intensity: 1.2 }))
+// the sway tips an outer group; the flower turns inside it - one rotation per node, so neither
+// undoes the other
+const sway = flowerView.scene.add(new Group())
+const flower = sway.add(daisy())
+// framed for the whole turn: as wide as the flower reaches, whichever way it faces
+const reach = flower.bounds, wide = Math.max(...[reach.min[0], reach.max[0], reach.min[2], reach.max[2]].map(Math.abs))
+flowerView.frame(new Box3([-wide, reach.min[1], -wide], [wide, reach.max[1], wide]), { padding: 0.02 })
+if (import.meta.env.DEV) Object.assign(window, { flowerView })
+flowerView.start((dt, t) => {
+  flower.rotateY(0.35 * dt)
+  // a gentle sway, as if in a breeze
+  sway.rotation.z = Math.sin(t * 0.8) * 0.04
 })
