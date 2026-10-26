@@ -69,11 +69,13 @@ export function hero(canvas, caption) {
     legend: { position: 'top-right' },
     // every label at full strength, even where one covers another - a showpiece, not a dashboard
     overlap: 'show',
-    // quick, so a reveal is done before the next one starts - a change that arrives mid-animation
-    // restarts it, and the bars would never finish growing
-    transition: { duration: 0.35 },
+    // made with nothing animating, so hiding every bar for the start is instant - animated, the
+    // bars would show at the bottom for a moment, shrinking away, before the show begins
+    transition: false,
   }))
   sales.filter(() => false)
+  // then quick animations, so each month has grown before the next is revealed
+  sales.update({ transition: { duration: 0.35 } })
 
   // the show: each step a call on the chart, held for a while; the bars reveal a month at a time
   const STEPS = [
