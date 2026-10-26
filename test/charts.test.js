@@ -148,6 +148,45 @@ describe('charts', () => {
     expect(mesh.data.map((r) => r.id)).toEqual([rows[0].id, rows[2].id])
   })
 
+  it('lets rows that are leaving go, even when changes come faster than the animation', () => {
+    const scene = new Scene()
+    const bars = scene.add(chart({ mark: 'bar', data: rows, x: 'month', z: 'region', y: 'sales', transition: { duration: 0.5 } }))
+    run(scene, 0.6)
+    const mesh = /** @type {any} */ (bars.marks[0])
+    // a live chart: one region hidden, then new data every 0.1 s - five times faster than the animation
+    bars.filter((r) => r.region === 'North')
+    for (let tick = 1; tick <= 10; tick++) {
+      run(scene, 0.1)
+      bars.update(rows.map((r) => ({ ...r, sales: r.sales + tick })))
+    }
+    run(scene, 0.1)
+    // the hidden region's rows have gone, rather than staying on as flat leftovers
+    expect(mesh.count).toBe(3)
+    expect(mesh.data.every((r) => r.region === 'North')).toBe(true)
+    // and once the changes stop, the shown bars reach their full heights
+    run(scene, 0.6)
+    const heights = [0, 1, 2].map((i) => mesh.instanceMatrices[i * 16 + 5])
+    expect(Math.min(...heights)).toBeGreaterThan(0.5)
+  })
+
+  it('drops rows that were already leaving when a new change arrives', () => {
+    const scene = new Scene()
+    const bars = scene.add(chart({ mark: 'bar', data: rows, x: 'month', z: 'region', y: 'sales', transition: { duration: 0.5 } }))
+    run(scene, 0.6)
+    const mesh = /** @type {any} */ (bars.marks[0])
+    bars.filter((r) => r.region === 'North')
+    run(scene, 0.1)
+    // the three South rows are on their way out
+    expect(mesh.count).toBe(6)
+    bars.filter((r) => r.region === 'North' && r.month !== 'Mar')
+    run(scene, 0.1)
+    // the South rows are gone; only North's Mar is leaving now
+    expect(mesh.count).toBe(3)
+    expect(mesh.data.filter((r) => r.region === 'South')).toHaveLength(0)
+    run(scene, 0.6)
+    expect(mesh.count).toBe(2)
+  })
+
   it('filters rows, keeping the axes where they were', () => {
     const scene = new Scene()
     const bars = scene.add(chart({ mark: 'bar', data: rows, x: 'month', y: 'sales', color: 'region', stack: true, transition: false }))

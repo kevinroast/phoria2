@@ -253,7 +253,13 @@ export class Chart extends Group {
       // keyed: match items by key; new ones enter from nothing, missing ones leave to nothing
       const before = new Map(now?.keys?.map((k, i) => [k, i]) ?? [])
       const keep = new Set(target.keys)
-      const leaving = now?.keys ? now.keys.map((_, i) => i).filter((i) => !keep.has(/** @type {any[]} */ (now.keys)[i])) : []
+      // rows the interrupted animation was already taking away go now, rather than leaving all
+      // over again - or under a steady stream of changes they would never be gone
+      const going = new Set(this.#tween?.final.keys ?? now?.keys)
+      const leaving = now?.keys ? now.keys.map((_, i) => i).filter((i) => {
+        const key = /** @type {any[]} */ (now.keys)[i]
+        return !keep.has(key) && going.has(key)
+      }) : []
       const n = target.keys.length + leaving.length
       from = new Float32Array(n * stride)
       to = new Float32Array(n * stride)
