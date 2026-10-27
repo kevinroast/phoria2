@@ -22,7 +22,8 @@ install.addEventListener('click', async () => {
 const sections = /** @type {HTMLElement} */ (document.getElementById('demo-sections'))
 /** @type {HTMLUListElement | null} */
 let list = null
-for (const { section, name, title } of DEMOS) {
+for (const { section, name, title, hidden } of DEMOS) {
+  if (hidden) continue
   if (section || !list) {
     const heading = document.createElement('h2')
     heading.className = 'section-heading'

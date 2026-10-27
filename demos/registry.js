@@ -24,8 +24,11 @@ export const DEMOS = [
   { name: 'viewer', title: 'a glTF product viewer - full material maps, an HDR studio, shadows, animation' },
   { name: 'models', title: 'hand-made models from raw points and polygons - drawn solid, as edges and as points' },
   { section: 'Showcase', name: 'solar', title: 'a solar system - nested orbits, planets painted in code, a sun that lights them, click to follow' },
+  { name: 'artemis', title: 'an animated infographic of Artemis IV - the Blue Moon lander mission, step by step on a timeline' },
   { name: 'galaxy', title: 'a spiral galaxy - 200,000 additive stars, old and young, round a glowing core' },
   { name: 'fireworks', title: 'fireworks over a city across the water - rockets with physics, four burst shapes, reflections' },
   { name: 'paint', title: 'a paint cannon - click the wall to aim; drops splat and drip into its canvas textures', orbit: false },
   //{ name: 'space', title: 'Cobra Mk IIIs over a gas giant as a comet flies by - and an Elite mode in green vector lines', orbit: false },
+  // tests of the API on bigger tasks go here with hidden: true - reachable by name
+  // (demo.html?name=...), not listed in the gallery
 ]

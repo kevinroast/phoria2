@@ -8,3 +8,11 @@ occlusion, roughness and metalness in red, green and blue).
 - `red_brick_03` - https://polyhaven.com/a/red_brick_03
 - `weathered_brown_planks` - https://polyhaven.com/a/weathered_brown_planks
 - `rusty_metal_02` - https://polyhaven.com/a/rusty_metal_02
+
+`earth_blue_marble_2048.jpg` is NASA's Blue Marble (land, ocean and ice, 2048 x 1024), from NASA
+Visible Earth (https://visibleearth.nasa.gov/images/57730) - public domain, credit NASA Goddard
+Space Flight Center.
+
+`moon_lroc_1k.jpg` is the Lunar Reconnaissance Orbiter Camera colour map (1024 x 512) from NASA's
+CGI Moon Kit (https://svs.gsfc.nasa.gov/4720) - public domain, credit NASA's Scientific
+Visualization Studio.
