@@ -48,6 +48,10 @@
       "types": "./dist/types/gltf/index.d.ts",
       "import": "./dist/gltf.js"
     },
+    "./motion": {
+      "types": "./dist/types/motion/index.d.ts",
+      "import": "./dist/motion.js"
+    },
     "./charts/schema.json": "./schema/chart.schema.json"
   },
   "scripts": {

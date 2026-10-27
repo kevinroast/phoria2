@@ -162,13 +162,14 @@ export class Node {
 
   /**
    * Add children. Returns the first one, so `const cube = scene.add(new Mesh({...}))` keeps a
-   * reference. For a description, add(create({ type: 'mesh', ... })).
+   * reference. A list works too: `group.add(...parts)`. For a description, add(create({ type: 'mesh', ... })).
    * @template {Node} T
-   * @param {T} first
+   * @param {T} [first] (optional only in its type, so a spread list type-checks - add() needs one)
    * @param {...Node} more
    * @returns {T}
    */
   add(first, ...more) {
+    if (first === undefined) fail(this.constructor.name, 'add() needs a node to add - add(new Mesh({...})), or add(...nodes) for several')
     const nodes = [first, ...more].map((n) => toNode(n))
     for (const node of nodes) {
       if (node === this) fail(this.constructor.name, "can't add a node to itself")
@@ -278,19 +279,25 @@ export class Node {
   rotateZ(rad) { return this.rotate([0, 0, 1], rad) }
 
   /**
-   * Turn so the node's -Z axis points at a world position or node (cameras and lights look down -Z).
+   * Turn so the node's -Z axis points at a world position or node (cameras and lights look down -Z),
+   * with its +Y leaning toward up - a world direction, +Y unless given. The roll is undefined when
+   * looking straight along up, so for something that turns through every heading in a plane - a
+   * craft seen face on, moving in x-y - give an up out of that plane: [0, 0, 1].
    * @param {Vec3Input | Node} target
+   * @param {Vec3Input} [up]
    * @returns {this}
    */
-  lookAt(target) {
+  lookAt(target, up) {
     const at = target instanceof Node ? target.updateWorld().worldPosition : Vec3.fromInput(target, this.constructor.name)
+    const toward = up === undefined ? UP : Vec3.fromInput(up, `${this.constructor.name}.lookAt() up`).normalize()
     this.updateWorld()
     const eye = this.worldPosition
     if (eye.equals(at, 1e-9)) return this
-    // a view straight up or down needs a different up vector
+    // looking straight along up needs a different one
     const dir = at.clone().sub(eye).normalize()
-    const up = Math.abs(dir[1]) > 0.9999 ? [0, 0, -1] : UP
-    mat4.targetTo(tmpMat, eye, at, up)
+    const along = Math.abs(dir.dot(toward)) > 0.9999
+    const lean = along ? (Math.abs(toward[1]) > 0.9 ? [0, 0, -1] : UP) : toward
+    mat4.targetTo(tmpMat, eye, at, lean)
     const world = quat.fromMat3(new Float32Array(4), mat3.fromMat4(tmpMat3, tmpMat))
     // into the parent's frame
     if (this.#parent) {

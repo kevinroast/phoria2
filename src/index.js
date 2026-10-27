@@ -19,6 +19,7 @@ export { Light, AmbientLight, HemisphereLight, DirectionalLight, PointLight, Spo
 export { Geometry } from './geometry/Geometry.js'
 export { box, sphere, plane, cylinder, torus, icosphere, edges, axes, grid } from './geometry/generators.js'
 export { fromPolygons } from './geometry/fromPolygons.js'
+export { Curve, curve, ellipse } from './geometry/Curve.js'
 export { Material } from './material/Material.js'
 export { Texture, loadTexture } from './material/Texture.js'
 

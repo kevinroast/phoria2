@@ -3,13 +3,15 @@ import { defineConfig } from 'vite'
 
 const root = import.meta.dirname
 
-// The package entry points: 'phoria2' (the core), 'phoria2/particles', 'phoria2/charts' and 'phoria2/gltf'.
+// The package entry points: 'phoria2' (the core), 'phoria2/particles', 'phoria2/charts', 'phoria2/gltf'
+// and 'phoria2/motion'.
 // The library build emits one ES module per entry (dist/phoria2.js, dist/particles.js, ...).
 const ENTRIES = {
   phoria2: 'src/index.js',
   particles: 'src/particles/index.js',
   charts: 'src/charts/index.js',
   gltf: 'src/gltf/index.js',
+  motion: 'src/motion/index.js',
 }
 
 /**
@@ -41,6 +43,7 @@ export default defineConfig(({ mode }) => ({
       { find: /^phoria2\/particles$/, replacement: resolve(root, ENTRIES.particles) },
       { find: /^phoria2\/charts$/, replacement: resolve(root, ENTRIES.charts) },
       { find: /^phoria2\/gltf$/, replacement: resolve(root, ENTRIES.gltf) },
+      { find: /^phoria2\/motion$/, replacement: resolve(root, ENTRIES.motion) },
     ],
   },
   build: mode === 'demos'
@@ -66,7 +69,7 @@ export default defineConfig(({ mode }) => ({
             // everything the sub-paths share with the core goes in one predictable chunk; modules
             // loaded on demand (explain, toImage, the tooltip, the .hdr parser, the renderer's
             // environment and shadow passes, GPU picking) keep chunks of their own
-            manualChunks: (id) => (/[\\/]src[\\/](?!particles|charts|gltf|explain|snapshot|tooltip|hdr|irradiance|webgl[\\/](?:passes|picking))/.test(id) ? 'core' : undefined),
+            manualChunks: (id) => (/[\\/]src[\\/](?!particles|charts|gltf|motion|explain|snapshot|tooltip|hdr|irradiance|webgl[\\/](?:passes|picking))/.test(id) ? 'core' : undefined),
             chunkFileNames: '[name].js',
           },
         },

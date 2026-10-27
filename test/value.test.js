@@ -40,6 +40,8 @@ describe('Vec3', () => {
     expect(v.clone().normalize().toArray()).toEqual([0.6000000238418579, 0, 0.800000011920929])
     expect(new Vec3(1, 0, 0).cross([0, 1, 0]).toArray()).toEqual([0, 0, 1])
     expect(new Vec3(1, 2, 3).add([1, 1, 1]).multiplyScalar(2).toArray()).toEqual([4, 6, 8])
+    expect(new Vec3(1, 2, 3).setScalar(2).toArray()).toEqual([2, 2, 2])
+    expect(() => new Vec3().setScalar(/** @type {any} */ ('2'))).toThrow('setScalar')
     expect(new Vec3(1, 0, 0).applyQuaternion(new Quat().setFromEuler(0, Math.PI / 2, 0)).equals([0, 0, -1], 1e-6)).toBe(true)
   })
 })

@@ -80,6 +80,14 @@ describe('graph management', () => {
     expect(leaf.root).toBe(b)
   })
 
+  it('adds a list, returning the first', () => {
+    const parts = [new Node({ name: 'x' }), new Node({ name: 'y' })]
+    const g = new Group()
+    expect(g.add(...parts)).toBe(parts[0])
+    expect(g.children.map((n) => n.name)).toEqual(['x', 'y'])
+    expect(() => g.add(...[])).toThrow('add() needs a node')
+  })
+
   it('refuses loops', () => {
     const a = new Group(), b = a.add(new Group())
     expect(() => b.add(a)).toThrow("can't add an ancestor")

@@ -1,5 +1,5 @@
 import * as vec3 from '../math/vec3.js'
-import { describe, fail } from '../validate.js'
+import { checkNumber, describe, fail } from '../validate.js'
 
 /** @import { Vec3Input } from '../types.js' */
 
@@ -57,6 +57,12 @@ export class Vec3 extends Float32Array {
     this[0] = x
     this[1] = y ?? this[1]
     this[2] = z ?? this[2]
+    return this
+  }
+
+  /** Set all three to one number - a uniform scale: `node.scale.setScalar(2)`. @param {number} s @returns {this} */
+  setScalar(s) {
+    this[0] = this[1] = this[2] = checkNumber('Vec3', 'setScalar', s)
     return this
   }
 
