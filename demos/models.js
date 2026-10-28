@@ -27,7 +27,7 @@ export default function run({ canvas, gui }) {
   view.scene.add(new DirectionalLight({ direction: [-0.6, -1, -0.5], intensity: 1.2, castShadow: true }))
   view.scene.add(new Mesh({ geometry: cylinder({ radius: 1.7, height: 0.16, segments: 96 }), material: { color: '#a8a39c', roughness: 0.6 }, position: [0, -0.08, 0], receiveShadow: true }))
 
-  const settings = { model: 'teapot', finish: 'its own', smooth: true, solid: true, edges: false, points: false, opacity: 1, spin: 0.4 }
+  const settings = { model: 'teapot', finish: 'its own', smooth: true, solid: true, edges: true, points: true, opacity: 0.6, spin: 0.2 }
   // models are centred on a turntable, so spinning it turns them about their middle
   const turntable = view.scene.add(new Group())
   const show = () => {
