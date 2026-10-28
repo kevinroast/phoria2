@@ -1,4 +1,4 @@
-import { AmbientLight, Box3, DirectionalLight, Geometry, Group, InstancedMesh, Mesh, PointLight, SpotLight, Texture, View, box, cylinder } from 'phoria2'
+import { AmbientLight, Box3, DirectionalLight, Geometry, Group, InstancedMesh, Mesh, PointLight, SpotLight, Texture, View, box, cylinder, extrude, outline } from 'phoria2'
 import { random } from './kit.js'
 
 // Carbide, the Robot Wars champion: a low black and neon green double wedge on two yellow wheels,
@@ -112,69 +112,12 @@ function inside([x, z], points) {
   return hit
 }
 
-/** Triangles filling a simple polygon (ear clipping), as index triples, wound like the polygon. */
-function triangulate(points) {
-  const cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
-  let area = 0
-  points.forEach((p, i) => { area += cross([0, 0], p, points[(i + 1) % points.length]) })
-  const sign = Math.sign(area), left = points.map((_, i) => i), tris = []
-  let guard = 0
-  while (left.length > 3 && guard++ < 10000) {
-    let clipped = false
-    for (let k = 0; k < left.length; k++) {
-      const ia = left[(k + left.length - 1) % left.length], ib = left[k], ic = left[(k + 1) % left.length]
-      const a = points[ia], b = points[ib], c = points[ic]
-      if (cross(a, b, c) * sign <= 1e-9) continue
-      const inside = left.some((j) => j !== ia && j !== ib && j !== ic &&
-        cross(a, b, points[j]) * sign >= 0 && cross(b, c, points[j]) * sign >= 0 && cross(c, a, points[j]) * sign >= 0)
-      if (inside) continue
-      tris.push([ia, ib, ic])
-      left.splice(k, 1)
-      clipped = true
-      break
-    }
-    if (!clipped) break
-  }
-  if (left.length === 3) tris.push(left)
-  return tris
-}
-
 /**
- * A flat piece cut from an outline: top, bottom and edges, with sharp creases. `uv` maps a point of
- * the outline to its texture position on the top; the edges all take the texture at `edge`.
+ * A flat piece cut from an outline in plan ([x, z] pairs), from y0 up to y1 - mesh options, its
+ * geometry and where it sits. Seen from above, an outline's y runs away from you, towards -z.
  */
-function slab(points, y0, y1, uv = () => [0, 0], edge = [0.005, 0.005]) {
-  const positions = [], uvs = []
-  const push = (...corners) => {
-    for (const [x, y, z, u, v] of corners) {
-      positions.push(x, y, z)
-      uvs.push(u, v)
-    }
-  }
-  for (const [a, b, c] of triangulate(points)) {
-    const [pa, pb, pc] = [points[a], points[b], points[c]]
-    push([pa[0], y1, pa[1], ...uv(pa)], [pb[0], y1, pb[1], ...uv(pb)], [pc[0], y1, pc[1], ...uv(pc)])
-    push([pa[0], y0, pa[1], ...uv(pa)], [pc[0], y0, pc[1], ...uv(pc)], [pb[0], y0, pb[1], ...uv(pb)])
-  }
-  for (let i = 0; i < points.length; i++) {
-    const [ax, az] = points[i], [bx, bz] = points[(i + 1) % points.length]
-    push([ax, y0, az, ...edge], [bx, y0, bz, ...edge], [bx, y1, bz, ...edge], [ax, y0, az, ...edge], [bx, y1, bz, ...edge], [ax, y1, az, ...edge])
-  }
-  return flat(positions, uvs)
-}
-
-/** A geometry of separate triangles, each with its own face normal. */
-function flat(positions, uvs) {
-  const normalsOut = []
-  for (let i = 0; i < positions.length; i += 9) {
-    const ax = positions[i + 3] - positions[i], ay = positions[i + 4] - positions[i + 1], az = positions[i + 5] - positions[i + 2]
-    const bx = positions[i + 6] - positions[i], by = positions[i + 7] - positions[i + 1], bz = positions[i + 8] - positions[i + 2]
-    let nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx
-    const l = Math.hypot(nx, ny, nz) || 1
-    nx /= l, ny /= l, nz /= l
-    normalsOut.push(nx, ny, nz, nx, ny, nz, nx, ny, nz)
-  }
-  return new Geometry({ positions, normals: normalsOut, uvs })
+function slab(points, y0, y1) {
+  return { geometry: extrude({ shape: points.map(([x, z]) => [x, -z]), depth: y1 - y0, axis: 'y' }), position: [0, (y0 + y1) / 2, 0] }
 }
 
 /**
@@ -505,8 +448,8 @@ function body() {
   // the cavity: dark shelves above and below the slot, and a wall round the back of the blade's sweep
   const dark = { color: '#050505', unlit: true, doubleSided: true }
   const shelf = deck(0.2, 0.62).points
-  g.add(new Mesh({ geometry: slab(shelf, MID + SLOT, MID + SLOT + 0.03), material: dark }))
-  g.add(new Mesh({ geometry: slab(shelf, MID - SLOT - 0.03, MID - SLOT), material: dark }))
+  g.add(new Mesh({ ...slab(shelf, MID + SLOT, MID + SLOT + 0.03), material: dark }))
+  g.add(new Mesh({ ...slab(shelf, MID - SLOT - 0.03, MID - SLOT), material: dark }))
   const within = inset(outline, 0.05), arc = []
   for (let k = 0; k <= 240; k++) {
     const a = -Math.PI / 2 + (k / 240 - 0.5) * TAU, p = [HUB[0] + Math.cos(a) * CAVITY, HUB[1] + Math.sin(a) * CAVITY]
@@ -516,13 +459,13 @@ function body() {
 
   // the top plate: out to a ring round the weapon's hub at the front, cut away round the wheels at
   // the back; the bottom plate the same shape underneath
+  // extrude() spreads its texture over the outline's bounds, as the plate's texture is drawn
   const { points: plate, bounds } = deck(SLOPE + 0.2, 0.95)
-  const uv = ([x, z]) => [(x - bounds.x0) / (bounds.x1 - bounds.x0), (z - bounds.z0) / (bounds.z1 - bounds.z0)]
   g.add(new Mesh({
-    geometry: slab(plate, PLATE.bottom, PLATE.top, uv), castShadow: true, receiveShadow: true,
+    ...slab(plate, PLATE.bottom, PLATE.top), castShadow: true, receiveShadow: true,
     material: { map: plateTexture(plate, bounds), roughness: 0.3, metalness: 0.35 },
   }))
-  g.add(new Mesh({ geometry: slab(plate, UNDER.bottom, UNDER.top), castShadow: true, material: { color: '#16181a', roughness: 0.5, metalness: 0.4 } }))
+  g.add(new Mesh({ ...slab(plate, UNDER.bottom, UNDER.top), castShadow: true, material: { color: '#16181a', roughness: 0.5, metalness: 0.4 } }))
   // bolts round the plate's edge
   const bolts = resample(inset(plate, 0.3), 0.9).filter(([x, z]) => Math.hypot(x - HUB[0], z - HUB[1]) > 0.75)
   g.add(new InstancedMesh({
@@ -540,13 +483,12 @@ function body() {
 function wheel(side) {
   const g = new Group({ position: [side * WHEEL.x, WHEEL.radius, WHEEL.z] })
   const spin = g.add(new Group())
-  const axle = { rotation: [0, 0, Math.PI / 2] }
-  spin.add(new Mesh({ geometry: cylinder({ radius: WHEEL.radius, height: WHEEL.width, segments: 40, caps: false }), ...axle, castShadow: true, material: { map: treadTexture(), roughness: 0.85, doubleSided: true } }))
-  spin.add(new Mesh({ geometry: cylinder({ radius: WHEEL.radius - 0.02, height: WHEEL.width - 0.02, segments: 40 }), ...axle, castShadow: true, material: { color: '#e0ad17', roughness: 0.8 } }))
-  spin.add(new Mesh({ geometry: cylinder({ radius: 0.38, height: WHEEL.width + 0.04, segments: 24 }), ...axle, material: { color: '#b07c10', roughness: 0.6 } }))
+  spin.add(new Mesh({ geometry: cylinder({ radius: WHEEL.radius, height: WHEEL.width, segments: 40, caps: false, axis: 'x' }), castShadow: true, material: { map: treadTexture(), roughness: 0.85, doubleSided: true } }))
+  spin.add(new Mesh({ geometry: cylinder({ radius: WHEEL.radius - 0.02, height: WHEEL.width - 0.02, segments: 40, axis: 'x' }), castShadow: true, material: { color: '#e0ad17', roughness: 0.8 } }))
+  spin.add(new Mesh({ geometry: cylinder({ radius: 0.38, height: WHEEL.width + 0.04, segments: 24, axis: 'x' }), material: { color: '#b07c10', roughness: 0.6 } }))
   spin.add(new InstancedMesh({
-    geometry: cylinder({ radius: 0.06, height: WHEEL.width + 0.1, segments: 6 }),
-    instances: Array.from({ length: 5 }, (_, k) => ({ position: [0, Math.cos(k / 5 * TAU) * 0.24, Math.sin(k / 5 * TAU) * 0.24], rotation: [0, 0, Math.PI / 2] })),
+    geometry: cylinder({ radius: 0.06, height: WHEEL.width + 0.1, segments: 6, axis: 'x' }),
+    instances: Array.from({ length: 5 }, (_, k) => ({ position: [0, Math.cos(k / 5 * TAU) * 0.24, Math.sin(k / 5 * TAU) * 0.24] })),
     material: { color: '#2b2b2b', metalness: 0.8, roughness: 0.4 },
   }))
   return { node: g, spin }
@@ -561,10 +503,10 @@ function weapon() {
   const middle = [[-mid, w], [mid, w], [mid, -w], [-mid, -w]]
   const tip = [[mid, w], [L - 0.55, w], [L, w - 0.3], [L, -w - 0.06], [L - 0.35, -w - 0.06], [L - 0.45, -w], [mid, -w]]
   const steel = { map: brushedTexture(7, 150), metalness: 0.95, roughness: 0.32 }
-  g.add(new Mesh({ geometry: slab(middle, BAR.bottom, BAR.top, ([x, z]) => [x / L * 0.5 + 0.5, z / w * 0.5 + 0.5]), castShadow: true, material: steel }))
+  g.add(new Mesh({ ...slab(middle, BAR.bottom, BAR.top), castShadow: true, material: steel }))
   const paint = { color: YELLOW, roughness: 0.45, metalness: 0.2 }
-  g.add(new Mesh({ geometry: slab(tip, BAR.bottom, BAR.top), castShadow: true, material: paint }))
-  g.add(new Mesh({ geometry: slab(tip.map(([x, z]) => [-x, -z]), BAR.bottom, BAR.top), castShadow: true, material: paint }))
+  g.add(new Mesh({ ...slab(tip, BAR.bottom, BAR.top), castShadow: true, material: paint }))
+  g.add(new Mesh({ ...slab(tip.map(([x, z]) => [-x, -z]), BAR.bottom, BAR.top), castShadow: true, material: paint }))
   // clamps above and below, the boss down to the bottom plate, the drum, sprocket and cap
   const shiny = { color: '#c4c9cf', metalness: 1, roughness: 0.25 }
   g.add(new Mesh({ geometry: cylinder({ radius: 0.78, height: 0.12, segments: 32 }), position: [0, BAR.top + 0.06, 0], castShadow: true, material: shiny }))
@@ -574,15 +516,7 @@ function weapon() {
   const drum = PLATE.top + 0.06 - (BAR.top + 0.12)
   g.add(new Mesh({ geometry: cylinder({ radius: 0.58, height: drum, segments: 36 }), position: [0, BAR.top + 0.12 + drum / 2, 0], castShadow: true, material: { map: drumTexture(), metalness: 1, roughness: 0.3 } }))
   const sprocketY = MID + 0.5
-  g.add(new Mesh({ geometry: cylinder({ radius: 0.68, height: 0.1, segments: 36 }), position: [0, sprocketY, 0], castShadow: true, material: shiny }))
-  g.add(new InstancedMesh({
-    geometry: box({ width: 0.16, height: 0.1, depth: 0.1 }),
-    instances: Array.from({ length: 20 }, (_, k) => {
-      const a = k / 20 * TAU
-      return { position: [Math.cos(a) * 0.72, sprocketY, Math.sin(a) * 0.72], rotation: [0, -a, 0] }
-    }),
-    material: shiny,
-  }))
+  g.add(new Mesh({ geometry: extrude({ shape: outline.gear({ radius: 0.78, teeth: 20, depth: 0.1 }), depth: 0.1, axis: 'y' }), position: [0, sprocketY, 0], castShadow: true, material: shiny }))
   const capY = BAR.top + 0.12 + drum
   g.add(new Mesh({ geometry: cylinder({ radius: 0.46, height: 0.06, segments: 32 }), position: [0, capY + 0.03, 0], material: shiny }))
   g.add(new InstancedMesh({

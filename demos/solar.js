@@ -1,4 +1,4 @@
-import { AmbientLight, Geometry, Group, Label, Lines, Mesh, PointLight, Points, Texture, View, sphere } from 'phoria2'
+import { AmbientLight, Geometry, Group, Label, Lines, Mesh, PointLight, Points, Texture, View, ellipse, lathe, sphere } from 'phoria2'
 import { glow, starfield } from './kit.js'
 import { banded, clouds, terrain } from './planets.js'
 
@@ -51,9 +51,9 @@ export default function run({ canvas, gui, info }) {
     // a see-through shell of cloud, a little bigger than the globe
     if (p.clouds) globe.add(new Mesh({ geometry: ball, material: { map: clouds(), transparent: true, depthWrite: false, roughness: 1 }, scale: 1.025, pickable: false }))
     labels.push(body.add(new Label({ text: p.name, position: [0, p.radius + 0.8, 0], className: 'demo-tick' })))
-    orbits.add(new Lines({ geometry: circle(p.distance), material: { color: '#2a2f45' } }))
+    orbits.add(new Lines({ geometry: ellipse({ radius: p.distance }).line({ segments: 128 }), material: { color: '#2a2f45' } }))
     if (p.rings) {
-      body.add(new Mesh({ name: p.name, geometry: ring(p.radius * 1.3, p.radius * 2.4), material: { map: ringBands(), transparent: true, doubleSided: true, roughness: 0.9 }, rotation: [0.3, 0, 0.15] }))
+      body.add(new Mesh({ name: p.name, geometry: lathe({ points: [[p.radius * 2.4, 0], [p.radius * 1.3, 0]], segments: 96 }), material: { map: ringBands(), transparent: true, doubleSided: true, roughness: 0.9 }, rotation: [0.3, 0, 0.15] }))
     }
     let moon = null
     if (p.moon) {
@@ -114,40 +114,19 @@ export default function run({ canvas, gui, info }) {
   })
 }
 
-/** A flat ring in the x-z plane, u running from its inner edge to its outer one. */
-function ring(inner, outer, segments = 96) {
-  const positions = [], uvs = [], indices = []
-  for (let i = 0; i <= segments; i++) {
-    const a = i / segments * Math.PI * 2, c = Math.cos(a), s = Math.sin(a)
-    positions.push(c * inner, 0, s * inner, c * outer, 0, s * outer)
-    uvs.push(0, 0.5, 1, 0.5)
-    if (i < segments) indices.push(i * 2, i * 2 + 1, i * 2 + 3, i * 2, i * 2 + 3, i * 2 + 2)
-  }
-  return new Geometry({ positions, uvs, indices })
-}
-
-/** Saturn's rings across, inner edge to outer: bands of dust, with the Cassini gap. */
+/** Saturn's rings, inner edge (top) to outer: bands of dust, with the Cassini gap - down the image, as lathe() runs v. */
 function ringBands() {
   const c = document.createElement('canvas')
-  c.width = 256
-  c.height = 1
+  c.width = 1
+  c.height = 256
   const ctx = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'))
-  for (let x = 0; x < 256; x++) {
-    const t = x / 256
+  for (let y = 0; y < 256; y++) {
+    const t = y / 256
     const gap = t > 0.62 && t < 0.68
     const a = gap ? 0.05 : (0.45 + 0.4 * Math.sin(t * 40) * Math.sin(t * 13)) * Math.min(1, t * 6, (1 - t) * 8)
     ctx.fillStyle = `rgba(${210 + 30 * Math.sin(t * 25)}, ${190 + 25 * Math.sin(t * 25)}, ${150 + 20 * Math.sin(t * 9)}, ${Math.max(0, a)})`
-    ctx.fillRect(x, 0, 1, 1)
+    ctx.fillRect(0, y, 1, 1)
   }
   return new Texture({ image: c })
 }
 
-/** An orbit: a circle of line segments in the x-z plane. */
-function circle(radius, segments = 128) {
-  const positions = []
-  for (let i = 0; i < segments; i++) {
-    const a = i / segments * Math.PI * 2, b = (i + 1) / segments * Math.PI * 2
-    positions.push(Math.cos(a) * radius, 0, Math.sin(a) * radius, Math.cos(b) * radius, 0, Math.sin(b) * radius)
-  }
-  return new Geometry({ positions })
-}

@@ -77,9 +77,9 @@ export default async function run({ canvas, gui, info }) {
   mount.add(new Mesh({ geometry: icosphere({ radius: 0.2, detail: 2 }), material: steel, castShadow: true }))
   const yaw = mount.add(new Group())
   const pitch = yaw.add(new Group())
-  const along = [0, 0, -Math.PI / 2] // a cylinder's axis is y; this lays it along +x
-  pitch.add(new Mesh({ geometry: cylinder({ radius: 0.28, height: 1.3, segments: 32 }), material: steel, position: [0.25, 0, 0], rotation: along, castShadow: true }))
-  pitch.add(new Mesh({ geometry: cylinder({ radius: 0.2, radiusTop: 0.08, height: 0.5, segments: 32 }), material: { color: '#c79a4a', metalness: 1, roughness: 0.3 }, position: [1.15, 0, 0], rotation: along, castShadow: true }))
+  // the barrel and its nozzle, lying along +x
+  pitch.add(new Mesh({ geometry: cylinder({ radius: 0.28, height: 1.3, segments: 32, axis: 'x' }), material: steel, position: [0.25, 0, 0], castShadow: true }))
+  pitch.add(new Mesh({ geometry: cylinder({ radius: 0.2, radiusTop: 0.08, height: 0.5, segments: 32, axis: 'x' }), material: { color: '#c79a4a', metalness: 1, roughness: 0.3 }, position: [1.15, 0, 0], castShadow: true }))
   const tank = pitch.add(new Mesh({ geometry: cylinder({ radius: 0.26, height: 0.55, segments: 32 }), material: { color: PAINTS.blue, roughness: 0.25 }, position: [-0.1, 0.5, 0], castShadow: true }))
   pitch.add(new Mesh({ geometry: cylinder({ radius: 0.12, height: 0.1 }), material: steel, position: [-0.1, 0.82, 0] }))
 

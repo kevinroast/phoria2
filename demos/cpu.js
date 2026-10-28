@@ -273,8 +273,8 @@ export default function run({ canvas, gui, info }) {
     plate.add(new Mesh({ geometry: box({ width: w, height: 0.05, depth: d }), position: [x, 0, z], material: metal, pickable: false }))
   }
   const lever = socket.add(new Group({ position: [SOCKET + 0.32, 0.18, SOCKET - 0.1] }))
-  lever.add(new Mesh({ geometry: cylinder({ radius: 0.05, height: SOCKET * 2 + 0.3, segments: 12 }), rotation: [Math.PI / 2, 0, 0], position: [0, 0, -SOCKET], material: metal, pickable: false }))
-  lever.add(new Mesh({ geometry: cylinder({ radius: 0.07, height: 0.6, segments: 12 }), rotation: [0, 0, Math.PI / 2], position: [0.27, 0, -SOCKET * 2 - 0.1], material: metal, pickable: false }))
+  lever.add(new Mesh({ geometry: cylinder({ radius: 0.05, height: SOCKET * 2 + 0.3, segments: 12, axis: 'z' }), position: [0, 0, -SOCKET], material: metal, pickable: false }))
+  lever.add(new Mesh({ geometry: cylinder({ radius: 0.07, height: 0.6, segments: 12, axis: 'x' }), position: [0.27, 0, -SOCKET * 2 - 0.1], material: metal, pickable: false }))
 
   // guides from the socket's corners up to the processor as it lines up, and a band of light
   // that sweeps up and down them

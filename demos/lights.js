@@ -1,6 +1,6 @@
 import {
   AmbientLight, DirectionalLight, Group, HemisphereLight, Mesh, PointLight, Points, SpotLight, Geometry, Texture, View,
-  cylinder, fromPolygons, plane, sphere,
+  cylinder, fromPolygons, lathe, plane, sphere,
 } from 'phoria2'
 import { teapot } from './data/teapot.js'
 
@@ -49,8 +49,10 @@ export default function run({ canvas, gui }) {
   const pivot = scene.add(new Group({ position: [0, 5.6, 0] }))
   pivot.add(new Mesh({ geometry: cylinder({ radius: 0.03, height: 2.4 }), material: { color: '#222' }, position: [0, -1.2, 0] }))
   const head = pivot.add(new Group({ position: [0, -2.4, 0] }))
-  head.add(new Mesh({ geometry: cylinder({ radius: 0.35, radiusTop: 0.08, height: 0.4, segments: 32 }), material: { color: '#2b2b30', roughness: 0.4, metalness: 0.6 }, castShadow: true }))
-  head.add(bulb('#fff2d0', 0.1)).position.set(0, -0.22, 0)
+  // the shade, turned: in under its crown, down the inside, round the rim and back up the outside
+  const shade = [[0, 0.16], [0.06, 0.16], [0.33, -0.2], [0.36, -0.2], [0.09, 0.2], [0, 0.2]]
+  head.add(new Mesh({ geometry: lathe({ points: shade, segments: 48 }), material: { color: '#2b2b30', roughness: 0.4, metalness: 0.6 }, castShadow: true }))
+  head.add(bulb('#fff2d0', 0.1)).position.set(0, -0.1, 0)
   const lamp = head.add(new SpotLight({ color: '#fff2d0', direction: [0, -1, 0], angle: 0.55, penumbra: 0.5, range: 12, position: [0, -0.2, 0] }))
 
   // the moods' own lights, switched on and off as a mood is chosen
