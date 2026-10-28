@@ -14,6 +14,7 @@ export const DEMOS = [
   { name: 'dashboard', title: 'eight chart tiles, each its own view, idle until touched' },
   { name: 'topology', title: 'a network topology built by hand - status colours, hover to trace links, live traffic' },
   { name: 'floorplan', title: 'a data hall floor plan - isometric or plan view, rack heat map, image export' },
+  { name: 'planner', title: 'an office floor planner - drag furniture in, select, move and turn it with a handle, snapping, undo' },
   { name: 'city', title: 'a city as data - 1,500 instanced buildings coloured by energy use, occupancy, age or use, with tooltips' },
   { section: 'Features', name: 'hello', title: 'a minimal scene, with the whole program' },
   { name: 'scene-json', title: 'a scene as plain JSON - edit it, add to it, rebuild it, export it' },
@@ -36,6 +37,5 @@ export const DEMOS = [
   //{ name: 'space', title: 'Cobra Mk IIIs over a gas giant as a comet flies by - and an Elite mode in green vector lines', orbit: false },
   // tests of the API on bigger tasks go here with hidden: true - reachable by name
   // (demo.html?name=...), not listed in the gallery
-  { name: 'planner', title: 'an office floor planner - drag furniture in, select, move and turn it with a handle, snapping, undo', hidden: true },
   { name: 'harbour', title: 'a harbour on a foggy night - lamps and a lighthouse beam casting shadows through the mist', hidden: true },
 ]
