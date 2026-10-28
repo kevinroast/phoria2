@@ -108,7 +108,8 @@ Methods:
 - `start(fn?)` - `fn(dt, t)` every frame. Time and node update handlers run anyway; you only need
   `start` for your own per-frame code.
 - `frame(node?, { padding })` - move the camera so a node (default: the whole scene) fills the view,
-  centred, keeping the viewing direction. It fits what the camera draws - not hidden nodes, nor a
+  keeping the viewing direction - centred across, and a little below the middle so it stands
+  rather than hangs. It fits what the camera draws - not hidden nodes, nor a
   chart's axis labels for the edges it isn't showing - so a chart fills the view. `padding` is the
   margin around it as a fraction of its size: `0` is a tight fit, `0.2` (the default) leaves a
   fifth, `0.5` half.

@@ -21,7 +21,8 @@ const PAGE = ['dashboard', 'cells']
 // the picture leaves out: its turntable goes back to the start, with the objects side by side, and it
 // is framed in the middle from a little to the right and above; artemis stops on its way home, with
 // the whole route drawn; cpu is running, its traces alight; volcano is erupting, its lava running;
-// cells is scrolled past the poster's heading, to the two cells, its scrollbar hidden; the
+// cells is scrolled past the poster's heading, to the two cells, its scrollbar hidden; carbide is
+// seen from a little closer than its framing, which leaves room for the blade's whole sweep; the
 // planner has its meeting table selected - outline, handle and distances to the walls - and is
 // framed close, filling the card
 const PREPARE = {
@@ -29,6 +30,9 @@ const PREPARE = {
     select(table)
     handle.onChange(table, 'move')
     view.frame(view.scene, { padding: 0.02 })`,
+  carbide: `const { position: p, target: t } = view.camera
+    p.set(t[0] + (p[0] - t[0]) * 0.7, t[1] + (p[1] - t[1]) * 0.7, t[2] + (p[2] - t[2]) * 0.7)
+    view.invalidate()`,
   cells: `document.querySelector('.cells-poster').style.scrollbarWidth = 'none'
     document.querySelector('.cells-pair').scrollIntoView({ block: 'center' })`,
   // played for a moment, so the fountain's sparks have built up

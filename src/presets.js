@@ -79,13 +79,17 @@ export function fitBox(box, direction, { aspect, fov, padding = 0 }) {
   return fov === undefined ? Math.max(fit * 2, 1e-3) : Math.max(fit, 1e-3)
 }
 
+// where a perspective picture's middle sits, below the view's middle (in half-heights of the view):
+// a little low, so things standing on a floor look grounded rather than hung from the top edge
+const LOW = 0.12
+
 /**
- * How to fit a set of points in view from `direction`, centred on screen: where to look (the
- * centre) and the distance for a perspective camera (give `fov`) or the view height for an
- * orthographic one. Every point lands inside the view with `padding` to spare. Fitting the corners
- * of each thing drawn, rather than one box round them all, keeps a picture from sitting small in
- * the box's empty corners; with perspective, the near side looks bigger, so the centre moves until
- * the picture's middle is the view's.
+ * How to fit a set of points in view from `direction`: where to look (the centre) and the distance
+ * for a perspective camera (give `fov`), or the view height for an orthographic one. Every point
+ * lands inside the view with `padding` to spare. Fitting the corners of each thing drawn, rather
+ * than one box round them all, keeps a picture from sitting small in the box's empty corners. An
+ * orthographic picture is centred; a perspective one - whose near side looks bigger - is moved
+ * until it sits just below the middle, filling as much of the view as that allows.
  * @param {ArrayLike<number>[]} points world positions, at least one
  * @param {ArrayLike<number>} direction a unit vector from the points towards the camera
  * @param {{ aspect: number, fov?: number, padding?: number }} view as for fitBox
@@ -97,7 +101,7 @@ export function fitPoints(points, direction, { aspect, fov, padding = 0 }) {
   const right = ahead.clone().cross(Math.abs(ahead[1]) > 0.9999 ? [0, 0, -1] : [0, 1, 0]).normalize()
   const up = right.clone().cross(ahead)
   const axes = [right, up, ahead]
-  // the points in the camera's axes, and their middle
+  // the points in the camera's axes, and the middle of their spread
   const local = points.map((p) => axes.map((a) => p[0] * a[0] + p[1] * a[1] + p[2] * a[2]))
   const lo = [0, 1, 2].map((k) => Math.min(...local.map((q) => q[k]))), hi = [0, 1, 2].map((k) => Math.max(...local.map((q) => q[k])))
   const mid = [0, 1, 2].map((k) => (lo[k] + hi[k]) / 2)
@@ -115,14 +119,15 @@ export function fitPoints(points, direction, { aspect, fov, padding = 0 }) {
     return Math.max(x / tanH - z, y / tanV - z, near - z)
   }))
   let d = distance()
-  for (let i = 0; i < 6; i++) {
-    // where the points land, from -1 to 1 across the view: move the centre to their middle
+  for (let i = 0; i < 8; i++) {
+    // where the points land, from -1 to 1 across the view: move the centre until their middle is
+    // across the middle of the view, and just below it
     let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity
     for (const q of local) {
       const depth = d + q[2] - mid[2], u = (q[0] - mid[0]) / depth / tanH, v = (q[1] - mid[1]) / depth / tanV
       u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v)
     }
-    const du = (u0 + u1) / 2, dv = (v0 + v1) / 2
+    const du = (u0 + u1) / 2, dv = (v0 + v1) / 2 + LOW
     if (Math.abs(du) < 1e-4 && Math.abs(dv) < 1e-4) break
     mid[0] += du * tanH * d
     mid[1] += dv * tanV * d

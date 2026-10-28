@@ -268,8 +268,7 @@ describe('fitBox', () => {
     expect(reach(plan, camera)).toBeCloseTo(1, 3)
   })
 
-  it('fits points centred on screen, however the perspective shifts them', () => {
-    // a tall, deep block seen from above and in front: its near bottom looms, so the box's middle sits low
+  it('fits points centred across the view and just below its middle, the furthest on an edge', () => {
     const b = new Box3([-5, 0, -3], [5, 6, 3])
     const points = []
     for (let i = 0; i < 8; i++) points.push([i & 1 ? b.max[0] : b.min[0], i & 2 ? b.max[1] : b.min[1], i & 4 ? b.max[2] : b.min[2]])
@@ -281,8 +280,12 @@ describe('fitBox', () => {
     const ndc = points.map((p) => { const q = vec4.transformMat4(new Float32Array(4), [p[0], p[1], p[2], 1], vp); return [q[0] / q[3], q[1] / q[3]] })
     const xs = ndc.map((q) => q[0]), ys = ndc.map((q) => q[1])
     expect((Math.min(...xs) + Math.max(...xs)) / 2).toBeCloseTo(0, 2)
-    expect((Math.min(...ys) + Math.max(...ys)) / 2).toBeCloseTo(0, 2)
-    expect(Math.max(...xs.map(Math.abs), ...ys.map(Math.abs))).toBeCloseTo(1, 2)
+    // its middle 0.12 of the half-height below the view's, so it stands rather than hangs
+    expect((Math.min(...ys) + Math.max(...ys)) / 2).toBeCloseTo(-0.12, 2)
+    expect(Math.max(...ndc.flat().map(Math.abs))).toBeCloseTo(1, 2)
+    // padding leaves a margin
+    const padded = fitPoints(points, direction, { fov, aspect, padding: 0.25 })
+    expect(padded.size).toBeGreaterThan(size)
     // orthographic: the height that fits them, centred on their middle
     const plan = fitPoints([[-10, 0, -5], [10, 0, 5]], [0, 1, 0], { aspect: 2 })
     expect(plan.size).toBeCloseTo(10)
