@@ -244,7 +244,7 @@ export class Picker {
       program.set('uScale', frame.camera.projection[5] * height / 2)
       const buffers = this.resources.mesh(geometry, null, false)
       gl.bindVertexArray(buffers.vao)
-      gl.drawArrays(gl.POINTS, 0, geometry.drawnCount)
+      gl.drawArrays(gl.POINTS, 0, geometry.drawnVertices)
       return
     }
     program.set('uNormalMatrix', this.#normal)

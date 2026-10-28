@@ -94,7 +94,7 @@ export class Raycaster {
       this.#mesh(n, n.worldMatrix, null, hits)
     } else if (n.drawMode === 'points') {
       const p = n.geometry.positions
-      if (element >= n.geometry.drawnCount) return null
+      if (element >= n.geometry.drawnVertices) return null
       const point = new Vec3(p[element * 3], p[element * 3 + 1], p[element * 3 + 2]).applyMatrix4(n.worldMatrix)
       hits.push({ node: n, point, distance: point.distanceTo(this.ray.origin), normal: null, face: element, instance: null, uv: null, datum: n.datumAt(element) })
     } else if (n.drawMode === 'lines') {
@@ -193,7 +193,7 @@ export class Raycaster {
     const p = node.geometry.positions, w = node.worldMatrix
     const limit = this.threshold * this.threshold
     let best = null
-    for (let i = 0, n = node.geometry.drawnCount; i < n; i++) {
+    for (let i = 0, n = node.geometry.drawnVertices; i < n; i++) {
       a.set(p[i * 3], p[i * 3 + 1], p[i * 3 + 2]).applyMatrix4(w)
       const { distanceSq } = this.ray.distanceSqToPoint(a)
       if (distanceSq > limit) continue

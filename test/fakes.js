@@ -5,7 +5,8 @@
 // no-op. With `parallel`, it offers background shader compiling, finished when compiled.done is set.
 export function fakeGL({ parallel = false } = {}) {
   const compiled = { done: false }
-  const draws = { count: 0 }
+  // draws made, and how many vertices each drawArrays drew
+  const draws = { count: 0, /** @type {number[]} */ sizes: [] }
   const live = new Set()
   const lost = { count: 0, now: false, restores: 0 }
   const consts = new Map()
@@ -31,7 +32,10 @@ export function fakeGL({ parallel = false } = {}) {
     getExtension: (name) => (name === 'WEBGL_lose_context' ? { loseContext: () => { lost.count++; lost.now = true; live.clear() }, restoreContext: () => { lost.restores++; lost.now = false } }
       : name === 'KHR_parallel_shader_compile' && parallel ? {} : null),
     drawElements: () => draws.count++,
-    drawArrays: () => draws.count++,
+    drawArrays: (_mode, _first, n) => {
+      draws.count++
+      draws.sizes.push(n)
+    },
     isContextLost: () => lost.now,
   }
   const proxy = new Proxy(gl, {

@@ -1,10 +1,25 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Material, Mesh, PerspectiveCamera, Scene, Texture, box, sphere } from '../src/index.js'
+import { Material, Mesh, PerspectiveCamera, Points, Scene, Texture, box, sphere } from '../src/index.js'
 import { WebGLRenderer, bloomSettings } from '../src/webgl/WebGLRenderer.js'
 import { fakeCanvas, fakeGL } from './fakes.js'
 
 const camera = () => new PerspectiveCamera({ position: [0, 0, 10], target: [0, 0, 0], aspect: 1 })
 const pixels = () => new Texture({ image: { data: new Uint8Array([255, 0, 0, 255]), width: 1, height: 1 } })
+
+describe('drawing points', () => {
+  it("draws each vertex once - not one per index - when the geometry is a mesh's, indexed", () => {
+    const { gl, draws } = fakeGL()
+    const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
+    renderer.setSize(10, 10)
+    const scene = new Scene()
+    const geometry = box(1)
+    scene.add(new Points({ geometry, material: { size: 4, sizeAttenuation: false } }))
+    renderer.render(scene, camera())
+    // 24 vertices, 36 indices: anything past the 24th would be read as the origin
+    expect(draws.sizes).toEqual([geometry.vertexCount])
+    expect(geometry.indices?.length).toBeGreaterThan(geometry.vertexCount)
+  })
+})
 
 describe('GPU resources', () => {
   afterEach(() => {

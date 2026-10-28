@@ -255,7 +255,7 @@ function instanceLabels(node, viewProjection, out) {
   let id = ids.get(node)
   if (id === undefined) ids.set(node, id = nextId++)
   const instanced = 'instanceMatrices' in node
-  const n = instanced ? node.count : node.geometry.drawnCount
+  const n = instanced ? node.count : node.geometry.drawnVertices
   let px = 0, py = 0, pz = 0
   if (instanced) {
     // where on each instance: the top centre or the centre of its geometry

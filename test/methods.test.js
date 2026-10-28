@@ -126,6 +126,43 @@ describe('moving nodes', () => {
   })
 })
 
+describe('points of indexed geometry', () => {
+  // a mesh's geometry shown as its vertices too, as the models demo does: 24 vertices, 36 indices,
+  // all of them a long way from the origin
+  const shown = () => {
+    const geometry = box(1)
+    const scene = new Scene()
+    const points = scene.add(new Points({ geometry, position: [10, 0, 0], data: Array.from({ length: geometry.vertexCount }, (_, i) => i) }))
+    scene.updateWorldTree()
+    return { geometry, scene, points }
+  }
+
+  it('count their vertices, limited by drawCount, never the indices', () => {
+    const { geometry } = shown()
+    expect(geometry.drawnVertices).toBe(24)
+    geometry.drawCount = 10
+    expect(geometry.drawnVertices).toBe(10)
+    geometry.drawCount = 100
+    expect(geometry.drawnVertices).toBe(24)
+  })
+
+  it('pick only real vertices - nothing at the origin past the last one', async () => {
+    const { Raycaster } = await import('../src/index.js')
+    const { scene, points } = shown()
+    const camera = new PerspectiveCamera({ position: [0, 0, 10], target: [0, 0, 0] })
+    // straight at the origin, where a vertex read past the end would sit
+    const rc = new Raycaster().setFromCamera([0, 0], camera)
+    rc.threshold = 0.5
+    expect(rc.intersect(scene)).toEqual([])
+    // at one of its corners, the row for that vertex
+    const aim = new Raycaster().setFromCamera([0, 0], new PerspectiveCamera({ position: [10.5, 0.5, 10], target: [10.5, 0.5, 0.5] }))
+    aim.threshold = 0.1
+    const hit = aim.intersect(scene)[0]
+    expect(hit?.node).toBe(points)
+    expect(hit?.face).toBeLessThan(24)
+  })
+})
+
 describe('normals', () => {
   // two triangles folded along x at a right angle: one flat on the floor, one standing up
   const fold = () => new Geometry({ positions: [0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 1, 0, 0, 0, 1, 0], indices: [0, 1, 2, 3, 4, 5] })

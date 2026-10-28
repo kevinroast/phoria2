@@ -465,7 +465,7 @@ export class WebGLRenderer {
       program.set('uSize', material.sizeAttenuation ? material.size : material.size * this.pixelRatio)
       const buffers = this.#gpu.resources.mesh(geometry, null, false)
       gl.bindVertexArray(buffers.vao)
-      gl.drawArrays(gl.POINTS, 0, geometry.drawnCount)
+      gl.drawArrays(gl.POINTS, 0, geometry.drawnVertices)
       this.info.drawCalls++
       return
     }

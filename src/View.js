@@ -488,7 +488,7 @@ export class View {
     let work = 0
     for (const { node, geometry, instances } of [...frame.opaque, ...frame.transparent]) {
       const mode = /** @type {any} */ (node).drawMode
-      work += instances ? instances.count : mode === 'points' ? geometry.drawnCount : mode === 'lines' ? geometry.drawnCount / 2 : geometry.drawnCount / 3
+      work += instances ? instances.count : mode === 'points' ? geometry.drawnVertices : mode === 'lines' ? geometry.drawnCount / 2 : geometry.drawnCount / 3
     }
     return work > GPU_PICKING ? frame : null
   }

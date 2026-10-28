@@ -59,7 +59,7 @@ export function explain(info) {
     const kind = instances ? 'instanced mesh' : /** @type {any} */ (node).drawMode === 'points' ? 'points' : /** @type {any} */ (node).drawMode === 'lines' ? 'lines' : 'mesh'
     const k = kinds.get(kind) ?? { n: 0, items: 0 }
     k.n++
-    k.items += instances ? instances.count : kind === 'points' ? node.geometry.drawnCount : 0
+    k.items += instances ? instances.count : kind === 'points' ? node.geometry.drawnVertices : 0
     kinds.set(kind, k)
   }
   const drawn = [...kinds].map(([kind, k]) => `${k.n} ${kind}${k.items ? ` (${k.items.toLocaleString('en')} ${kind === 'points' ? 'points' : 'instances'})` : ''}`)

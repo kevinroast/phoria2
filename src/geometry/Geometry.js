@@ -102,6 +102,15 @@ export class Geometry {
     return this.drawCount === null ? this.elementCount : Math.max(0, Math.min(this.drawCount, this.elementCount))
   }
 
+  /**
+   * The vertices actually drawn as points: vertexCount, limited by drawCount. Points draw each vertex
+   * once and ignore the index, so a mesh's indexed geometry can be shown as its vertices too.
+   * @returns {number}
+   */
+  get drawnVertices() {
+    return this.drawCount === null ? this.vertexCount : Math.max(0, Math.min(this.drawCount, this.vertexCount))
+  }
+
   /** Local space bounds, cached until needsUpdate(). @returns {Box3} */
   get bounds() {
     return this.#bounds ??= new Box3().expandByPositions(this.positions)
