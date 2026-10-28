@@ -160,6 +160,7 @@ contract('Material', {
     alphaTest: { value: 0.5, read: (m) => m.alphaTest, default: 0, bad: 2, error: 'alphaTest' },
     normalScale: { value: 0.5, read: (m) => m.normalScale, default: 1, bad: 'strong', error: 'normalScale' },
     aoMapIntensity: { value: 0.5, read: (m) => m.aoMapIntensity, default: 1, bad: 2, error: 'aoMapIntensity' },
+    triplanar: { value: 4, read: (m) => m.triplanar, default: 0, bad: -1, error: 'triplanar' },
     blending: { value: 'additive', read: (m) => m.blending, default: 'normal', bad: 'screen', error: 'blending' },
   },
 })

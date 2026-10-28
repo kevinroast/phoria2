@@ -279,6 +279,14 @@ Properties: `color`, `opacity`, `roughness` (0.5), `metalness` (0), `emissive`,
 `emissiveMap`; `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
 `mesh.material.color.set('#0f0')`, `mesh.material.opacity = 0.5`.
 
+**Models without UVs** (scans, CAD exports) can still take maps: `triplanar: 40` projects them
+from the mesh's three axes instead of using UVs, repeating 40 times per unit of the mesh's own space.
+The maps stay on the mesh as it moves; normal maps follow the surface. 0 (the default) uses the UVs.
+
+```js
+{ normalMap: pores, roughnessMap: sheen, triplanar: 45, normalScale: 0.8 }   // bone texture on a scanned skull
+```
+
 ## Lights and cameras
 
 | | Options |

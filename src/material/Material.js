@@ -21,6 +21,9 @@ import { Texture } from './Texture.js'
  * @property {MapInput | null} [metalnessMap] multiplies metalness by its blue channel (glTF)
  * @property {MapInput | null} [normalMap] tangent-space normals, +Y up (glTF/OpenGL convention)
  * @property {number} [normalScale] strength of the normal map (default 1)
+ * @property {number} [triplanar] project the maps onto the mesh from its three axes instead of using UVs -
+ *   for scans and CAD models, which have none. The number is how many times a map repeats per unit of the
+ *   mesh's own space; the maps stay on the mesh as it moves. 0 (the default) uses the UVs
  * @property {MapInput | null} [aoMap] ambient occlusion in its red channel; darkens environment and ambient light
  * @property {number} [aoMapIntensity] 0-1 (default 1)
  * @property {MapInput | null} [emissiveMap] multiplies the emissive colour
@@ -44,9 +47,9 @@ const MAPS = ['map', 'roughnessMap', 'metalnessMap', 'normalMap', 'aoMap', 'emis
 const LINEAR_MAPS = new Set(['roughnessMap', 'metalnessMap', 'normalMap', 'aoMap'])
 const FLAGS = ['unlit', 'flatShading', 'doubleSided', 'vertexColors', 'depthWrite', 'depthTest', 'sizeAttenuation', 'transparent', 'fog']
 const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiveIntensity: [0, Infinity], size: [0, Infinity], width: [0, Infinity],
-  alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1] }
+  alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1], triplanar: [0, Infinity] }
 const DEFAULTS = {
-  name: '', opacity: 1, alphaTest: 0, roughness: 0.5, metalness: 0, normalScale: 1, aoMapIntensity: 1, emissiveIntensity: 1, unlit: false, flatShading: false,
+  name: '', opacity: 1, alphaTest: 0, roughness: 0.5, metalness: 0, normalScale: 1, aoMapIntensity: 1, triplanar: 0, emissiveIntensity: 1, unlit: false, flatShading: false,
   doubleSided: false, vertexColors: false, blending: 'normal', depthWrite: true, depthTest: true, fog: true,
   size: 1, sizeAttenuation: true, width: 1,
 }
@@ -78,6 +81,7 @@ export class Material {
   /** Drop pixels with less alpha than this - hard-edged cut-outs, drawn with the opaque pass. @type {number} */ alphaTest = 0
   /** @type {number} */ normalScale = 1
   /** @type {number} */ aoMapIntensity = 1
+  /** Maps projected from the mesh's three axes, this many repeats per unit; 0 uses the UVs. @type {number} */ triplanar = 0
   /** @type {number} */ roughness = 0.5
   /** @type {number} */ metalness = 0
   /** @type {number} */ emissiveIntensity = 1

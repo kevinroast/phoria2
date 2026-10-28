@@ -65,6 +65,8 @@ export function bloomSettings(owner, value) {
 const TONE_MAPPING = { none: 0, aces: 1, neutral: 2 }
 // material maps and the shader feature each one switches on (all but emissive need lighting)
 const MAP_DEFINES = { roughnessMap: 'ROUGHNESS_MAP', metalnessMap: 'METALNESS_MAP', normalMap: 'NORMAL_MAP', aoMap: 'AO_MAP' }
+// every map a mesh can sample - triplanar projection is only worth its varyings when there is one
+const MAP_SLOTS = ['map', 'emissiveMap', ...Object.keys(MAP_DEFINES)]
 const MAP_UNIFORMS = { map: 'uMap', roughnessMap: 'uRoughnessMap', metalnessMap: 'uMetalnessMap', normalMap: 'uNormalMap', aoMap: 'uAoMap', emissiveMap: 'uEmissiveMap' }
 // counting a cap's faces into the stencil: the solids' surfaces, colour and depth left alone
 const CLIP_MASK = /** @type {[string, string]} */ ([MESH_VERTEX, CLIP_ONLY_FRAGMENT])
@@ -480,6 +482,7 @@ export class WebGLRenderer {
     program.set('uRoughness', material.roughness)
     program.set('uMetalness', material.metalness)
     program.set('uNormalScale', material.normalScale)
+    if (material.triplanar > 0) program.set('uTriplanar', material.triplanar)
     program.set('uAoMapIntensity', material.aoMapIntensity)
     program.set('uAlphaTest', material.alphaTest)
     /** @type {[string, Texture][]} */
@@ -646,6 +649,7 @@ export class WebGLRenderer {
       if (material.alphaTest > 0) d.push('ALPHA_TEST')
       if (material.flatShading) d.push('FLAT_SHADING')
       if (material.doubleSided) d.push('DOUBLE_SIDED')
+      if (material.triplanar > 0 && MAP_SLOTS.some((slot) => material[slot])) d.push('TRIPLANAR')
       if (instanced) d.push('INSTANCED')
     } else if (kind === 'points') {
       if (material.map) d.push('MAP')

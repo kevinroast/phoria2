@@ -152,6 +152,12 @@ out vec3 vNormal;
 out vec2 vUv;
 out vec3 vColor;
 flat out float vHighlight;
+#ifdef TRIPLANAR
+// the mesh's own space, so projected maps stay on it as it moves; and how its normals turn into the world
+out vec3 vObjectPosition;
+out vec3 vObjectNormal;
+out mat3 vObjectToWorld;
+#endif
 #ifdef PICK
 flat out uint vPickElement; // which instance, point or segment, for GPU picking
 #endif
@@ -168,7 +174,8 @@ void main() {
   // the instance's normal matrix as its cofactor: the inverse transpose up to scale, from three
   // cross products, flipped back for mirroring transforms
   mat3 m = mat3(instanceMatrix);
-  vec3 n = mat3(cross(m[1], m[2]), cross(m[2], m[0]), cross(m[0], m[1])) * normal * sign(dot(m[0], cross(m[1], m[2])));
+  mat3 instanceNormal = mat3(cross(m[1], m[2]), cross(m[2], m[0]), cross(m[0], m[1])) * sign(dot(m[0], cross(m[1], m[2])));
+  vec3 n = instanceNormal * normal;
   vColor *= instanceColor;
   if (gl_InstanceID == uHighlightIndex) vHighlight = 1.0;
 #else
@@ -182,6 +189,15 @@ void main() {
   vWorldPosition = world.xyz;
   vNormal = uNormalMatrix * n;
   vUv = uv * uUvTransform.xy + uUvTransform.zw;
+#ifdef TRIPLANAR
+  vObjectPosition = position;
+  vObjectNormal = normal;
+#ifdef INSTANCED
+  vObjectToWorld = uNormalMatrix * instanceNormal;
+#else
+  vObjectToWorld = uNormalMatrix;
+#endif
+#endif
   gl_Position = uViewProjection * world;
 #ifdef FOG
   vFogDepth = -(uView * world).z;
@@ -214,6 +230,27 @@ uniform float uAlphaTest;
 #endif
 #ifdef EMISSIVE_MAP
 uniform sampler2D uEmissiveMap;
+#endif
+
+#ifdef TRIPLANAR
+in vec3 vObjectPosition;
+in vec3 vObjectNormal;
+in mat3 vObjectToWorld;
+uniform float uTriplanar; // repeats per unit of the mesh's own space
+
+// how much each axis's projection counts: mostly the one the surface faces, blended at the turns
+vec3 triplanarWeights(vec3 n) {
+  vec3 w = pow(abs(n), vec3(4.0));
+  return w / (w.x + w.y + w.z);
+}
+// a map seen from the three axes and blended - for meshes with no UVs, scans and CAD models
+vec4 triplanar(sampler2D s) {
+  vec3 p = vObjectPosition * uTriplanar, w = triplanarWeights(normalize(vObjectNormal));
+  return texture(s, p.zy) * w.x + texture(s, p.xz) * w.y + texture(s, p.xy) * w.z;
+}
+#define SAMPLE(s) triplanar(s)
+#else
+#define SAMPLE(s) texture(s, vUv)
 #endif
 
 #ifdef LIT
@@ -346,6 +383,22 @@ vec3 envIrradiance(vec3 n) {
 }
 #endif
 
+#if defined(NORMAL_MAP) && defined(TRIPLANAR)
+// A normal map from the three axes: each projection's bump laid round the surface normal (a
+// 'whiteout' blend), blended, then turned into the world - no tangents and no UVs needed
+vec3 triplanarNormal(float strength) {
+  vec3 n = normalize(vObjectNormal), p = vObjectPosition * uTriplanar, w = triplanarWeights(n);
+  vec3 tx = texture(uNormalMap, p.zy).xyz * 2.0 - 1.0;
+  vec3 ty = texture(uNormalMap, p.xz).xyz * 2.0 - 1.0;
+  vec3 tz = texture(uNormalMap, p.xy).xyz * 2.0 - 1.0;
+  tx.xy *= strength; ty.xy *= strength; tz.xy *= strength;
+  tx = vec3(tx.xy + n.zy, abs(tx.z) * n.x);
+  ty = vec3(ty.xy + n.xz, abs(ty.z) * n.y);
+  tz = vec3(tz.xy + n.xy, abs(tz.z) * n.z);
+  return normalize(vObjectToWorld * normalize(tx.zyx * w.x + ty.xzy * w.y + tz.xyz * w.z));
+}
+#endif
+
 #ifdef NORMAL_MAP
 // Tangent space from screen-space derivatives (Schüler's cotangent frame), so geometry needs no
 // tangents. UVs run down the image (glTF) while normal maps point +Y up it, hence -b.
@@ -400,7 +453,7 @@ void main() {
   clipAway(vWorldPosition);
   vec4 base = vec4(uColor * vColor, uOpacity);
 #ifdef MAP
-  base *= texture(uMap, vUv); // sRGB textures are decoded to linear by the hardware
+  base *= SAMPLE(uMap); // sRGB textures are decoded to linear by the hardware
 #endif
 #ifdef ALPHA_TEST
   if (base.a < uAlphaTest) discard;
@@ -408,7 +461,7 @@ void main() {
 #endif
   vec3 emissive = uEmissive;
 #ifdef EMISSIVE_MAP
-  emissive *= texture(uEmissiveMap, vUv).rgb;
+  emissive *= SAMPLE(uEmissiveMap).rgb;
 #endif
 
 #ifdef LIT
@@ -422,18 +475,25 @@ void main() {
 #endif
   vec3 surfaceNormal = n;
 #ifdef NORMAL_MAP
+#ifdef TRIPLANAR
+  n = triplanarNormal(uNormalScale);
+#ifdef DOUBLE_SIDED
+  if (!gl_FrontFacing) n = -n;
+#endif
+#else
   vec3 m = texture(uNormalMap, vUv).xyz * 2.0 - 1.0;
   m.xy *= uNormalScale;
   n = perturbNormal(n, m);
+#endif
 #endif
   vec3 v = normalize(uCameraPosition - vWorldPosition);
   float roughness = uRoughness;
   float metalness = uMetalness;
 #ifdef ROUGHNESS_MAP
-  roughness *= texture(uRoughnessMap, vUv).g;
+  roughness *= SAMPLE(uRoughnessMap).g;
 #endif
 #ifdef METALNESS_MAP
-  metalness *= texture(uMetalnessMap, vUv).b;
+  metalness *= SAMPLE(uMetalnessMap).b;
 #endif
   roughness = clamp(roughness, 0.04, 1.0);
   float a = roughness * roughness;
@@ -491,7 +551,7 @@ void main() {
 #endif
   vec3 indirect = diffuse * irradiance + ambientSpecular;
 #ifdef AO_MAP
-  indirect *= mix(1.0, texture(uAoMap, vUv).r, uAoMapIntensity);
+  indirect *= mix(1.0, SAMPLE(uAoMap).r, uAoMapIntensity);
 #endif
   color += indirect + emissive;
   color = toneMap(color);
