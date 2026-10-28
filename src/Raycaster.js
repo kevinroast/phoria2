@@ -3,6 +3,7 @@ import * as mat4 from './math/mat4.js'
 import { Ray } from './value/Ray.js'
 import { Vec3 } from './value/Vec3.js'
 import { clipOwner, worldPlane } from './clip.js'
+import { BVH_MIN_TRIANGLES, bvhOf, walk } from './geometry/bvh.js'
 
 /** @import { Camera } from './scene/cameras.js' */
 /** @import { Node } from './scene/Node.js' */
@@ -161,20 +162,26 @@ export class Raycaster {
     if (cut) for (let j = 0; j < 4; j++) localPlane[j] = cut.plane[0] * world[j * 4] + cut.plane[1] * world[j * 4 + 1] + cut.plane[2] * world[j * 4 + 2] + cut.plane[3] * world[j * 4 + 3]
     const o = local.origin, d = local.direction
     let best = null, bestT = Infinity, bestFace = -1
-    for (let f = 0, n = Math.floor(g.drawnCount / 3); f < n; f++) {
+    /** @param {number} f a triangle @returns {number} the nearest hit so far */
+    const test = (f) => {
       const i0 = idx ? idx[f * 3] : f * 3, i1 = idx ? idx[f * 3 + 1] : f * 3 + 1, i2 = idx ? idx[f * 3 + 2] : f * 3 + 2
       a.set(p[i0 * 3], p[i0 * 3 + 1], p[i0 * 3 + 2])
       b.set(p[i1 * 3], p[i1 * 3 + 1], p[i1 * 3 + 2])
       c.set(p[i2 * 3], p[i2 * 3 + 1], p[i2 * 3 + 2])
       const hit = local.intersectTriangle(a, b, c, cullBack)
       // a hit on the cut-away side isn't there
-      if (hit && cut && localPlane[0] * (o[0] + d[0] * hit.t) + localPlane[1] * (o[1] + d[1] * hit.t) + localPlane[2] * (o[2] + d[2] * hit.t) + localPlane[3] > 0) continue
-      if (hit && hit.t < bestT) {
+      if (hit && cut && localPlane[0] * (o[0] + d[0] * hit.t) + localPlane[1] * (o[1] + d[1] * hit.t) + localPlane[2] * (o[2] + d[2] * hit.t) + localPlane[3] > 0) return bestT
+      if (hit && (hit.t < bestT || (hit.t === bestT && f < bestFace))) {
         best = { ...hit, i0, i1, i2 }
         bestT = hit.t
         bestFace = f
       }
+      return bestT
     }
+    const triangles = Math.floor(g.drawnCount / 3)
+    // big meshes through their tree; small ones a triangle at a time
+    if (triangles >= BVH_MIN_TRIANGLES) walk(bvhOf(g, triangles), o, d, test)
+    else for (let f = 0; f < triangles; f++) test(f)
     if (!best) return
 
     let point = local.at(best.t).applyMatrix4(world)
