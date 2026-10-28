@@ -27,7 +27,7 @@ Or straight from a CDN, with no build step:
 </script>
 ```
 
-To use more than the core - charts, particles, glTF or motion - map each import to the package's own
+To use more than the core - charts, particles, glTF, motion or editing - map each import to the package's own
 files, so they share one copy of the core (the CDN's ready-made `+esm` builds each bundle their
 own). Pin the version so a new release can't change your page:
 
@@ -35,11 +35,12 @@ own). Pin the version so a new release can't change your page:
 <script type="importmap">
 {
   "imports": {
-    "phoria2": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.3/dist/phoria2.js",
-    "phoria2/charts": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.3/dist/charts.js",
-    "phoria2/particles": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.3/dist/particles.js",
-    "phoria2/gltf": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.3/dist/gltf.js",
-    "phoria2/motion": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.3/dist/motion.js"
+    "phoria2": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.4/dist/phoria2.js",
+    "phoria2/charts": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.4/dist/charts.js",
+    "phoria2/particles": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.4/dist/particles.js",
+    "phoria2/gltf": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.4/dist/gltf.js",
+    "phoria2/motion": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.4/dist/motion.js",
+    "phoria2/edit": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.4/dist/edit.js"
   }
 }
 </script>
@@ -139,6 +140,7 @@ A full example, with a chart that follows its data, is in
 | `phoria2/particles` | `Emitter` and `Body` |
 | `phoria2/gltf` | `loadGLTF()` - glTF 2.0 models with their materials and animations |
 | `phoria2/motion` | `Timeline` - named steps played in order, `follow()` along a curve, `reveal()` a path as it's travelled - for explainers and guided tours |
+| `phoria2/edit` | `TransformHandle` - a move and turn handle with grid and angle snapping - and `History` for undo, for planners and layout editors |
 
 ## Browsers
 
