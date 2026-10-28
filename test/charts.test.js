@@ -67,6 +67,13 @@ describe('chart specs', () => {
     expect(normalise({ mark: 'point', data: rows, x: 'sales', y: 'sales', color: '#ff8800' }).channels.color.value).toBe('#ff8800')
   })
 
+  it('reads a tooltip field named on its own as its channel does, title and format', () => {
+    const s = normalise({ mark: 'bar', data: rows, x: { field: 'month', title: 'Month' }, y: { field: 'sales', format: (v) => `£${v}k` },
+      tooltip: ['month', 'sales', 'region', { field: 'month', title: 'When' }] })
+    expect(s.tooltip?.map((c) => c.title)).toEqual(['Month', s.channels.y.title, s.tooltip?.[2].title, 'When'])
+    expect(s.tooltip?.[1].format).toBe(s.channels.y.format)
+  })
+
   it('explains mistakes, naming the real fields and other libraries\' words', () => {
     const spec = (extra) => ({ mark: 'bar', data: rows, x: 'month', y: 'sales', ...extra })
     expect(() => normalise(spec({ y: 'sale' }))).toThrow("y: field 'sale' isn't in the data - fields are id, month, region, sales - did you mean 'sales'?")

@@ -1,0 +1,10 @@
+{
+  "name": "phoria2",
+  "displayName": "phoria2",
+  "description": "Build 3D for the web with phoria2: 3D charts from a data spec, labelled diagrams and floor plans, cutaway explainers, animated infographics, dashboards, editors and glTF product viewers. Includes the API reference, the chart spec JSON Schema and a page check that runs in Chrome.",
+  "author": { "name": "Kevin Roast", "url": "https://github.com/kevinroast" },
+  "homepage": "https://kevs3d.co.uk/phoria2/",
+  "repository": "https://github.com/kevinroast/phoria2",
+  "license": "MIT",
+  "keywords": ["3d", "webgl", "charts", "data-visualization", "diagrams", "dashboard", "phoria2"]
+}

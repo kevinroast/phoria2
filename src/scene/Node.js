@@ -475,6 +475,26 @@ export class Node {
     return box
   }
 
+  /**
+   * The world-space box of what a camera draws of this subtree: like bounds, but leaving out hidden
+   * nodes and those whose showFrom turns them away from that camera - a chart's axis labels for
+   * the edges it isn't showing, say. Framing fits this, so the picture fills the view.
+   * @param {Camera} camera
+   * @returns {Box3}
+   */
+  boundsFrom(camera) {
+    this.updateWorld()
+    const box = new Box3()
+    /** @param {Node} n */
+    const visit = (n) => {
+      if (!n.visible || (n.showFrom && !n.showFrom(camera))) return
+      n.expandBounds(box)
+      for (const child of n.#children) visit(child)
+    }
+    visit(this)
+    return box
+  }
+
   /** @internal Grow a world space box by this node's own geometry (none for a plain node). @param {Box3} box */
   expandBounds(box) {
     return box

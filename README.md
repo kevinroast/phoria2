@@ -17,6 +17,18 @@ business apps: charts, labelled scenes, diagrams, dashboards and product viewers
 in one page ([llms.txt](https://kevs3d.co.uk/phoria2/llms.txt) is the short index). Both ship in the
 package too, at `node_modules/phoria2/llms-full.txt`.
 
+**Claude Code**: install the phoria2 plugin, and Claude reaches for phoria2 when asked for 3D charts,
+diagrams, explainers or dashboards - with the reference to hand and a check that loads the page in
+Chrome and reports what's wrong:
+
+```text
+/plugin marketplace add kevinroast/phoria2
+/plugin install phoria2@phoria2
+```
+
+The skill inside it ([claude-plugin/skills/phoria2](claude-plugin/skills/phoria2)) follows the Agent
+Skills standard, so other agents that read skills can use the folder as it is.
+
 ## Install
 
 ```sh

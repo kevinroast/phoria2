@@ -1,7 +1,7 @@
 import { collect } from './frame.js'
 import { LabelLayer } from './labels.js'
 import { OrbitControl } from './OrbitControl.js'
-import { cameraPreset, fitBox, framingScale } from './presets.js'
+import { cameraPreset, fitPoints, framingScale } from './presets.js'
 import { Raycaster } from './Raycaster.js'
 import { ChangeWatch } from './watch.js'
 import { Box3 } from './value/Box3.js'
@@ -397,7 +397,8 @@ export class View {
       const bounds = this.scene.bounds
       // the app moved the camera itself: leave it where it put it
       if (!samePlace(cameraPlace(this.camera), this.#autoFrameFrom)) this.#autoFrame = false
-      else if (!bounds.isEmpty()) this.frame(bounds)
+      // what is drawn from the preset's direction, not every candidate label set
+      else if (!bounds.isEmpty()) this.frame(this.scene)
     }
     this.scene.updateWorldTree()
     const frame = collect(this.scene, this.camera)
@@ -442,21 +443,22 @@ export class View {
   frame(target = this.scene, { padding = 0.2 } = {}) {
     if (!(padding >= 0)) fail('View', `frame() padding is the margin around, as a fraction of the size (0.2 = 20%), got ${describe(padding)}`)
     if (padding >= 1) warnOnce(this, `frame() padding ${padding} leaves a margin of ${Math.round(padding * 100)}% - it is a fraction of the size (0.2 = 20%)`)
-    const box = target instanceof Box3 ? target : target.bounds
-    // an explicit frame replaces the preset camera's fit on the first frame
-    this.#autoFrame = false
-    if (box.isEmpty()) return this
-    const center = box.getCenter()
-    const radius = Math.max(box.getRadius(), 1e-3)
     const cam = /** @type {any} */ (this.camera)
     const direction = cam.position.clone().sub(cam.target ?? new Vec3()).normalize()
     if (direction.len() === 0) direction.set(0, 0.3, 1).normalize()
-    if (cam.constructor.type === 'orthographic-camera') {
-      cam.height = fitBox(box, direction, { aspect: cam.aspect, padding })
+    const points = target instanceof Box3 ? corners(target) : this.#drawnPoints(target, direction)
+    // an explicit frame replaces the preset camera's fit on the first frame
+    this.#autoFrame = false
+    if (!points.length) return this
+    const ortho = cam.constructor.type === 'orthographic-camera'
+    const { center, size } = fitPoints(points, direction, { aspect: cam.aspect, fov: ortho ? undefined : cam.fov, padding })
+    const radius = Math.max(1e-3, ...points.map((p) => Math.hypot(p[0] - center[0], p[1] - center[1], p[2] - center[2])))
+    if (ortho) {
+      cam.height = size
       cam.position.copy(center).add(direction.clone().multiplyScalar(radius * 4))
       cam.far = Math.max(cam.far, radius * 10)
     } else {
-      const distance = fitBox(box, direction, { aspect: cam.aspect, fov: cam.fov, padding })
+      const distance = size
       cam.position.copy(center).add(direction.clone().multiplyScalar(distance))
       // keep the near/far range sensible for the model's size
       cam.near = Math.max(1e-3, distance / 1000)
@@ -468,6 +470,25 @@ export class View {
     this.#applied = 1
     this.invalidate()
     return this
+  }
+
+  /**
+   * The corners of each thing a node draws seen from along a direction - leaving out what a camera
+   * there wouldn't show (hidden nodes, showFrom sets turned away), measured from where framing will
+   * put the camera. All its bounds' corners when that leaves nothing.
+   * @param {Node} node @param {Vec3} direction from the node towards the camera
+   * @returns {number[][]}
+   */
+  #drawnPoints(node, direction) {
+    const all = node.bounds
+    if (all.isEmpty()) return []
+    const cam = this.camera, at = cam.position.clone()
+    cam.position.copy(all.getCenter()).add(direction.clone().multiplyScalar(Math.max(all.getRadius(), 1e-3) * 3))
+    cam.updateWorld()
+    const points = drawnPoints(node, cam)
+    cam.position.copy(at)
+    cam.updateWorld()
+    return points.length ? points : corners(all)
   }
 
   /**
@@ -565,20 +586,19 @@ export class View {
 
   /**
    * The rectangle on the canvas that a node, a box or (with no argument) the whole scene covers - CSS
-   * pixels, from the corners of its bounds. Null when there's nothing there, or part of it is behind
-   * the camera.
+   * pixels, from the corners of each thing the camera draws of it (as node.boundsFrom counts them).
+   * Null when there's nothing there, or part of it is behind the camera.
    *
    *     const { left, top, width } = view.screenBounds(model)   // put a title above it
    * @param {Node | Box3} [target]
    * @returns {{ left: number, top: number, right: number, bottom: number, width: number, height: number } | null}
    */
   screenBounds(target = this.scene) {
-    const box = target instanceof Box3 ? target : target.bounds
-    if (box.isEmpty()) return null
+    const points = target instanceof Box3 ? corners(target) : drawnPoints(target, this.camera)
+    if (!points.length) return null
     let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
-    for (let i = 0; i < 8; i++) {
-      const corner = [i & 1 ? box.max[0] : box.min[0], i & 2 ? box.max[1] : box.min[1], i & 4 ? box.max[2] : box.min[2]]
-      const { x, y, depth } = this.project(corner)
+    for (const point of points) {
+      const { x, y, depth } = this.project(point)
       if (!(depth >= 0 && depth <= 1)) return null
       left = Math.min(left, x)
       right = Math.max(right, x)
@@ -709,11 +729,14 @@ export class View {
       // nodes that can describe themselves (charts) add a line each
       if (n !== this.scene && typeof (/** @type {any} */ (n)).explain === 'function') notes.push(/** @type {any} */ (n).explain())
     })
+    // how much of the view the scene covers: what is drawn, projected - a share of each side
+    const drawn = this.scene.boundsFrom(this.camera), onScreen = this.screenBounds(this.scene)
+    const fills = onScreen ? { height: onScreen.height / this.#height, width: onScreen.width / this.#width } : null
     return explain({
-      notes,
+      notes, fills,
       width: this.#width, height: this.#height, pixelRatio: this.#pixelRatio, renderMode: this.renderMode, running: this.#running,
       sharedContext: this.renderer.shared,
-      frame, labels: this.#labelStats, bounds: this.scene.bounds, nodes, autoLight: this.autoLight,
+      frame, labels: this.#labelStats, bounds: drawn, nodes, autoLight: this.autoLight,
       contextLost: !!this.renderer.gl?.isContextLost?.(),
       interaction: { hover: this.#handlers.hover.size, click: this.#handlers.click.size, tooltip: !!this.#tooltipContent, highlight: !!this.#highlight },
     })
@@ -1037,6 +1060,33 @@ function cameraPlace(camera) {
 }
 /** @param {number[]} a @param {number[] | null} b */
 const samePlace = (a, b) => !!b && a.length === b.length && a.every((v, i) => v === b[i])
+
+/** A box's eight corners - one point when it is a point. @param {Box3} box @returns {number[][]} */
+function corners(box) {
+  if (box.isEmpty()) return []
+  if (box.min.equals(box.max)) return [box.min.toArray()]
+  const out = []
+  for (let i = 0; i < 8; i++) out.push([i & 1 ? box.max[0] : box.min[0], i & 2 ? box.max[1] : box.min[1], i & 4 ? box.max[2] : box.min[2]])
+  return out
+}
+
+/**
+ * The corners of each thing a camera draws of a subtree, as node.boundsFrom() counts them: a box
+ * each, so the empty space between things doesn't count as filled.
+ * @param {Node} node @param {Camera} camera @returns {number[][]}
+ */
+function drawnPoints(node, camera) {
+  node.updateWorld()
+  const points = []
+  /** @param {Node} n */
+  const visit = (n) => {
+    if (!n.visible || (n.showFrom && !n.showFrom(camera))) return
+    points.push(...corners(n.expandBounds(new Box3())))
+    for (const child of n.children) visit(child)
+  }
+  visit(node)
+  return points
+}
 
 /** The nearest node at or above this one with a handler of this kind. @param {any} node @param {string} key */
 function nearestAbove(node, key) {

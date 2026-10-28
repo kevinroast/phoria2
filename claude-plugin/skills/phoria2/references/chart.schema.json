@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phoria2/charts/schema.json",
+  "title": "phoria2 chart spec",
+  "description": "The spec for chart() from phoria2/charts: a mark, data, and channels mapping data fields to what is drawn. Channels may also be nested under 'encoding', as Vega-Lite writes them.",
+  "type": "object",
+  "required": ["mark", "data"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "description": { "type": "string" },
+    "mark": {
+      "description": "What to draw.",
+      "oneOf": [
+        { "$ref": "#/$defs/markName" },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": { "type": { "$ref": "#/$defs/markName" }, "tooltip": { "type": "boolean" } }
+        }
+      ]
+    },
+    "data": {
+      "description": "Rows (objects), Vega-Lite's { values: rows }, or { nodes, links } for a network.",
+      "oneOf": [
+        { "type": "array", "items": { "type": "object" } },
+        { "type": "object", "required": ["values"], "properties": { "values": { "type": "array", "items": { "type": "object" } } } },
+        {
+          "type": "object",
+          "required": ["nodes", "links"],
+          "properties": {
+            "nodes": { "type": "array", "items": { "type": "object" } },
+            "links": { "type": "array", "items": { "type": "object" } }
+          }
+        }
+      ]
+    },
+    "encoding": {
+      "description": "Channels nested the Vega-Lite way; flat channels win if both are given.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": { "$ref": "#/$defs/channel" }, "y": { "$ref": "#/$defs/channel" }, "z": { "$ref": "#/$defs/channel" },
+        "color": { "$ref": "#/$defs/channel" }, "size": { "$ref": "#/$defs/channel" }, "opacity": { "$ref": "#/$defs/channel" },
+        "label": { "$ref": "#/$defs/channel" }, "key": { "$ref": "#/$defs/channel" }, "detail": { "$ref": "#/$defs/channel" },
+        "tooltip": { "$ref": "#/$defs/tooltip" }
+      }
+    },
+    "x": { "$ref": "#/$defs/channel", "description": "Position across the floor: categories (bands), numbers or dates." },
+    "y": { "$ref": "#/$defs/channel", "description": "Position up: the value axis for bars, lines, areas and surfaces." },
+    "z": { "$ref": "#/$defs/channel", "description": "Position into the depth; leave out for a 2.5D chart in one row." },
+    "color": { "$ref": "#/$defs/channel", "description": "A field (categorical or sequential scale) or a constant colour." },
+    "size": { "$ref": "#/$defs/channel", "description": "Point or network node size: a field, or a number in world units." },
+    "opacity": { "$ref": "#/$defs/channel", "description": "A constant 0-1." },
+    "label": { "$ref": "#/$defs/channel", "description": "Text drawn on each mark, such as the value on a bar." },
+    "key": { "$ref": "#/$defs/channel", "description": "What identifies a row across updates (default: an 'id' field, else the index)." },
+    "detail": { "$ref": "#/$defs/channel", "description": "Groups rows into series (lines, areas) without colouring them." },
+    "tooltip": { "$ref": "#/$defs/tooltip" },
+    "box": {
+      "description": "The chart's size in the scene, [x, y, z] world units.",
+      "type": "array", "items": { "type": "number", "exclusiveMinimum": 0 }, "minItems": 3, "maxItems": 3
+    },
+    "stack": { "type": "boolean", "description": "Stack bars (by colour, when there is no z) or areas." },
+    "width": { "type": "number", "minimum": 0, "maximum": 1, "description": "A bar's share of its band (default 0.7)." },
+    "layout": {
+      "description": "How a network is laid out.",
+      "oneOf": [
+        { "enum": ["force", "given"] },
+        {
+          "type": "object", "required": ["tiers"], "additionalProperties": false,
+          "properties": { "tiers": { "type": "string" }, "order": { "type": "array" } }
+        }
+      ]
+    },
+    "flat": { "type": "boolean", "description": "Lay a force-directed network out in a plane." },
+    "steps": { "type": "integer", "minimum": 0, "description": "Force layout steps (default 300; 60 on updates)." },
+    "seed": { "type": "number", "description": "Force layout seed - the same seed and data give the same layout." },
+    "spacing": { "type": "number", "exclusiveMinimum": 0, "description": "Force layout spacing between nodes." },
+    "source": { "type": "string", "description": "The link field naming a link's first node (default 'source')." },
+    "target": { "type": "string", "description": "The link field naming a link's second node (default 'target')." },
+    "link": {
+      "description": "A network's link channels.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "width": { "$ref": "#/$defs/channel" }, "color": { "$ref": "#/$defs/channel" }, "opacity": { "$ref": "#/$defs/channel" },
+        "flow": { "$ref": "#/$defs/channel", "description": "Packets running along the link, faster for bigger values." },
+        "tooltip": { "$ref": "#/$defs/tooltip" }
+      }
+    },
+    "highlight": {
+      "description": "Hover highlight: a colour, false for none, or 'neighbours' (networks: the node's links and linked nodes).",
+      "oneOf": [{ "type": "boolean", "const": false }, { "enum": ["node", "neighbours"] }, { "type": "string" }]
+    },
+    "legend": {
+      "oneOf": [
+        { "type": "boolean", "const": false },
+        {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "position": { "enum": ["top-right", "top-left", "bottom-right", "bottom-left"] },
+            "container": { "type": "string", "description": "A CSS selector to put the legend in, outside the canvas." }
+          }
+        }
+      ]
+    },
+    "theme": { "enum": ["dark", "light"] },
+    "overlap": {
+      "enum": ["dim", "hide", "show"],
+      "description": "What every label the chart draws - values, ticks, axis titles - does when covered by another label or by the marks: dim (the default) fades it, hide drops it, show always shows it."
+    },
+    "transition": {
+      "oneOf": [
+        { "type": "boolean", "const": false },
+        {
+          "type": "object", "additionalProperties": false,
+          "properties": { "duration": { "type": "number", "minimum": 0 }, "ease": { "enum": ["linear", "outCubic", "inOutCubic"] } }
+        }
+      ]
+    },
+    "title": { "type": "string" },
+    "name": { "type": "string" },
+    "position": { "$ref": "#/$defs/vec3" },
+    "rotation": { "$ref": "#/$defs/vec3" },
+    "scale": { "oneOf": [{ "type": "number" }, { "$ref": "#/$defs/vec3" }] },
+    "visible": { "type": "boolean" },
+    "pickable": { "type": "boolean" }
+  },
+  "$defs": {
+    "markName": { "enum": ["bar", "point", "line", "area", "surface", "network"] },
+    "vec3": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+    "format": {
+      "description": "Intl.NumberFormat or Intl.DateTimeFormat options, e.g. { \"style\": \"currency\", \"currency\": \"GBP\", \"notation\": \"compact\" }.",
+      "type": "object"
+    },
+    "channel": {
+      "oneOf": [
+        { "type": "string", "description": "A field name - or, for colours, a constant colour." },
+        { "type": "number", "description": "A constant (size, opacity, link width)." },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "field": { "type": "string" },
+            "value": { "description": "A constant instead of a field." },
+            "type": { "enum": ["quantitative", "nominal", "ordinal", "temporal"] },
+            "title": { "type": "string" },
+            "format": { "$ref": "#/$defs/format" },
+            "priority": { "description": "Labels: a number, or the field whose value ranks the label." },
+            "legend": { "type": "boolean" },
+            "scale": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "domain": { "type": "array" },
+                "range": { "type": "array" },
+                "scheme": { "enum": ["category", "viridis", "blues", "heat", "cool", "redblue"] },
+                "zero": { "type": "boolean" },
+                "nice": { "type": "boolean" },
+                "type": { "enum": ["linear", "log"] }
+              }
+            },
+            "axis": {
+              "oneOf": [
+                { "type": "boolean", "const": false },
+                {
+                  "type": "object", "additionalProperties": false,
+                  "properties": { "title": { "type": "string" }, "format": { "$ref": "#/$defs/format" } }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "tooltip": {
+      "description": "Fields to show as name/value rows (the first category is the title), true for every encoded field, or false for none.",
+      "oneOf": [
+        { "type": "boolean" },
+        { "type": "string" },
+        { "type": "array", "items": { "$ref": "#/$defs/channel" } }
+      ]
+    }
+  }
+}

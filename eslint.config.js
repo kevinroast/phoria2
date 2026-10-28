@@ -18,7 +18,7 @@ export default defineConfig([
   },
   {
     // build and measurement scripts run in Node
-    files: ['scripts/**/*.mjs', 'perf/**/*.mjs', 'eval/**/*.mjs'],
+    files: ['scripts/**/*.mjs', 'perf/**/*.mjs', 'eval/**/*.mjs', 'claude-plugin/**/*.mjs'],
     extends: [js.configs.recommended],
     languageOptions: { globals: globals.node },
   },

@@ -1,0 +1,14 @@
+{
+  "name": "phoria2",
+  "owner": { "name": "Kevin Roast", "url": "https://github.com/kevinroast" },
+  "description": "Claude Code plugins for phoria2, small 3D for the web",
+  "plugins": [
+    {
+      "name": "phoria2",
+      "source": "./claude-plugin",
+      "description": "Build 3D charts, diagrams, explainers, dashboards, editors and product viewers with phoria2 - the API reference, the chart spec schema, and a check that loads the page in Chrome and reports what's wrong",
+      "category": "development",
+      "tags": ["3d", "webgl", "charts", "data-visualization", "phoria2"]
+    }
+  ]
+}

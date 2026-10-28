@@ -96,6 +96,7 @@ const view = new View({ canvas: '#c', orbit: true })
 | `renderMode` | `'auto'` | `'auto'` draws only when something changed (idle views cost nothing); `'always'`; `'manual'` |
 | `toneMapping`, `exposure` | `'neutral'`, `1` | `'neutral'` \| `'aces'` \| `'none'` |
 | `bloom` | off | glow round bright parts (emissive, additive points and lines): `true` or `{ strength, radius, threshold }`; also `view.bloom` |
+| `autoLight` | `true` | light a scene that has no lights (a chart needs none of its own); `false` to leave it dark |
 | `pixelRatio` | `min(devicePixelRatio, 2)` | |
 | `context` | `'auto'` | WebGL context: own for the first four views on a page, then one shared context - so a page can hold any number of views |
 
@@ -107,8 +108,10 @@ Methods:
 - `start(fn?)` - `fn(dt, t)` every frame. Time and node update handlers run anyway; you only need
   `start` for your own per-frame code.
 - `frame(node?, { padding })` - move the camera so a node (default: the whole scene) fills the view,
-  keeping the viewing direction. `padding` is the margin around it as a fraction of its size: `0` is a
-  tight fit, `0.2` (the default) leaves a fifth, `0.5` half.
+  centred, keeping the viewing direction. It fits what the camera draws - not hidden nodes, nor a
+  chart's axis labels for the edges it isn't showing - so a chart fills the view. `padding` is the
+  margin around it as a fraction of its size: `0` is a tight fit, `0.2` (the default) leaves a
+  fifth, `0.5` half.
 - `on('click' | 'hover', (hit, event) => ...)` - see Interaction. Returns an unsubscribe function.
 - `tooltip(fn)` - set the tooltip function later.
 - `pick(x, y)` / `pick(event)` - the hit under a canvas position; `pickAll` for every hit.
@@ -153,6 +156,7 @@ scene.find('lamp'); scene.findAll((n) => n.name.startsWith('rack')); scene.trave
 node.translate(x, y, z); node.rotateY(rad); node.lookAt([0, 0, 0])
 node.remove(child); node.removeFromParent(); node.dispose()
 node.bounds              // world-space Box3: .min, .max, .getCenter(), .getSize()
+node.boundsFrom(camera)  // the same, for only what that camera draws (hidden and showFrom-off parts left out)
 node.worldPosition       // read only
 ```
 
@@ -364,6 +368,11 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
   ``y: { field: 'sales', format: (v) => `£${v}k` }`` for values in thousands;
   `{ style: 'currency', currency: 'GBP', notation: 'compact' }` turns 42000 into £42K.
 - **tooltip**: `true` (every encoded field), a field name, or a list of fields / `{ field, title, format }`.
+  A field named on its own reads as the channel that encodes it - its `title` and `format` - so set
+  those once, on the channel. The legend's title is the `color` channel's `title`.
+- **Order**: bands follow the data's order, or `scale.domain` when given - `x` left to right, `z`
+  front to back (the first `z` category is nearest the viewer). Put the tallest series at the back so
+  it doesn't hide the rest: `z: { field: 'region', scale: { domain: ['West', 'South', 'North'] } }`.
 - **Options**: `box: [x, y, z]` (the chart's size in world units, default about [10, 6, 6]),
   `stack: true` (bars with no `z` stack by `color`; areas stack), `width` (bar width share, 0-1),
   `legend: false | { position, container }` (`position`: `'top-right'`, `'top-left'`, `'bottom-right'`,
@@ -371,7 +380,7 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
   in it as a wrapping row, so give it no fixed height),
   `theme: 'dark' | 'light'`, `title`, `transition: false | { duration, ease }`,
   `overlap: 'dim' | 'hide' | 'show'` (labels), `highlight` (a colour, false, or for networks
-  `'neighbours'`), and node options (`position`, ...).
+  `'neighbours'` - the default, lighting the node's links and linked nodes - or `'node'`, the node alone), and node options (`position`, ...).
 - **Surfaces**: one row per grid point - `x` and `z` are the grid (numbers or categories), `y` the
   height; colour follows `y` unless `color` says otherwise:
   `chart({ mark: 'surface', data: rows, x: 'hour', z: 'day', y: 'load', color: { field: 'load', scale: { scheme: 'heat' } } })`.
@@ -402,7 +411,8 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
 - **Chart object**: `update(rowsOrSpec)`, `filter(fn | null)`, `scales` (e.g. `chart.scales.y(50)`),
   `marks` (the nodes drawing it). Picking a mark gives the original row as `hit.datum`.
 - **JSON Schema** for the spec ships with the package: `phoria2/charts/schema.json` - validate a
-  spec before rendering it, or hand it to a model generating specs.
+  spec before rendering it, or hand it to a model generating specs. It covers what JSON can hold: in
+  code, `format` can also be a function and `legend.container` an element.
 
 ## Editing: `phoria2/edit`
 

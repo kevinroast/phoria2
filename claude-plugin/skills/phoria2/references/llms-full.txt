@@ -1,0 +1,558 @@
+# phoria2 - reference for app writers
+
+Small 3D for the web, for business apps: charts, labelled scenes, diagrams, dashboards, explainers,
+editors and product viewers. WebGL 2, plain ES modules, no dependencies.
+
+This is the whole API in one page, written for people and coding agents building with phoria2. Demos:
+https://kevs3d.co.uk/phoria2/ - source: https://github.com/kevinroast/phoria2
+
+## When to use it
+
+phoria2 is for 3D that shows something: 3D charts from a data spec (bar, scatter, line, area,
+surface, network), labelled diagrams and floor plans, cutaway explainers with callouts, animated
+infographics on a timeline, dashboards of many small views, product viewers for glTF models, and
+editors that drag, snap and undo. Picking, tooltips, hover highlights, HTML labels, shadows and
+image-based light are built in, and a view draws only when something changes, so idle pages cost
+nothing. Apps come out short: typically a few dozen lines. For games, custom shaders or
+post-processing pipelines, three.js is the better fit.
+
+## Install
+
+```sh
+npm install phoria2
+```
+
+```js
+import { View, Mesh, box } from 'phoria2'
+import { chart } from 'phoria2/charts'                    // 3D charts from a spec
+import { loadGLTF } from 'phoria2/gltf'                   // glTF 2.0 models
+import { Timeline, follow, reveal } from 'phoria2/motion' // steps on a timeline, moving along curves
+import { Emitter, Body } from 'phoria2/particles'         // particles and simple physics
+import { TransformHandle, History } from 'phoria2/edit'   // a move/turn handle, and undo
+```
+
+Without a build step, map the imports to a CDN in the page, pinning the version (they share one
+copy of the core):
+
+```html
+<script type="importmap">
+{ "imports": {
+  "phoria2": "https://cdn.jsdelivr.net/npm/phoria2@VERSION/dist/phoria2.js",
+  "phoria2/charts": "https://cdn.jsdelivr.net/npm/phoria2@VERSION/dist/charts.js"
+} }
+</script>
+```
+
+The other sub-paths follow the same pattern: `dist/gltf.js`, `dist/motion.js`, `dist/particles.js`,
+`dist/edit.js`. TypeScript types ship with the package.
+
+## Conventions
+
+- **Coordinates**: right-handed, **+Y up**, +Z towards the viewer, units are metres.
+- **Angles** are radians, except a perspective camera's `fov`, which is degrees.
+- **Vectors in**: `[x, y, z]` arrays (objects `{ x, y, z }` also work). On objects, `position`,
+  `rotation`, `scale` are small vector classes: `node.position.set(1, 2, 3)`, `node.rotation.y += 0.1`,
+  `node.scale.x = 2` all work.
+- **Colours**: `'#ff8800'`, `'#f80'`, `0xff8800`, CSS names (`'orange'`), `'rgb(255 136 0)'`, or
+  `[r, g, b]` 0-1. Inputs are sRGB.
+- **Time** is seconds. Handlers get what they act on as an argument (arrow functions are fine).
+- **One options object per constructor.** Unknown option names throw an error that says what to use
+  instead - read it, it usually names the fix.
+
+## The minimal app
+
+```html
+<canvas id="c" style="width: 100%; height: 100vh; display: block"></canvas>
+<script type="module" src="./main.js"></script>
+```
+
+```js
+import { View, Mesh, box, DirectionalLight } from 'phoria2'
+
+const view = new View({ canvas: '#c', orbit: true, background: '#1c1c20' })
+const cube = view.scene.add(new Mesh({ geometry: box(2), material: { color: 'orange' } }))
+view.scene.add(new DirectionalLight({ direction: [-1, -2, -1] }))
+view.start((dt) => cube.rotateY(0.6 * dt))
+```
+
+The canvas needs a size from CSS; the View matches its drawing buffer to it and follows resizes
+itself. A scene with no lights is lit automatically (with a console note).
+
+## View
+
+```js
+const view = new View({ canvas: '#c', orbit: true })
+```
+
+| Option | Default | |
+|---|---|---|
+| `canvas` | a new full-window canvas | element or CSS selector |
+| `camera` | `'perspective'`: a three-quarter view from the front right and above, fitted to the scene on the first frame | a preset - `'perspective'`, `'isometric'`, `'top'`, `'front'`, `'side'` (fitted to the scene on the first frame, unless you place or frame the camera first) - camera options (`{ position, target, fov }`), or a camera |
+| `orbit` | `false` | `true`, or options: `{ autoRotate, inertia, minDistance, maxDistance, minPitch, maxPitch, pan, zoom, mode }`. `autoRotate`: `true` (a slow turn) or radians per second; it pauses while the user drags. `mode`: `'orbit'` (the default) or `'map'` - drags pan and the view never turns, for plans. Left-drag orbits, right-drag pans, wheel zooms |
+| `background` | transparent | a colour |
+| `highlight` | none | a colour mixed into whatever is under the pointer |
+| `tooltip` | none | `(hit) => content` - see Interaction |
+| `framing` | `'height'` | what stays in view as the canvas changes shape: `'height'`, `'width'`, or `'both'` (nothing framed is ever cut off - good for tiles). Also `{ keep, aspect }` |
+| `renderMode` | `'auto'` | `'auto'` draws only when something changed (idle views cost nothing); `'always'`; `'manual'` |
+| `toneMapping`, `exposure` | `'neutral'`, `1` | `'neutral'` \| `'aces'` \| `'none'` |
+| `bloom` | off | glow round bright parts (emissive, additive points and lines): `true` or `{ strength, radius, threshold }`; also `view.bloom` |
+| `autoLight` | `true` | light a scene that has no lights (a chart needs none of its own); `false` to leave it dark |
+| `pixelRatio` | `min(devicePixelRatio, 2)` | |
+| `context` | `'auto'` | WebGL context: own for the first four views on a page, then one shared context - so a page can hold any number of views |
+
+Members: `view.scene`, `view.camera` (assign a camera or a preset name to switch), `view.controls`
+(the orbit control), `view.renderer`, `view.width`, `view.height`.
+
+Methods:
+
+- `start(fn?)` - `fn(dt, t)` every frame. Time and node update handlers run anyway; you only need
+  `start` for your own per-frame code.
+- `frame(node?, { padding })` - move the camera so a node (default: the whole scene) fills the view,
+  centred, keeping the viewing direction. It fits what the camera draws - not hidden nodes, nor a
+  chart's axis labels for the edges it isn't showing - so a chart fills the view. `padding` is the
+  margin around it as a fraction of its size: `0` is a tight fit, `0.2` (the default) leaves a
+  fifth, `0.5` half.
+- `on('click' | 'hover', (hit, event) => ...)` - see Interaction. Returns an unsubscribe function.
+- `tooltip(fn)` - set the tooltip function later.
+- `pick(x, y)` / `pick(event)` - the hit under a canvas position; `pickAll` for every hit.
+- `rayAt(x, y)` / `rayAt(event)` - the world `Ray` through a canvas position, for placing things:
+  `ray.at(ray.intersectPlane([0, 1, 0], [0, 0, 0]))` is the point on the floor under the pointer
+  (`intersectPlane` returns null when the ray runs along the plane or away from it).
+- `await view.toImage()` - a PNG `Blob` of the picture, labels included.
+- `await view.explain()` - a plain-text report of what is drawn, with warnings ("nothing in view",
+  "no lights", labels hidden...). Use it to debug a blank or wrong picture.
+- `render()`, `invalidate()` (redraw after changing data the view can't see), `dispose()`.
+
+If a page shows nothing or the wrong thing, `console.log(await view.explain())` before anything else.
+Errors thrown for bad options name the option and usually the fix.
+
+## Changing things later
+
+Everything can be changed after it is made, and the next frame shows it (the View redraws when
+something changes):
+
+- Nodes: `position`, `rotation`, `scale`, `visible`, `pickable`, `add`/`remove` children. `node.bounds`
+  is always current - read it straight after adding or moving things.
+- Materials: every property - `color.set(...)`, `opacity` (going below 1 makes it transparent;
+  back to 1, opaque again), `emissive`, `roughness`, `width` on Lines, `size` on Points, maps.
+- Instances: `setInstance`, `setColor`. Labels: `text`, `className`, `visible`.
+- Lights: `intensity`, `color`, `direction`, `castShadow`. Scene: `background`, `environment`.
+- View: `view.camera = 'top'` switches camera (a preset is fitted to the scene); `view.controls.mode`,
+  `view.controls.autoRotate`, `view.controls.enabled`; `view.highlight`; `view.tooltip(fn)`.
+- Charts: `chart.update(newRows)` or `chart.update({ color: 'other' })` - animated.
+
+## Scene graph
+
+Everything in a scene is a node. Node options (all optional): `name`, `position`, `rotation`
+(Euler XYZ radians, `[x, y, z]`), `quaternion`, `scale` (number or `[x, y, z]`), `visible`,
+`pickable` (default true), `userData`, `children`, `onUpdate`, `clip` (a section plane - see
+Cutaways), plus the interaction options below.
+
+```js
+const group = view.scene.add(new Group({ position: [0, 1, 0] }))   // add() returns what it added
+group.add(new Mesh({ geometry: sphere(), material: { color: 'teal' } }))
+node.onUpdate((node, dt, t) => { node.rotation.y += dt })
+scene.find('lamp'); scene.findAll((n) => n.name.startsWith('rack')); scene.traverse((n) => {})
+node.translate(x, y, z); node.rotateY(rad); node.lookAt([0, 0, 0])
+node.remove(child); node.removeFromParent(); node.dispose()
+node.bounds              // world-space Box3: .min, .max, .getCenter(), .getSize()
+node.boundsFrom(camera)  // the same, for only what that camera draws (hidden and showFrom-off parts left out)
+node.worldPosition       // read only
+```
+
+**Cutaways**: `clip: { normal, offset, cap }` on any node cuts away everything in its subtree on the
+`normal` side of a plane, `offset` along the normal from the node's origin, in the node's own space
+(so it moves with the node). `cap` fills the cut faces of closed shapes with a colour, as a surface
+lying on the plane - parts that touch join cleanly, and what is inside them stays hidden; without it
+they show their hollow insides. Caps need closed solids: keep open surfaces (planes, open tubes) out
+of a capped clip. The nearest clip above a mesh is the one that cuts it. Move the cut
+by changing it in place: `engine.clip.offset = 0.5`. Cut-away parts cast no shadow and can't be
+picked; points and lines aren't cut.
+
+```js
+const block = view.scene.add(new Group({ clip: { normal: [0, 0, 1], offset: 0, cap: '#c0392b' } }))
+```
+
+`Scene` (also `view.scene`) adds: `background` (colour, or a panorama texture), `environment`
+(`'studio'` - built in, no download - `'none'`, or an `.hdr` url: image-based light for every lit
+material), `environmentIntensity`, `backgroundBlur` (0-1, for a panorama background), `fog`.
+
+**Fog**: `scene.fog = { color, density }` - exponential, thickening with distance like mist (try 0.02 -
+0.1) - or `{ color, near, far }` for linear. Give `background` the same colour, so distant things melt
+into it. Change it in place (`scene.fog.density = 0.08`); `null` turns it off. Additive glows fade
+out with distance rather than turning fog-coloured; a material with `fog: false` (a sky dome, a far
+backdrop) ignores it.
+
+## Drawables
+
+All drawables take `geometry`, `material`, `castShadow`, `receiveShadow`, `renderOrder` and `data`.
+
+```js
+new Mesh({ geometry: box(1), material: { color: '#c33', roughness: 0.3 } })
+new Points({ geometry, material: { color: 'white', size: 4, sizeAttenuation: false } })  // size in pixels when not attenuated
+new Lines({ geometry: edges(box(2)), material: { color: '#333', width: 2 } })            // segments: pairs of vertices; width in pixels
+new Label({ text: 'Rack A1', position: [0, 2, 0], className: 'my-label', place: 'above' })
+```
+
+**InstancedMesh** - many copies of one geometry in one draw call, for bars, racks, nodes:
+
+```js
+const bars = view.scene.add(new InstancedMesh({ geometry: box(1), material: { roughness: 0.5 }, data: rows }))  // count = rows.length
+rows.forEach((r, i) => bars.setInstance(i, { position: [r.x, r.h / 2, r.z], scale: [0.8, r.h, 0.8], color: r.color }))
+bars.setColor(3, 'red')
+```
+
+`setInstance(i, { position, rotation, quaternion, scale, color })`. An instance's `color` multiplies the
+material's colour, which is white unless you set one - so the instance colour shows as given. `count` defaults to the number
+of rows in `data`. For very large data, write `bars.instanceMatrices` (16 numbers per instance,
+column-major) directly and call `bars.needsUpdate()`.
+
+**Labels** are HTML elements pinned to 3D points (style them with CSS). Options: `text`, `position`,
+`className`, `place` (`'center'` | `'above'` | `'below'` | `'left'` | `'right'`), `offset` ([x, y]
+pixels), `priority` (higher wins when labels overlap), `overlap` (`'hide'` | `'dim'` | `'show'` - what
+a label does when covered), `occlude` (true: counts as covered when geometry is in front), `leader`
+(true: a line from the point to the label, with a dot on the point - for callouts), `edge` (`'left'` |
+`'right'`: set the label at that edge of the view, level with its point - callouts in a column, with
+`leader: true`; `offset` then moves it in and up or down).
+
+**Labels per instance or point**, without a Label node each:
+
+```js
+new InstancedMesh({ geometry: box(1), data: rows, labels: { text: (row) => row.name, place: 'above', priority: (row) => row.alert ? 2 : 0 } })
+```
+
+## Geometry
+
+Generators return a `Geometry`; each takes one options object (a number is the main size):
+
+| | Options |
+|---|---|
+| `box(size \| { width, height, depth })` | centred on the origin |
+| `sphere({ radius, segments, rings })` | |
+| `plane(size \| { width, depth })` | in the x-z plane, facing up (+Y) |
+| `cylinder({ radius, radiusTop, height, segments })` | along Y, centred; `radiusTop: 0` is a cone |
+| `torus({ radius, tube })`, `icosphere({ radius, detail })` | |
+| `lathe({ points, segments, axis })` | a profile of `[radius, y]` pairs, bottom up, turned about Y - pistons, bottles, bolts |
+| `extrude({ shape, holes, depth, axis })` | an outline of `[x, y]` pairs (and hole outlines) pushed along Z, centred - plates, brackets, logos |
+| `grid({ size, divisions })` | floor grid, for `Lines` |
+| `edges(geometry)` | wireframe of any geometry, for `Lines` |
+
+`axis: 'x' | 'y' | 'z'` lays `cylinder`, `lathe` and `extrude` along another axis - no rotating the mesh
+to suit. An extruded outline is drawn as seen from the axis's + end (`'y'`: from above, its y away
+from you).
+
+**Outlines** for `extrude` and `lathe` - lists of `[x, y]` points, anticlockwise, to spread together or
+cut as holes: `outline.circle(radius | { radius, segments, center })`, `outline.rect({ width, height,
+radius, center })` (`radius` rounds the corners), `outline.polygon({ radius, sides, angle })`,
+`outline.arc({ radius, from, to, center })` (angles in radians from +x; both ends included, for joining
+into a shape), `outline.gear({ radius, teeth, depth })`.
+
+```js
+// a connecting rod: two eyes joined by their sides, each bored through, lying across x
+extrude({
+  shape: [...outline.arc({ radius: 0.15, from: -0.4, to: Math.PI + 0.4, center: [0, 1.4] }), ...outline.arc({ radius: 0.3, from: Math.PI - 0.4, to: 2 * Math.PI + 0.4 })],
+  holes: [outline.circle(0.2), outline.circle({ radius: 0.09, center: [0, 1.4] })],
+  depth: 0.16, axis: 'x',
+})
+```
+
+Your own: `new Geometry({ positions, normals?, uvs?, colors?, indices? })` - flat arrays, xyz per
+vertex; `colors` are rgb 0-1 per vertex (use `material: { vertexColors: true }`).
+
+## Materials
+
+One material type, given as a plain object:
+
+```js
+{ color: 'white' }                                   // lit, physically based
+{ color: '#c33', roughness: 0.2, metalness: 1 }      // metal
+{ color: 'orange', unlit: true }                     // flat colour, ignores lights
+{ color: '#8cf', opacity: 0.4 }                      // transparent
+{ emissive: '#ff0', emissiveIntensity: 3 }           // glows
+{ map: 'wood.jpg', normalMap: 'wood_n.png' }         // textures from urls
+```
+
+Properties: `color`, `opacity`, `roughness` (0.5), `metalness` (0), `emissive`,
+`emissiveIntensity`, `unlit`, `flatShading`, `doubleSided`, `vertexColors`, `fog` (true), `blending`
+(`'normal'` | `'additive'`), `map`, `normalMap`, `roughnessMap`, `metalnessMap`, `aoMap`,
+`emissiveMap`; `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
+`mesh.material.color.set('#0f0')`, `mesh.material.opacity = 0.5`.
+
+## Lights and cameras
+
+| | Options |
+|---|---|
+| `AmbientLight` | `color`, `intensity` |
+| `HemisphereLight` | `sky`, `ground`, `intensity` |
+| `DirectionalLight` | `color`, `intensity`, `direction` (the way it travels, e.g. `[-1, -2, -1]`), `castShadow` |
+| `PointLight` | `color`, `intensity`, `position`, `range` - inverse-square falloff, so intensity ~ distance squared (30 lights things ~5 m away) |
+| `SpotLight` | point light options plus `direction`, `angle`, `penumbra`, `castShadow` |
+
+Intensity 1 on a directional light lights a white surface facing it to white. Limits: 2
+directional and 4 point/spot lights.
+
+**Shadows**: one directional light and up to four spot lights with `castShadow: true`; meshes opt in
+with `castShadow` and `receiveShadow`. No shadow camera to set up. A spot light's own lamp - anything
+whose bounds hold the light - doesn't block it, so a lamp's shade can cast shadows of its own.
+
+Cameras: `new PerspectiveCamera({ fov, near, far, position, target })`,
+`new OrthographicCamera({ height, near, far, position, target })` (width follows the aspect). Or
+use a View camera preset: `'isometric'` and `'top'` are orthographic.
+
+## Interaction
+
+```js
+const view = new View({ canvas: '#c', orbit: true, highlight: '#ffffff',
+  tooltip: (hit) => ({ title: hit.datum.name, rows: { Sales: hit.datum.sales } }) })
+view.on('click', (hit) => { if (hit) select(hit.datum) })   // hit is null for empty space
+view.on('hover', (hit) => show(hit?.datum))                 // fires when the thing under the pointer changes
+```
+
+- A **hit** is `{ node, instance, datum, point, distance, normal, face, uv }`. `datum` is the
+  `data` row for the instance or point hit, or the node's own `data`.
+- **Tooltip** content: a string (new lines kept), an HTML element, or `{ title, rows }` with rows as
+  an object `{ name: value }`. Return null for none. Styled by the `.phoria-tooltip` class.
+- **highlight** tints the hovered node, instance or point. A drag never counts as a click.
+- Per node: `tooltip`, `highlight`, `onHover`, `onClick` options on any node apply to it and its
+  children. A node's `highlight` is the colour for its subtree; it tints the mesh, instance or point
+  under the pointer. Add `highlightWhole: true` to tint the whole subtree as one thing (a piece of
+  furniture, a machine) whichever part is hovered. Without the View's `highlight`, only nodes with
+  their own highlight light up - leave it off to keep floors and walls plain.
+- **Dragging**: `onDrag: (drag) => ...` on a node makes its subtree draggable. A press on it starts a
+  drag (not an orbit) once the pointer has moved 4 px - until then it can still click - and the click
+  after a drag is dropped. `drag` is `{ phase, hit, node, ray, plane, start, point, delta, event }`:
+  `phase` is `'start'`, `'move'` or `'end'`; `point` is where the pointer's ray meets `plane`
+  (null when it misses), and `delta` is `point - start`. `plane` (`{ normal, point }`) is
+  horizontal through the hit unless the handler sets another at `'start'`. The cursor shows grab and
+  grabbing.
+
+```js
+chair.onDrag = (drag) => {
+  if (drag.phase === 'start') from = chair.position.clone()
+  else if (drag.point) chair.position.copy(from).add(drag.delta)
+}
+```
+
+- **Outline**: `outline: '#ffcc00'` or `{ color, width }` (pixels, up to 8; default 2) on a node draws
+  a line round its silhouette, over everything - for what is selected. Set it any time; `null` removes it.
+- `view.controls.cancel()` lets go of the orbit gesture in progress, for apps that take over a press.
+
+## Charts: `phoria2/charts`
+
+```js
+import { chart } from 'phoria2/charts'
+
+const sales = view.scene.add(chart({
+  mark: 'bar',
+  data: rows,                         // [{ month: 'Jan', region: 'North', sales: 41 }, ...]
+  x: 'month', z: 'region', y: 'sales',
+  color: 'region',
+  tooltip: ['region', 'month', { field: 'sales', format: { style: 'currency', currency: 'GBP' } }],
+}))
+view.frame(sales)
+sales.update(newRows)                 // animates to the new data
+```
+
+A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. Vega-Lite's shape
+(`encoding: { x: { field, type } }`, `data: { values }`) is accepted as-is.
+
+- **Marks**: `'bar'` (x and optional z bands, y value), `'point'` (scatter; x, y, z numbers or
+  categories), `'line'`, `'area'`, `'surface'` (x, z grid with y heights), `'network'`.
+- **Channels**: `x`, `y`, `z`, `color`, `size`, `opacity`, `label` (text on each mark), `key` (row
+  identity for animated updates; default `id`), `detail`. Each is a field name or
+  `{ field, type, title, format, scale, axis, priority, legend }`; `color` can also be a constant colour.
+  `scale`: `{ domain, range, scheme, zero, nice, type: 'linear' | 'log' }`; schemes: `'category'`,
+  `'viridis'`, `'blues'`, `'heat'`, `'cool'`, `'redblue'`. `axis: false` or `{ title, format }`.
+- **Formats** (`format` on a channel, an axis or a tooltip field) are `Intl.NumberFormat` /
+  `DateTimeFormat` options, or a function `(value) => string`:
+  ``y: { field: 'sales', format: (v) => `£${v}k` }`` for values in thousands;
+  `{ style: 'currency', currency: 'GBP', notation: 'compact' }` turns 42000 into £42K.
+- **tooltip**: `true` (every encoded field), a field name, or a list of fields / `{ field, title, format }`.
+  A field named on its own reads as the channel that encodes it - its `title` and `format` - so set
+  those once, on the channel. The legend's title is the `color` channel's `title`.
+- **Order**: bands follow the data's order, or `scale.domain` when given - `x` left to right, `z`
+  front to back (the first `z` category is nearest the viewer). Put the tallest series at the back so
+  it doesn't hide the rest: `z: { field: 'region', scale: { domain: ['West', 'South', 'North'] } }`.
+- **Options**: `box: [x, y, z]` (the chart's size in world units, default about [10, 6, 6]),
+  `stack: true` (bars with no `z` stack by `color`; areas stack), `width` (bar width share, 0-1),
+  `legend: false | { position, container }` (`position`: `'top-right'`, `'top-left'`, `'bottom-right'`,
+  `'bottom-left'` inside the canvas; `container`: an element or selector - the legend's HTML goes
+  in it as a wrapping row, so give it no fixed height),
+  `theme: 'dark' | 'light'`, `title`, `transition: false | { duration, ease }`,
+  `overlap: 'dim' | 'hide' | 'show'` (labels), `highlight` (a colour, false, or for networks
+  `'neighbours'` - the default, lighting the node's links and linked nodes - or `'node'`, the node alone), and node options (`position`, ...).
+- **Surfaces**: one row per grid point - `x` and `z` are the grid (numbers or categories), `y` the
+  height; colour follows `y` unless `color` says otherwise:
+  `chart({ mark: 'surface', data: rows, x: 'hour', z: 'day', y: 'load', color: { field: 'load', scale: { scheme: 'heat' } } })`.
+- **Networks** - nodes as spheres and links as lines, laid out, labelled and interactive:
+
+  ```js
+  const services = [{ id: 'gateway', status: 'ok' }, { id: 'payments', status: 'down' }, ...]
+  const calls = [{ source: 'gateway', target: 'payments' }, ...]   // link ends name node ids
+  view.scene.add(chart({
+    mark: 'network',
+    data: { nodes: services, links: calls },
+    color: { field: 'status', scale: { domain: ['ok', 'warning', 'down'], range: ['#2ecc71', '#f5a623', '#e74c3c'] } },
+    label: 'id',                        // a name label on each node
+    size: 'load',                       // optional: node size from a field
+    link: { width: 2, color: '#8899aa' },   // or fields: width, color, opacity, flow (moving packets)
+    layout: { tiers: 'tier', order: ['edge', 'service', 'data'] },   // or 'force' (default), or 'given' (x, y, z fields)
+    highlight: 'neighbours',            // hover lights the node, its links and linked nodes; dims the rest
+    tooltip: ['id', 'status'],
+  }))
+  view.on('click', (hit) => hit && show(hit.datum))   // the node's (or link's) row
+  ```
+
+  `source`/`target` name the link fields if they aren't called that; nodes are matched by `id`
+  (or the `key` channel). Tiers run top to bottom, each tier a ring that widens further down - from
+  the side (`camera: 'front'`, or a low view) they read as levels; `'force'` spreads nodes evenly
+  instead. A hit on a node gives the node's row as `hit.datum`, on a link the link's row (it has
+  `source` and `target`).
+- **Chart object**: `update(rowsOrSpec)`, `filter(fn | null)`, `scales` (e.g. `chart.scales.y(50)`),
+  `marks` (the nodes drawing it). Picking a mark gives the original row as `hit.datum`.
+- **JSON Schema** for the spec ships with the package: `phoria2/charts/schema.json` - validate a
+  spec before rendering it, or hand it to a model generating specs. It covers what JSON can hold: in
+  code, `format` can also be a function and `legend.container` an element.
+
+## Editing: `phoria2/edit`
+
+For editors - planners, layout tools, scene builders: a handle to move and turn what is selected, and
+undo. Built on `onDrag`, `outline` and `rayAt` above.
+
+```js
+import { TransformHandle, History } from 'phoria2/edit'
+
+const history = new History({ onChange: (h) => { undoButton.disabled = !h.canUndo } })
+const handle = new TransformHandle({
+  view, history,
+  snap: { move: 0.5, turn: Math.PI / 12 },               // a half-metre grid, 15 degree turns
+  constrain: (placement, target) => fits(target, placement) ? placement : null,
+  onChange: (target, phase) => showDistances(target, phase),
+})
+handle.target = chair                                    // null hides it
+chair.outline = '#ffb000'
+window.addEventListener('keydown', (e) => { if (e.ctrlKey && e.key === 'z') history.undo() })
+```
+
+- **TransformHandle** options: `view` (required), `target`, `move` (`'xz'` across the floor - the
+  default - `'xyz'` with an up arrow too, or `false`), `turn` (a ring for turning about the
+  vertical; default true), `snap: { move, turn }`, `size` (pixels across the ring; default 120 - it
+  grows to go round a big target), `dragTarget` (drag the target itself too; default true),
+  `history`, `constrain(placement, target)` and `onChange(target, phase)`. It is drawn over
+  everything, the same size on screen at any distance. `constrain` gets `{ position, rotation }`
+  (rotation is the turn about y) and returns it changed, `null` to refuse the move, or nothing to
+  allow it. `handle.dispose()` removes it.
+- **History**: `push({ label, undo, redo })` records something already done; `undo()`, `redo()`
+  (each returns false when there is nothing to do), `canUndo`, `canRedo`, `undoLabel`,
+  `redoLabel`, `clear()`. Options `limit` (default 100) and `onChange(history)`.
+  `history.transform(nodes, label?)` notes where nodes are and returns `done(label?)`: call it after
+  moving them, and it records the move if there was one.
+
+```js
+const done = history.transform(selected)
+selected.rotation.y += Math.PI / 2
+done('Turn')
+history.push({ label: 'Delete desk', undo: () => room.add(desk), redo: () => desk.removeFromParent() })
+```
+
+## Models: `phoria2/gltf`
+
+```js
+import { loadGLTF } from 'phoria2/gltf'
+
+const model = await loadGLTF('models/chair.glb')     // .glb or .gltf
+view.scene.add(model)
+view.frame(model)
+model.find('Cushion').material.color.set('#2a6')
+for (const m of model.meshes) m.castShadow = true
+model.play()                                          // its first animation; or model.play('Open')
+```
+
+A model has `animations` (each with `play()`, `pause()`, `stop()`, `loop`, `speed`), `cameras` and
+`meshes`. Product-viewer lighting:
+
+```js
+view.scene.environment = 'studio.hdr'                // or 'studio' (built in)
+view.scene.background = view.scene.environment       // the HDR as a backdrop
+view.scene.backgroundBlur = 0.5
+```
+
+## Curves and motion: `phoria2/motion`
+
+Curves are in the core: `curve(points, { closed, tension })` is a smooth path through points
+(`tension` 0 round to 1 straight), `ellipse({ plane, radius, radiusX, radiusY, radiusZ, center, tilt })`
+an orbit (flat in x-z unless `plane` is `'xy'` or `'yz'`). Positions go by distance, so `t = 0.5`
+is half way along. A curve has `length`, `at(t)`, `tangentAt(t)`, `points(count)`,
+`line({ segments, dash: [on, off] })` (geometry for `Lines`) and `tube({ radius, segments, sides })`
+(geometry for a `Mesh`).
+
+`phoria2/motion` plays named steps in order - for stories, explainers and guided tours. Each step is
+a function of its own progress (0 before it starts, 0-1 while it plays, 1 once done) and sets the
+scene from it, so seeking, stepping back and looping always leave the scene right.
+
+```js
+import { curve, Lines } from 'phoria2'
+import { Timeline, follow, reveal } from 'phoria2/motion'
+
+const route = curve([[0, 0, 0], [2, 3, 0], [6, 2, 1]])
+const trail = view.scene.add(new Lines({ geometry: route.line({ dash: [0.3, 0.15] }), material: { color: 'orange', width: 2 } }))
+const story = new Timeline({ loop: true })
+story.add(4, (t) => { follow(probe, route, t); reveal(trail, t) }, { label: 'Transfer', ease: 'inOut' })
+story.add(2, (t) => { flag.visible = t > 0 }, { label: 'Arrival' })
+story.onStep((index, label) => { caption.textContent = label })
+view.start((dt) => story.update(dt))
+```
+
+- `new Timeline({ loop, speed })`; `add(seconds, run, { label, ease })` with `ease` `'linear'`
+  (default), `'in'`, `'out'`, `'inOut'` or a function. `play()`, `pause()`, `seek(seconds)`,
+  `seekStep(index | label)`, `onStep(fn)`, and `update(dt)` every frame. Read `duration`, `time`,
+  `step`, `label`, `steps`, `playing`.
+- `follow(node, curve, t, { orient, forward, up })` puts a node `t` along a curve, facing along it.
+  `forward` names the model's nose axis (`'-z'` default; `'+y'` for a rocket modelled upright).
+- `face(node, direction, { forward, up })` turns a node to point along a direction.
+- `reveal(lines, t)` draws only the first `t` of a `curve.line()`, so a path draws in as it is
+  travelled.
+
+## Particles: `phoria2/particles`
+
+```js
+import { Emitter, Body } from 'phoria2/particles'
+
+const sparks = view.scene.add(new Emitter({
+  rate: 200, velocity: [0, 3, 0], velocitySpread: 1, gravity: [0, -9.8, 0],
+  lifetime: [0.8, 1.4], color: ['#ffd27f', '#ff5a1f', '#000'],   // fades through these; end on black
+}))
+sparks.burst(500, { velocitySpread: 8 })
+```
+
+An `Emitter` is a `Points` node that runs itself. Options: `max` (most alive at once, 1000), `rate`
+(born per second, 100), `origin`, `originSpread` (a radius), `velocity`, `velocitySpread` (a number
+spreads in every direction - explosions; `[x, y, z]` per axis), `lifetime` (seconds or `[min, max]`),
+`color` (one, or a list each particle fades through), `gravity`, `drag` (share of velocity lost per
+second), `follow` (a node whose position is the origin each frame - a trail), `onParticle(p)`
+(every live particle each frame; return false to remove it), plus node and material options; the
+default material is small additive points. `burst(count, spawnOptions)`, `clear()`, `set(options)`,
+`count`.
+
+`Body` moves any node: `node.onUpdate(new Body({ velocity, gravity, drag }).update)`;
+`body.impulse([x, y, z])` kicks it.
+
+## Scenes as plain data
+
+`node.toJSON()` describes a node and its children as plain data, and `create(description)` builds it
+back - to save, load, send or generate scenes. A description is a node's constructor options plus a
+`type`: `'group'`, `'mesh'`, `'instanced-mesh'`, `'points'`, `'lines'`, `'label'`, the lights
+(`'directional-light'`, `'point-light'`, ...), `'chart'`, `'emitter'`. Geometry is described the same
+way. Handlers are behaviour, not data, and are left out.
+
+```js
+import { create } from 'phoria2'
+
+view.scene.add(create({
+  type: 'group', children: [
+    { type: 'mesh', geometry: { type: 'box', size: 2 }, material: { color: 'orange' }, position: [0, 1, 0] },
+    { type: 'label', text: 'Crate', position: [0, 2.4, 0] },
+  ],
+}))
+await view.scene.ready   // textures named by url have loaded
+```

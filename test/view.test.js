@@ -1,7 +1,7 @@
 // The View's behaviour on a stand-in page: when it draws, how it keeps its framing as the canvas
 // changes shape, what it picks, and who hears about clicks and hovering.
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
-import { DirectionalLight, Group, InstancedMesh, Mesh, Scene, Vec3, View, box } from '../src/index.js'
+import { DirectionalLight, Group, InstancedMesh, Label, Mesh, Scene, Vec3, View, box } from '../src/index.js'
 import { fakePage } from './fakes.js'
 
 const page = fakePage()
@@ -200,6 +200,37 @@ describe('View projection', () => {
     // the scene's covers the cube's; an empty group covers nothing
     expect(view.screenBounds()?.width).toBeCloseTo(r.width)
     expect(view.screenBounds(view.scene.add(new Group()))).toBeNull()
+  })
+
+  it('frames what the camera draws, centred and filling the view - not hidden or turned-away parts', () => {
+    const view = viewOf({ camera: { position: [6, 5, 9], target: [0, 0, 0] } })
+    const chart = view.scene.add(new Group())
+    chart.add(new Mesh({ geometry: box({ width: 4, height: 3, depth: 2 }), position: [0, 1.5, 0] }))
+    // a label set only shown from behind, and a hidden marker - neither should count
+    chart.add(new Group({ showFrom: (cam) => cam.worldPosition[2] < 0, children: [new Label({ text: 'far', position: [0, 0, -12] })] }))
+    chart.add(new Mesh({ geometry: box(1), position: [20, 0, 0], visible: false }))
+    expect(chart.bounds.max[0]).toBe(20.5)
+    const drawn = chart.boundsFrom(view.camera)
+    expect([drawn.min.toArray(), drawn.max.toArray()]).toEqual([[-2, 0, -1], [2, 3, 1]])
+
+    view.frame(chart, { padding: 0 })
+    const tight = /** @type {NonNullable<ReturnType<View['screenBounds']>>} */ (view.screenBounds(chart))
+    // touches two opposite edges, and is centred both ways
+    expect(Math.max(tight.width / 300, tight.height / 150)).toBeCloseTo(1, 2)
+    expect((tight.left + tight.right) / 2).toBeCloseTo(150, 0)
+    expect((tight.top + tight.bottom) / 2).toBeCloseTo(75, 0)
+    // padding is the margin, as a fraction of the size
+    view.frame(chart, { padding: 0.25 })
+    const padded = /** @type {NonNullable<ReturnType<View['screenBounds']>>} */ (view.screenBounds(chart))
+    expect(Math.max(padded.width / 300, padded.height / 150)).toBeCloseTo(1 / 1.25, 2)
+  })
+
+  it('says how much of the view the drawn scene spans on screen', async () => {
+    const view = viewOf({ camera: { position: [0, 0, 10], target: [0, 0, 0] } })
+    view.scene.add(new Mesh({ geometry: box(2) }))
+    view.frame(view.scene, { padding: 0 })
+    const line = (await view.explain()).split('\n').find((l) => l.startsWith('Bounds'))
+    expect(line).toMatch(/on screen it spans \d+% of the view's width and 100% of its height/)
   })
 })
 

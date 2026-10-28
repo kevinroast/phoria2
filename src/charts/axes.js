@@ -14,6 +14,8 @@ import * as mat4 from '../math/mat4.js'
 const ALONG = 0.97
 // walls closer than this to edge-on are left out
 const EDGE_ON = 0.08
+// a camera this little to one side counts as straight ahead when choosing which edges to label
+const LEAN = 0.1
 
 const tmp = new Float32Array(16)
 
@@ -104,7 +106,9 @@ export function chartFrame({ box, axes, theme, overlap }) {
     }
   }
   const bottom = (v) => v[1] >= -EDGE_ON
-  const sign = (n) => (n >= 0 ? 1 : -1)
+  // which side the camera is on - leaning to + so a view from straight ahead (or nearly) keeps its
+  // labels where a front-on chart has them, however framing nudges the camera off centre
+  const sign = (n) => (n >= -LEAN ? 1 : -1)
   // x ticks along the bottom edge nearest the viewer
   labels('x', [-1, 1].flatMap((zs) => [0, h].map((y) => ({
     when: (v) => (y === 0) === bottom(v) && sign(v[2]) === zs,

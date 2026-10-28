@@ -15,7 +15,9 @@ import { Box3 } from './value/Box3.js'
  * @property {boolean} running
  * @property {FrameDescription} frame
  * @property {LabelStats | null} labels
- * @property {Box3} bounds the scene's world bounds
+ * @property {Box3} bounds the world bounds of what the camera draws of the scene
+ * @property {{ width: number, height: number } | null} [fills] the share of the view's width and height
+ *   that drawn box covers on screen; null when part of it is behind the camera
  * @property {number} nodes
  * @property {boolean} autoLight
  * @property {boolean} contextLost
@@ -71,10 +73,14 @@ export function explain(info) {
   if (!bounds.isEmpty()) {
     const centre = bounds.getCenter(), radius = bounds.getRadius()
     const distance = Math.hypot(cam.position[0] - centre[0], cam.position[1] - centre[1], cam.position[2] - centre[2])
+    // the drawn box as it lands on screen; a sphere's guess when part of it is behind the camera
+    const fills = info.fills
     const viewHeight = ortho ? cam.height : 2 * distance * Math.tan(cam.fov * Math.PI / 360)
-    const fill = (2 * radius) / viewHeight
+    const fill = fills ? Math.max(fills.width, fills.height) : (2 * radius) / viewHeight
+    const pct = (f) => `${Math.round(f * 100)}%`
     lines.push(`Bounds: ${vec(bounds.min)} to ${vec(bounds.max)}, centre ${vec(centre)}, radius ${fmt(radius)}; ` +
-      `about ${Math.round(fill * 100)}% of the view's height`)
+      (fills ? `on screen it spans ${pct(fills.width)} of the view's width and ${pct(fills.height)} of its height`
+        : `about ${pct(fill)} of the view's height (part of it is behind the camera)`))
     if (frame.stats.drawn && fill < 0.05) warnings.push(`the scene fills only ${Math.round(fill * 100)}% of the view - call view.frame() to fit the camera to it`)
     // only solid meshes count here: starfields and floor grids are meant to surround the camera
     const solid = solidBounds(items)

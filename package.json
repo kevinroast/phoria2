@@ -78,7 +78,8 @@
     "size": "node scripts/size.mjs",
     "perf": "node perf/run.mjs",
     "thumbs": "node scripts/thumbs.mjs",
-    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run build"
+    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run build",
+    "plugin": "node scripts/plugin.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

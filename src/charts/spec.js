@@ -239,5 +239,7 @@ function tooltipOf(spec, channels, rows, fields) {
     return Object.entries(channels).filter(([n, c]) => c.field && n !== 'key' && !seen.has(c.field) && seen.add(c.field)).map(([, c]) => c)
   }
   const list = Array.isArray(spec) ? spec : [spec]
-  return list.map((item) => channel('tooltip', item, rows, fields))
+  // a field named on its own reads as its channel does - with that channel's title and format
+  const encoded = (item) => typeof item === 'string' && Object.entries(channels).find(([n, c]) => n !== 'key' && c.field === item)?.[1]
+  return list.map((item) => encoded(item) || channel('tooltip', item, rows, fields))
 }

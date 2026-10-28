@@ -4,7 +4,7 @@ import {
   Box3, Scene, Vec3, box, cameraPreset, collect, grid, mat4, plane, vec4,
 } from '../src/index.js'
 import { explain } from '../src/explain.js'
-import { fitBox, framingScale } from '../src/presets.js'
+import { fitBox, fitPoints, framingScale } from '../src/presets.js'
 import { alignColumns, layoutLabels, leaderEnd, placeBox, stackColumns } from '../src/labelLayout.js'
 import { OrbitControl } from '../src/OrbitControl.js'
 import { ChangeWatch } from '../src/watch.js'
@@ -266,6 +266,27 @@ describe('fitBox', () => {
     const { distance, camera } = fitted(plan, [0, 1, 0])
     expect(Number.isFinite(distance)).toBe(true)
     expect(reach(plan, camera)).toBeCloseTo(1, 3)
+  })
+
+  it('fits points centred on screen, however the perspective shifts them', () => {
+    // a tall, deep block seen from above and in front: its near bottom looms, so the box's middle sits low
+    const b = new Box3([-5, 0, -3], [5, 6, 3])
+    const points = []
+    for (let i = 0; i < 8; i++) points.push([i & 1 ? b.max[0] : b.min[0], i & 2 ? b.max[1] : b.min[1], i & 4 ? b.max[2] : b.min[2]])
+    const direction = new Vec3(0.5, 0.6, 1).normalize(), fov = 45, aspect = 1.5
+    const { center, size } = fitPoints(points, direction, { fov, aspect })
+    const cam = new PerspectiveCamera({ fov, aspect, position: center.clone().add(direction.clone().multiplyScalar(size)), target: center })
+    cam.updateWorld()
+    const vp = mat4.multiply(new Float32Array(16), cam.projectionMatrix, cam.viewMatrix)
+    const ndc = points.map((p) => { const q = vec4.transformMat4(new Float32Array(4), [p[0], p[1], p[2], 1], vp); return [q[0] / q[3], q[1] / q[3]] })
+    const xs = ndc.map((q) => q[0]), ys = ndc.map((q) => q[1])
+    expect((Math.min(...xs) + Math.max(...xs)) / 2).toBeCloseTo(0, 2)
+    expect((Math.min(...ys) + Math.max(...ys)) / 2).toBeCloseTo(0, 2)
+    expect(Math.max(...xs.map(Math.abs), ...ys.map(Math.abs))).toBeCloseTo(1, 2)
+    // orthographic: the height that fits them, centred on their middle
+    const plan = fitPoints([[-10, 0, -5], [10, 0, 5]], [0, 1, 0], { aspect: 2 })
+    expect(plan.size).toBeCloseTo(10)
+    expect(plan.center.toArray().map((v) => Math.round(v * 1e6) / 1e6 || 0)).toEqual([0, 0, 0])
   })
 
   it('gives an orthographic height that fits the box at the aspect', () => {
