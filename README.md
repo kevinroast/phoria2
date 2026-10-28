@@ -4,8 +4,9 @@ Small, friendly 3D for the web. A WebGL 2 renderer with PBR materials, instancin
 labels, picking and particles, behind an API small enough to learn in an afternoon - aimed at
 business apps: charts, labelled scenes, diagrams, dashboards and product viewers.
 
-- **Small**: about 46 KB gzipped for a lit, interactive scene; charts, particles and glTF are
-  separate imports, and the heavier parts (shadows, HDR environments, GPU picking) load only when used.
+- **Small**: about 57 KB gzipped for a lit, interactive scene, and about 116 KB for everything;
+  charts, particles, glTF, motion and editing are separate imports, and the heavier parts (shadows,
+  HDR environments, GPU picking) load only when used.
 - **Idle when nothing changes**: a view draws only when something in it changed, so a dashboard of
   many views only updates when needed.
 - **Tells you what to write**: every option is checked, and a mistake throws an error that names

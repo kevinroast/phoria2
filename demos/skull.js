@@ -88,13 +88,13 @@ export default async function run({ canvas, info }) {
     part.userData.kind = kind
     part.material = part.material.clone()
     part.material.color.set(BONES[kind].color)
-    // the bone's surface - fine pores and a soft, uneven sheen - projected onto it from three sides,
-    // since a scan has no UVs; enamel smoother and glossier. The occlusion baked into the model's
+    // the bone's surface - fine pores as bumps and a soft, uneven sheen - projected onto it from
+    // three sides, since a scan has no UVs; enamel smoother and glossier. The occlusion baked into the model's
     // vertex colours darkens the sutures, foramina and sockets
     const enamel = kind === 'teeth'
     Object.assign(part.material, {
-      normalMap: surface.normal, roughnessMap: surface.roughness, triplanar: 45, vertexColors: true,
-      normalScale: enamel ? 0.15 : 0.8, roughness: enamel ? 0.38 : 0.82,
+      bumpMap: surface.height, roughnessMap: surface.roughness, triplanar: TILES, vertexColors: true,
+      bumpScale: surface.relief * (enamel ? 0.15 : 0.8), roughness: enamel ? 0.38 : 0.82,
     })
     // each bone shadows the next: the brow over the sockets, the cheekbones over the maxillae
     part.castShadow = part.receiveShadow = true
@@ -264,6 +264,9 @@ function facePoint(part, face = 'front') {
  * A tile of bone surface, drawn in code: a normal map of fine pores in a gently undulating surface,
  * and a roughness map that makes its sheen uneven. It wraps at its edges, so it repeats without seams.
  */
+/** Tiles of the bone's surface per metre. */
+const TILES = 45
+
 function boneSurface() {
   const SIZE = 256
   let seed = 7
@@ -303,19 +306,22 @@ function boneSurface() {
     }
   }
   const at = (x, y) => height[((y + SIZE) % SIZE) * SIZE + ((x + SIZE) % SIZE)]
-  const normal = new Uint8Array(SIZE * SIZE * 4), roughness = new Uint8Array(SIZE * SIZE * 4)
+  let low = Infinity, high = -Infinity
+  for (const h of height) { low = Math.min(low, h); high = Math.max(high, h) }
+  const heights = new Uint8Array(SIZE * SIZE * 4), roughness = new Uint8Array(SIZE * SIZE * 4)
   const sheen = noise(6)
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
-      // slopes to a normal, +Y up the tile
-      const sx = (at(x + 1, y) - at(x - 1, y)) * 6, sy = (at(x, y - 1) - at(x, y + 1)) * 6
-      const l = Math.hypot(sx, sy, 1), o = (y * SIZE + x) * 4
-      normal.set([(-sx / l * 0.5 + 0.5) * 255, (-sy / l * 0.5 + 0.5) * 255, (1 / l * 0.5 + 0.5) * 255, 255], o)
+      const o = (y * SIZE + x) * 4
+      heights.set([(at(x, y) - low) / (high - low) * 255, 0, 0, 255], o)
       // rougher in the pits, a little glossier on the rises
       const r = Math.min(1, Math.max(0, 0.78 + (sheen(x, y) - 0.5) * 0.35 - (at(x, y) - 0.5) * 0.4))
       roughness.set([255, r * 255, 255, 255], o)
     }
   }
   const tile = (data) => new Texture({ image: { data, width: SIZE, height: SIZE }, colorSpace: 'linear' })
-  return { normal: tile(normal), roughness: tile(roughness) }
+  // how high the bumps stand, in metres: a slope of 12 across the field per texel, a texel being
+  // 1/256 of a tile
+  const relief = 12 * (high - low) / (TILES * SIZE)
+  return { height: tile(heights), relief, roughness: tile(roughness) }
 }
