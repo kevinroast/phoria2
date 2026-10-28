@@ -46,6 +46,20 @@ export class Ray {
   }
 
   /**
+   * Distance to where the ray meets a plane - given by its normal and a point on it - or null when
+   * it runs along the plane or the plane is behind it. For dragging things across a floor:
+   * ray.at(ray.intersectPlane([0, 1, 0], [0, 0, 0])).
+   * @param {ArrayLike<number>} normal @param {ArrayLike<number>} point
+   * @returns {number | null}
+   */
+  intersectPlane(normal, point) {
+    const across = normal[0] * this.direction[0] + normal[1] * this.direction[1] + normal[2] * this.direction[2]
+    if (Math.abs(across) < 1e-9) return null
+    const t = (normal[0] * (point[0] - this.origin[0]) + normal[1] * (point[1] - this.origin[1]) + normal[2] * (point[2] - this.origin[2])) / across
+    return t >= 0 ? t : null
+  }
+
+  /**
    * Möller-Trumbore ray/triangle test: the distance along the ray and barycentric (u, v), or null.
    * Triangles facing away (clockwise from the ray's side) are skipped when cullBack is set.
    * @param {ArrayLike<number>} a @param {ArrayLike<number>} b @param {ArrayLike<number>} c

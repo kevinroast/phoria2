@@ -1,7 +1,7 @@
 // The View's behaviour on a stand-in page: when it draws, how it keeps its framing as the canvas
 // changes shape, what it picks, and who hears about clicks and hovering.
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
-import { DirectionalLight, Group, InstancedMesh, Mesh, Scene, View, box } from '../src/index.js'
+import { DirectionalLight, Group, InstancedMesh, Mesh, Scene, Vec3, View, box } from '../src/index.js'
 import { fakePage } from './fakes.js'
 
 const page = fakePage()
@@ -271,6 +271,96 @@ describe('View picking and events', () => {
     expect(heard).toEqual(['cube', null])
     expect(nodeHeard).toEqual(['cube', null])
     expect(view.lastFrame?.highlight).toBeNull()
+  })
+
+  it('tints a whole highlightWhole subtree when any part of it is hovered', () => {
+    const view = viewOf()
+    const desk = view.scene.add(new Group({ highlight: '#dbe9ff', highlightWhole: true }))
+    const top = desk.add(new Mesh({ geometry: box(1), name: 'top' }))
+    const leg = desk.add(new Mesh({ geometry: box(0.1), position: [3, 0, 0], name: 'leg' }))
+    const floor = view.scene.add(new Mesh({ geometry: box(1), position: [0, 0, -5] }))
+    frame()
+    view.canvas.dispatch('pointermove', { clientX: 150, clientY: 75 })
+    frame()
+    frame()
+    const hl = view.lastFrame?.highlight
+    expect(hl?.node).toBe(top)
+    expect(hl?.index).toBeNull()
+    expect([hl?.nodes?.has(top), hl?.nodes?.has(leg), hl?.nodes?.has(floor)]).toEqual([true, true, false])
+    expect(hl?.color).toBe(desk.highlight)
+  })
+
+  describe('dragging', () => {
+    /** A box on the ground seen from above and in front, with orbiting on; where its top is on the canvas. */
+    const dragScene = () => {
+      const view = viewOf({ orbit: true, camera: { position: [0, 8, 6], target: [0, 0, 0] } })
+      const box1 = view.scene.add(new Mesh({ geometry: box(1), position: [0, 0.5, 0], name: 'box' }))
+      frame()
+      const p = view.project([0, 1, 0])
+      const press = (type, dx = 0, dy = 0, buttons = 1) => view.canvas.dispatch(type, { clientX: p.x + dx, clientY: p.y + dy, pointerId: 1, button: 0, buttons, pointerType: 'mouse' })
+      return { view, box1, press }
+    }
+
+    it('drags across the plane through the pressed point: start once it moves, then where it is, then end - the camera staying still', () => {
+      const { view, box1, press } = dragScene()
+      /** @type {any[]} */
+      const heard = []
+      box1.onDrag = (d) => heard.push({ phase: d.phase, node: d.node.name, y: d.point && Math.round(d.point[1] * 1000) / 1000, moved: Math.round(d.delta.len() * 100) / 100 })
+      frame()
+      const camera = view.camera.position.toArray()
+      press('pointerdown')
+      // a nudge under the threshold is still a press
+      press('pointermove', 2, 0)
+      expect(heard).toEqual([])
+      press('pointermove', 40, 0)
+      press('pointermove', 80, 20)
+      press('pointerup', 80, 20, 0)
+      expect(heard.map((h) => h.phase)).toEqual(['start', 'move', 'move', 'end'])
+      // on the horizontal plane through the top of the box, further from the start each move
+      expect(heard.every((h) => h.node === 'box' && (h.y === null || h.y === 1))).toBe(true)
+      expect(heard[2].moved).toBeGreaterThan(heard[1].moved)
+      expect(view.camera.position.toArray()).toEqual(camera)
+    })
+
+    it("doesn't click when a drag ends, but a press that doesn't move still does", () => {
+      const { view, box1, press } = dragScene()
+      const clicks = []
+      box1.onDrag = () => {}
+      box1.onClick = (hit) => clicks.push(hit.node.name)
+      frame()
+      press('pointerdown')
+      press('pointermove', 40, 0)
+      press('pointerup', 40, 0, 0)
+      view.canvas.dispatch('click', { clientX: view.project([0, 1, 0]).x + 40, clientY: view.project([0, 1, 0]).y })
+      expect(clicks).toEqual([])
+      press('pointerdown')
+      press('pointerup', 0, 0, 0)
+      view.canvas.dispatch('click', { clientX: view.project([0, 1, 0]).x, clientY: view.project([0, 1, 0]).y })
+      expect(clicks).toEqual(['box'])
+    })
+
+    it('lets a handler choose the plane at the start - an upright one facing the camera, to lift something', () => {
+      const { box1, press } = dragScene()
+      const xs = []
+      box1.onDrag = (d) => {
+        if (d.phase === 'start') d.plane = { normal: new Vec3(0, 0, 1), point: new Vec3(0, 0, 0) }
+        else if (d.point) xs.push(Math.round(d.point[2] * 1e4) / 1e4 || 0)
+      }
+      frame()
+      press('pointerdown')
+      press('pointermove', 0, -40)
+      press('pointerup', 0, -40, 0)
+      expect(xs.length).toBeGreaterThan(0)
+      expect(xs.every((x) => x === 0)).toBe(true)
+    })
+
+    it('gives the ray under a canvas position', () => {
+      const { view } = dragScene()
+      const p = view.project([0, 0, 0])
+      const ray = view.rayAt(p.x, p.y)
+      const t = /** @type {number} */ (ray.intersectPlane([0, 1, 0], [0, 0, 0]))
+      expect(ray.at(t).toArray().map((v) => Math.round(v * 1e4) / 1e4 || 0)).toEqual([0, 0, 0])
+    })
   })
 
   it('switches camera by preset name, keeping the orbit control on the new camera', () => {

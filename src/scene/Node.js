@@ -14,6 +14,25 @@ import { Clip } from '../clip.js'
 /** @import { Hit } from '../Raycaster.js' */
 /** @import { Camera } from './cameras.js' */
 /** @import { ClipOptions } from '../clip.js' */
+/** @import { Ray } from '../value/Ray.js' */
+
+/**
+ * A drag in progress, given to onDrag handlers: 'start' once the pointer has moved off where it
+ * was pressed, 'move' as it moves, 'end' when it lets go.
+ * @typedef {object} Drag
+ * @property {'start' | 'move' | 'end'} phase
+ * @property {Hit} hit what was pressed
+ * @property {Node} node the node whose handler this is (the hit's, or the nearest above it with one)
+ * @property {Ray} ray the pointer's ray now, in world space
+ * @property {{ normal: Vec3, point: Vec3 }} plane what it is dragged across - horizontal through the
+ *   pressed point unless the handler sets another at 'start'
+ * @property {Vec3} start where the drag began on the plane
+ * @property {Vec3 | null} point where the pointer is on the plane now (null if it has left the plane, as at the horizon)
+ * @property {Vec3} delta point - start (the last good point's, when it has left the plane)
+ * @property {PointerEvent} event
+ */
+
+/** @typedef {{ color: Color, width: number }} Outline */
 
 /**
  * Per-frame behaviour: `(node, dt, t) => void`, with dt and t in seconds.
@@ -36,16 +55,22 @@ import { Clip } from '../clip.js'
  * @property {((hit: Hit) => any) | null} [tooltip] tooltip for anything picked in this subtree; nearer nodes win, and
  *   all win over the View's
  * @property {ColorInput | null} [highlight] hover tint for this subtree, over the View's
+ * @property {boolean} [highlightWhole] hovering any part of this subtree tints all of it, as one thing - a
+ *   piece of furniture, a machine - rather than just the part under the pointer (default false)
  * @property {((hit: Hit | null) => void) | null} [onHover] called as the thing under the pointer in this subtree changes
  *   (null when it leaves the subtree)
  * @property {((hit: Hit) => void) | null} [onClick] called when something in this subtree is clicked
  * @property {((camera: Camera) => boolean) | null} [showFrom] draw this subtree only for cameras this returns true for
+ * @property {((drag: Drag) => void) | null} [onDrag] drag this subtree with the pointer: called as a drag starts, moves and ends
+ *   (the camera stays still meanwhile); a press without a drag still clicks
+ * @property {ColorInput | { color?: ColorInput, width?: number } | null} [outline] draw a line round this subtree's silhouette, on top of
+ *   everything - for selection. A colour, or { color, width } with width in pixels (default 2)
  * @property {ClipOptions | Clip | null} [clip] cut away everything in this subtree on one side of a plane in this
  *   node's space - for cutaways. The nearest clip above a mesh is the one that cuts it
  */
 
 export const NODE_OPTIONS = ['name', 'position', 'rotation', 'quaternion', 'scale', 'visible', 'pickable',
-  'matrixAutoUpdate', 'children', 'userData', 'onUpdate', 'tooltip', 'highlight', 'onHover', 'onClick', 'showFrom', 'clip']
+  'matrixAutoUpdate', 'children', 'userData', 'onUpdate', 'tooltip', 'highlight', 'highlightWhole', 'onHover', 'onClick', 'showFrom', 'clip', 'onDrag', 'outline']
 
 // three.js habits that would otherwise fail with a plain "unknown option"
 export const NODE_HINTS = {
@@ -55,6 +80,10 @@ export const NODE_HINTS = {
   parent: 'add the node to its parent instead: parent.add(node)',
   type: "'type' is only used in descriptions passed to create() or add()",
   clippingPlanes: 'use clip: { normal, offset, cap } - one plane, cutting this node and everything under it',
+  draggable: 'give the node an onDrag handler: onDrag: (drag) => { ... }',
+  onDragStart: "use onDrag - drag.phase is 'start', 'move' or 'end'",
+  onDragEnd: "use onDrag - drag.phase is 'start', 'move' or 'end'",
+  selected: "outline what's selected: node.outline = '#ffcc00'",
 }
 
 // While a scene update walks the graph, removals are queued and applied afterwards so handlers
@@ -109,8 +138,6 @@ export class Node {
   userData = {}
   /** Tooltip for anything picked in this subtree (nearest wins, over the View's). @type {((hit: Hit) => any) | null} */
   tooltip = null
-  /** Hover tint for this subtree, over the View's. @type {Color | null} */
-  highlight = null
   /** Called as the thing under the pointer in this subtree changes; null when it leaves. @type {((hit: Hit | null) => void) | null} */
   onHover = null
   /** Called when something in this subtree is clicked. @type {((hit: Hit) => void) | null} */
@@ -121,6 +148,14 @@ export class Node {
   overlay = null
   /** @type {Clip | null} */
   #clip = null
+  /** Called as the pointer drags this subtree: see Drag. @type {((drag: Drag) => void) | null} */
+  onDrag = null
+  /** @type {Outline | null} */
+  #outline = null
+  /** @type {Color | null} */
+  #highlight = null
+  /** Hovering any part of this subtree tints all of it, not just the part under the pointer. */
+  highlightWhole = false
 
   /** @type {Node | null} */
   #parent = null
@@ -147,15 +182,30 @@ export class Node {
     if (options.matrixAutoUpdate !== undefined) this.matrixAutoUpdate = !!options.matrixAutoUpdate
     if (options.userData !== undefined) this.userData = options.userData
     if (options.onUpdate) [options.onUpdate].flat().forEach((fn) => this.onUpdate(fn))
-    for (const key of ['tooltip', 'onHover', 'onClick', 'showFrom']) {
+    for (const key of ['tooltip', 'onHover', 'onClick', 'showFrom', 'onDrag']) {
       const fn = options[key]
       if (fn === undefined || fn === null) continue
       if (typeof fn !== 'function') fail(owner, `'${key}' must be a function, got ${describe(fn)}`)
       this[key] = fn
     }
-    if (options.highlight != null) this.highlight = Color.fromInput(options.highlight, owner)
+    if (options.highlight != null) this.#highlight = Color.fromInput(options.highlight, owner)
+    if (options.highlightWhole !== undefined) {
+      if (typeof options.highlightWhole !== 'boolean') fail(owner, `'highlightWhole' must be true or false, got ${describe(options.highlightWhole)}`)
+      this.highlightWhole = options.highlightWhole
+    }
     if (options.clip != null) this.#clip = Clip.fromInput(options.clip, owner)
+    if (options.outline != null) this.#setOutline(options.outline)
     if (options.children) for (const child of options.children) this.add(child)
+  }
+
+  /** Hover tint for this subtree, over the View's; set any colour, or null. @returns {Color | null} */
+  get highlight() {
+    return this.#highlight
+  }
+
+  /** @param {ColorInput | null} value */
+  set highlight(value) {
+    this.#highlight = value == null ? null : Color.fromInput(value, this.constructor.name)
   }
 
   /**
@@ -170,6 +220,35 @@ export class Node {
   /** @param {ClipOptions | Clip | null} value */
   set clip(value) {
     this.#clip = value == null ? null : Clip.fromInput(value, this.constructor.name)
+  }
+
+  /**
+   * A line round this subtree's silhouette, drawn over everything - for showing what is selected -
+   * or null. Set a colour, { color, width } (pixels, default 2) or null.
+   * @returns {Outline | null}
+   */
+  get outline() {
+    return this.#outline
+  }
+
+  /** @param {ColorInput | { color?: ColorInput, width?: number } | null} value */
+  set outline(value) {
+    this.#setOutline(value)
+  }
+
+  /** @param {ColorInput | { color?: ColorInput, width?: number } | null} value */
+  #setOutline(value) {
+    const owner = this.constructor.name
+    if (value == null) {
+      this.#outline = null
+      return
+    }
+    const options = typeof value === 'object' && !Array.isArray(value) && !ArrayBuffer.isView(value) && !(value instanceof Color)
+      ? /** @type {{ color?: ColorInput, width?: number }} */ (value) : { color: /** @type {ColorInput} */ (value) }
+    checkOptions(owner, options, ['color', 'width'], {}, 'outline')
+    const width = options.width ?? 2
+    if (typeof width !== 'number' || !(width > 0) || width > 8) fail(owner, `'outline.width' is in pixels, above 0 and up to 8, got ${describe(width)}`)
+    this.#outline = { color: Color.fromInput(options.color ?? '#ffcc00', owner), width }
   }
 
   /** @returns {Node | null} */
@@ -429,10 +508,13 @@ export class Node {
       pickable: this.pickable,
       tooltip: this.tooltip,
       highlight: this.highlight,
+      highlightWhole: this.highlightWhole,
       onHover: this.onHover,
       onClick: this.onClick,
       showFrom: this.showFrom,
       clip: this.#clip ? this.#clip.toJSON() : null,
+      onDrag: this.onDrag,
+      outline: this.#outline ? { color: this.#outline.color.getStyle(), width: this.#outline.width } : null,
     }
   }
 
@@ -452,7 +534,9 @@ export class Node {
     if (!this.pickable) json.pickable = false
     if (!this.matrixAutoUpdate) json.matrixAutoUpdate = false
     if (this.highlight) json.highlight = this.highlight.getStyle()
+    if (this.highlightWhole) json.highlightWhole = true
     if (this.#clip) json.clip = this.#clip.toJSON()
+    if (this.#outline) json.outline = { color: this.#outline.color.getStyle(), width: this.#outline.width }
     if (Object.keys(this.userData).length) json.userData = this.userData
     Object.assign(json, this.jsonOptions())
     if (this.#children.length) json.children = this.#children.map((c) => c.toJSON())

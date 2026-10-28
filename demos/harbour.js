@@ -266,7 +266,7 @@ export default function run({ canvas, gui, info }) {
     { node: boat('#8a3a2c', '#7c6345'), at: [6.5, 0, -2.0], rope: [7.5, 0] },
   ]
   for (const b of boats) {
-    b.node.position.set(...b.at)
+    b.node.position.set(b.at[0], b.at[1], b.at[2])
     scene.add(b.node)
     const [bx] = b.rope
     scene.add(new Mesh({

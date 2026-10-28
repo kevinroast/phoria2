@@ -4,12 +4,12 @@
 import * as mat4 from '../math/mat4.js'
 import { irradianceSH } from '../irradiance.js'
 import { SHADOW_MAP_SIZE, SPOT_ATLAS_SIZE } from '../shadow.js'
-import { CLIP_ONLY_FRAGMENT, COMMON, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
+import { CLIP, CLIP_ONLY_FRAGMENT, COMMON, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
 
 /** @import { Programs } from './programs.js' */
 /** @import { Resources } from './resources.js' */
 /** @import { Texture, DataImage } from '../material/Texture.js' */
-/** @import { FrameDescription, ShadowFrame, SpotShadowFrame, DrawItem } from '../frame.js' */
+/** @import { FrameDescription, ShadowFrame, SpotShadowFrame, DrawItem, FrameOutline } from '../frame.js' */
 
 
 
@@ -94,6 +94,70 @@ void main() {
 `
 
 
+// outlines: a mask of what is outlined - its colour, and the line's width in alpha
+const OUTLINE_MASK_FRAGMENT = /* glsl */ `
+precision highp float;
+in vec3 vWorldPosition;
+uniform vec4 uMask;
+out vec4 fragColor;
+${CLIP}
+void main() {
+  clipAway(vWorldPosition);
+  fragColor = uMask;
+}
+`
+// widest an outline goes, in drawing buffer pixels (its width is stored as a fraction of this)
+const OUTLINE_MAX = 16
+
+// widen the mask along one direction: each pixel takes the colour of the nearest masked pixel
+// within that pixel's own line width
+const WIDEN = /* glsl */ `
+uniform sampler2D uSource;
+uniform vec2 uStep;
+uniform int uRadius;
+vec4 widened(vec2 uv) {
+  vec4 best = vec4(0.0);
+  float nearest = 1e9;
+  for (int i = -${OUTLINE_MAX}; i <= ${OUTLINE_MAX}; i++) {
+    float d = abs(float(i));
+    if (d > float(uRadius)) continue;
+    vec4 s = texture(uSource, uv + uStep * float(i));
+    if (s.a > 0.0 && d <= s.a * ${OUTLINE_MAX}.0 && d < nearest) {
+      best = s;
+      nearest = d;
+    }
+  }
+  return best;
+}
+`
+const OUTLINE_WIDEN_FRAGMENT = /* glsl */ `
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+${WIDEN}
+void main() {
+  fragColor = widened(vUv);
+}
+`
+// the last widening, drawn straight over the scene - everywhere but inside the mask itself
+const OUTLINE_COMPOSITE_FRAGMENT = /* glsl */ `
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uMask;
+out vec4 fragColor;
+${COMMON}
+${WIDEN}
+void main() {
+  if (texture(uMask, vUv).a > 0.0) discard;
+  vec4 ring = widened(vUv);
+  if (ring.a <= 0.0) discard;
+  fragColor = vec4(linearToSrgb(ring.rgb), 1.0);
+}
+`
+const OUTLINE_MASK = /** @type {[string, string]} */ ([MESH_VERTEX, OUTLINE_MASK_FRAGMENT])
+const OUTLINE_WIDEN = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, OUTLINE_WIDEN_FRAGMENT])
+const OUTLINE_COMPOSITE = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, OUTLINE_COMPOSITE_FRAGMENT])
+
 // shadow maps only need depth - of what isn't cut away
 const DEPTH = /** @type {[string, string]} */ ([MESH_VERTEX, CLIP_ONLY_FRAGMENT])
 const BACKGROUND = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, BACKGROUND_FRAGMENT])
@@ -116,6 +180,7 @@ export class Passes {
   /** @type {WeakMap<Texture, Environment>} */ #environments = new WeakMap()
   /** @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #shadow = null
   /** Spot lights' shadows, a tile each. @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #spotShadow = null
+  /** Outlines' mask and its widened copy. @type {{ width: number, height: number, mask: { texture: WebGLTexture, framebuffer: WebGLFramebuffer }, wide: { texture: WebGLTexture, framebuffer: WebGLFramebuffer } } | null} */ #outline = null
   /** @type {WebGLVertexArrayObject | null} */ #empty = null
   /** Rendering to float textures, which environments need. */
   floatTargets = false
@@ -133,6 +198,7 @@ export class Passes {
     this.#environments = new WeakMap()
     this.#shadow = null
     this.#spotShadow = null
+    this.#outline = null
     this.#empty = null
     this.floatTargets = !!this.gl.getExtension('EXT_color_buffer_float')
   }
@@ -318,6 +384,119 @@ export class Passes {
       if (buffers.indexType) gl.drawElementsInstanced(gl.TRIANGLES, elements, buffers.indexType, 0, count)
       else gl.drawArraysInstanced(gl.TRIANGLES, 0, elements, count)
     }
+  }
+
+/**
+   * The first half of drawing outlines, before the scene: a mask of the outlined subtrees - each
+   * pixel they cover in their colour, with the line's width in alpha - then that mask widened
+   * sideways. outlineComposite() widens it up and down and draws the ring left round each mask.
+   * @param {FrameOutline[]} outlines @param {FrameDescription} frame
+   * @param {number} width @param {number} height drawing buffer pixels
+   * @param {number} pixelRatio
+   * @returns {{ mask: WebGLTexture, wide: WebGLTexture, radius: number }}
+   */
+  outlineMask(outlines, frame, width, height, pixelRatio) {
+    const gl = this.gl
+    const targets = this.#outlineTargets(width, height)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targets.mask.framebuffer)
+    gl.viewport(0, 0, width, height)
+    gl.clearColor(0, 0, 0, 0)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    gl.disable(gl.DEPTH_TEST)
+    gl.disable(gl.BLEND)
+    gl.disable(gl.CULL_FACE)
+    gl.depthMask(false)
+    let radius = 1
+    for (const outline of outlines) {
+      const px = Math.min(OUTLINE_MAX, Math.max(1, Math.round(outline.width * pixelRatio)))
+      radius = Math.max(radius, px)
+      for (const item of outline.items) {
+        const defines = item.instances ? ['INSTANCED'] : []
+        if (item.clip) defines.push('CLIP')
+        const program = this.programs.ready('outline-mask', defines, OUTLINE_MASK)
+        gl.useProgram(program.program)
+        program.set('uViewProjection', frame.camera.viewProjection)
+        program.set('uModel', item.worldMatrix)
+        program.set('uMask', [outline.color[0], outline.color[1], outline.color[2], px / OUTLINE_MAX])
+        if (item.clip) program.set('uClipPlane', item.clip.plane)
+        const buffers = this.resources.mesh(item.geometry, item.instances, true)
+        gl.bindVertexArray(buffers.vao)
+        const elements = item.geometry.drawnCount - item.geometry.drawnCount % 3
+        const count = item.instances ? item.instances.count : 1
+        if (buffers.indexType) gl.drawElementsInstanced(gl.TRIANGLES, elements, buffers.indexType, 0, count)
+        else gl.drawArraysInstanced(gl.TRIANGLES, 0, elements, count)
+      }
+    }
+    // widened sideways
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targets.wide.framebuffer)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    const widen = this.programs.ready('outline-widen', [], OUTLINE_WIDEN)
+    gl.useProgram(widen.program)
+    widen.set('uSource', targets.mask.texture)
+    widen.set('uStep', [1 / width, 0])
+    widen.set('uRadius', radius)
+    gl.bindVertexArray(this.#emptyArray())
+    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    gl.depthMask(true)
+    gl.enable(gl.DEPTH_TEST)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    return { mask: targets.mask.texture, wide: targets.wide.texture, radius }
+  }
+
+  /**
+   * Draw the outlines over the finished scene, into whatever is bound: the sideways-widened mask
+   * widened up and down too, less the mask itself, so a ring is left round each subtree.
+   * @param {{ mask: WebGLTexture, wide: WebGLTexture, radius: number }} outline
+   * @param {number} height drawing buffer pixels
+   */
+  outlineComposite(outline, height) {
+    const gl = this.gl
+    const program = this.programs.ready('outline-composite', [], OUTLINE_COMPOSITE)
+    gl.useProgram(program.program)
+    program.set('uSource', outline.wide)
+    program.set('uMask', outline.mask)
+    program.set('uStep', [0, 1 / height])
+    program.set('uRadius', outline.radius)
+    gl.disable(gl.DEPTH_TEST)
+    gl.disable(gl.CULL_FACE)
+    gl.depthMask(false)
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+    gl.bindVertexArray(this.#emptyArray())
+    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    gl.depthMask(true)
+    gl.enable(gl.DEPTH_TEST)
+  }
+
+  /** The mask and its widened copy, made again when the size changes. @param {number} width @param {number} height */
+  #outlineTargets(width, height) {
+    const t = this.#outline
+    if (t && t.width === width && t.height === height) return t
+    const gl = this.gl
+    if (t) {
+      for (const { texture, framebuffer } of [t.mask, t.wide]) {
+        gl.deleteTexture(texture)
+        gl.deleteFramebuffer(framebuffer)
+      }
+    }
+    const make = () => {
+      const texture = /** @type {WebGLTexture} */ (gl.createTexture())
+      gl.activeTexture(gl.TEXTURE15)
+      gl.bindTexture(gl.TEXTURE_2D, texture)
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, width, height)
+      // read texel for texel: no blending between neighbours
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      const framebuffer = /** @type {WebGLFramebuffer} */ (gl.createFramebuffer())
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0)
+      return { texture, framebuffer }
+    }
+    this.#outline = { width, height, mask: make(), wide: make() }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    return this.#outline
   }
 
   /** A depth texture to draw shadows into and compare against. @param {number} size */

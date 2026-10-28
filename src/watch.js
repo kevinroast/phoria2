@@ -118,6 +118,13 @@ export class ChangeWatch {
       this.#push(clip.offset)
       this.#push(clip.cap ? clip.cap.getHex() : -1)
     } else this.#push(-2)
+    // which pointer handlers it has: the frame says whether anything can be clicked or dragged
+    this.#push((node.onClick ? 1 : 0) | (node.onHover ? 2 : 0) | (node.tooltip ? 4 : 0) | (node.onDrag ? 8 : 0) | (node.highlight ? 16 : 0))
+    const outline = node.outline
+    if (outline) {
+      this.#pushAll(outline.color)
+      this.#push(outline.width)
+    } else this.#push(-3)
     this.#pushAll(node.position)
     this.#pushAll(node.quaternion)
     this.#pushAll(node.scale)

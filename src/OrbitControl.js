@@ -236,6 +236,17 @@ export class OrbitControl {
     }
   }
 
+  /**
+   * Let go of the gesture under way - for an app taking the pointer over, such as to drag
+   * something across the scene. The camera stays where it is; the next press orbits as usual.
+   */
+  cancel() {
+    this.#pointers.clear()
+    this.#pinchDistance = 0
+    this.#velocity = { yaw: 0, pitch: 0 }
+    this.#dragged = false
+  }
+
   dispose() {
     this.#removeListeners()
     this.element.style.touchAction = ''

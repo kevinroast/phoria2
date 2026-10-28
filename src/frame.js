@@ -47,6 +47,14 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  */
 
 /**
+ * A subtree to outline: the meshes in it, drawn together, so the line runs round their joint silhouette.
+ * @typedef {object} FrameOutline
+ * @property {Color} color linear
+ * @property {number} width CSS pixels
+ * @property {DrawItem[]} items
+ */
+
+/**
  * A section plane's cap: the cut faces of the solids under one clip, filled in its colour. The
  * renderer finds where the plane passes through solid by counting each pixel's faces into the
  * stencil buffer, then fills those pixels with the plane - drawn where it is, so nothing in the
@@ -103,10 +111,12 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  */
 
 /**
- * The hovered thing to tint: a whole node, or one of its instances or points.
+ * The hovered thing to tint: a whole node, or one of its instances or points - or, under a node with
+ * highlightWhole, every drawable in that subtree.
  * @typedef {object} FrameHighlight
  * @property {Node} node
  * @property {number | null} index instance (InstancedMesh) or point (Points); null for the whole node
+ * @property {Set<Node> | null} [nodes] every drawable tinted, when a highlightWhole subtree is tinted as one
  * @property {Color} color linear
  * @property {number} amount 0-1, how far the colour moves towards it
  */
@@ -130,6 +140,8 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  * @property {FrameHighlight | null} highlight set by the View for hover highlighting
  * @property {any[]} overlays HTML elements carried by the nodes drawn (node.overlay)
  * @property {boolean} interactive some node has a tooltip, highlight or pointer handler
+ * @property {boolean} draggable some node has an onDrag handler
+ * @property {FrameOutline[]} outlines subtrees to draw an outline round, last of all
  * @property {boolean} tooltips some node has its own tooltip
  */
 
@@ -167,6 +179,8 @@ export function collect(scene, camera) {
     highlight: null,
     overlays: [],
     interactive: false,
+    draggable: false,
+    outlines: [],
     tooltips: false,
   }
   let punctual = 0, directional = 0
@@ -180,14 +194,23 @@ export function collect(scene, camera) {
   /** @type {Map<FrameClip, DrawItem[]>} */
   const capped = new Map()
 
-  /** @param {any} node @param {FrameClip | null} clip the plane cutting this subtree, from above */
-  const visit = (node, clip) => {
+  /**
+   * @param {any} node @param {FrameClip | null} clip the plane cutting this subtree, from above
+   * @param {FrameOutline | null} outline the outline drawn round this subtree, from above
+   */
+  const visit = (node, clip, outline) => {
     if (!node.visible) return
     // per-camera visibility decides what this frame draws, without touching the scene
     if (node.showFrom && !node.showFrom(camera)) return
     // the nearest clip cuts this subtree
     if (node.clip) clip = { plane: worldPlane(node), cap: node.clip.cap }
+    // an outline goes round everything under the node that asks for it
+    if (node.outline) {
+      outline = { color: node.outline.color, width: node.outline.width, items: [] }
+      frame.outlines.push(outline)
+    }
     if (node.overlay) frame.overlays.push(node.overlay)
+    if (node.onDrag) frame.interactive = frame.draggable = true
     if (node.tooltip) frame.interactive = frame.tooltips = true
     else if (node.highlight || node.onHover || node.onClick) frame.interactive = true
     if (node.isDrawable) {
@@ -198,6 +221,7 @@ export function collect(scene, camera) {
         // point sprites with a map nearly always have soft alpha edges, so they blend too
         const blended = node.material.transparent || (node.drawMode === 'points' && node.material.map)
         ;(blended ? frame.transparent : frame.opaque).push(item)
+        if (outline && node.drawMode === 'triangles') outline.items.push(item)
         if (item.clip?.cap && !blended) {
           const solids = capped.get(item.clip)
           if (solids) solids.push(item)
@@ -214,7 +238,7 @@ export function collect(scene, camera) {
     } else if (node.lightKind) {
       addLight(/** @type {Light} */ (node))
     }
-    for (const child of node.children) visit(child, clip)
+    for (const child of node.children) visit(child, clip, outline)
   }
 
   /** @param {any} node */
@@ -241,7 +265,8 @@ export function collect(scene, camera) {
       }
     }
   }
-  visit(scene, null)
+  visit(scene, null, null)
+  frame.outlines = frame.outlines.filter((o) => o.items.length)
   for (const [clip, items] of capped) frame.caps.push(capOf(clip, items))
 
   // one shadow map, for the first directional light that casts; it goes first, so the shader

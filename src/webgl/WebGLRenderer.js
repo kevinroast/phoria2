@@ -211,7 +211,7 @@ export class WebGLRenderer {
 
     const env = frame.environment
     const bg = frame.background
-    const passes = gpu.loadPasses(!!frame.shadow || frame.spotShadows.length > 0 || (typeof env === 'object' && !!env.image) || (!!bg && !('getHex' in bg) && !!bg.image))
+    const passes = gpu.loadPasses(!!frame.shadow || frame.spotShadows.length > 0 || frame.outlines.length > 0 || (typeof env === 'object' && !!env.image) || (!!bg && !('getHex' in bg) && !!bg.image))
     this.#environment = passes && typeof env === 'object' ? passes.environment(env) : null
     if (passes && typeof env === 'object' && env.image && !this.#environment) {
       warnOnce(env, env.isHDR ? "this device can't render to float textures, which HDR environments need - lighting without it"
@@ -226,6 +226,8 @@ export class WebGLRenderer {
       this.#shadow = null
     }
     this.#spotShadow = passes && frame.spotShadows.length ? passes.spotShadowMaps(frame.spotShadows) : null
+    // outlines' mask, drawn before the scene, so the scene's own target need not be left
+    const outline = passes && frame.outlines.length ? passes.outlineMask(frame.outlines, frame, width, height, this.pixelRatio) : null
 
     // with bloom, the scene is drawn into a buffer of its own first (drawn plainly while its code loads)
     const bloom = this.#bloom ? gpu.loadBloom() : null
@@ -260,6 +262,8 @@ export class WebGLRenderer {
     for (const cap of frame.caps) this.#cap(cap, frame, width, height)
     gl.enable(gl.BLEND)
     for (const item of frame.transparent) this.#draw(item, frame, true)
+    // outlines over everything
+    if (outline && passes) passes.outlineComposite(outline, height)
     gl.depthMask(true)
     gl.disable(gl.BLEND)
     gl.bindVertexArray(null)
@@ -457,7 +461,7 @@ export class WebGLRenderer {
 
     program.set('uModel', worldMatrix)
     const hl = frame.highlight
-    if (hl && hl.node === node) {
+    if (hl && (hl.nodes ? hl.nodes.has(node) : hl.node === node)) {
       program.set('uHighlightIndex', hl.index ?? -1)
       program.set('uHighlight', [hl.color[0], hl.color[1], hl.color[2], hl.amount])
     } else {

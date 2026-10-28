@@ -36,5 +36,6 @@ export const DEMOS = [
   //{ name: 'space', title: 'Cobra Mk IIIs over a gas giant as a comet flies by - and an Elite mode in green vector lines', orbit: false },
   // tests of the API on bigger tasks go here with hidden: true - reachable by name
   // (demo.html?name=...), not listed in the gallery
+  { name: 'planner', title: 'an office floor planner - drag furniture in, select, move and turn it with a handle, snapping, undo', hidden: true },
   { name: 'harbour', title: 'a harbour on a foggy night - lamps and a lighthouse beam casting shadows through the mist', hidden: true },
 ]

@@ -52,6 +52,10 @@
       "types": "./dist/types/motion/index.d.ts",
       "import": "./dist/motion.js"
     },
+    "./edit": {
+      "types": "./dist/types/edit/index.d.ts",
+      "import": "./dist/edit.js"
+    },
     "./charts/schema.json": "./schema/chart.schema.json"
   },
   "scripts": {

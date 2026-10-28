@@ -125,6 +125,7 @@ function slab(points, y0, y1) {
  * ring; v is 0 along the upper ring and 1 along the lower, unless `v(i, upper)` says otherwise.
  * An open band's ends don't meet.
  */
+/** @param {number[][]} lower @param {number[][]} upper @param {(i: number, up: boolean) => number} [v] @param {boolean} [closed] */
 function loft(lower, upper, v = (i, up) => (up ? 0 : 1), closed = true) {
   const positions = [], uvs = [], indices = [], n = lower.length, columns = closed ? n + 1 : n
   for (let i = 0; i < columns; i++) {
@@ -452,7 +453,7 @@ function body() {
   g.add(new Mesh({ ...slab(shelf, MID - SLOT - 0.03, MID - SLOT), material: dark }))
   const within = inset(outline, 0.05), arc = []
   for (let k = 0; k <= 240; k++) {
-    const a = -Math.PI / 2 + (k / 240 - 0.5) * TAU, p = [HUB[0] + Math.cos(a) * CAVITY, HUB[1] + Math.sin(a) * CAVITY]
+    const a = -Math.PI / 2 + (k / 240 - 0.5) * TAU, p = /** @type {[number, number]} */ ([HUB[0] + Math.cos(a) * CAVITY, HUB[1] + Math.sin(a) * CAVITY])
     if (inside(p, within)) arc.push(p)
   }
   g.add(new Mesh({ geometry: loft(arc.map(([x, z]) => [x, MID - SLOT, z]), arc.map(([x, z]) => [x, MID + SLOT, z]), undefined, false), material: dark }))

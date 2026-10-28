@@ -86,6 +86,8 @@ const EVENT_HINTS = {
   mouseleave: 'hover', pointerleave: 'hover', tap: 'click', pick: 'click', select: 'click', pointerdown: 'click', mousedown: 'click',
 }
 // how far the highlight colour is mixed in
+// how far (CSS pixels) a press moves before it is a drag rather than a click
+const DRAG_START = 4
 const HIGHLIGHT_AMOUNT = 0.45
 // views that get a WebGL context of their own before 'auto' starts sharing one
 const OWN_CONTEXTS = 4
@@ -162,6 +164,13 @@ export class View {
   // a hover pick is out on the GPU
   #hoverBusy = false
   #dragging = false
+  /**
+   * A node being dragged: from the press, until the pointer lets go.
+   * @type {{ drag: import('./scene/Node.js').Drag, id: number, x: number, y: number, press: import('./value/Ray.js').Ray, started: boolean } | null}
+   */
+  #drag = null
+  // a drag just ended: the click the browser sends after it isn't one
+  #dragEnded = false
   /** @type {Hit | null} */ #hovered = null
   // used for scenes without lights; never added to the scene itself
   #autoSky = new HemisphereLight({ sky: '#ffffff', ground: '#444444', intensity: 0.5 })
@@ -481,6 +490,27 @@ export class View {
     return found && this.#exact(found, frame)
   }
 
+  /**
+   * The ray from the camera through a canvas position - CSS pixels from its top left, or a pointer
+   * event - in world space: for finding where the pointer is on a floor or any plane.
+   *
+   *     const ray = view.rayAt(event)
+   *     const t = ray.intersectPlane([0, 1, 0], [0, 0, 0])
+   *     if (t !== null) chair.position.copy(ray.at(t))
+   * @param {number | MouseEvent} x
+   * @param {number} [y]
+   * @returns {import('./value/Ray.js').Ray}
+   */
+  rayAt(x, y) {
+    if (typeof x === 'object') {
+      const rect = this.canvas.getBoundingClientRect()
+      y = x.clientY - rect.top
+      x = x.clientX - rect.left
+    }
+    const ndc = [(x / (this.#width || 1)) * 2 - 1, 1 - (/** @type {number} */ (y) / (this.#height || 1)) * 2]
+    return new Raycaster().setFromCamera(ndc, this.camera).ray
+  }
+
   /** The last frame, when it is big enough that picking on the GPU pays. */
   #gpuFrame() {
     const frame = this.lastFrame
@@ -792,7 +822,9 @@ export class View {
     else this.#tooltip?.hide()
     if (same) return
     if (this.#highlightFor(before) || this.#highlightFor(hit)) this.invalidate()
-    if (this.#handlers.click.size || this.lastFrame?.interactive) this.canvas.style.cursor = hit && this.#clickable(hit) ? 'pointer' : ''
+    if (this.#handlers.click.size || this.lastFrame?.interactive) {
+      this.canvas.style.cursor = hit && nearestAbove(hit.node, 'onDrag') ? 'grab' : hit && this.#clickable(hit) ? 'pointer' : ''
+    }
     // node handlers: those that lose the pointer hear null, those that gain or keep it hear the hit
     const was = handlersAbove(before?.node, 'onHover'), now = handlersAbove(hit?.node, 'onHover')
     for (const fn of was) if (!now.includes(fn)) fn(null)
@@ -808,15 +840,21 @@ export class View {
   /** @param {Hit | null} hit @returns {FrameHighlight | null} */
   #highlightFor(hit) {
     if (!hit) return null
-    let color = this.#highlight
+    // the nearest colour wins, and the nearest highlightWhole is what is tinted as one
+    let color = null, whole = null
     for (let n = /** @type {any} */ (hit.node); n; n = n.parent) {
-      if (n.highlight) {
-        color = n.highlight
-        break
-      }
+      color ??= n.highlight
+      whole ??= n.highlightWhole ? n : null
     }
+    color ??= this.#highlight
     if (!color) return null
     const node = /** @type {any} */ (hit.node)
+    if (whole) {
+      /** @type {Set<Node>} */
+      const nodes = new Set()
+      whole.traverse((n) => { nodes.add(n) })
+      return { node, index: null, nodes, color, amount: HIGHLIGHT_AMOUNT }
+    }
     const index = hit.instance ?? (node.drawMode === 'points' ? hit.face : null)
     return { node, index, color, amount: HIGHLIGHT_AMOUNT }
   }
@@ -846,6 +884,7 @@ export class View {
     }
     const move = (e) => {
       this.#pointer = at(e)
+      this.#moveDrag(e, this.#pointer)
       this.#dragging = e.buttons !== 0
       if (this.#dragging) this.#tooltip?.hide()
       else this.#tooltip?.move(e.clientX, e.clientY)
@@ -858,25 +897,52 @@ export class View {
       this.#pickPending = true
       this.#schedule()
     }
-    const up = () => {
+    const up = (e) => {
+      this.#endDrag(e)
       this.#dragging = false
       this.#pickPending = true
       this.#schedule()
     }
+    // a press on something with onDrag is the beginning of dragging it, not of orbiting
+    const down = (e) => {
+      // a new press replaces a drag whose letting go never arrived (released outside the window, say)
+      if (this.#drag?.id === e.pointerId) return
+      this.#drag = null
+      if (!this.lastFrame?.draggable || (e.pointerType === 'mouse' && e.button !== 0)) return
+      const hit = this.pick(e)
+      const node = hit && nearestAbove(hit.node, 'onDrag')
+      if (!hit || !node) return
+      this.controls?.cancel()
+      try { canvas.setPointerCapture(e.pointerId) } catch { /* drags still work inside the canvas */ }
+      const p = at(e)
+      const start = hit.point.clone()
+      /** @type {import('./scene/Node.js').Drag} */
+      const drag = { phase: 'start', hit, node, ray: this.rayAt(p.x, p.y), plane: { normal: new Vec3(0, 1, 0), point: start.clone() },
+        start, point: start.clone(), delta: new Vec3(), event: e }
+      this.#drag = { drag, id: e.pointerId, x: p.x, y: p.y, press: drag.ray, started: false }
+    }
     const click = (e) => {
+      if (this.#dragEnded) {
+        this.#dragEnded = false
+        return
+      }
       if (!this.#handlers.click.size && !this.lastFrame?.interactive) return
       const hit = this.pick(e)
       if (hit) for (const fn of handlersAbove(hit.node, 'onClick')) fn(hit)
       for (const fn of this.#handlers.click) fn(hit, e)
     }
+    canvas.addEventListener('pointerdown', down)
     canvas.addEventListener('pointermove', move)
     canvas.addEventListener('pointerleave', leave)
     canvas.addEventListener('pointerup', up)
+    canvas.addEventListener('pointercancel', up)
     canvas.addEventListener('click', click)
     this.#cleanup.push(() => {
+      canvas.removeEventListener('pointerdown', down)
       canvas.removeEventListener('pointermove', move)
       canvas.removeEventListener('pointerleave', leave)
       canvas.removeEventListener('pointerup', up)
+      canvas.removeEventListener('pointercancel', up)
       canvas.removeEventListener('click', click)
     })
 
@@ -900,6 +966,58 @@ export class View {
     }
   }
 
+  /**
+   * The pointer moved while something is pressed: once it has moved far enough to be a drag, tell
+   * the node's handler it started, then where it is on the plane each move.
+   * @param {PointerEvent} e @param {{ x: number, y: number }} p
+   */
+  #moveDrag(e, p) {
+    const d = this.#drag
+    if (!d || e.pointerId !== d.id) return
+    const { drag } = d
+    drag.event = e
+    drag.ray = this.rayAt(p.x, p.y)
+    if (!d.started) {
+      if (Math.hypot(p.x - d.x, p.y - d.y) < DRAG_START) return
+      d.started = true
+      this.canvas.style.cursor = 'grabbing'
+      drag.phase = 'start'
+      const plane = drag.plane
+      drag.node.onDrag?.(drag)
+      // a handler that chose another plane drags across that, from where the press meets it
+      if (drag.plane !== plane || !drag.plane.point.equals(plane.point) || !drag.plane.normal.equals(plane.normal)) {
+        drag.plane = { normal: Vec3.fromInput(drag.plane.normal, 'Drag').normalize(), point: Vec3.fromInput(drag.plane.point, 'Drag') }
+        const t = d.press.intersectPlane(drag.plane.normal, drag.plane.point)
+        if (t !== null) drag.start.copy(d.press.at(t))
+      }
+    }
+    drag.phase = 'move'
+    const t = drag.ray.intersectPlane(drag.plane.normal, drag.plane.point)
+    if (t !== null) {
+      drag.point = drag.ray.at(t)
+      drag.delta.copy(drag.point).sub(drag.start)
+    } else drag.point = null
+    drag.node.onDrag?.(drag)
+    this.invalidate()
+  }
+
+  /** The pointer let go: a drag ends, and the click that follows isn't one. @param {PointerEvent} e */
+  #endDrag(e) {
+    const d = this.#drag
+    if (!d || e.pointerId !== d.id) return
+    this.#drag = null
+    try { this.canvas.releasePointerCapture(e.pointerId) } catch { /* already gone */ }
+    if (!d.started) return
+    d.drag.phase = 'end'
+    d.drag.event = e
+    d.drag.node.onDrag?.(d.drag)
+    this.#dragEnded = true
+    // a click may not follow (it ended off the canvas); don't let it eat the next real one
+    setTimeout(() => { this.#dragEnded = false }, 0)
+    this.canvas.style.cursor = ''
+    this.invalidate()
+  }
+
   /** @param {FrameDescription} frame */
   #addAutoLights(frame) {
     if (!this.#noted) {
@@ -919,6 +1037,12 @@ function cameraPlace(camera) {
 }
 /** @param {number[]} a @param {number[] | null} b */
 const samePlace = (a, b) => !!b && a.length === b.length && a.every((v, i) => v === b[i])
+
+/** The nearest node at or above this one with a handler of this kind. @param {any} node @param {string} key */
+function nearestAbove(node, key) {
+  for (let n = node; n; n = n.parent) if (n[key]) return n
+  return null
+}
 
 /**
  * A node's handlers of one kind and its ancestors', nearest first.

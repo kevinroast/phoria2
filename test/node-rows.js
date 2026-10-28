@@ -27,8 +27,11 @@ export const nodeRows = () => ({
   },
   tooltip: { value: () => 'tip', read: (n) => typeof n.tooltip, expect: 'function', bad: 'tip', error: 'function', keep: false },
   highlight: { value: '#ff0000', read: (n) => hex(n.highlight), expect: 0xff0000, bad: 'notacolour', error: 'notacolour' },
+  highlightWhole: { value: true, read: (n) => n.highlightWhole, default: false, bad: 'yes', error: 'highlightWhole' },
   onHover: { value: () => {}, read: (n) => typeof n.onHover, expect: 'function', bad: 1, error: 'function', keep: false },
   onClick: { value: () => {}, read: (n) => typeof n.onClick, expect: 'function', bad: 1, error: 'function', keep: false },
   showFrom: { value: () => {}, read: (n) => typeof n.showFrom, expect: 'function', bad: 1, error: 'function', keep: false },
+  onDrag: { value: () => {}, read: (n) => typeof n.onDrag, expect: 'function', bad: 1, error: 'function', keep: false },
+  outline: { value: { color: '#00ff00', width: 3 }, read: (n) => n.outline && [n.outline.color.getHex(), n.outline.width], expect: [0x00ff00, 3], default: null, bad: { width: 20 }, error: 'outline.width' },
   clip: { value: { normal: [1, 0, 0], offset: 0.5, cap: '#ff0000' }, read: (n) => n.clip && n.clip.toJSON(), expect: { normal: [1, 0, 0], offset: 0.5, cap: '#ff0000' }, default: null, bad: 'front', error: "'clip' must be" },
 })

@@ -257,6 +257,9 @@ export class Picker {
       return
     }
     program.set('uNormalMatrix', this.#normal)
+    // something drawn over everything is picked over everything too
+    if (material.depthTest) gl.enable(gl.DEPTH_TEST)
+    else gl.disable(gl.DEPTH_TEST)
     if (material.doubleSided || item.clip?.cap) gl.disable(gl.CULL_FACE)
     else {
       gl.enable(gl.CULL_FACE)
@@ -301,7 +304,9 @@ function pickable(frame) {
     if (v === undefined) seen.set(n, v = n.pickable !== false && ok(n.parent))
     return v
   }
-  return [...frame.opaque, ...frame.transparent].filter((item) => ok(item.node))
+  const items = [...frame.opaque, ...frame.transparent].filter((item) => ok(item.node))
+  // what is drawn over everything goes last, so it is picked over everything too
+  return [...items.filter((item) => item.material.depthTest), ...items.filter((item) => !item.material.depthTest)]
 }
 
 /** @param {ArrayLike<number>} m 4x4 */

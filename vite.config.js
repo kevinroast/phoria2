@@ -3,8 +3,8 @@ import { defineConfig } from 'vite'
 
 const root = import.meta.dirname
 
-// The package entry points: 'phoria2' (the core), 'phoria2/particles', 'phoria2/charts', 'phoria2/gltf'
-// and 'phoria2/motion'.
+// The package entry points: 'phoria2' (the core), 'phoria2/particles', 'phoria2/charts', 'phoria2/gltf',
+// 'phoria2/motion' and 'phoria2/edit'.
 // The library build emits one ES module per entry (dist/phoria2.js, dist/particles.js, ...).
 const ENTRIES = {
   phoria2: 'src/index.js',
@@ -12,6 +12,7 @@ const ENTRIES = {
   charts: 'src/charts/index.js',
   gltf: 'src/gltf/index.js',
   motion: 'src/motion/index.js',
+  edit: 'src/edit/index.js',
 }
 
 /**
@@ -44,6 +45,7 @@ export default defineConfig(({ mode }) => ({
       { find: /^phoria2\/charts$/, replacement: resolve(root, ENTRIES.charts) },
       { find: /^phoria2\/gltf$/, replacement: resolve(root, ENTRIES.gltf) },
       { find: /^phoria2\/motion$/, replacement: resolve(root, ENTRIES.motion) },
+      { find: /^phoria2\/edit$/, replacement: resolve(root, ENTRIES.edit) },
     ],
   },
   build: mode === 'demos'
@@ -69,7 +71,7 @@ export default defineConfig(({ mode }) => ({
             // everything the sub-paths share with the core goes in one predictable chunk; modules
             // loaded on demand (explain, toImage, the tooltip, the .hdr parser, the renderer's
             // environment and shadow passes, bloom, GPU picking) keep chunks of their own
-            manualChunks: (id) => (/[\\/]src[\\/](?!particles|charts|gltf|motion|explain|snapshot|tooltip|hdr|irradiance|webgl[\\/](?:passes|picking|bloom))/.test(id) ? 'core' : undefined),
+            manualChunks: (id) => (/[\\/]src[\\/](?!particles|charts|gltf|motion|edit|explain|snapshot|tooltip|hdr|irradiance|webgl[\\/](?:passes|picking|bloom))/.test(id) ? 'core' : undefined),
             chunkFileNames: '[name].js',
           },
         },
