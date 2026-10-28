@@ -26,6 +26,7 @@ export const DEMOS = [
   { section: 'Showcase', name: 'solar', title: 'a solar system - nested orbits, planets painted in code, a sun that lights them, click to follow' },
   { name: 'artemis', title: 'an animated infographic of Artemis IV - the Blue Moon lander mission, step by step on a timeline' },
   { name: 'cpu', title: 'a processor going into its socket - exploded layers, glowing traces and bloom' },
+  { name: 'engine', title: 'an inline four engine, cut away - pistons, valves and crank running inside, a section plane through the cylinders' },
   { name: 'volcano', title: 'a volcano erupting, cut away to show the magma inside - callouts with leader lines' },
   { name: 'carbide', title: 'Carbide, the Robot Wars champion 2017 - a double wedge on yellow wheels, steel bar weapon spinning up' },
   { name: 'cells', title: 'an animal and a plant cell, cut open - a labelled science poster, hover a part to light it' },
@@ -36,5 +37,4 @@ export const DEMOS = [
   // tests of the API on bigger tasks go here with hidden: true - reachable by name
   // (demo.html?name=...), not listed in the gallery
   { name: 'harbour', title: 'a harbour on a foggy night - lamps and a lighthouse beam casting shadows through the mist', hidden: true },
-  { name: 'engine', title: 'an inline four, cut away - pistons, valves and crank running, section plane through the cylinders', hidden: true },
 ]
