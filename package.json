@@ -1,6 +1,6 @@
 {
   "name": "phoria2",
-  "version": "1.0.0-rc.3",
+  "version": "1.0.0-rc.4",
   "description": "Small, friendly 3D for the web - a WebGL 2 renderer with charts, labels, picking, particles and glTF",
   "keywords": [
     "3d",
