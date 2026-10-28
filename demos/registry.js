@@ -32,6 +32,7 @@ export const DEMOS = [
   { name: 'carbide', title: 'Carbide, the Robot Wars champion 2017 - a double wedge on yellow wheels, steel bar weapon spinning up' },
   { name: 'cells', title: 'an animal and a plant cell, cut open - a labelled science poster, hover a part to light it' },
   { name: 'skull', title: 'the human skull, as an anatomy plate - every bone coloured and named in Latin; hover for English, click a bone or its name to draw it out' },
+  { name: 'pumpkin', title: "a jack-o'-lantern - a candle inside casting shadows all round, its light escaping only through the carved face", hidden: true },
   { name: 'galaxy', title: 'a spiral galaxy - 200,000 additive stars, old and young, round a glowing core' },
   { name: 'fireworks', title: 'fireworks over a city across the water - rockets with physics, four burst shapes, reflections' },
   { name: 'paint', title: 'a paint cannon - click the wall to aim; drops splat and drip into its canvas textures', orbit: false },
