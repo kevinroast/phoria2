@@ -13,14 +13,25 @@ import { DEMOS } from '../demos/registry.js'
 
 const WIDTH = 960, HEIGHT = 600, SCALE = 0.5
 // seconds to let a demo run first - longer for those that load models or build up to something
-const WAIT = { viewer: 7, fireworks: 6, paint: 7, particles: 5, space: 4.5, textures: 5, lights: 5, artemis: 4 }
+const WAIT = { viewer: 7, fireworks: 6, paint: 7, particles: 5, space: 4.5, textures: 5, lights: 5, artemis: 4, cpu: 4, volcano: 5 }
 // several views on one page: captured from the page, not one view's toImage()
 const PAGE = ['dashboard']
 // set a demo up for its picture first - scene-json aims off-centre to clear its editor panel, which
 // the picture leaves out: its turntable goes back to the start, with the objects side by side, and it
 // is framed in the middle from a little to the right and above; artemis stops on its way home, with
-// the whole route drawn
+// the whole route drawn; cpu is running, its traces alight; volcano is erupting, its lava running
 const PREPARE = {
+  // played for a moment, so the fountain's sparks have built up
+  volcano: `(async () => {
+    story.seekStep(4)
+    story.seek(story.time + 0.8)
+    story.play()
+    await new Promise((r) => setTimeout(r, 1200))
+    story.pause()
+  })()`,
+  cpu: `story.pause()
+    story.seekStep(6)
+    story.seek(story.time + 3.2)`,
   artemis: `story.pause()
     story.seekStep(15)
     story.seek(story.time + 3.6)`,

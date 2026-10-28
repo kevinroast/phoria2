@@ -511,6 +511,34 @@ body.gallery {
   box-shadow: 0 0 12px rgba(255, 140, 60, 0.45);
 }
 
+/* the processor's layers, named while it is pulled apart */
+.chip-layer {
+  padding: 3px 10px;
+  border-left: 2px solid #3cf0ff;
+  background: rgba(3, 10, 14, 0.7);
+  color: #d8f8ff;
+  font-size: 12px;
+  white-space: nowrap;
+  text-shadow: 0 0 8px rgba(60, 240, 255, 0.6);
+}
+
+/* the volcano's callouts: small capitals over a rule, joined to their feature by a leader line */
+.volcano-callout {
+  padding: 1px 2px 3px;
+  border-bottom: 1px solid currentColor;
+  color: #dbe6f5;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: color 0.3s, opacity 0.15s;
+}
+
+.volcano-callout.now {
+  color: #ffc46b;
+}
+
 /* the hero names the call it is making, as code */
 .hero-caption {
   position: absolute;

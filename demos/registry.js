@@ -25,6 +25,8 @@ export const DEMOS = [
   { name: 'models', title: 'hand-made models from raw points and polygons - drawn solid, as edges and as points' },
   { section: 'Showcase', name: 'solar', title: 'a solar system - nested orbits, planets painted in code, a sun that lights them, click to follow' },
   { name: 'artemis', title: 'an animated infographic of Artemis IV - the Blue Moon lander mission, step by step on a timeline' },
+  { name: 'cpu', title: 'a processor going into its socket - exploded layers, glowing traces and bloom' },
+  { name: 'volcano', title: 'a volcano erupting, cut away to show the magma inside - callouts with leader lines' },
   { name: 'galaxy', title: 'a spiral galaxy - 200,000 additive stars, old and young, round a glowing core' },
   { name: 'fireworks', title: 'fireworks over a city across the water - rockets with physics, four burst shapes, reflections' },
   { name: 'paint', title: 'a paint cannon - click the wall to aim; drops splat and drip into its canvas textures', orbit: false },
