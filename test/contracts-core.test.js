@@ -3,10 +3,11 @@ import { expect, it } from 'vitest'
 import {
   AmbientLight, DirectionalLight, Geometry, Group, HemisphereLight, InstancedMesh, Label, Lines, Material, Mesh,
   OrthographicCamera, PerspectiveCamera, PointLight, Points, Scene, SpotLight, Texture, box, create, curve, cylinder,
-  ellipse, extrude, grid, icosphere, lathe, plane, sphere, torus, axes,
+  ellipse, extrude, grid, icosphere, lathe, outline, plane, sphere, torus, axes,
 } from '../src/index.js'
 import { NODE_HINTS, NODE_OPTIONS } from '../src/scene/Node.js'
 import { GENERATOR_OPTIONS } from '../src/geometry/generators.js'
+import { OUTLINE_OPTIONS } from '../src/geometry/outline.js'
 import { CURVE_HINTS, CURVE_OPTIONS, ELLIPSE_OPTIONS, LINE_HINTS, LINE_OPTIONS, TUBE_HINTS, TUBE_OPTIONS } from '../src/geometry/Curve.js'
 import { contract, rounded } from './contract.js'
 import { nodeRows } from './node-rows.js'
@@ -213,6 +214,7 @@ generator('cylinder', cylinder, {
   height: { value: 3, read: src('height'), bad: 0, error: 'height' },
   segments: { value: 12, read: src('segments'), bad: 2, error: 'segments' },
   caps: { value: false, read: src('caps'), default: true },
+  axis: { value: 'x', read: (g) => g.source.axis ?? 'y', default: 'y', bad: 'up', error: 'axis' },
 })
 generator('torus', torus, {
   radius: { value: 2, read: src('radius'), bad: 0, error: 'radius' },
@@ -230,17 +232,59 @@ contract('lathe()', {
   rows: {
     points: { value: [[1, 0], [1, 2]], read: src('points'), bad: [[1, 0]], error: 'points' },
     segments: { value: 12, read: src('segments'), bad: 2, error: 'segments' },
+    axis: { value: 'z', read: (g) => g.source.axis ?? 'y', default: 'y', bad: 'sideways', error: 'axis' },
   },
 })
-const outline = [[0, 0], [1, 0], [1, 1], [0, 1]]
+const square = [[0, 0], [1, 0], [1, 1], [0, 1]]
 contract('extrude()', {
-  options: GENERATOR_OPTIONS.extrude, make: (o) => extrude({ shape: outline, ...o }),
+  options: GENERATOR_OPTIONS.extrude, make: (o) => extrude({ shape: square, ...o }),
   rows: {
     shape: { value: [[0, 0], [2, 0], [0, 2]], read: src('shape'), bad: [[0, 0]], error: 'shape' },
     holes: { value: [[[0.2, 0.2], [0.4, 0.2], [0.2, 0.4]]], read: src('holes'), default: [], bad: 'none', error: 'holes' },
     depth: { value: 3, read: src('depth'), default: 1, bad: 0, error: 'depth' },
+    axis: { value: 'y', read: (g) => g.source.axis ?? 'z', default: 'z', bad: 'up', error: 'axis' },
   },
 })
+// --- outlines: lists of [x, y] points
+const shapeContract = (name, rows) => contract(`outline.${name}()`, { options: OUTLINE_OPTIONS[name], make: (o) => outline[name](o), rows })
+const first = (p) => rounded(p[0])
+const far = (p) => Math.round(Math.max(...p.map(([x, y]) => Math.hypot(x, y))) * 1e4) / 1e4
+const spanX = (p) => Math.round((Math.max(...p.map(([x]) => x)) - Math.min(...p.map(([x]) => x))) * 1e4) / 1e4
+const spanY = (p) => Math.round((Math.max(...p.map(([, y]) => y)) - Math.min(...p.map(([, y]) => y))) * 1e4) / 1e4
+shapeContract('circle', {
+  radius: { value: 2, read: far, default: 1, bad: -1, error: 'radius' },
+  segments: { value: 8, read: (p) => p.length, default: 32, bad: 2, error: 'segments' },
+  center: { value: [3, 0], read: first, expect: [4, 0], default: [1, 0], bad: [1], error: 'center' },
+})
+shapeContract('rect', {
+  size: { value: 2, read: (p) => [spanX(p), spanY(p)], expect: [2, 2], bad: 0, error: 'size' },
+  width: { value: 3, read: spanX, default: 1, bad: -1, error: 'width' },
+  height: { value: 3, read: spanY, default: 1, bad: 'tall', error: 'height' },
+  radius: { value: 0.2, read: (p) => p.length, expect: 36, default: 4, bad: 0.9, error: 'radius' },
+  // corners only round with a radius, so check what segments does on a rounded one
+  segments: { value: 2, check: (_, v) => expect(outline.rect({ radius: 0.2, segments: v })).toHaveLength(4 * (v + 1)), bad: 0, error: 'segments' },
+  center: { value: [1, 1], read: first, expect: [0.5, 0.5], default: [-0.5, -0.5], bad: 'here', error: 'center' },
+})
+shapeContract('polygon', {
+  radius: { value: 2, read: far, default: 1, bad: 0, error: 'radius' },
+  sides: { value: 3, read: (p) => p.length, default: 6, bad: 2, error: 'sides' },
+  angle: { value: Math.PI / 2, read: first, expect: [0, 1], default: [1, 0], bad: 'up', error: 'angle' },
+  center: { value: [0, 2], read: first, expect: [1, 2], bad: [Infinity, 0], error: 'center' },
+})
+shapeContract('arc', {
+  radius: { value: 2, read: far, default: 1, bad: 0, error: 'radius' },
+  from: { value: Math.PI / 2, read: first, expect: [0, 1], default: [1, 0], bad: 'top', error: 'from' },
+  to: { value: Math.PI, read: (p) => rounded(p.at(-1)).map((v) => v || 0), expect: [-1, 0], default: [1, 0], bad: 0, error: 'to' },
+  segments: { value: 4, read: (p) => p.length, expect: 5, default: 33, bad: 0, error: 'segments' },
+  center: { value: [1, 1], read: first, expect: [2, 1], bad: null, error: 'center' },
+})
+shapeContract('gear', {
+  radius: { value: 2, read: far, default: 1, bad: 0, error: 'radius' },
+  teeth: { value: 8, read: (p) => p.length / 4, default: 24, bad: 2, error: 'teeth' },
+  depth: { value: 0.2, read: (p) => Math.round(Math.min(...p.map(([x, y]) => Math.hypot(x, y))) * 1e4) / 1e4, expect: 0.8, bad: 1, error: 'depth' },
+  center: { value: [5, 0], read: first, expect: [5 + 1 - Math.PI / 24, 0].map((v) => Math.round(v * 1e4) / 1e4), bad: 'x', error: 'center' },
+})
+
 generator('axes', axes, {
   size: { value: 3, read: src('size'), default: 1, bad: 0, error: 'size' },
 })

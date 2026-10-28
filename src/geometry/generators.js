@@ -3,7 +3,7 @@
 
 import { Geometry } from './Geometry.js'
 import { area, triangulate } from './triangulate.js'
-import { checkNumber, checkOptions, describe, fail } from '../validate.js'
+import { checkNumber, checkOneOf, checkOptions, describe, fail } from '../validate.js'
 
 const TAU = Math.PI * 2
 
@@ -12,11 +12,11 @@ export const GENERATOR_OPTIONS = {
   box: ['size', 'width', 'height', 'depth', 'segments'],
   sphere: ['radius', 'segments', 'rings'],
   plane: ['size', 'width', 'depth', 'segments'],
-  cylinder: ['radius', 'radiusTop', 'height', 'segments', 'caps'],
+  cylinder: ['radius', 'radiusTop', 'height', 'segments', 'caps', 'axis'],
   torus: ['radius', 'tube', 'segments', 'tubeSegments'],
   icosphere: ['radius', 'detail'],
-  lathe: ['points', 'segments'],
-  extrude: ['shape', 'holes', 'depth'],
+  lathe: ['points', 'segments', 'axis'],
+  extrude: ['shape', 'holes', 'depth', 'axis'],
   axes: ['size'],
   grid: ['size', 'divisions'],
 }
@@ -52,6 +52,7 @@ export const GENERATOR_OPTIONS = {
  * @property {number} [height] along y, default 1
  * @property {number} [segments] around the Y axis, default 32
  * @property {boolean} [caps] close the ends, default true
+ * @property {Axis} [axis] the axis it runs along, default 'y'
  */
 
 /**
@@ -72,15 +73,20 @@ export const GENERATOR_OPTIONS = {
  * @typedef {object} LatheOptions
  * @property {ArrayLike<number>[]} points the profile, as [radius, y] pairs from the bottom up - the
  *   outside of the surface is on the right as you go up it
- * @property {number} [segments] around the Y axis, default 32
+ * @property {number} [segments] around the axis, default 32
+ * @property {Axis} [axis] the axis it is turned about, default 'y'
  */
 
 /**
  * @typedef {object} ExtrudeOptions
  * @property {ArrayLike<number>[]} shape the outline, as [x, y] pairs, either way round
  * @property {ArrayLike<number>[][]} [holes] outlines cut out of it, each as [x, y] pairs
- * @property {number} [depth] along z, default 1
+ * @property {number} [depth] along the axis, default 1
+ * @property {Axis} [axis] the axis it is pushed along, default 'z'; the outline is drawn as seen
+ *   looking back down the axis from its + end, with y up ('y': seen from above, y away from you)
  */
+
+/** @typedef {'x' | 'y' | 'z'} Axis */
 
 /**
  * @typedef {object} AxesOptions
@@ -206,10 +212,12 @@ export function plane(options) {
 }
 
 /**
- * A cylinder along the Y axis, centred on the origin; `radiusTop: 0` makes a cone. The side and the
- * caps have separate vertices so both get the right normals. u runs around the side from +Z.
+ * A cylinder along the Y axis (or `axis`), centred on the origin; `radiusTop: 0` makes a cone. The
+ * side and the caps have separate vertices so both get the right normals. u runs around the side
+ * from +Z.
  * @example cylinder({ radius: 0.5, height: 2 })
  * @example cylinder({ radius: 1, radiusTop: 0 }) // a cone
+ * @example cylinder({ radius: 0.1, height: 3, axis: 'x' }) // an axle lying along x
  * @param {CylinderOptions} [options]
  * @returns {Geometry}
  */
@@ -227,6 +235,7 @@ export function cylinder(options) {
   const segments = count(owner, 'segments', o.segments, 32, 3)
   const caps = o.caps ?? true
   if (typeof caps !== 'boolean') fail(owner, `'caps' must be true or false, got ${describe(caps)}`)
+  const axis = axisOf(owner, o.axis, 'y')
 
   const m = new Builder()
   // side normals lean up as the side narrows towards the top
@@ -248,7 +257,8 @@ export function cylinder(options) {
     if (radiusTop > 0) cap(m, radiusTop, height / 2, 1, segments)
     if (radius > 0) cap(m, radius, -height / 2, -1, segments)
   }
-  return m.build({ type: 'cylinder', radius, radiusTop, height, segments, caps })
+  m.turn('y', axis)
+  return m.build({ type: 'cylinder', radius, radiusTop, height, segments, caps, ...(axis !== 'y' && { axis }) })
 }
 
 /**
@@ -365,11 +375,13 @@ export function icosphere(options) {
 }
 
 /**
- * A profile turned about the Y axis, as on a lathe: pistons, bottles, bolts, vases. Corners sharper
+ * A profile turned about the Y axis (or `axis`, with y up the profile becoming that axis), as on a
+ * lathe: pistons, bottles, bolts, vases, pulleys. Corners sharper
  * than about 30 degrees stay sharp; gentler ones are shaded smooth. A profile that starts or ends
  * on the axis (radius 0) closes over it. u runs around from +Z and v along the profile from its
  * last point to its first - top to bottom, as on cylinder().
  * @example lathe({ points: [[0, 0], [1, 0], [1, 2], [0.6, 2.4], [0, 2.4]] }) // a closed can with a shoulder
+ * @example lathe({ points: outline.arc({ radius: 1, from: -Math.PI / 2, to: Math.PI / 2 }), axis: 'x' }) // a ball on an x axle
  * @param {LatheOptions} options
  * @returns {Geometry}
  */
@@ -380,9 +392,11 @@ export function lathe(options) {
     phiSegments: "lathe(): use 'segments' for the divisions around the axis",
     profile: "lathe(): use 'points' for the profile, as [radius, y] pairs",
   })
-  const points = pairs(owner, 'points', o.points, 2)
+  // a radius a hair off the axis (an arc's end, from cos(pi / 2)) is on it, so the shape closes there
+  const points = pairs(owner, 'points', o.points, 2).map(([r, y]) => /** @type {[number, number]} */ ([Math.abs(r) < 1e-9 ? 0 : r, y]))
   if (points.some(([r]) => r < 0)) fail(owner, "'points' are [radius, y] pairs - a radius can't be below 0")
   const segments = count(owner, 'segments', o.segments, 32, 3)
+  const axis = axisOf(owner, o.axis, 'y')
 
   // each span of the profile, with its outward normal (to the right, going up)
   const spans = []
@@ -409,17 +423,20 @@ export function lathe(options) {
     m.grid(first, segments, 1, { pinchTop: s.to[0] === 0, pinchBottom: s.from[0] === 0 })
     along += s.len
   })
-  return m.build({ type: 'lathe', points: points.map((p) => [...p]), segments })
+  m.turn('y', axis)
+  return m.build({ type: 'lathe', points: points.map((p) => [...p]), segments, ...(axis !== 'y' && { axis }) })
 }
 
 /**
- * A flat outline pushed out along Z, centred on the origin: the front faces +Z, the back -Z, and
- * the sides follow the outline. Concave outlines and holes are fine. Corners sharper than about 30
+ * A flat outline pushed out along Z (or `axis`), centred on the origin: the front faces +Z, the
+ * back -Z, and the sides follow the outline. With another axis the front faces that axis's + end,
+ * the outline drawn as seen from there. Concave outlines and holes are fine. Corners sharper than about 30
  * degrees stay sharp; gentler ones are shaded smooth, so a many-sided circle looks round. On the
  * front and back u, v span the outline's bounds, upright as seen from that side; on the sides u
  * runs round each outline and v from front to back.
  * @example extrude({ shape: [[0, 0], [2, 0], [2, 1], [0, 1]], depth: 0.5 })
- * @example extrude({ shape: square, holes: [circle], depth: 0.2 }) // a plate with a hole
+ * @example extrude({ shape: outline.rect(2), holes: [outline.circle(0.5)], depth: 0.2 }) // a plate with a hole
+ * @example extrude({ shape: outline.gear({ radius: 1, teeth: 40 }), depth: 0.1, axis: 'x' }) // a gear on an x axle
  * @param {ExtrudeOptions} options
  * @returns {Geometry}
  */
@@ -436,6 +453,7 @@ export function extrude(options) {
   if (typeof o.holes?.[0]?.[0] === 'number') fail(owner, "'holes' is a list of outlines - for one hole, holes: [outline]")
   const holes = /** @type {unknown[]} */ (o.holes ?? []).map((h, i) => pairs(owner, `holes[${i}]`, h, 3))
   const depth = size(owner, 'depth', o.depth, 1)
+  const axis = axisOf(owner, o.axis, 'z')
   const front = depth / 2
 
   // the outline counter-clockwise and the holes clockwise, so every side faces out of the solid
@@ -486,7 +504,8 @@ export function extrude(options) {
       along += lengths[i]
     }
   }
-  return m.build({ type: 'extrude', shape: shape.map((p) => [...p]), holes: holes.map((hole) => hole.map((p) => [...p])), depth })
+  m.turn('z', axis)
+  return m.build({ type: 'extrude', shape: shape.map((p) => [...p]), holes: holes.map((hole) => hole.map((p) => [...p])), depth, ...(axis !== 'z' && { axis }) })
 }
 
 // corners turning less than this (about 30 degrees) are shaded smooth
@@ -687,6 +706,26 @@ class Builder {
     }
   }
 
+  /**
+   * Lay what has been built along another axis: a quarter turn - never a mirror, so faces still
+   * face out. From y (turned shapes): x is reached by turning about z, z by turning about x. From z
+   * (pushed outlines): x by turning about y, so the outline is seen from +x, and y by turning about
+   * x, so it is seen from above.
+   * @param {'y' | 'z'} from @param {Axis} to
+   */
+  turn(from, to) {
+    if (from === to) return
+    const map = TURNS[from][to]
+    for (const list of [this.positions, this.normals]) {
+      for (let i = 0; i < list.length; i += 3) {
+        const [x, y, z] = map(list[i], list[i + 1], list[i + 2])
+        list[i] = x
+        list[i + 1] = y
+        list[i + 2] = z
+      }
+    }
+  }
+
   /** @param {{ type: string } & Record<string, unknown>} source @returns {Geometry} */
   build(source) {
     const { positions, normals, uvs, indices } = this
@@ -694,6 +733,21 @@ class Builder {
     g.source = source
     return g
   }
+}
+
+/** @type {Record<string, Record<string, (x: number, y: number, z: number) => number[]>>} */
+const TURNS = {
+  y: { x: (x, y, z) => [y, -x, z], z: (x, y, z) => [x, -z, y] },
+  z: { x: (x, y, z) => [z, y, -x], y: (x, y, z) => [x, z, -y] },
+}
+
+/**
+ * The axis option, or the shape's own when it's missing.
+ * @param {string} owner @param {unknown} value @param {Axis} fallback
+ * @returns {Axis}
+ */
+function axisOf(owner, value, fallback) {
+  return value === undefined ? fallback : checkOneOf(owner, 'axis', /** @type {Axis} */ (value), ['x', 'y', 'z'])
 }
 
 /**

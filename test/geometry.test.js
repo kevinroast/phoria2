@@ -434,6 +434,51 @@ describe('extrude', () => {
   })
 })
 
+describe('axis', () => {
+  // each shape laid along every axis is the same solid, turned: faces out, same volume, the bounds turned
+  it('turns cylinders and lathes from Y to X or Z, faces still out', () => {
+    const along = (axis) => cylinder({ radius: 0.5, height: 2, segments: 16, ...(axis && { axis }) })
+    expectBounds(along('x'), [-1, -0.5, -0.5], [1, 0.5, 0.5])
+    expectBounds(along('z'), [-0.5, -0.5, -1], [0.5, 0.5, 1])
+    for (const axis of ['x', 'z']) {
+      expectWellFormed(along(axis))
+      expectOutward(along(axis))
+      expect(volume(along(axis))).toBeCloseTo(volume(along()), 6)
+    }
+    // y up the profile becomes the axis: a cone's tip points along +x
+    const cone = lathe({ points: [[0, 0], [1, 0], [0, 2]], axis: 'x', segments: 8 })
+    expectWellFormed(cone)
+    expectBounds(cone, [0, -1, -1], [2, 1, 1])
+    expect(volume(cone)).toBeGreaterThan(0)
+    expect(cone.toJSON()).toMatchObject({ type: 'lathe', axis: 'x' })
+    expect(lathe({ points: [[1, 0], [1, 1]] }).toJSON()).not.toHaveProperty('axis')
+  })
+
+  it('pushes an extruded outline along X or Y, drawn as seen from that axis', () => {
+    // a unit square drawn right of and above the middle
+    const shape = [[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]]
+    // seen from +x: the outline's right is -z, its up is +y; the front faces +x
+    const x = extrude({ shape, depth: 2, axis: 'x' })
+    expectBounds(x, [-1, 0.5, -1.5], [1, 1.5, -0.5])
+    expect(find(x, [1, 0.5, -0.5], [1, 0, 0])).toBeGreaterThanOrEqual(0)
+    // seen from above: the outline's right is +x, its up is -z (away); the front faces +y
+    const y = extrude({ shape, depth: 2, axis: 'y' })
+    expectBounds(y, [0.5, -1, -1.5], [1.5, 1, -0.5])
+    expect(find(y, [0.5, 1, -0.5], [0, 1, 0])).toBeGreaterThanOrEqual(0)
+    for (const g of [x, y]) {
+      expectWellFormed(g)
+      expectUVsUpright(g)
+      expect(volume(g)).toBeCloseTo(2, 6)
+    }
+    expect(y.toJSON()).toMatchObject({ type: 'extrude', axis: 'y' })
+  })
+
+  it('rejects an axis that is not x, y or z', () => {
+    expect(() => cylinder({ axis: 'up' })).toThrow("cylinder(): 'axis' 'up' is not valid - expected 'x' | 'y' | 'z'")
+    expect(() => extrude({ shape: [[0, 0], [1, 0], [0, 1]], axis: 'X' })).toThrow("did you mean 'x'?")
+  })
+})
+
 describe('edges', () => {
   const pairs = (g) => {
     const out = []

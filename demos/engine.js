@@ -1,11 +1,11 @@
-import { AmbientLight, Box3, DirectionalLight, Geometry, Group, Label, Lines, Mesh, PointLight, View, box, curve, cylinder, extrude, lathe } from 'phoria2'
+import { AmbientLight, Box3, DirectionalLight, Geometry, Group, Label, Lines, Mesh, PointLight, View, box, curve, cylinder, extrude, lathe, outline } from 'phoria2'
 
 // An inline four-cylinder engine, cut away to show it running. The block, crankcase, head, cam
 // cover and sump are one group with a section plane through the cylinders (node.clip), its cut
 // faces filled in red as on a real cutaway; the moving parts inside are whole. Pistons, valves,
 // plugs and pulleys are turned profiles (lathe); the block with its bores, the crankcase, the
 // connecting rods with their bearing eyes, the crank webs, cam lobes and the toothed flywheel are
-// flat outlines pushed out (extrude). The cylinders fire 1-3-4-2.
+// flat outlines (outline) pushed out (extrude), each laid along its axis. The cylinders fire 1-3-4-2.
 
 const TAU = Math.PI * 2
 const CYLINDERS = [-1.5, -0.5, 0.5, 1.5] // along x, cylinder 1 at the back (-x) to 4 at the front
@@ -46,22 +46,7 @@ const ABOUT = {
 
 // --- outlines
 
-/** Points round a circle. @returns {[number, number][]} */
-const circle = (r, n = 32, cx = 0, cy = 0, from = 0, to = TAU) =>
-  Array.from({ length: n }, (_, i) => {
-    const a = from + (to - from) * i / (to - from >= TAU - 1e-9 ? n : n - 1)
-    return [cx + Math.cos(a) * r, cy + Math.sin(a) * r]
-  })
-
 const rad = (deg) => deg * Math.PI / 180
-
-// part orientations: extrude() pushes along z and lathe() turns about y
-/** An outline drawn in the y-z plane (x of the outline is z), pushed along x. */
-const ACROSS = { rotation: [0, -Math.PI / 2, 0] }
-/** An outline drawn in plan (x, z), pushed up y. */
-const UPRIGHT = { rotation: [Math.PI / 2, 0, 0] }
-/** A lathe or cylinder lying along x. */
-const ALONG_X = { rotation: [0, 0, -Math.PI / 2] }
 
 // --- materials
 const alloy = { color: '#b9bec5', metalness: 0.75, roughness: 0.42 }
@@ -84,27 +69,27 @@ function casing() {
   const bottom = 0.9 + SEAM, top = DECK - SEAM
   // the block in plan, bored for the cylinders, from the crankcase up to the deck
   const blockShape = [[-2.1, -0.65], [2.1, -0.65], [2.1, 0.65], [-2.1, 0.65]]
-  const bores = CYLINDERS.map((x) => circle(BORE, 48, x, 0))
-  g.add(part('block', { geometry: extrude({ shape: blockShape, holes: bores, depth: top - bottom }), position: [0, (top + bottom) / 2, 0], ...UPRIGHT, material: alloy }))
+  const bores = CYLINDERS.map((x) => outline.circle({ radius: BORE, segments: 48, center: [x, 0] }))
+  g.add(part('block', { geometry: extrude({ shape: blockShape, holes: bores, depth: top - bottom, axis: 'y' }), position: [0, (top + bottom) / 2, 0], material: alloy }))
   // the crankcase: a U in section, open at the top under the bores
   const crankcase = [[0.65, 0.9], [0.95, 0.3], [0.95, -0.7], [0.8, -0.9], [-0.8, -0.9], [-0.95, -0.7], [-0.95, 0.3], [-0.65, 0.9],
     [-0.55, 0.9], [-0.85, 0.3], [-0.85, -0.65], [-0.75, -0.8], [0.75, -0.8], [0.85, -0.65], [0.85, 0.3], [0.55, 0.9]]
-  g.add(part('crankcase', { geometry: extrude({ shape: crankcase, depth: 4.2 }), ...ACROSS, material: iron }))
+  g.add(part('crankcase', { geometry: extrude({ shape: crankcase, depth: 4.2, axis: 'x' }), material: iron }))
   // its end walls, with a hole for the crankshaft
   const end = [[0.65, 0.9], [0.95, 0.3], [0.95, -0.7], [0.8, -0.9], [-0.8, -0.9], [-0.95, -0.7], [-0.95, 0.3], [-0.65, 0.9]]
   for (const x of [-2.15 - SEAM, 2.15 + SEAM]) {
-    g.add(part('crankcase', { geometry: extrude({ shape: end, holes: [circle(0.26, 32)], depth: 0.1 }), position: [x, 0, 0], ...ACROSS, material: iron }))
+    g.add(part('crankcase', { geometry: extrude({ shape: end, holes: [outline.circle(0.26)], depth: 0.1, axis: 'x' }), position: [x, 0, 0], material: iron }))
   }
   // the head, and the cam cover over it: an arch in section, round the camshafts
   g.add(part('head', { geometry: box({ width: 4.3, height: HEAD_TOP - DECK, depth: 1.3 }), position: [0, (DECK + HEAD_TOP) / 2, 0], material: alloy }))
-  const arch = [[0.72, 0], ...circle(0.72, 24, 0, 0.3, 0, Math.PI).map(([z, y]) => [z, y + 0.05]), [-0.72, 0], [-0.62, 0],
-    ...circle(0.62, 24, 0, 0.3, Math.PI, 0).map(([z, y]) => [z, y + 0.05]), [0.62, 0]]
-  g.add(part('cover', { geometry: extrude({ shape: arch, depth: 4.2 }), position: [0, HEAD_TOP + SEAM, 0], ...ACROSS, material: paint }))
+  const arch = [[0.72, 0], ...outline.arc({ radius: 0.72, from: 0, to: Math.PI, center: [0, 0.35] }), [-0.72, 0],
+    [-0.62, 0], ...outline.arc({ radius: 0.62, from: Math.PI, to: 0, center: [0, 0.35] }), [0.62, 0]]
+  g.add(part('cover', { geometry: extrude({ shape: arch, depth: 4.2, axis: 'x' }), position: [0, HEAD_TOP + SEAM, 0], material: paint }))
   // the sump, narrowing to its floor
   const sump = [[0.82, 0], [0.7, -0.6], [-0.7, -0.6], [-0.82, 0], [-0.74, 0], [-0.63, -0.52], [0.63, -0.52], [0.74, 0]]
-  g.add(part('sump', { geometry: extrude({ shape: sump, depth: 4.0 }), position: [0, -0.9 - SEAM, 0], ...ACROSS, material: iron }))
+  g.add(part('sump', { geometry: extrude({ shape: sump, depth: 4.0, axis: 'x' }), position: [0, -0.9 - SEAM, 0], material: iron }))
   for (const x of [-2.04 - SEAM, 2.04 + SEAM]) {
-    g.add(part('sump', { geometry: extrude({ shape: [[0.82, 0], [0.7, -0.6], [-0.7, -0.6], [-0.82, 0]], depth: 0.08 }), position: [x, -0.9 - SEAM, 0], ...ACROSS, material: iron }))
+    g.add(part('sump', { geometry: extrude({ shape: [[0.82, 0], [0.7, -0.6], [-0.7, -0.6], [-0.82, 0]], depth: 0.08, axis: 'x' }), position: [x, -0.9 - SEAM, 0], material: iron }))
   }
   return g
 }
@@ -117,29 +102,30 @@ function piston() {
   const groove = (y) => [[0.39, y], [0.37, y], [0.37, y + 0.035], [0.39, y + 0.035]]
   const profile = [[0, 0.55], [0.33, 0.55], [0.33, 0], [0.39, 0], [0.39, 0.45], ...groove(0.47), ...groove(0.54), ...groove(0.61), [0.39, 0.67], [0.375, 0.7], [0, 0.7]]
   g.add(part('piston', { geometry: lathe({ points: profile, segments: 48 }), position: [0, -PIN, 0], material: { color: '#e3e6ea', metalness: 0.9, roughness: 0.3 } }))
-  g.add(part('piston', { geometry: cylinder({ radius: 0.085, height: 0.64, segments: 20 }), ...ALONG_X, material: steel }))
+  g.add(part('piston', { geometry: cylinder({ radius: 0.085, height: 0.64, segments: 20, axis: 'x' }), material: steel }))
   return g
 }
 
 /** A connecting rod: big eye round the crank pin at the origin, small eye at the piston pin, up y. */
 function rod() {
-  const outline = [...circle(0.15, 16, 0, ROD, rad(-25), rad(205)), ...circle(0.3, 24, 0, 0, rad(155), rad(385))]
-  const holes = [circle(0.195, 32), circle(0.09, 20, 0, ROD)]
-  return part('rod', { geometry: extrude({ shape: outline, holes, depth: 0.16 }), ...ACROSS, material: darkSteel })
+  // the small eye over the big one, joined by the sides
+  const shape = [...outline.arc({ radius: 0.15, from: rad(-25), to: rad(205), center: [0, ROD] }), ...outline.arc({ radius: 0.3, from: rad(155), to: rad(385) })]
+  const holes = [outline.circle(0.195), outline.circle({ radius: 0.09, segments: 20, center: [0, ROD] })]
+  return part('rod', { geometry: extrude({ shape, holes, depth: 0.16, axis: 'x' }), material: darkSteel })
 }
 
 /** The crankshaft, along x: main journals, a throw per cylinder, counterweighted webs, and the snouts. */
 function crankshaft() {
   const g = new Group()
   // a web: round the crank pin at the top, a counterweight under the main journal
-  const web = [...circle(0.27, 16, 0, THROW, 0, Math.PI), ...circle(0.64, 28, 0, 0, rad(205), rad(335))]
-  for (const x of [-2, -1, 0, 1, 2]) g.add(part('crank', { geometry: cylinder({ radius: 0.24, height: 0.36, segments: 32 }), position: [x, 0, 0], ...ALONG_X, material: steel }))
+  const web = [...outline.arc({ radius: 0.27, from: 0, to: Math.PI, center: [0, THROW] }), ...outline.arc({ radius: 0.64, from: rad(205), to: rad(335) })]
+  for (const x of [-2, -1, 0, 1, 2]) g.add(part('crank', { geometry: cylinder({ radius: 0.24, height: 0.36, segments: 32, axis: 'x' }), position: [x, 0, 0], material: steel }))
   CYLINDERS.forEach((x, i) => {
     const throwAt = g.add(new Group({ rotation: [PHASES[i], 0, 0] }))
-    for (const side of [-1, 1]) throwAt.add(part('crank', { geometry: extrude({ shape: web, depth: 0.12 }), position: [x + side * 0.22, 0, 0], ...ACROSS, material: darkSteel }))
-    throwAt.add(part('crank', { geometry: cylinder({ radius: 0.19, height: 0.34, segments: 32 }), position: [x, THROW, 0], ...ALONG_X, material: steel }))
+    for (const side of [-1, 1]) throwAt.add(part('crank', { geometry: extrude({ shape: web, depth: 0.12, axis: 'x' }), position: [x + side * 0.22, 0, 0], material: darkSteel }))
+    throwAt.add(part('crank', { geometry: cylinder({ radius: 0.19, height: 0.34, segments: 32, axis: 'x' }), position: [x, THROW, 0], material: steel }))
   })
-  for (const x of [-2.3, 2.3]) g.add(part('crank', { geometry: cylinder({ radius: 0.2, height: 0.4, segments: 24 }), position: [x, 0, 0], ...ALONG_X, material: steel }))
+  for (const x of [-2.3, 2.3]) g.add(part('crank', { geometry: cylinder({ radius: 0.2, height: 0.4, segments: 24, axis: 'x' }), position: [x, 0, 0], material: steel }))
   return g
 }
 
@@ -156,13 +142,13 @@ function lobeOutline() {
 /** A camshaft along x at its axis, with a lobe over each valve; lobes turn on their own. */
 function camshaft(z) {
   const g = new Group({ position: [0, CAM.y, z] })
-  g.add(part('cam', { geometry: cylinder({ radius: 0.07, height: 4.4, segments: 20 }), position: [0.1, 0, 0], ...ALONG_X, material: steel }))
-  const geometry = extrude({ shape: lobeOutline(), depth: 0.13 })
+  g.add(part('cam', { geometry: cylinder({ radius: 0.07, height: 4.4, segments: 20, axis: 'x' }), position: [0.1, 0, 0], material: steel }))
+  const geometry = extrude({ shape: lobeOutline(), depth: 0.13, axis: 'x' })
   const lobes = []
   for (const x of CYLINDERS) {
     for (const dx of [-0.17, 0.17]) {
       const turn = g.add(new Group({ position: [x + dx, 0, 0] }))
-      turn.add(part('cam', { geometry, ...ACROSS, material: steel }))
+      turn.add(part('cam', { geometry, material: steel }))
       lobes.push(turn)
     }
   }
@@ -199,22 +185,18 @@ function pulley(radius, width = 0.16) {
   const g = new Group()
   const profile = [[radius - 0.04, -width / 2], [radius + 0.03, -width / 2], [radius + 0.03, -width / 2 + 0.02], [radius, -width / 2 + 0.03],
     [radius, width / 2 - 0.03], [radius + 0.03, width / 2 - 0.02], [radius + 0.03, width / 2], [radius - 0.04, width / 2], [radius - 0.04, -width / 2]]
-  g.add(part('pulley', { geometry: lathe({ points: profile, segments: 48 }), ...ALONG_X, material: alloy }))
-  const holes = Array.from({ length: 5 }, (_, i) => circle(radius * 0.22, 16, Math.cos(i / 5 * TAU) * radius * 0.55, Math.sin(i / 5 * TAU) * radius * 0.55))
-  g.add(part('pulley', { geometry: extrude({ shape: circle(radius - 0.03, 48), holes: [circle(0.06, 16), ...holes], depth: 0.05 }), ...ACROSS, material: alloy }))
+  g.add(part('pulley', { geometry: lathe({ points: profile, segments: 48, axis: 'x' }), material: alloy }))
+  const holes = Array.from({ length: 5 }, (_, i) => outline.circle({ radius: radius * 0.22, segments: 16, center: [Math.cos(i / 5 * TAU) * radius * 0.55, Math.sin(i / 5 * TAU) * radius * 0.55] }))
+  g.add(part('pulley', { geometry: extrude({ shape: outline.circle({ radius: radius - 0.03, segments: 48 }), holes: [outline.circle({ radius: 0.06, segments: 16 }), ...holes], depth: 0.05, axis: 'x' }), material: alloy }))
   return g
 }
 
 /** The flywheel: a toothed ring gear with bolt and lightening holes, in the y-z plane. */
 function flywheel() {
-  const teeth = 72, outline = []
-  for (let i = 0; i < teeth * 4; i++) {
-    const a = i / (teeth * 4) * TAU
-    outline.push([Math.cos(a) * (i % 4 < 2 ? 1.0 : 0.95), Math.sin(a) * (i % 4 < 2 ? 1.0 : 0.95)])
-  }
-  const holes = [circle(0.12, 24), ...Array.from({ length: 6 }, (_, i) => circle(0.045, 12, Math.cos(i / 6 * TAU) * 0.26, Math.sin(i / 6 * TAU) * 0.26)),
-    ...Array.from({ length: 4 }, (_, i) => circle(0.15, 24, Math.cos((i + 0.5) / 4 * TAU) * 0.6, Math.sin((i + 0.5) / 4 * TAU) * 0.6))]
-  return part('flywheel', { geometry: extrude({ shape: outline, holes, depth: 0.1 }), ...ACROSS, material: darkSteel })
+  const ring = (n, r, d, turn = 0) => Array.from({ length: n }, (_, i) => outline.circle({ radius: r, segments: 16, center: [Math.cos((i + turn) / n * TAU) * d, Math.sin((i + turn) / n * TAU) * d] }))
+  // the hub, its bolts, and four lightening holes
+  const holes = [outline.circle({ radius: 0.12, segments: 24 }), ...ring(6, 0.045, 0.26), ...ring(4, 0.15, 0.6, 0.5)]
+  return part('flywheel', { geometry: extrude({ shape: outline.gear({ radius: 1, teeth: 72, depth: 0.05 }), holes, depth: 0.1, axis: 'x' }), material: darkSteel })
 }
 
 /** The timing belt, round the crank pulley and both cam pulleys, at the front - drawn in the y-z plane at x. */
@@ -231,7 +213,7 @@ function intake() {
   for (const x of CYLINDERS) {
     g.add(part('intake', { geometry: curve([[x, 2.55, -0.62], [x, 2.62, -1.0], [x * 0.9, 2.35, -1.38], [x * 0.85, 1.95, -1.52]]).tube({ radius: 0.11, segments: 32, sides: 16 }), material: alloy }))
   }
-  g.add(part('intake', { geometry: lathe({ points: [[0, -2.0], [0.32, -2.0], [0.34, -1.9], [0.34, 1.9], [0.32, 2.0], [0, 2.0]], segments: 32 }), position: [0, 1.75, -1.55], ...ALONG_X, material: alloy }))
+  g.add(part('intake', { geometry: lathe({ points: [[0, -2.0], [0.32, -2.0], [0.34, -1.9], [0.34, 1.9], [0.32, 2.0], [0, 2.0]], segments: 32, axis: 'x' }), position: [0, 1.75, -1.55], material: alloy }))
   return g
 }
 
