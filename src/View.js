@@ -24,7 +24,7 @@ import { checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '
 /** @import { Tooltip, TooltipContent } from './tooltip.js' */
 /** @import { ToneMapping, BloomOptions } from './webgl/WebGLRenderer.js' */
 /** @import { CameraOptions } from './scene/cameras.js' */
-/** @import { ColorInput } from './types.js' */
+/** @import { ColorInput, Vec3Input } from './types.js' */
 /** @import { Node } from './scene/Node.js' */
 
 /**
@@ -511,6 +511,58 @@ export class View {
     const indexed = instanced || node.drawMode !== 'triangles'
     return { node, point, distance: point.distanceTo(raycaster.ray.origin), normal: null, face: indexed && !instanced ? element : null,
       instance: instanced ? element : null, uv: null, datum: node.datumAt(indexed ? element : null) }
+  }
+
+  /**
+   * Where a world position is on the canvas - CSS pixels from its top left - with its depth (0 at
+   * the near plane, 1 at the far) and whether it's in view: for placing HTML of your own over the
+   * scene, beside what it's about.
+   *
+   *     const { x, y } = view.project(cube.worldPosition)
+   * @param {Vec3Input} point
+   * @returns {{ x: number, y: number, depth: number, visible: boolean }}
+   */
+  project(point) {
+    const p = Vec3.fromInput(point, 'View'), m = this.#viewProjection()
+    const cx = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], cy = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]
+    const cz = m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14], cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15]
+    const x = cx / cw, y = cy / cw, z = cz / cw
+    return {
+      x: (x * 0.5 + 0.5) * this.#width, y: (0.5 - y * 0.5) * this.#height, depth: z * 0.5 + 0.5,
+      visible: cw > 0 && Math.abs(x) <= 1 && Math.abs(y) <= 1 && Math.abs(z) <= 1,
+    }
+  }
+
+  /**
+   * The rectangle on the canvas that a node, a box or (with no argument) the whole scene covers - CSS
+   * pixels, from the corners of its bounds. Null when there's nothing there, or part of it is behind
+   * the camera.
+   *
+   *     const { left, top, width } = view.screenBounds(model)   // put a title above it
+   * @param {Node | Box3} [target]
+   * @returns {{ left: number, top: number, right: number, bottom: number, width: number, height: number } | null}
+   */
+  screenBounds(target = this.scene) {
+    const box = target instanceof Box3 ? target : target.bounds
+    if (box.isEmpty()) return null
+    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
+    for (let i = 0; i < 8; i++) {
+      const corner = [i & 1 ? box.max[0] : box.min[0], i & 2 ? box.max[1] : box.min[1], i & 4 ? box.max[2] : box.min[2]]
+      const { x, y, depth } = this.project(corner)
+      if (!(depth >= 0 && depth <= 1)) return null
+      left = Math.min(left, x)
+      right = Math.max(right, x)
+      top = Math.min(top, y)
+      bottom = Math.max(bottom, y)
+    }
+    return { left, top, right, bottom, width: right - left, height: bottom - top }
+  }
+
+  /** The camera's world to clip space matrix, up to date. @returns {Mat4} */
+  #viewProjection() {
+    const camera = this.camera
+    camera.updateWorld()
+    return new Mat4().multiplyMatrices(camera.projectionMatrix, camera.viewMatrix)
   }
 
   /** Every hit under a canvas position, nearest first. @param {number | MouseEvent} x @param {number} [y] @returns {Hit[]} */

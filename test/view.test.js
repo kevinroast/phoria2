@@ -1,7 +1,7 @@
 // The View's behaviour on a stand-in page: when it draws, how it keeps its framing as the canvas
 // changes shape, what it picks, and who hears about clicks and hovering.
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
-import { DirectionalLight, InstancedMesh, Mesh, Scene, View, box } from '../src/index.js'
+import { DirectionalLight, Group, InstancedMesh, Mesh, Scene, View, box } from '../src/index.js'
 import { fakePage } from './fakes.js'
 
 const page = fakePage()
@@ -168,6 +168,38 @@ describe('View framing', () => {
     const view = viewOf({ framing: { keep: 'width', aspect: 1 } })
     // set up for 1:1, shown at 2:1 - twice as wide for its height - so half as far back
     expect(reshape(view, 300, 150)).toBe(5)
+  })
+})
+
+describe('View projection', () => {
+  it('says where a world position is on the canvas, how deep, and whether it is in view', () => {
+    const view = viewOf()
+    // straight ahead: the middle of the 300 x 150 canvas
+    const middle = view.project([0, 0, 0])
+    expect([Math.round(middle.x), Math.round(middle.y), middle.visible]).toEqual([150, 75, true])
+    expect(middle.depth).toBeGreaterThan(0)
+    expect(middle.depth).toBeLessThan(1)
+    // up and to the right of the middle on screen
+    const corner = view.project([1, 1, 0])
+    expect(corner.x).toBeGreaterThan(150)
+    expect(corner.y).toBeLessThan(75)
+    // behind the camera, or far off to the side
+    expect(view.project([0, 0, 20]).visible).toBe(false)
+    expect(view.project([500, 0, 0]).visible).toBe(false)
+  })
+
+  it('gives the rectangle a node or box covers on the canvas - or null for nothing', () => {
+    const view = viewOf()
+    const cube = view.scene.add(new Mesh({ geometry: box(2) }))
+    const r = /** @type {NonNullable<ReturnType<View['screenBounds']>>} */ (view.screenBounds(cube))
+    // centred on the middle, as wide as it is tall (a cube, face on)
+    expect(Math.round((r.left + r.right) / 2)).toBe(150)
+    expect(Math.round((r.top + r.bottom) / 2)).toBe(75)
+    expect(Math.round(r.width)).toBe(Math.round(r.height))
+    expect(r.width).toBeGreaterThan(0)
+    // the scene's covers the cube's; an empty group covers nothing
+    expect(view.screenBounds()?.width).toBeCloseTo(r.width)
+    expect(view.screenBounds(view.scene.add(new Group()))).toBeNull()
   })
 })
 

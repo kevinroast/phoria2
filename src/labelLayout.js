@@ -102,10 +102,11 @@ export function alignColumns(boxes) {
  * @param {number} x @param {number} y the point
  * @param {{ left: number, top: number, width: number, height: number }} box
  * @param {'left' | 'right' | null} [edge]
+ * @param {number} [rule] the thickness of its underline (its bottom border), whose middle the line meets
  * @returns {[number, number] | null}
  */
-export function leaderEnd(x, y, box, edge = null) {
-  if (edge) return [edge === 'left' ? box.left + box.width : box.left, box.top + box.height]
+export function leaderEnd(x, y, box, edge = null, rule = 0) {
+  if (edge) return [edge === 'left' ? box.left + box.width : box.left, box.top + box.height - rule / 2]
   const tx = Math.min(Math.max(x, box.left), box.left + box.width)
   const ty = Math.min(Math.max(y, box.top), box.top + box.height)
   return Math.hypot(tx - x, ty - y) < 2 ? null : [tx, ty]

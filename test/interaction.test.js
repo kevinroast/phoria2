@@ -93,6 +93,8 @@ describe('labels', () => {
     // the leader meets the end of the underline: inner side, bottom
     expect(leaderEnd(300, 50, { left: 16, top: 90, width: 90, height: 20 }, 'left')).toEqual([106, 110])
     expect(leaderEnd(300, 150, { left: 694, top: 90, width: 90, height: 20 }, 'right')).toEqual([694, 110])
+    // on the middle of a 1px underline, not below it
+    expect(leaderEnd(300, 150, { left: 694, top: 90, width: 90, height: 20 }, 'right', 1)).toEqual([694, 109.5])
   })
 
   it('keeps leader and edge on a label, through JSON, and points callout habits at them', () => {

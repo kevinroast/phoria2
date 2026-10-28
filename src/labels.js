@@ -16,7 +16,7 @@ import { alignColumns, layoutLabels, leaderEnd, placeBox, stackColumns } from '.
  * @property {number} offscreen behind the camera or outside the view
  */
 
-/** @typedef {{ el: HTMLDivElement, text: string, className: string, width: number, height: number, showing: boolean, leader: SVGGElement | null, color: string }} Entry */
+/** @typedef {{ el: HTMLDivElement, text: string, className: string, width: number, height: number, showing: boolean, leader: SVGGElement | null, color: string, rule: number }} Entry */
 
 /**
  * A leader line as drawn, in CSS pixels over the canvas - for image export.
@@ -121,8 +121,10 @@ export class LabelLayer {
       const el = entry.el, box = boxes[i]
       el.style.display = ''
       el.style.opacity = state === 'dim' ? DIM_OPACITY : ''
-      // whole pixels keep text crisp
-      el.style.transform = `translate(${Math.round(box.left)}px, ${Math.round(box.top)}px)`
+      // whole pixels keep text crisp - and the box is rounded too, so a leader meets the label where it is drawn
+      box.left = Math.round(box.left)
+      box.top = Math.round(box.top)
+      el.style.transform = `translate(${box.left}px, ${box.top}px)`
       // a column's labels share its width; the right column's text keeps to the edge
       const edge = label.style.edge
       const minWidth = edge && entry.width !== box.width ? `${box.width}px` : '', textAlign = edge === 'right' ? 'right' : ''
@@ -166,7 +168,13 @@ export class LabelLayer {
    */
   #leader(entry, box, opacity) {
     const { x, y } = box
-    const end = leaderEnd(x, y, box, box.edge)
+    // the label's own text colour and underline (read once per look), unless CSS on .phoria-leader says otherwise
+    if (!entry.color) {
+      const cs = getComputedStyle(entry.el)
+      entry.color = cs.color
+      entry.rule = cs.borderBottomStyle === 'none' ? 0 : parseFloat(cs.borderBottomWidth) || 0
+    }
+    const end = leaderEnd(x, y, box, box.edge, entry.rule)
     let g = entry.leader
     if (!g) {
       g = /** @type {SVGGElement} */ (document.createElementNS(SVG, 'g'))
@@ -174,8 +182,7 @@ export class LabelLayer {
       this.#ensureLines().append(g)
       entry.leader = g
     }
-    // the label's own text colour (read once per look), unless CSS on .phoria-leader says otherwise
-    const color = entry.color ||= getComputedStyle(entry.el).color
+    const color = entry.color
     g.setAttribute('class', `phoria-leader${entry.className.slice('phoria-label'.length)}`)
     g.setAttribute('stroke', color)
     g.setAttribute('fill', color)
@@ -228,7 +235,7 @@ export class LabelLayer {
       // opacity eases, so dimming and brightening don't flash
       Object.assign(el.style, { position: 'absolute', left: '0', top: '0', willChange: 'transform', transition: 'opacity 0.15s' })
       root.append(el)
-      entry = { el, text: '', className: '', width: -1, height: -1, showing: false, leader: null, color: '' }
+      entry = { el, text: '', className: '', width: -1, height: -1, showing: false, leader: null, color: '', rule: 0 }
       this.#elements.set(label.key, entry)
     }
     const className = `phoria-label${label.style.className ? ` ${label.style.className}` : ''}`
