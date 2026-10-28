@@ -3,13 +3,13 @@
 // directional shadow map. Each keeps its GL objects and frees them on reset() after a lost context.
 import * as mat4 from '../math/mat4.js'
 import { irradianceSH } from '../irradiance.js'
-import { SHADOW_MAP_SIZE, SPOT_ATLAS_SIZE } from '../shadow.js'
+import { POINT_SHADOW_SIZE, SHADOW_MAP_SIZE, SPOT_ATLAS_SIZE } from '../shadow.js'
 import { CLIP, CLIP_ONLY_FRAGMENT, COMMON, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
 
 /** @import { Programs } from './programs.js' */
 /** @import { Resources } from './resources.js' */
 /** @import { Texture, DataImage } from '../material/Texture.js' */
-/** @import { FrameDescription, ShadowFrame, SpotShadowFrame, DrawItem, FrameOutline } from '../frame.js' */
+/** @import { FrameDescription, ShadowFrame, SpotShadowFrame, PointShadowFrame, DrawItem, FrameOutline } from '../frame.js' */
 
 
 
@@ -180,6 +180,7 @@ export class Passes {
   /** @type {WeakMap<Texture, Environment>} */ #environments = new WeakMap()
   /** @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #shadow = null
   /** Spot lights' shadows, a tile each. @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #spotShadow = null
+  /** A point light's shadow: a depth cube, a framebuffer a face. @type {{ texture: WebGLTexture, framebuffers: WebGLFramebuffer[] } | null} */ #pointShadow = null
   /** Outlines' mask and its widened copy. @type {{ width: number, height: number, mask: { texture: WebGLTexture, framebuffer: WebGLFramebuffer }, wide: { texture: WebGLTexture, framebuffer: WebGLFramebuffer } } | null} */ #outline = null
   /** @type {WebGLVertexArrayObject | null} */ #empty = null
   /** Rendering to float textures, which environments need. */
@@ -198,6 +199,7 @@ export class Passes {
     this.#environments = new WeakMap()
     this.#shadow = null
     this.#spotShadow = null
+    this.#pointShadow = null
     this.#outline = null
     this.#empty = null
     this.floatTargets = !!this.gl.getExtension('EXT_color_buffer_float')
@@ -344,6 +346,24 @@ export class Passes {
     }
     this.#endDepth()
     return { texture: this.#spotShadow.texture, matrices, tiles, bias, texel: 1 / SPOT_ATLAS_SIZE }
+  }
+
+  /**
+   * Draw a point light's shadow casters' depth into the six faces of a cube round it.
+   * @param {PointShadowFrame} point
+   * @returns {{ texture: WebGLTexture, nearFar: number[], texel: number }}
+   */
+  pointShadowMap(point) {
+    const gl = this.gl
+    this.#pointShadow ??= this.#depthCube(POINT_SHADOW_SIZE)
+    point.faces.forEach((face, i) => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, /** @type {{ framebuffers: WebGLFramebuffer[] }} */ (this.#pointShadow).framebuffers[i])
+      gl.viewport(0, 0, POINT_SHADOW_SIZE, POINT_SHADOW_SIZE)
+      this.#beginDepth()
+      this.#drawDepth(face.casters, face.viewProjection)
+    })
+    this.#endDepth()
+    return { texture: this.#pointShadow.texture, nearFar: [point.near, point.far], texel: point.texelAngle }
   }
 
   #beginDepth() {
@@ -530,6 +550,31 @@ export class Passes {
     gl.readBuffer(gl.NONE)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     return { texture, framebuffer }
+  }
+
+  /** A depth cube to draw a point light's shadow into, a face at a time. @param {number} size */
+  #depthCube(size) {
+    const gl = this.gl
+    const texture = /** @type {WebGLTexture} */ (gl.createTexture())
+    gl.activeTexture(gl.TEXTURE15)
+    gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture)
+    gl.texStorage2D(gl.TEXTURE_CUBE_MAP, 1, gl.DEPTH_COMPONENT24, size, size)
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE)
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL)
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    const framebuffers = [0, 1, 2, 3, 4, 5].map((i) => {
+      const framebuffer = /** @type {WebGLFramebuffer} */ (gl.createFramebuffer())
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_CUBE_MAP_POSITIVE_X + i, texture, 0)
+      gl.drawBuffers([gl.NONE])
+      gl.readBuffer(gl.NONE)
+      return framebuffer
+    })
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    return { texture, framebuffers }
   }
 
   /** @param {number} width @param {number} height @param {number} levels */

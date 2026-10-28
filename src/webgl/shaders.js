@@ -227,6 +227,7 @@ void main() {
 const MESH_FRAGMENT = /* glsl */ `
 precision highp float;
 precision highp sampler2DShadow;
+precision highp samplerCubeShadow;
 
 in vec3 vWorldPosition;
 in vec3 vNormal;
@@ -329,6 +330,12 @@ uniform vec4 uSpotShadowTile[4];             // each tile's bounds in the map: x
 uniform float uSpotShadowBias[4];            // world units a unit of distance, to push the lookup out along the normal
 uniform float uSpotShadowTexel;              // 1 / map size
 uniform float uPunctualShadow[NUM_PUNCTUAL]; // which tile a point or spot light's shadow is in, or -1
+#endif
+#ifdef POINT_SHADOW
+uniform samplerCubeShadow uPointShadowMap; // a point light's depth all round it, a cube face each way
+uniform float uPointShadowIndex;           // which punctual light it is
+uniform vec2 uPointShadowNearFar;          // its faces' near and far planes
+uniform float uPointShadowTexel;           // a texel's size at a distance of 1
 #endif
 #endif
 
@@ -481,6 +488,29 @@ float spotShadowAt(int k, vec3 n, float distance) {
   return lit / 9.0;
 }
 #endif
+#ifdef POINT_SHADOW
+// a point light's shadow: the depth cube looked up along the way from the light, compared with
+// this point's depth in whichever face it falls in
+float pointShadowAt(vec3 light, vec3 n, float distance) {
+  // push the lookup out along the normal, more for surfaces further from the light
+  vec3 d = vWorldPosition + n * uPointShadowTexel * 1.5 * distance - light;
+  vec3 a = abs(d);
+  float z = max(a.x, max(a.y, a.z));
+  float near = uPointShadowNearFar.x, far = uPointShadowNearFar.y;
+  if (z >= far) return 1.0;
+  float depth = 0.5 * ((far + near) / (far - near) - 2.0 * far * near / ((far - near) * z)) + 0.5;
+  // nine filtered comparisons, spread across the direction a texel and a half apart
+  vec3 dir = d / length(d);
+  vec3 u = normalize(cross(dir, abs(dir.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
+  vec3 w = cross(dir, u);
+  float step = uPointShadowTexel * 1.5;
+  float lit = 0.0;
+  for (int x = -1; x <= 1; x++) {
+    for (int y = -1; y <= 1; y++) lit += texture(uPointShadowMap, vec4(dir + (u * float(x) + w * float(y)) * step, depth));
+  }
+  return lit / 9.0;
+}
+#endif
 #endif
 
 void main() {
@@ -563,6 +593,9 @@ void main() {
 #ifdef SPOT_SHADOWS
     float tile = uPunctualShadow[i];
     if (tile >= 0.0 && cone > 0.0) radiance *= spotShadowAt(int(tile), surfaceNormal, d);
+#endif
+#ifdef POINT_SHADOW
+    if (float(i) == uPointShadowIndex) radiance *= pointShadowAt(uPunctualPosition[i], surfaceNormal, d);
 #endif
     color += shade(n, v, l, radiance, diffuse, f0, a);
   }

@@ -4,7 +4,7 @@ import { Mat4 } from './value/Mat4.js'
 import { Vec3 } from './value/Vec3.js'
 import { Box3 } from './value/Box3.js'
 import { warnOnce } from './validate.js'
-import { fitShadow, fitSpotShadow, SPOT_TILES } from './shadow.js'
+import { fitPointShadow, fitShadow, fitSpotShadow, SPOT_TILES } from './shadow.js'
 import { worldPlane } from './clip.js'
 
 /** @import { Scene } from './scene/Scene.js' */
@@ -35,7 +35,7 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  * @property {number} [range] point, spot (0 = unlimited)
  * @property {number} [angle] spot
  * @property {number} [penumbra] spot
- * @property {boolean} [castShadow] directional, spot
+ * @property {boolean} [castShadow] directional, spot, point
  * @property {number} [shadowTile] spot: which spot shadow is its, or -1
  */
 
@@ -111,6 +111,16 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  */
 
 /**
+ * A point light's view of the scene for its shadow: six faces of a cube round it.
+ * @typedef {object} PointShadowFrame
+ * @property {FrameLight} light
+ * @property {{ viewProjection: Mat4, casters: DrawItem[] }[]} faces +X, -X, +Y, -Y, +Z, -Z, each with what it sees
+ * @property {number} near
+ * @property {number} far
+ * @property {number} texelAngle a texel's size at a distance of 1, for the bias
+ */
+
+/**
  * The hovered thing to tint: a whole node, or one of its instances or points - or, under a node with
  * highlightWhole, every drawable in that subtree.
  * @typedef {object} FrameHighlight
@@ -135,6 +145,7 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  * @property {import('./fog.js').Fog | null} fog distance fog
  * @property {ShadowFrame | null} shadow the shadow-casting light's view, when there is one and something casts
  * @property {SpotShadowFrame[]} spotShadows spot lights' shadows, up to four
+ * @property {PointShadowFrame | null} pointShadow a point light's shadow, all round it
  * @property {FrameCap[]} caps section planes' caps to fill, after the opaque pass
  * @property {{ drawn: number, culled: number }} stats
  * @property {FrameHighlight | null} highlight set by the View for hover highlighting
@@ -174,6 +185,7 @@ export function collect(scene, camera) {
     fog: scene.fog,
     shadow: null,
     spotShadows: [],
+    pointShadow: null,
     caps: [],
     stats: { drawn: 0, culled: 0 },
     highlight: null,
@@ -261,7 +273,7 @@ export function collect(scene, camera) {
         frame.lights.push({ kind: 'spot', node, color: node.color, intensity: node.intensity, position: node.worldPosition,
           direction: node.worldDirection, range: node.range, angle: node.angle, penumbra: node.penumbra, castShadow: node.castShadow, shadowTile: -1 })
       } else {
-        frame.lights.push({ kind: 'point', node, color: node.color, intensity: node.intensity, position: node.worldPosition, range: node.range })
+        frame.lights.push({ kind: 'point', node, color: node.color, intensity: node.intensity, position: node.worldPosition, range: node.range, castShadow: node.castShadow })
       }
     }
   }
@@ -273,8 +285,23 @@ export function collect(scene, camera) {
   // knows which light the map belongs to
   const sun = frame.lights.findIndex((l) => l.kind === 'directional' && l.castShadow)
   const spots = frame.lights.filter((l) => l.kind === 'spot' && l.castShadow)
-  const items = sun >= 0 || spots.length ? /** @type {DrawItem[]} */ (casters.map(([n, clip]) => drawItem(n, view, null, clip)).filter(Boolean)) : []
+  const points = frame.lights.filter((l) => l.kind === 'point' && l.castShadow)
+  const items = sun >= 0 || spots.length || points.length ? /** @type {DrawItem[]} */ (casters.map(([n, clip]) => drawItem(n, view, null, clip)).filter(Boolean)) : []
   if (spots.length > SPOT_TILES) warnOnce(scene, `more than ${SPOT_TILES} spot lights cast shadows - the extras don't`)
+  if (points.length > 1) warnOnce(scene, 'more than one point light casts shadows - only the first does')
+  if (items.length && points.length) {
+    const light = points[0]
+    const boxes = items.map((c) => c.node.expandBounds(new Box3()))
+    const fit = fitPointShadow(/** @type {Vec3} */ (light.position), light.range ?? 0, boxes, receivers.map((n) => n.expandBounds(new Box3())))
+    if (fit) {
+      // each face draws only what it can see
+      const faces = fit.viewProjections.map((viewProjection) => {
+        const planes = frustumPlanes(viewProjection)
+        return { viewProjection, casters: items.filter((_, i) => sphereInFrustum(planes, boxes[i].getCenter(), boxes[i].getRadius())) }
+      })
+      frame.pointShadow = { light, faces, near: fit.near, far: fit.far, texelAngle: fit.texelAngle }
+    }
+  }
   if (items.length && spots.length) {
     const boxes = items.map((c) => c.node.expandBounds(new Box3()))
     const receiving = receivers.map((n) => n.expandBounds(new Box3()))

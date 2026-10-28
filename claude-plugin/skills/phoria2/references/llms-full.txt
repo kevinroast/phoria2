@@ -300,15 +300,22 @@ The maps stay on the mesh as it moves; normal maps follow the surface. 0 (the de
 | `AmbientLight` | `color`, `intensity` |
 | `HemisphereLight` | `sky`, `ground`, `intensity` |
 | `DirectionalLight` | `color`, `intensity`, `direction` (the way it travels, e.g. `[-1, -2, -1]`), `castShadow` |
-| `PointLight` | `color`, `intensity`, `position`, `range` - inverse-square falloff, so intensity ~ distance squared (30 lights things ~5 m away) |
+| `PointLight` | `color`, `intensity`, `position`, `range` - inverse-square falloff, so intensity ~ distance squared (30 lights things ~5 m away); `castShadow` |
 | `SpotLight` | point light options plus `direction`, `angle`, `penumbra`, `castShadow` |
 
 Intensity 1 on a directional light lights a white surface facing it to white. Limits: 2
 directional and 4 point/spot lights.
 
-**Shadows**: one directional light and up to four spot lights with `castShadow: true`; meshes opt in
-with `castShadow` and `receiveShadow`. No shadow camera to set up. A spot light's own lamp - anything
-whose bounds hold the light - doesn't block it, so a lamp's shade can cast shadows of its own.
+**Shadows**: one directional light, up to four spot lights and one point light with `castShadow: true`;
+meshes opt in with `castShadow` and `receiveShadow`. No shadow camera to set up. A spot light's own
+lamp - anything whose bounds hold the light - doesn't block it, so a lamp's shade can cast shadows of
+its own. A point light casts all round, and everything that casts blocks it, around it too: a candle in
+a lantern or a carved pumpkin lights the room only through the openings. Give a bulb or flame mesh
+drawn at the light `castShadow: false`.
+
+```js
+scene.add(new PointLight({ position: [0, 0.1, 0], intensity: 0.5, range: 4, castShadow: true }))  // a candle in a jack-o'-lantern
+```
 
 Cameras: `new PerspectiveCamera({ fov, near, far, position, target })`,
 `new OrthographicCamera({ height, near, far, position, target })` (width follows the aspect). Or

@@ -105,6 +105,53 @@ export function fitSpotShadow(position, direction, angle, range, casters, receiv
   return { viewProjection, texelAngle: 2 * Math.tan(fov / 2) / (SPOT_ATLAS_SIZE / 2) }
 }
 
+/** A point light's shadow: a cube of six square faces, each this many texels across. */
+export const POINT_SHADOW_SIZE = 1024
+
+// the cube's faces in GL's order (+X, -X, +Y, -Y, +Z, -Z): which way each looks, and its up -
+// upside down, as cube maps are stored
+const CUBE_FACES = [
+  [[1, 0, 0], [0, -1, 0]], [[-1, 0, 0], [0, -1, 0]],
+  [[0, 1, 0], [0, 0, 1]], [[0, -1, 0], [0, 0, -1]],
+  [[0, 0, 1], [0, -1, 0]], [[0, 0, -1], [0, -1, 0]],
+]
+
+/**
+ * A point light's six views for its shadow, a right angle each, from close to the light out to the
+ * furthest receiver (or the light's range). Null when nothing casts.
+ * @param {ArrayLike<number>} position @param {number} range 0 for unlimited
+ * @param {Box3[]} casters @param {Box3[]} receivers
+ * @returns {{ viewProjections: Mat4[], near: number, far: number, texelAngle: number } | null} texelAngle: a texel's size at a distance of 1
+ */
+export function fitPointShadow(position, range, casters, receivers) {
+  const boxes = casters.filter((b) => !b.isEmpty())
+  if (!boxes.length) return null
+  // out to the furthest corner of anything casting or receiving
+  let far = 0
+  for (const b of [...boxes, ...receivers]) {
+    if (b.isEmpty()) continue
+    for (let i = 0; i < 8; i++) {
+      const dx = (i & 1 ? b.max[0] : b.min[0]) - position[0]
+      const dy = (i & 2 ? b.max[1] : b.min[1]) - position[1]
+      const dz = (i & 4 ? b.max[2] : b.min[2]) - position[2]
+      far = Math.max(far, Math.hypot(dx, dy, dz))
+    }
+  }
+  if (range > 0) far = Math.min(far, range)
+  far = Math.max(far * 1.02, 1e-3)
+  // a caster can wrap the light - a lantern, a pumpkin - so the near plane can't wait for the
+  // nearest caster; a fraction of the far one keeps the depth precise
+  const near = far * 2e-3
+  const projection = mat4.perspective(mat4.create(), Math.PI / 2, 1, near, far)
+  const eye = Float32Array.from(position)
+  const viewProjections = CUBE_FACES.map(([d, up]) => {
+    const at = Float32Array.from([eye[0] + d[0], eye[1] + d[1], eye[2] + d[2]])
+    const view = mat4.lookAt(mat4.create(), eye, at, Float32Array.from(up))
+    return /** @type {Mat4} */ (mat4.multiply(new Mat4(), projection, view))
+  })
+  return { viewProjections, near, far, texelAngle: 2 / POINT_SHADOW_SIZE }
+}
+
 /** @param {ArrayLike<number>} v @returns {number[]} */
 function normalized(v) {
   const len = Math.hypot(v[0], v[1], v[2]) || 1

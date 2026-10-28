@@ -102,7 +102,7 @@ export function explain(info) {
     lines.push(`Shadows: ${plural(frame.shadow.casters.length, 'caster')}, ${plural(receivers, 'receiver')} in view, ` +
       `${fmt(frame.shadow.texelSize)} units per shadow texel`)
     if (!receivers) warnings.push('shadows are cast but nothing in view has receiveShadow: true - set it on the ground and other surfaces')
-  } else if (frame.lights.some((l) => l.castShadow)) {
+  } else if (frame.lights.some((l) => l.castShadow) && !frame.spotShadows.length && !frame.pointShadow) {
     warnings.push('a light has castShadow but nothing casts - set castShadow: true on the meshes too')
   }
   const lit = items.filter((i) => !i.material.unlit && /** @type {any} */ (i.node).drawMode === 'triangles')

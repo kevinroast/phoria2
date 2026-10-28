@@ -142,7 +142,7 @@ export class Programs {
       const info = /** @type {WebGLActiveInfo} */ (gl.getActiveUniform(program, i))
       const name = info.name.replace(/\[0\]$/, '')
       const loc = gl.getUniformLocation(program, info.name)
-      const sampler = info.type === gl.SAMPLER_2D || info.type === gl.SAMPLER_2D_SHADOW
+      const sampler = info.type === gl.SAMPLER_2D || info.type === gl.SAMPLER_2D_SHADOW || info.type === gl.SAMPLER_CUBE_SHADOW
       setters.set(name, setterFor(gl, info.type, loc, sampler ? unit++ : 0))
     }
     p.set = (name, value) => setters.get(name)?.(value)
@@ -166,6 +166,11 @@ function setterFor(gl, type, loc, unit) {
     case gl.SAMPLER_2D_SHADOW: return (texture) => {
       gl.activeTexture(gl.TEXTURE0 + unit)
       gl.bindTexture(gl.TEXTURE_2D, texture)
+      gl.uniform1i(loc, unit)
+    }
+    case gl.SAMPLER_CUBE_SHADOW: return (texture) => {
+      gl.activeTexture(gl.TEXTURE0 + unit)
+      gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture)
       gl.uniform1i(loc, unit)
     }
     default: return () => {}

@@ -1,7 +1,7 @@
-// Night scenes: distance fog, and shadows from spot lights.
+// Night scenes: distance fog, and shadows from spot and point lights.
 import { describe, expect, it, vi } from 'vitest'
-import { DirectionalLight, Fog, Group, Mesh, PerspectiveCamera, Points, Scene, SpotLight, WebGLRenderer, box, collect, cylinder, plane, sphere } from '../src/index.js'
-import { fitSpotShadow } from '../src/shadow.js'
+import { DirectionalLight, Fog, Group, Mesh, PerspectiveCamera, PointLight, Points, Scene, SpotLight, WebGLRenderer, box, collect, cylinder, plane, sphere } from '../src/index.js'
+import { fitPointShadow, fitSpotShadow } from '../src/shadow.js'
 import { ChangeWatch } from '../src/watch.js'
 import { Box3 } from '../src/value/Box3.js'
 import { fakeCanvas, fakeGL } from './fakes.js'
@@ -151,5 +151,83 @@ describe('spot light shadows', () => {
     renderer.render(scene, camera())
     const programs = defines()
     expect(programs.some((d) => d.includes('SPOT_SHADOWS') && d.includes('SHADOW'))).toBe(true)
+  })
+})
+
+describe('point light shadows', () => {
+  /** A candle in a lantern: a point light inside a hollow box, a crate beside it, and the ground. */
+  const lantern = ({ lights = 1 } = {}) => {
+    const scene = new Scene()
+    scene.add(new Mesh({ geometry: plane(20), receiveShadow: true }))
+    const shell = scene.add(new Mesh({ geometry: box(1), position: [0, 1, 0], castShadow: true, material: { doubleSided: true } }))
+    const flame = scene.add(new Mesh({ geometry: sphere(0.05), position: [0, 1, 0], castShadow: false }))
+    const crate = scene.add(new Mesh({ geometry: box(1), position: [3, 0.5, 0], castShadow: true }))
+    const candles = []
+    for (let i = 0; i < lights; i++) candles.push(scene.add(new PointLight({ position: [0, 1, 0], range: 8, castShadow: true })))
+    scene.updateWorldTree()
+    return { scene, shell, flame, crate, candles }
+  }
+
+  it("is cast all round, and the light's own shell blocks it - a lantern, a pumpkin", () => {
+    const { scene, shell, crate } = lantern()
+    const frame = collect(scene, camera())
+    const shadow = /** @type {NonNullable<typeof frame.pointShadow>} */ (frame.pointShadow)
+    expect(shadow.light.kind).toBe('point')
+    expect(shadow.faces).toHaveLength(6)
+    // the shell is round the light, so every face sees it; the crate only from +X
+    for (const face of shadow.faces) expect(face.casters.map((c) => c.node)).toContain(shell)
+    expect(shadow.faces.map((f) => f.casters.some((c) => c.node === crate))).toEqual([true, false, false, false, false, false])
+    expect(shadow.near).toBeGreaterThan(0)
+    expect(shadow.far).toBeCloseTo(8 * 1.02, 5) // the range, and a little over
+    // a light with castShadow off: no shadow
+    const candle = /** @type {PointLight} */ (shadow.light.node)
+    candle.castShadow = false
+    expect(collect(scene, camera()).pointShadow).toBeNull()
+  })
+
+  it('looks along each axis in cube map order, so the shader finds a direction in the right face', () => {
+    const fit = /** @type {NonNullable<ReturnType<typeof fitPointShadow>>} */ (fitPointShadow([1, 2, 3], 0, [new Box3([0, 0, 0], [2, 4, 6])], []))
+    const axes = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
+    fit.viewProjections.forEach((m, i) => {
+      // a point one unit along the face's axis lands in the middle of that face, in front
+      const p = [1 + axes[i][0], 2 + axes[i][1], 3 + axes[i][2]]
+      const w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15]
+      expect(w).toBeGreaterThan(0)
+      expect((m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / w).toBeCloseTo(0, 5)
+      expect((m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / w).toBeCloseTo(0, 5)
+    })
+    // out to the furthest corner, or the range
+    expect(fit.far).toBeCloseTo(Math.hypot(1, 2, 3) * 1.02, 5)
+    expect(fitPointShadow([1, 2, 3], 2, [new Box3([0, 0, 0], [2, 4, 6])], [])?.far).toBeCloseTo(2.04, 5)
+    expect(fitPointShadow([0, 0, 0], 0, [], [])).toBeNull()
+  })
+
+  it('has one: a second casting point light warns and goes without', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { scene, candles } = lantern({ lights: 2 })
+    expect(collect(scene, camera()).pointShadow?.light.node).toBe(candles[0])
+    expect(warn.mock.calls.flat().join(' ')).toContain('more than one point light casts shadows')
+    warn.mockRestore()
+  })
+
+  it('draws the cube once its code has loaded, and the receivers sample it', async () => {
+    const { renderer, defines } = recording()
+    let ready = 0
+    renderer.onReady = () => ready++
+    const { scene } = lantern()
+    renderer.render(scene, camera())
+    await vi.waitFor(() => expect(ready).toBeGreaterThan(0))
+    defines()
+    renderer.render(scene, camera())
+    const programs = defines()
+    expect(programs.some((d) => d.includes('POINT_SHADOW'))).toBe(true)
+    expect(programs.some((d) => d.includes('SPOT_SHADOWS'))).toBe(false)
+  })
+
+  it('keeps castShadow through clone and JSON', () => {
+    const light = new PointLight({ castShadow: true, range: 4 })
+    expect(light.clone().castShadow).toBe(true)
+    expect(light.toJSON()).toMatchObject({ castShadow: true, range: 4 })
+    expect(new PointLight().toJSON()).not.toHaveProperty('castShadow')
   })
 })

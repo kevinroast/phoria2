@@ -118,6 +118,7 @@ nodeContract(DirectionalLight, (o) => new DirectionalLight(o), {
 nodeContract(PointLight, (o) => new PointLight(o), {
   ...lightRows(),
   range: { value: 5, read: (l) => l.range, default: 0, bad: -1, error: 'range' },
+  castShadow: { value: true, read: (l) => l.castShadow, default: false },
 })
 nodeContract(SpotLight, (o) => new SpotLight(o), {
   ...lightRows(), ...aimRows(),

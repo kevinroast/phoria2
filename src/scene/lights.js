@@ -14,7 +14,7 @@ const LIGHT_HINTS = {
   distance: "use 'range' (0 = infinite)",
   decay: 'falloff is physical (inverse square), as in glTF - limit it with range',
   attenuation: "use 'range' - falloff is physical (inverse square)",
-  shadow: "use 'castShadow: true' (directional and spot lights)",
+  shadow: "use 'castShadow: true' (directional, spot and point lights)",
 }
 
 /**
@@ -194,25 +194,32 @@ export class PointLight extends Light {
   static type = 'point-light'
   /** @type {LightKind} */
   static kind = 'point'
-  static get OPTIONS() { return [...LIGHT_OPTIONS, 'range'] }
+  static get OPTIONS() { return [...LIGHT_OPTIONS, 'range', 'castShadow'] }
 
   /** Distance where the light fades to nothing; 0 for unlimited. */
   range = 0
+  /**
+   * Cast shadows all round: one point light a scene can. Everything that casts blocks it, round
+   * it too - a lantern's walls, a pumpkin's shell - so light leaves only through the openings; give
+   * a bulb or flame drawn at the light castShadow: false.
+   */
+  castShadow = false
 
-  /** @param {LightOptions & { range?: number }} [options] */
+  /** @param {LightOptions & { range?: number, castShadow?: boolean }} [options] */
   constructor(options = {}) {
     super(options)
     if (options.range !== undefined) this.range = rangeOf(this.constructor.name, options.range)
+    if (options.castShadow !== undefined) this.castShadow = !!options.castShadow
   }
 
   /** @returns {Record<string, unknown>} */
   cloneOptions() {
-    return { ...super.cloneOptions(), range: this.range }
+    return { ...super.cloneOptions(), range: this.range, castShadow: this.castShadow }
   }
 
   /** @returns {Record<string, unknown>} */
   jsonOptions() {
-    return { ...super.jsonOptions(), ...(this.range ? { range: this.range } : {}) }
+    return { ...super.jsonOptions(), ...(this.range ? { range: this.range } : {}), ...(this.castShadow ? { castShadow: true } : {}) }
   }
 }
 
