@@ -1208,3 +1208,65 @@ button.demo-legend-item {
   color: #fff;
   font: 600 11px system-ui, sans-serif;
 }
+
+/* the skull plate: Latin names in an old anatomy atlas's italic, over a fine rule; the bone being
+   hovered in red ink */
+.skull-callout {
+  max-width: 150px;
+  white-space: normal;
+  line-height: 1.2;
+  padding: 0 2px 2px;
+  border-bottom: 1px solid currentColor;
+  color: #2f2a22;
+  font: italic 15px/1.2 Georgia, 'Times New Roman', serif;
+  transition: color 0.2s, opacity 0.15s;
+}
+
+.skull-callout.now {
+  color: #b3261e;
+}
+
+.skull-credit {
+  position: fixed;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  color: #8a7f6c;
+  font: italic 11px Georgia, 'Times New Roman', serif;
+  pointer-events: none;
+}
+
+.skull-tip {
+  max-width: 230px;
+}
+
+.skull-tip b {
+  display: block;
+}
+
+.skull-tip i {
+  display: block;
+  margin-bottom: 4px;
+  font-family: Georgia, 'Times New Roman', serif;
+  opacity: 0.75;
+}
+
+.skull-tip p {
+  margin: 0;
+  white-space: normal;
+}
+
+/* the callouts are a menu: click a name to draw its bone out; the one drawn out is set in bold */
+.skull-callout {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.skull-callout:hover {
+  color: #b3261e;
+}
+
+.skull-callout.chosen {
+  font-weight: 700;
+  color: #b3261e;
+}

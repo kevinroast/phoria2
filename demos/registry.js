@@ -37,5 +37,6 @@ export const DEMOS = [
   //{ name: 'space', title: 'Cobra Mk IIIs over a gas giant as a comet flies by - and an Elite mode in green vector lines', orbit: false },
   // tests of the API on bigger tasks go here with hidden: true - reachable by name
   // (demo.html?name=...), not listed in the gallery
+  { name: 'skull', title: 'the human skull, as an anatomy plate - every bone coloured and named in Latin; hover for English, click a bone or its name to draw it out', hidden: true },
   { name: 'harbour', title: 'a harbour on a foggy night - lamps and a lighthouse beam casting shadows through the mist', hidden: true },
 ]
