@@ -134,7 +134,7 @@ A full example, with a chart that follows its data, is in
 
 | Import | |
 |---|---|
-| `phoria2` | the view, scene graph, cameras, lights, materials, geometry, curves, textures, picking, labels, `create()` from JSON |
+| `phoria2` | the view, scene graph, cameras, lights, materials, geometry, curves, textures, picking, labels, bloom, `create()` from JSON |
 | `phoria2/charts` | `chart()` - charts from a spec of mark, data and channels, and the scales they use |
 | `phoria2/particles` | `Emitter` and `Body` |
 | `phoria2/gltf` | `loadGLTF()` - glTF 2.0 models with their materials and animations |

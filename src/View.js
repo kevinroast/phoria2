@@ -22,7 +22,7 @@ import { checkOneOf, checkOptions, describe, fail, warnOnce } from './validate.j
 /** @import { LabelStats } from './labels.js' */
 /** @import { ImageOptions } from './snapshot.js' */
 /** @import { Tooltip, TooltipContent } from './tooltip.js' */
-/** @import { ToneMapping } from './webgl/WebGLRenderer.js' */
+/** @import { ToneMapping, BloomOptions } from './webgl/WebGLRenderer.js' */
 /** @import { CameraOptions } from './scene/cameras.js' */
 /** @import { ColorInput } from './types.js' */
 /** @import { Node } from './scene/Node.js' */
@@ -58,6 +58,8 @@ import { checkOneOf, checkOptions, describe, fail, warnOnce } from './validate.j
  *   views on a page, shared after that
  * @property {ToneMapping} [toneMapping] 'neutral' keeps colours true (default), 'aces' is filmic, 'none' clips
  * @property {number} [exposure] (default 1)
+ * @property {boolean | BloomOptions} [bloom] glow round the bright parts of the picture - emissive materials,
+ *   additive points and lines (default off). true for the defaults, or { strength, radius, threshold }
  * @property {boolean} [autoLight] light a scene that has no lights, with one console note (default true)
  * @property {number} [maxDelta] longest frame step in seconds, so a background tab doesn't jump (default 0.1)
  */
@@ -66,7 +68,7 @@ import { checkOneOf, checkOptions, describe, fail, warnOnce } from './validate.j
 /** @typedef {(hit: Hit | null, event: PointerEvent | MouseEvent | null) => void} ViewHandler */
 
 const OPTIONS = ['canvas', 'scene', 'camera', 'orbit', 'background', 'renderMode', 'framing', 'highlight', 'tooltip', 'pixelRatio',
-  'antialias', 'context', 'toneMapping', 'exposure', 'autoLight', 'maxDelta']
+  'antialias', 'context', 'toneMapping', 'exposure', 'bloom', 'autoLight', 'maxDelta']
 const HINTS = {
   renderer: 'the View makes its renderer - read it from view.renderer',
   controls: "use orbit: true (or orbit options); the control is then view.controls",
@@ -186,7 +188,7 @@ export class View {
 
     const context = options.context === undefined ? 'auto' : checkOneOf('View', 'context', options.context, ['auto', 'own', 'shared'])
     const shared = context === 'shared' || (context === 'auto' && ownContexts >= OWN_CONTEXTS)
-    this.renderer = new WebGLRenderer({ canvas: this.canvas, shared, antialias: options.antialias, toneMapping: options.toneMapping, exposure: options.exposure })
+    this.renderer = new WebGLRenderer({ canvas: this.canvas, shared, antialias: options.antialias, toneMapping: options.toneMapping, exposure: options.exposure, bloom: options.bloom })
     if (!shared) {
       this.#ownContext = true
       ownContexts++
@@ -259,6 +261,18 @@ export class View {
       this.controls.camera = camera
     }
     if (this.#autoFrame) this.#autoFrameFrom = cameraPlace(camera)
+    this.invalidate()
+  }
+
+  /**
+   * Glow round the bright parts of the picture: null for none, or its settings. Set true, false or
+   * { strength, radius, threshold }. (After changing its numbers in place, call invalidate().)
+   * @returns {Required<BloomOptions> | null}
+   */
+  get bloom() { return this.renderer.bloom }
+  /** @param {boolean | BloomOptions | null} v */
+  set bloom(v) {
+    this.renderer.bloom = v
     this.invalidate()
   }
 

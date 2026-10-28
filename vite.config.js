@@ -68,8 +68,8 @@ export default defineConfig(({ mode }) => ({
           output: {
             // everything the sub-paths share with the core goes in one predictable chunk; modules
             // loaded on demand (explain, toImage, the tooltip, the .hdr parser, the renderer's
-            // environment and shadow passes, GPU picking) keep chunks of their own
-            manualChunks: (id) => (/[\\/]src[\\/](?!particles|charts|gltf|motion|explain|snapshot|tooltip|hdr|irradiance|webgl[\\/](?:passes|picking))/.test(id) ? 'core' : undefined),
+            // environment and shadow passes, bloom, GPU picking) keep chunks of their own
+            manualChunks: (id) => (/[\\/]src[\\/](?!particles|charts|gltf|motion|explain|snapshot|tooltip|hdr|irradiance|webgl[\\/](?:passes|picking|bloom))/.test(id) ? 'core' : undefined),
             chunkFileNames: '[name].js',
           },
         },

@@ -4,7 +4,7 @@
 import * as mat4 from '../math/mat4.js'
 import { irradianceSH } from '../irradiance.js'
 import { SHADOW_MAP_SIZE } from '../shadow.js'
-import { COMMON, EQUIRECT, MESH_VERTEX, TONE_MAP } from './shaders.js'
+import { COMMON, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
 
 /** @import { Programs } from './programs.js' */
 /** @import { Resources } from './resources.js' */
@@ -17,16 +17,6 @@ precision highp float;
 out vec4 fragColor;
 void main() {
   fragColor = vec4(1.0);
-}
-`
-
-// one triangle that covers the screen, for backgrounds and image passes
-const FULLSCREEN_VERTEX = /* glsl */ `
-out vec2 vUv;
-void main() {
-  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
-  vUv = p;
-  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }
 `
 

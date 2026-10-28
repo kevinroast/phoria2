@@ -40,6 +40,16 @@ vec3 equirectDirection(vec2 uv) {
 }
 `
 
+// one triangle that covers the screen, for backgrounds and image passes
+export const FULLSCREEN_VERTEX = /* glsl */ `
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}
+`
+
 export const TONE_MAP = /* glsl */ `
 uniform float uExposure;
 uniform int uToneMapping;    // 0 none, 1 aces, 2 neutral

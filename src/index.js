@@ -41,6 +41,7 @@ export { collect, NullRenderer, LIGHT_LIMITS } from './frame.js'
 export { PhoriaError } from './validate.js'
 
 /** @typedef {import('./View.js').ViewOptions} ViewOptions */
+/** @typedef {import('./webgl/WebGLRenderer.js').BloomOptions} BloomOptions */
 /** @typedef {import('./View.js').ViewEvent} ViewEvent */
 /** @typedef {import('./View.js').ViewHandler} ViewHandler */
 /** @typedef {import('./View.js').RenderMode} RenderMode */

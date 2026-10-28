@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Material, Mesh, PerspectiveCamera, Scene, Texture, box, sphere } from '../src/index.js'
-import { WebGLRenderer } from '../src/webgl/WebGLRenderer.js'
+import { WebGLRenderer, bloomSettings } from '../src/webgl/WebGLRenderer.js'
 
 // A stand-in WebGL 2 context that does nothing but count the GPU objects made and freed, and the
 // draws, so leaks show without a GPU. Constants are stable made-up numbers; every other call is a
@@ -72,6 +72,31 @@ describe('GPU resources', () => {
     expect([count('vertex array'), count('program'), lost.count]).toEqual([0, 0, 0])
     vi.runAllTimers()
     expect([lost.count, live.size]).toEqual([1, 0])
+  })
+
+  it('bloom draws into buffers of its own once its code has loaded, remade at a new size and freed on dispose', async () => {
+    const { gl, count } = fakeGL()
+    const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl), bloom: true })
+    renderer.setSize(64, 64)
+    let ready = 0
+    renderer.onReady = () => ready++
+    const scene = new Scene()
+    scene.add(new Mesh({ geometry: box(1) }))
+    renderer.render(scene, camera())
+    // drawn plainly while its code loads
+    expect(count('framebuffer')).toBe(0)
+    await vi.waitFor(() => expect(ready).toBe(1))
+    renderer.render(scene, camera())
+    // the multisampled buffer (colour and depth), the resolved picture, and levels of 32, 16 and 8
+    expect([count('framebuffer'), count('renderbuffer')]).toEqual([5, 2])
+    renderer.setSize(128, 128)
+    renderer.render(scene, camera())
+    // the old ones go; a level more at this size
+    expect([count('framebuffer'), count('renderbuffer')]).toEqual([6, 2])
+    renderer.bloom = false
+    renderer.render(scene, camera())
+    renderer.dispose(scene)
+    expect([count('framebuffer'), count('renderbuffer')]).toEqual([0, 0])
   })
 
   it('a new renderer on the canvas straight after a dispose keeps its context (React StrictMode)', () => {
@@ -157,5 +182,16 @@ describe('GPU resources', () => {
     renderer.render(scene, camera())
     expect([renderer.info.compiling, draws.count - before]).toEqual([0, 2])
     expect(ready).toBe(0)
+  })
+})
+
+describe('bloom settings', () => {
+  it('takes true, false or numbers, with hints for the names people reach for', () => {
+    expect(bloomSettings('View', true)).toEqual({ strength: 1, radius: 0.6, threshold: 0.6 })
+    expect([bloomSettings('View', false), bloomSettings('View', null), bloomSettings('View', undefined)]).toEqual([null, null, null])
+    expect(bloomSettings('View', { strength: 2 })).toEqual({ strength: 2, radius: 0.6, threshold: 0.6 })
+    expect(() => bloomSettings('View', /** @type {any} */ ({ intensity: 2 }))).toThrow("use 'strength'")
+    expect(() => bloomSettings('View', /** @type {any} */ ('on'))).toThrow('bloom is true, false or { strength, radius, threshold }')
+    expect(() => bloomSettings('View', /** @type {any} */ ({ radius: 'wide' }))).toThrow('radius')
   })
 })

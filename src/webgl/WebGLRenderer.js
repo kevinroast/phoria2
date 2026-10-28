@@ -1,6 +1,6 @@
 import * as mat3 from '../math/mat3.js'
 import { collect } from '../frame.js'
-import { checkOneOf, checkOptions, fail, warnOnce } from '../validate.js'
+import { checkNumber, checkOneOf, checkOptions, describe, fail, warnOnce } from '../validate.js'
 import { GLContext } from './context.js'
 import { SHADOW_MAP_SIZE } from '../shadow.js'
 
@@ -15,6 +15,15 @@ import { SHADOW_MAP_SIZE } from '../shadow.js'
 /** @typedef {'aces' | 'neutral' | 'none'} ToneMapping */
 
 /**
+ * Glow round the bright parts of the picture - emissive materials, additive points and lines, lit
+ * highlights - as light spills round them through a lens.
+ * @typedef {object} BloomOptions
+ * @property {number} [strength] how much glow is added (default 1)
+ * @property {number} [radius] 0 - 1: how far it spreads (default 0.6)
+ * @property {number} [threshold] 0 - 1: how bright a colour has to be to glow (default 0.6)
+ */
+
+/**
  * @typedef {object} WebGLRendererOptions
  * @property {HTMLCanvasElement | OffscreenCanvas} canvas
  * @property {boolean} [shared] draw with the page's one shared WebGL context and copy the picture to
@@ -25,9 +34,28 @@ import { SHADOW_MAP_SIZE } from '../shadow.js'
  *   true (Khronos PBR Neutral, the default), 'aces' is filmic, 'none' clips
  * @property {number} [exposure] (default 1)
  * @property {number} [pixelRatio] drawing buffer pixels per CSS pixel (default 1; View sets it)
+ * @property {boolean | BloomOptions} [bloom] glow round bright parts (default off); loads its code the first time
  */
 
-const OPTIONS = ['canvas', 'shared', 'antialias', 'toneMapping', 'exposure', 'pixelRatio']
+const OPTIONS = ['canvas', 'shared', 'antialias', 'toneMapping', 'exposure', 'pixelRatio', 'bloom']
+const BLOOM = { strength: 1, radius: 0.6, threshold: 0.6 }
+
+/**
+ * Bloom options as settings: true for the defaults, false or null for none.
+ * @param {string} owner @param {boolean | BloomOptions | null | undefined} value
+ * @returns {Required<BloomOptions> | null}
+ */
+export function bloomSettings(owner, value) {
+  if (value === undefined || value === null || value === false) return null
+  if (value === true) return { ...BLOOM }
+  if (typeof value !== 'object') fail(owner, `bloom is true, false or { strength, radius, threshold }, got ${describe(value)}`)
+  checkOptions(`${owner} bloom`, value, Object.keys(BLOOM), { intensity: "use 'strength'", amount: "use 'strength'", size: "use 'radius'", blur: "use 'radius'" })
+  const settings = { ...BLOOM }
+  for (const key of /** @type {(keyof BloomOptions)[]} */ (Object.keys(BLOOM))) {
+    if (value[key] !== undefined) settings[key] = checkNumber(`${owner} bloom`, key, value[key])
+  }
+  return settings
+}
 const TONE_MAPPING = { none: 0, aces: 1, neutral: 2 }
 // material maps and the shader feature each one switches on (all but emissive need lighting)
 const MAP_DEFINES = { roughnessMap: 'ROUGHNESS_MAP', metalnessMap: 'METALNESS_MAP', normalMap: 'NORMAL_MAP', aoMap: 'AO_MAP' }
@@ -46,6 +74,7 @@ export class WebGLRenderer {
   /** @type {ToneMapping} */ toneMapping = 'neutral'
   exposure = 1
   pixelRatio = 1
+  /** @type {Required<BloomOptions> | null} */ #bloom = null
   /** Counts from the last frame and the GPU caches. */
   info = { drawCalls: 0, triangles: 0, programs: 0, geometries: 0, textures: 0, compiling: 0 }
   /**
@@ -76,6 +105,7 @@ export class WebGLRenderer {
     if (options.toneMapping !== undefined) this.toneMapping = checkOneOf('WebGLRenderer', 'toneMapping', options.toneMapping, ['aces', 'neutral', 'none'])
     if (options.exposure !== undefined) this.exposure = options.exposure
     if (options.pixelRatio !== undefined) this.pixelRatio = options.pixelRatio
+    this.#bloom = bloomSettings('WebGLRenderer', options.bloom)
 
     if (options.shared) {
       this.#gpu = GLContext.shared()
@@ -86,6 +116,20 @@ export class WebGLRenderer {
       this.#gpu = new GLContext(this.canvas, { antialias: options.antialias })
     }
     this.#gpu.users.add(this)
+  }
+
+  /**
+   * Glow round the bright parts of the picture: null for none, or its settings. Set true, false or
+   * { strength, radius, threshold }; change its numbers in place to tune it.
+   * @returns {Required<BloomOptions> | null}
+   */
+  get bloom() {
+    return this.#bloom
+  }
+
+  /** @param {boolean | BloomOptions | null} value */
+  set bloom(value) {
+    this.#bloom = bloomSettings('WebGLRenderer', value)
   }
 
   /** The WebGL 2 context drawn with - shared with other renderers when `shared` is set. @returns {WebGL2RenderingContext} */
@@ -162,8 +206,13 @@ export class WebGLRenderer {
       this.#shadow = null
     }
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-    gl.viewport(0, 0, width, height)
+    // with bloom, the scene is drawn into a buffer of its own first (drawn plainly while its code loads)
+    const bloom = this.#bloom ? gpu.loadBloom() : null
+    if (bloom) bloom.begin(width, height)
+    else {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+      gl.viewport(0, 0, width, height)
+    }
     if (bg && 'getHex' in bg) {
       const [r, g, b] = bg.toSRGB()
       gl.clearColor(r, g, b, 1)
@@ -191,6 +240,7 @@ export class WebGLRenderer {
     gl.depthMask(true)
     gl.disable(gl.BLEND)
     gl.bindVertexArray(null)
+    if (bloom && this.#bloom) bloom.end(this.#bloom)
 
     if (this.info.compiling) gpu.whenCompiled()
     if (this.#copy) {
