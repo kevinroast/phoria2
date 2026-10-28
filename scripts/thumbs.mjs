@@ -24,8 +24,13 @@ const PAGE = ['dashboard', 'cells']
 // cells is scrolled past the poster's heading, to the two cells, its scrollbar hidden; carbide is
 // seen from a little closer than its framing, which leaves room for the blade's whole sweep; the
 // planner has its meeting table selected - outline, handle and distances to the walls - and is
-// framed close, filling the card
+// framed close, filling the card; the viewer's turntable stops with the model facing front, the
+// camera back on the line it opens on
 const PREPARE = {
+  viewer: `view.controls.autoRotate = false
+    const { position: p, target: t } = view.camera, d = p.distanceTo(t), l = Math.hypot(2.4, 1.6, 3.2)
+    p.set(t[0] + 2.4 / l * d, t[1] + 1.6 / l * d, t[2] + 3.2 / l * d)
+    view.invalidate()`,
   planner: `const table = furniture.children.find((n) => n.userData.kind === 'meeting')
     select(table)
     handle.onChange(table, 'move')
