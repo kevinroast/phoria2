@@ -13,6 +13,10 @@ business apps: charts, labelled scenes, diagrams, dashboards and product viewers
   agents too.
 - **No runtime dependencies.** ES modules, with TypeScript types.
 
+**Using a coding agent?** Point it at [llms-full.txt](https://kevs3d.co.uk/phoria2/llms-full.txt) - the whole API
+in one page ([llms.txt](https://kevs3d.co.uk/phoria2/llms.txt) is the short index). Both ship in the
+package too, at `node_modules/phoria2/llms-full.txt`.
+
 ## Install
 
 ```sh

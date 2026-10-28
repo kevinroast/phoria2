@@ -1,0 +1,31 @@
+# phoria2
+
+> Small 3D for the web, for business apps: 3D charts from a data spec, labelled diagrams and floor
+> plans, cutaway explainers, animated infographics, dashboards, editors and glTF product viewers.
+> WebGL 2, plain ES modules, no dependencies; picking, tooltips, labels, shadows and idle-when-still
+> rendering built in. `npm install phoria2`.
+
+Apps are short - typically a few dozen lines - and every option is checked: unknown or misspelt
+options throw errors that name the fix. `await view.explain()` reports what a view is drawing and
+why a page might look wrong. Coordinates are +Y up, in metres; angles in radians.
+
+## Docs
+
+- [Full reference](https://kevs3d.co.uk/phoria2/llms-full.txt): the whole API in one page - View, scene graph, drawables, geometry, materials, lights, interaction and dragging, charts, editing, models, motion, particles, plain-data scenes
+- [README](https://github.com/kevinroast/phoria2#readme): install, CDN use, the entry points
+- [Chart spec JSON Schema](https://cdn.jsdelivr.net/npm/phoria2/schema/chart.schema.json): the spec `chart()` takes, as `phoria2/charts/schema.json` in the package
+
+## Examples
+
+- [Demo gallery](https://kevs3d.co.uk/phoria2/): every demo, live, with its source a click away
+- [Bar chart](https://github.com/kevinroast/phoria2/blob/main/demos/bars.js): a chart from a spec - axes, legend, value labels, animated updates
+- [Service network](https://github.com/kevinroast/phoria2/blob/main/demos/network.js): a dependency map with force or tiered layout and live status
+- [Data hall floor plan](https://github.com/kevinroast/phoria2/blob/main/demos/floorplan.js): isometric or plan view, heat map, image export
+- [Office planner](https://github.com/kevinroast/phoria2/blob/main/demos/planner.js): drag, snap, turn handle, outline, undo
+- [Product viewer](https://github.com/kevinroast/phoria2/blob/main/demos/viewer.js): a glTF model in an HDR studio with shadows
+- [Cutaway engine](https://github.com/kevinroast/phoria2/blob/main/demos/engine.js): section planes with capped cuts, moving parts
+- [Artemis infographic](https://github.com/kevinroast/phoria2/blob/main/demos/artemis.js): a mission told step by step on a timeline
+
+## Optional
+
+- [npm package](https://www.npmjs.com/package/phoria2): versions; release candidates are tagged `next`

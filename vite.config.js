@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 
@@ -32,12 +33,34 @@ export function minifyGlsl() {
   }
 }
 
+// The agent reference (llms.txt, and llms-full.txt with the whole API) lives at the package root, so
+// it ships in the npm package; the demo site serves it too, from its own root.
+const AGENT_DOCS = ['llms.txt', 'llms-full.txt']
+
+/** @param {boolean} emit write them into the build @returns {import('vite').Plugin} */
+function agentDocs(emit) {
+  return {
+    name: 'phoria2-agent-docs',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const name = req.url?.slice(1)
+        if (!name || !AGENT_DOCS.includes(name)) return next()
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+        res.end(readFileSync(resolve(root, name)))
+      })
+    },
+    generateBundle() {
+      if (emit) for (const name of AGENT_DOCS) this.emitFile({ type: 'asset', fileName: name, source: readFileSync(resolve(root, name), 'utf8') })
+    },
+  }
+}
+
 // Default build is the library. `--mode demos` builds the demo gallery as a static site instead.
 // In dev, demos import 'phoria2' and its sub-paths straight from src/.
 export default defineConfig(({ mode }) => ({
   // relative base so the demo site works from any folder on a static host
   base: mode === 'demos' ? './' : '/',
-  plugins: [minifyGlsl()],
+  plugins: [minifyGlsl(), agentDocs(mode === 'demos')],
   resolve: {
     alias: [
       { find: /^phoria2$/, replacement: resolve(root, ENTRIES.phoria2) },

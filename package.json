@@ -9,10 +9,17 @@
     "3d-charts",
     "data-visualization",
     "charts",
+    "diagrams",
+    "dashboard",
+    "infographic",
+    "explainer",
+    "floor-plan",
+    "editor",
     "scene-graph",
     "gltf",
     "pbr",
-    "particles"
+    "particles",
+    "llms-txt"
   ],
   "homepage": "https://kevs3d.co.uk/phoria2/",
   "bugs": {
@@ -27,7 +34,9 @@
   "type": "module",
   "files": [
     "dist",
-    "schema"
+    "schema",
+    "llms.txt",
+    "llms-full.txt"
   ],
   "sideEffects": false,
   "types": "./dist/types/index.d.ts",
