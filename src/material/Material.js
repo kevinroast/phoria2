@@ -21,6 +21,9 @@ import { Texture } from './Texture.js'
  * @property {MapInput | null} [metalnessMap] multiplies metalness by its blue channel (glTF)
  * @property {MapInput | null} [normalMap] tangent-space normals, +Y up (glTF/OpenGL convention)
  * @property {number} [normalScale] strength of the normal map (default 1)
+ * @property {MapInput | null} [bumpMap] heights in its red channel, shown as bumps - for height textures and ones
+ *   drawn in code, with no need to make a normal map
+ * @property {number} [bumpScale] how high a height of 1 stands, in the mesh's own units (default 1)
  * @property {number} [triplanar] project the maps onto the mesh from its three axes instead of using UVs -
  *   for scans and CAD models, which have none. The number is how many times a map repeats per unit of the
  *   mesh's own space; the maps stay on the mesh as it moves. 0 (the default) uses the UVs
@@ -42,14 +45,14 @@ import { Texture } from './Texture.js'
  * @property {number} [width] Lines: width in pixels (default 1)
  */
 
-const MAPS = ['map', 'roughnessMap', 'metalnessMap', 'normalMap', 'aoMap', 'emissiveMap']
+const MAPS = ['map', 'roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap', 'emissiveMap']
 // data maps hold numbers, not colours
-const LINEAR_MAPS = new Set(['roughnessMap', 'metalnessMap', 'normalMap', 'aoMap'])
+const LINEAR_MAPS = new Set(['roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap'])
 const FLAGS = ['unlit', 'flatShading', 'doubleSided', 'vertexColors', 'depthWrite', 'depthTest', 'sizeAttenuation', 'transparent', 'fog']
 const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiveIntensity: [0, Infinity], size: [0, Infinity], width: [0, Infinity],
-  alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1], triplanar: [0, Infinity] }
+  alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1], triplanar: [0, Infinity], bumpScale: [-Infinity, Infinity] }
 const DEFAULTS = {
-  name: '', opacity: 1, alphaTest: 0, roughness: 0.5, metalness: 0, normalScale: 1, aoMapIntensity: 1, triplanar: 0, emissiveIntensity: 1, unlit: false, flatShading: false,
+  name: '', opacity: 1, alphaTest: 0, roughness: 0.5, metalness: 0, normalScale: 1, bumpScale: 1, aoMapIntensity: 1, triplanar: 0, emissiveIntensity: 1, unlit: false, flatShading: false,
   doubleSided: false, vertexColors: false, blending: 'normal', depthWrite: true, depthTest: true, fog: true,
   size: 1, sizeAttenuation: true, width: 1,
 }
@@ -80,6 +83,7 @@ export class Material {
   /** @type {number} */ opacity = 1
   /** Drop pixels with less alpha than this - hard-edged cut-outs, drawn with the opaque pass. @type {number} */ alphaTest = 0
   /** @type {number} */ normalScale = 1
+  /** How high a bump map's height of 1 stands, in the mesh's own units. @type {number} */ bumpScale = 1
   /** @type {number} */ aoMapIntensity = 1
   /** Maps projected from the mesh's three axes, this many repeats per unit; 0 uses the UVs. @type {number} */ triplanar = 0
   /** @type {number} */ roughness = 0.5
@@ -160,6 +164,10 @@ export class Material {
   get normalMap() { return this.#maps.normalMap }
   /** @param {MapInput | null} v */
   set normalMap(v) { this.setMap('normalMap', v) }
+  /** @returns {Texture | null} */
+  get bumpMap() { return this.#maps.bumpMap }
+  /** @param {MapInput | null} v */
+  set bumpMap(v) { this.setMap('bumpMap', v) }
   /** @returns {Texture | null} */
   get aoMap() { return this.#maps.aoMap }
   /** @param {MapInput | null} v */

@@ -61,9 +61,25 @@ export const CLIP_ONLY_FRAGMENT = /* glsl */ `
 precision highp float;
 in vec3 vWorldPosition;
 out vec4 fragColor;
+#ifdef ALPHA_TEST
+// a cut-out casts the shadow of what is left of it - leaves, fences, grilles - not of its rectangle
+in vec2 vUv;
+uniform float uOpacity;
+uniform float uAlphaTest;
+#ifdef MAP
+uniform sampler2D uMap;
+#endif
+#endif
 ${CLIP}
 void main() {
   clipAway(vWorldPosition);
+#ifdef ALPHA_TEST
+  float alpha = uOpacity;
+#ifdef MAP
+  alpha *= texture(uMap, vUv).a;
+#endif
+  if (alpha < uAlphaTest) discard;
+#endif
   fragColor = vec4(1.0);
 }
 `
@@ -267,6 +283,10 @@ uniform sampler2D uMetalnessMap;
 uniform sampler2D uNormalMap;
 uniform float uNormalScale;
 #endif
+#ifdef BUMP_MAP
+uniform sampler2D uBumpMap;
+uniform float uBumpScale;
+#endif
 #ifdef AO_MAP
 uniform sampler2D uAoMap;
 uniform float uAoMapIntensity;
@@ -383,6 +403,20 @@ vec3 envIrradiance(vec3 n) {
 }
 #endif
 
+#ifdef BUMP_MAP
+// A height map as bumps: the normal tilted by how the height changes across the pixel, from
+// screen-space derivatives (Mikkelsen) - no tangents, and it works with UVs or triplanar alike
+vec3 bumpNormal(vec3 n) {
+  float h = SAMPLE(uBumpMap).r * uBumpScale;
+  vec2 dh = vec2(dFdx(h), dFdy(h));
+  vec3 sx = dFdx(vWorldPosition), sy = dFdy(vWorldPosition);
+  vec3 r1 = cross(sy, n), r2 = cross(n, sx);
+  float det = dot(sx, r1);
+  vec3 grad = sign(det) * (dh.x * r1 + dh.y * r2);
+  return normalize(abs(det) * n - grad);
+}
+#endif
+
 #if defined(NORMAL_MAP) && defined(TRIPLANAR)
 // A normal map from the three axes: each projection's bump laid round the surface normal (a
 // 'whiteout' blend), blended, then turned into the world - no tangents and no UVs needed
@@ -485,6 +519,9 @@ void main() {
   m.xy *= uNormalScale;
   n = perturbNormal(n, m);
 #endif
+#endif
+#ifdef BUMP_MAP
+  n = bumpNormal(n);
 #endif
   vec3 v = normalize(uCameraPosition - vWorldPosition);
   float roughness = uRoughness;

@@ -140,6 +140,7 @@ contract('Material', {
     roughnessMap: materialMap('roughnessMap'),
     metalnessMap: materialMap('metalnessMap'),
     normalMap: materialMap('normalMap'),
+    bumpMap: materialMap('bumpMap'),
     aoMap: materialMap('aoMap'),
     emissiveMap: materialMap('emissiveMap'),
     unlit: { value: true, read: (m) => m.unlit, default: false, bad: 'yes', error: 'unlit' },
@@ -159,6 +160,7 @@ contract('Material', {
     width: { value: 3, read: (m) => m.width, default: 1, bad: -1, error: 'width' },
     alphaTest: { value: 0.5, read: (m) => m.alphaTest, default: 0, bad: 2, error: 'alphaTest' },
     normalScale: { value: 0.5, read: (m) => m.normalScale, default: 1, bad: 'strong', error: 'normalScale' },
+    bumpScale: { value: 0.002, read: (m) => m.bumpScale, default: 1, bad: 'deep', error: 'bumpScale' },
     aoMapIntensity: { value: 0.5, read: (m) => m.aoMapIntensity, default: 1, bad: 2, error: 'aoMapIntensity' },
     triplanar: { value: 4, read: (m) => m.triplanar, default: 0, bad: -1, error: 'triplanar' },
     blending: { value: 'additive', read: (m) => m.blending, default: 'normal', bad: 'screen', error: 'blending' },
@@ -176,6 +178,7 @@ contract('Texture', {
     offset: { value: [0.5, 0.25], read: (t) => t.offset, default: [0, 0], bad: 'left', error: 'offset' },
     filter: { value: 'nearest', read: (t) => t.filter, default: 'linear', bad: 'blurry', error: 'filter' },
     mipmaps: { value: false, read: (t) => t.mipmaps, default: true },
+    anisotropy: { value: 4, read: (t) => t.anisotropy, default: 8, bad: 0.5, error: 'anisotropy' },
     flipY: { value: true, read: (t) => t.flipY, default: false },
   },
 })

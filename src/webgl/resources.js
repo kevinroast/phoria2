@@ -60,6 +60,17 @@ export class Resources {
     this.gl = gl
   }
 
+  /** @type {{ ext: any, max: number } | null | undefined} */
+  #aniso
+
+  /** The anisotropic filtering extension and its limit, or null where there is none. */
+  #anisotropic() {
+    if (this.#aniso !== undefined) return this.#aniso
+    const ext = this.gl.getExtension('EXT_texture_filter_anisotropic')
+    this.#aniso = ext ? { ext, max: this.gl.getParameter(ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT) || 1 } : null
+    return this.#aniso
+  }
+
   /**
    * Vertex array for a mesh or points: the geometry's attributes, plus per-instance matrices and
    * colours when `instances` is given. Instanced meshes get their own vertex array, keyed by the node.
@@ -262,6 +273,9 @@ export class Resources {
     if (texture.mipmaps) {
       gl.generateMipmap(gl.TEXTURE_2D)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, nearest ? gl.NEAREST_MIPMAP_NEAREST : gl.LINEAR_MIPMAP_LINEAR)
+      // sharp at glancing angles - as far as the GPU goes
+      const aniso = this.#anisotropic()
+      if (aniso && !nearest) gl.texParameterf(gl.TEXTURE_2D, aniso.ext.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(texture.anisotropy, aniso.max))
     } else {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, nearest ? gl.NEAREST : gl.LINEAR)
     }

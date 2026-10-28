@@ -1,4 +1,4 @@
-import { checkOneOf, checkOptions, describe, fail } from '../validate.js'
+import { checkNumber, checkOneOf, checkOptions, describe, fail } from '../validate.js'
 
 /**
  * Raw pixels, RGBA, top row first: bytes for ordinary images, floats for HDR (linear radiance).
@@ -18,16 +18,19 @@ import { checkOneOf, checkOptions, describe, fail } from '../validate.js'
  * @property {number[]} [offset] [u, v] (default [0, 0])
  * @property {'linear' | 'nearest'} [filter] (default 'linear')
  * @property {boolean} [mipmaps] (default true)
+ * @property {number} [anisotropy] samples along a surface seen at a glancing angle - floors and roads
+ *   stay sharp into the distance. Up to what the GPU allows; 1 is off (default 8)
  * @property {boolean} [flipY] flip on upload; false for glTF-style UVs (default false)
  */
 
-const OPTIONS = ['image', 'url', 'colorSpace', 'wrap', 'repeat', 'offset', 'filter', 'mipmaps', 'flipY']
-const DEFAULTS = { colorSpace: 'srgb', wrap: 'repeat', repeat: [1, 1], offset: [0, 0], filter: 'linear', mipmaps: true, flipY: false }
+const OPTIONS = ['image', 'url', 'colorSpace', 'wrap', 'repeat', 'offset', 'filter', 'mipmaps', 'anisotropy', 'flipY']
+const DEFAULTS = { colorSpace: 'srgb', wrap: 'repeat', repeat: [1, 1], offset: [0, 0], filter: 'linear', mipmaps: true, anisotropy: 8, flipY: false }
 
 const HINTS = {
   src: "use 'url' for the image address",
   encoding: "use colorSpace: 'srgb' | 'linear'",
   wrapS: "use wrap: 'repeat' | 'clamp' | 'mirror' (applies to both directions)",
+  maxAnisotropy: "use 'anisotropy' - samples along glancing angles, 1 for off",
 }
 
 /** An image for a material map. Canvas and video textures: set `needsUpdate()` after drawing. */
@@ -48,6 +51,8 @@ export class Texture {
   /** @type {'linear' | 'nearest'} */
   filter = 'linear'
   mipmaps = true
+  /** Samples along glancing angles, up to the GPU's limit; 1 is off. Call needsUpdate() after changing it. */
+  anisotropy = 8
   flipY = false
   /** Bumped by needsUpdate() so renderers re-upload. */
   version = 0
@@ -68,6 +73,8 @@ export class Texture {
     this.repeat = pair('repeat', o.repeat)
     this.offset = pair('offset', o.offset)
     this.mipmaps = !!o.mipmaps
+    this.anisotropy = checkNumber('Texture', 'anisotropy', o.anisotropy)
+    if (!(this.anisotropy >= 1)) fail('Texture', `'anisotropy' is how many samples along a glancing angle - 1 (off) or more, got ${this.anisotropy}`)
     this.flipY = !!o.flipY
     this.url = o.url ?? null
 

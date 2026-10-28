@@ -372,11 +372,21 @@ export class Passes {
       const instances = item.instances
       const defines = instances ? ['INSTANCED'] : []
       if (item.clip) defines.push('CLIP')
+      // a cut-out's shadow has its holes: the map's alpha against the material's threshold
+      const material = item.material, cutout = material.alphaTest > 0
+      if (cutout) defines.push('ALPHA_TEST', ...(material.map ? ['MAP'] : []))
       const program = this.programs.ready('depth', defines, DEPTH)
       gl.useProgram(program.program)
       program.set('uViewProjection', viewProjection)
       program.set('uModel', item.worldMatrix)
       if (item.clip) program.set('uClipPlane', item.clip.plane)
+      if (cutout) {
+        program.set('uOpacity', material.opacity)
+        program.set('uAlphaTest', material.alphaTest)
+        const map = material.map
+        program.set('uUvTransform', map ? [map.repeat[0], map.repeat[1], map.offset[0], map.offset[1]] : [1, 1, 0, 0])
+        if (map) program.set('uMap', this.resources.texture(map))
+      }
       const buffers = this.resources.mesh(item.geometry, instances, true)
       gl.bindVertexArray(buffers.vao)
       const elements = item.geometry.drawnCount - item.geometry.drawnCount % 3

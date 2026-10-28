@@ -275,16 +275,22 @@ One material type, given as a plain object:
 
 Properties: `color`, `opacity`, `roughness` (0.5), `metalness` (0), `emissive`,
 `emissiveIntensity`, `unlit`, `flatShading`, `doubleSided`, `vertexColors`, `fog` (true), `blending`
-(`'normal'` | `'additive'`), `map`, `normalMap`, `roughnessMap`, `metalnessMap`, `aoMap`,
+(`'normal'` | `'additive'`), `alphaTest` (cut-outs: drop pixels with less alpha - leaves, fences),
+`map`, `normalMap`/`normalScale`, `bumpMap`/`bumpScale`, `roughnessMap`, `metalnessMap`, `aoMap`,
 `emissiveMap`; `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
 `mesh.material.color.set('#0f0')`, `mesh.material.opacity = 0.5`.
+
+A **bump map** is a height texture (red channel) shown as bumps - no normal map to make, so it suits
+heights drawn in code. `bumpScale` is how high a height of 1 stands, in the mesh's units. Textures
+take `anisotropy` (default 8, up to the GPU's limit, 1 for off), which keeps floors and roads sharp
+into the distance. A cut-out (`alphaTest`) casts the shadow of what is left of it.
 
 **Models without UVs** (scans, CAD exports) can still take maps: `triplanar: 40` projects them
 from the mesh's three axes instead of using UVs, repeating 40 times per unit of the mesh's own space.
 The maps stay on the mesh as it moves; normal maps follow the surface. 0 (the default) uses the UVs.
 
 ```js
-{ normalMap: pores, roughnessMap: sheen, triplanar: 45, normalScale: 0.8 }   // bone texture on a scanned skull
+{ bumpMap: pores, bumpScale: 0.0005, roughnessMap: sheen, triplanar: 45 }   // bone texture on a scanned skull
 ```
 
 ## Lights and cameras
