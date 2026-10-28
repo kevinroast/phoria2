@@ -539,6 +539,113 @@ body.gallery {
   color: #ffc46b;
 }
 
+/* the cells poster: a white page under the title, the two cells side by side (stacked when narrow) */
+.cells-poster {
+  position: fixed;
+  inset: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 190px 24px 24px;
+  /* paper, not screen white */
+  background: #f1ece1;
+  color: #2b2b33;
+}
+
+.cells-poster header {
+  margin: 0 auto 4px;
+  max-width: 760px;
+  text-align: center;
+}
+
+.cells-poster h2 {
+  margin: 0;
+  font-size: clamp(26px, 4vw, 42px);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.cells-poster header p {
+  margin: 2px 0 0;
+  color: #6b6b78;
+  font-size: 14px;
+}
+
+.cells-pair {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.cells-pair section {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 440px;
+}
+
+/* each cell's name, big, set just above the cell by the demo (it knows where the cell's top is) */
+.cells-pair h3 {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  top: 0;
+  margin: 0;
+  pointer-events: none;
+  text-align: center;
+  font-size: clamp(30px, 3.6vw, 54px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #c2456b;
+}
+
+.cells-pair section:nth-child(2) h3 {
+  color: #5b8a2b;
+}
+
+.cells-pair canvas {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: block;
+}
+
+@media (max-width: 900px) {
+  .cells-pair {
+    grid-template-columns: 1fr;
+  }
+
+  .cells-pair section {
+    min-height: 560px;
+  }
+}
+
+/* a cell's callouts: small capitals over a rule, the part being hovered in colour */
+.cell-callout {
+  /* long names wrap onto a second line, as on a poster, so the columns stay narrow */
+  max-width: 132px;
+  white-space: normal;
+  line-height: 1.25;
+  padding: 1px 2px 3px;
+  border-bottom: 1px solid currentColor;
+  color: #4a4a56;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition: color 0.2s, opacity 0.15s;
+}
+
+.cell-callout.now {
+  color: #d0336a;
+}
+
 /* the hero names the call it is making, as code */
 .hero-caption {
   position: absolute;

@@ -521,16 +521,16 @@ export default function run({ canvas, gui, info }) {
   const wisps = Array.from({ length: 5 }, (_, i) => ({ node: puffNode('#e2e6ee', 0.5), phase: i / 5 }))
 
   // --- callouts: names off to the sides, with leader lines to what they name
-  /** @param {string} text @param {import('phoria2').Vec3Input} position @param {'left' | 'right'} edge @param {number} [dy] */
-  // in a column at the view's edge, level with the point (dy nudges it up or down), the leader across
-  const callout = (text, position, edge, dy = 0) => scene.add(new Label({ text, position, edge, offset: [0, dy - 9], leader: true, className: 'volcano-callout', overlap: 'dim' }))
+  /** @param {string} text @param {import('phoria2').Vec3Input} position @param {'left' | 'right'} edge */
+  // in a column at the view's edge, level with the point (spaced out by the library), the leader across
+  const callout = (text, position, edge) => scene.add(new Label({ text, position, edge, leader: true, className: 'volcano-callout', overlap: 'dim' }))
   const C = {
     cloud: callout('Ash cloud', [0, rimHeight + 3, 0], 'left'),
-    flow: callout('Lava flow', flows[0].geometry.positions.slice(60 * 3, 60 * 3 + 3), 'left', -30),
-    parasite: callout('Parasitic cone', [0, parasiteTop + 0.12, PARASITE[1]], 'left', -18),
-    ash: callout('Layers of ash', [0.02, 1.4, 1.2], 'left', 16),
+    flow: callout('Lava flow', flows[0].geometry.positions.slice(60 * 3, 60 * 3 + 3), 'left'),
+    parasite: callout('Parasitic cone', [0, parasiteTop + 0.12, PARASITE[1]], 'left'),
+    ash: callout('Layers of ash', [0.02, 1.4, 1.2], 'left'),
     sill: callout('Sill', [0.02, -1.25, 3.2], 'left'),
-    crater: callout('Crater', [-0.1, rimHeight - 0.1, -0.1], 'right', -10),
+    crater: callout('Crater', [-0.1, rimHeight - 0.1, -0.1], 'right'),
     vent: callout('Vent', [0.03, 1.4, 0.03], 'right'),
     laccolith: callout('Laccolith', [3.6, -0.9, 0.02], 'right'),
     chamber: scene.add(new Label({ text: 'Magma chamber', position: [0.03, chamberY, 0.03], place: 'below', offset: [0, 70], leader: true, className: 'volcano-callout', overlap: 'show' })),

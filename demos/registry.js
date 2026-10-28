@@ -27,6 +27,7 @@ export const DEMOS = [
   { name: 'artemis', title: 'an animated infographic of Artemis IV - the Blue Moon lander mission, step by step on a timeline' },
   { name: 'cpu', title: 'a processor going into its socket - exploded layers, glowing traces and bloom' },
   { name: 'volcano', title: 'a volcano erupting, cut away to show the magma inside - callouts with leader lines' },
+  { name: 'cells', title: 'an animal and a plant cell, cut open - a labelled science poster, hover a part to light it' },
   { name: 'galaxy', title: 'a spiral galaxy - 200,000 additive stars, old and young, round a glowing core' },
   { name: 'fireworks', title: 'fireworks over a city across the water - rockets with physics, four burst shapes, reflections' },
   { name: 'paint', title: 'a paint cannon - click the wall to aim; drops splat and drip into its canvas textures', orbit: false },

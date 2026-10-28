@@ -14,13 +14,16 @@ import { DEMOS } from '../demos/registry.js'
 const WIDTH = 960, HEIGHT = 600, SCALE = 0.5
 // seconds to let a demo run first - longer for those that load models or build up to something
 const WAIT = { viewer: 7, fireworks: 6, paint: 7, particles: 5, space: 4.5, textures: 5, lights: 5, artemis: 4, cpu: 4, volcano: 5 }
-// several views on one page: captured from the page, not one view's toImage()
-const PAGE = ['dashboard']
+// several views on one page: captured from the page, not one view's toImage() - for cells, the
+// whole poster: both cells, their titles and the paper behind them
+const PAGE = ['dashboard', 'cells']
 // set a demo up for its picture first - scene-json aims off-centre to clear its editor panel, which
 // the picture leaves out: its turntable goes back to the start, with the objects side by side, and it
 // is framed in the middle from a little to the right and above; artemis stops on its way home, with
-// the whole route drawn; cpu is running, its traces alight; volcano is erupting, its lava running
+// the whole route drawn; cpu is running, its traces alight; volcano is erupting, its lava running;
+// cells is scrolled past the poster's heading, to the two cells
 const PREPARE = {
+  cells: `document.querySelector('.cells-pair').scrollIntoView({ block: 'center' })`,
   // played for a moment, so the fountain's sparks have built up
   volcano: `(async () => {
     story.seekStep(4)
