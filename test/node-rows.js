@@ -30,4 +30,5 @@ export const nodeRows = () => ({
   onHover: { value: () => {}, read: (n) => typeof n.onHover, expect: 'function', bad: 1, error: 'function', keep: false },
   onClick: { value: () => {}, read: (n) => typeof n.onClick, expect: 'function', bad: 1, error: 'function', keep: false },
   showFrom: { value: () => {}, read: (n) => typeof n.showFrom, expect: 'function', bad: 1, error: 'function', keep: false },
+  clip: { value: { normal: [1, 0, 0], offset: 0.5, cap: '#ff0000' }, read: (n) => n.clip && n.clip.toJSON(), expect: { normal: [1, 0, 0], offset: 0.5, cap: '#ff0000' }, default: null, bad: 'front', error: "'clip' must be" },
 })

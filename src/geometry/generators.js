@@ -2,6 +2,7 @@
 // conventions - +Y up, counter-clockwise front faces, outward normals, glTF UVs (v down).
 
 import { Geometry } from './Geometry.js'
+import { area, triangulate } from './triangulate.js'
 import { checkNumber, checkOptions, describe, fail } from '../validate.js'
 
 const TAU = Math.PI * 2
@@ -14,6 +15,8 @@ export const GENERATOR_OPTIONS = {
   cylinder: ['radius', 'radiusTop', 'height', 'segments', 'caps'],
   torus: ['radius', 'tube', 'segments', 'tubeSegments'],
   icosphere: ['radius', 'detail'],
+  lathe: ['points', 'segments'],
+  extrude: ['shape', 'holes', 'depth'],
   axes: ['size'],
   grid: ['size', 'divisions'],
 }
@@ -63,6 +66,20 @@ export const GENERATOR_OPTIONS = {
  * @typedef {object} IcosphereOptions
  * @property {number} [radius] default 1
  * @property {number} [detail] subdivision level 0-6, default 2; 0 is an icosahedron (20 faces)
+ */
+
+/**
+ * @typedef {object} LatheOptions
+ * @property {ArrayLike<number>[]} points the profile, as [radius, y] pairs from the bottom up - the
+ *   outside of the surface is on the right as you go up it
+ * @property {number} [segments] around the Y axis, default 32
+ */
+
+/**
+ * @typedef {object} ExtrudeOptions
+ * @property {ArrayLike<number>[]} shape the outline, as [x, y] pairs, either way round
+ * @property {ArrayLike<number>[][]} [holes] outlines cut out of it, each as [x, y] pairs
+ * @property {number} [depth] along z, default 1
  */
 
 /**
@@ -345,6 +362,167 @@ export function icosphere(options) {
   const g = new Geometry({ positions: dirs.map((d) => d * radius), normals: dirs, indices: faces })
   g.source = { type: 'icosphere', radius, detail }
   return g
+}
+
+/**
+ * A profile turned about the Y axis, as on a lathe: pistons, bottles, bolts, vases. Corners sharper
+ * than about 30 degrees stay sharp; gentler ones are shaded smooth. A profile that starts or ends
+ * on the axis (radius 0) closes over it. u runs around from +Z and v along the profile from its
+ * last point to its first - top to bottom, as on cylinder().
+ * @example lathe({ points: [[0, 0], [1, 0], [1, 2], [0.6, 2.4], [0, 2.4]] }) // a closed can with a shoulder
+ * @param {LatheOptions} options
+ * @returns {Geometry}
+ */
+export function lathe(options) {
+  const owner = 'lathe()'
+  const o = resolve(owner, options, GENERATOR_OPTIONS.lathe, null, {
+    divisions: "lathe(): use 'segments' for the divisions around the axis",
+    phiSegments: "lathe(): use 'segments' for the divisions around the axis",
+    profile: "lathe(): use 'points' for the profile, as [radius, y] pairs",
+  })
+  const points = pairs(owner, 'points', o.points, 2)
+  if (points.some(([r]) => r < 0)) fail(owner, "'points' are [radius, y] pairs - a radius can't be below 0")
+  const segments = count(owner, 'segments', o.segments, 32, 3)
+
+  // each span of the profile, with its outward normal (to the right, going up)
+  const spans = []
+  for (let k = 0; k + 1 < points.length; k++) {
+    const [r0, y0] = points[k], [r1, y1] = points[k + 1]
+    const len = Math.hypot(r1 - r0, y1 - y0)
+    if (len === 0) continue
+    spans.push({ from: points[k], to: points[k + 1], len, normal: [(y1 - y0) / len, -(r1 - r0) / len] })
+  }
+  if (!spans.length) fail(owner, "'points' need at least two different points")
+  const total = spans.reduce((t, s) => t + s.len, 0)
+  const m = new Builder()
+  let along = 0
+  spans.forEach((s, k) => {
+    const start = smoothed(spans[k - 1]?.normal, s.normal), end = smoothed(spans[k + 1]?.normal, s.normal)
+    const first = m.count
+    // the far end first, as cylinder() puts its top row first, so the winding faces out
+    for (const [[r, y], [nr, ny], v] of [[s.to, end, 1 - (along + s.len) / total], [s.from, start, 1 - along / total]]) {
+      for (let i = 0; i <= segments; i++) {
+        const phi = ((i % segments) / segments) * TAU, sin = Math.sin(phi), cos = Math.cos(phi)
+        m.vertex(r * sin, y, r * cos, nr * sin, ny, nr * cos, i / segments, v)
+      }
+    }
+    m.grid(first, segments, 1, { pinchTop: s.to[0] === 0, pinchBottom: s.from[0] === 0 })
+    along += s.len
+  })
+  return m.build({ type: 'lathe', points: points.map((p) => [...p]), segments })
+}
+
+/**
+ * A flat outline pushed out along Z, centred on the origin: the front faces +Z, the back -Z, and
+ * the sides follow the outline. Concave outlines and holes are fine. Corners sharper than about 30
+ * degrees stay sharp; gentler ones are shaded smooth, so a many-sided circle looks round. On the
+ * front and back u, v span the outline's bounds, upright as seen from that side; on the sides u
+ * runs round each outline and v from front to back.
+ * @example extrude({ shape: [[0, 0], [2, 0], [2, 1], [0, 1]], depth: 0.5 })
+ * @example extrude({ shape: square, holes: [circle], depth: 0.2 }) // a plate with a hole
+ * @param {ExtrudeOptions} options
+ * @returns {Geometry}
+ */
+export function extrude(options) {
+  const owner = 'extrude()'
+  const o = resolve(owner, options, GENERATOR_OPTIONS.extrude, null, {
+    amount: "extrude(): use 'depth'",
+    points: "extrude(): use 'shape' for the outline, as [x, y] pairs",
+    outline: "extrude(): use 'shape' for the outline, as [x, y] pairs",
+    bevelEnabled: "extrude() has no bevel - round the shape's corners instead",
+  })
+  const shape = pairs(owner, 'shape', o.shape, 3)
+  if (o.holes !== undefined && !Array.isArray(o.holes)) fail(owner, `'holes' must be a list of outlines, got ${describe(o.holes)}`)
+  if (typeof o.holes?.[0]?.[0] === 'number') fail(owner, "'holes' is a list of outlines - for one hole, holes: [outline]")
+  const holes = /** @type {unknown[]} */ (o.holes ?? []).map((h, i) => pairs(owner, `holes[${i}]`, h, 3))
+  const depth = size(owner, 'depth', o.depth, 1)
+  const front = depth / 2
+
+  // the outline counter-clockwise and the holes clockwise, so every side faces out of the solid
+  const outline = area(shape) < 0 ? [...shape].reverse() : shape
+  const cutouts = holes.map((h) => (area(h) > 0 ? [...h].reverse() : h))
+  const all = [outline, ...cutouts].flat()
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity
+  for (const [x, y] of all) {
+    x0 = Math.min(x0, x)
+    x1 = Math.max(x1, x)
+    y0 = Math.min(y0, y)
+    y1 = Math.max(y1, y)
+  }
+  const w = x1 - x0 || 1, h = y1 - y0 || 1
+
+  const m = new Builder()
+  // front and back, from one triangulation
+  const tris = triangulate(outline, cutouts)
+  for (const [z, nz] of [[front, 1], [-front, -1]]) {
+    const start = m.count
+    // the back is mapped as seen from behind, as box() maps its back face
+    for (const [x, y] of all) m.vertex(x, y, z, 0, 0, nz, nz > 0 ? (x - x0) / w : (x1 - x) / w, (y1 - y) / h)
+    for (let t = 0; t < tris.length; t += 3) {
+      if (nz > 0) m.indices.push(start + tris[t], start + tris[t + 1], start + tris[t + 2])
+      else m.indices.push(start + tris[t], start + tris[t + 2], start + tris[t + 1])
+    }
+  }
+  // the sides: a quad per edge, sharing normals with the next edge across a gentle corner
+  for (const ring of [outline, ...cutouts]) {
+    const n = ring.length
+    const lengths = ring.map(([ax, ay], i) => Math.hypot(ring[(i + 1) % n][0] - ax, ring[(i + 1) % n][1] - ay))
+    const normals = ring.map(([ax, ay], i) => {
+      const [bx, by] = ring[(i + 1) % n], l = lengths[i] || 1
+      return /** @type {[number, number]} */ ([(by - ay) / l, -(bx - ax) / l])
+    })
+    const perimeter = lengths.reduce((t, l) => t + l, 0) || 1
+    let along = 0
+    for (let i = 0; i < n; i++) {
+      const own = normals[i]
+      const [na, nb] = [smoothed(normals[(i + n - 1) % n], own), smoothed(normals[(i + 1) % n], own)]
+      const [ax, ay] = ring[i], [bx, by] = ring[(i + 1) % n]
+      const u0 = along / perimeter, u1 = (along + lengths[i]) / perimeter
+      const a = m.vertex(ax, ay, front, na[0], na[1], 0, u0, 0)
+      const b = m.vertex(ax, ay, -front, na[0], na[1], 0, u0, 1)
+      const c = m.vertex(bx, by, -front, nb[0], nb[1], 0, u1, 1)
+      const d = m.vertex(bx, by, front, nb[0], nb[1], 0, u1, 0)
+      m.indices.push(a, b, c, a, c, d)
+      along += lengths[i]
+    }
+  }
+  return m.build({ type: 'extrude', shape: shape.map((p) => [...p]), holes: holes.map((hole) => hole.map((p) => [...p])), depth })
+}
+
+// corners turning less than this (about 30 degrees) are shaded smooth
+const CREASE = Math.cos(Math.PI / 6)
+
+/**
+ * A 2D normal where a span meets its neighbour: the two averaged across a gentle corner, its own at
+ * a sharp one (or at an end, with no neighbour).
+ * @param {number[] | undefined} other @param {number[]} own
+ * @returns {number[]}
+ */
+function smoothed(other, own) {
+  if (!other || other[0] * own[0] + other[1] * own[1] < CREASE) return own
+  const x = other[0] + own[0], y = other[1] + own[1], l = Math.hypot(x, y) || 1
+  return [x / l, y / l]
+}
+
+/**
+ * A list of [a, b] number pairs, at least `min` long.
+ * @param {string} owner @param {string} name @param {unknown} value @param {number} min
+ * @returns {[number, number][]}
+ */
+function pairs(owner, name, value, min) {
+  if (!Array.isArray(value)) fail(owner, `'${name}' must be a list of [x, y] pairs, got ${describe(value)}`)
+  const list = /** @type {any[]} */ (value)
+  if (list.length < min) fail(owner, `'${name}' needs at least ${min} points, got ${list.length}`)
+  return list.map((p, i) => {
+    if (!p || typeof p !== 'object' || typeof p.length !== 'number' || p.length < 2) {
+      fail(owner, `'${name}' must be a list of [x, y] pairs - point ${i} is ${describe(p)}`)
+    }
+    const a = p[0], b = p[1]
+    if (typeof a !== 'number' || typeof b !== 'number' || !Number.isFinite(a) || !Number.isFinite(b)) {
+      fail(owner, `'${name}' point ${i} must be two finite numbers, got ${describe(p)}`)
+    }
+    return /** @type {[number, number]} */ ([a, b])
+  })
 }
 
 /**

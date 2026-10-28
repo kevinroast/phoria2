@@ -2,10 +2,13 @@ import * as mat3 from './math/mat3.js'
 import * as mat4 from './math/mat4.js'
 import { Ray } from './value/Ray.js'
 import { Vec3 } from './value/Vec3.js'
+import { clipOwner, worldPlane } from './clip.js'
 
 /** @import { Camera } from './scene/cameras.js' */
 /** @import { Node } from './scene/Node.js' */
 /** @import { InstancedMesh, Lines, Mesh, Points } from './scene/drawables.js' */
+
+/** The section plane cutting what is being tested: world plane, and whether its cut faces are filled. @typedef {{ plane: Float32Array, cap: boolean }} Cut */
 
 // Nodes are told apart by markers (drawMode, instanceMatrices) rather than instanceof, so picking
 // doesn't pull every node class into an app's bundle.
@@ -27,6 +30,10 @@ import { Vec3 } from './value/Vec3.js'
 const inverse = new Float32Array(16)
 const instanceWorld = new Float32Array(16)
 const a = new Vec3(), b = new Vec3(), c = new Vec3()
+const localPlane = new Float32Array(4)
+
+/** The cut a node's nearest clip makes, or null. @param {Node | null} owner @returns {Cut | null} */
+const cutBy = (owner) => (owner?.clip ? { plane: worldPlane(owner), cap: !!owner.clip.cap } : null)
 
 /**
  * Finds what a ray hits, on the CPU - no GPU read-back, so it also works in tests. Meshes are
@@ -69,7 +76,8 @@ export class Raycaster {
     const hits = []
     for (const target of [targets].flat()) {
       target.updateWorld()
-      this.#visit(target, hits)
+      // a clip above the target cuts it too
+      this.#visit(target, hits, cutBy(clipOwner(target.parent)))
     }
     return hits.filter((h) => h.distance >= this.near && h.distance <= this.far).sort((x, y) => x.distance - y.distance)
   }
@@ -86,12 +94,13 @@ export class Raycaster {
     const n = /** @type {any} */ (node)
     /** @type {Hit[]} */
     const hits = []
+    const cut = cutBy(clipOwner(node))
     if (n.drawMode === 'triangles' && n.instanceMatrices) {
       if (element >= n.count) return null
       mat4.multiply(instanceWorld, n.worldMatrix, n.instanceMatrices.subarray(element * 16, element * 16 + 16))
-      this.#mesh(n, instanceWorld, element, hits)
+      this.#mesh(n, instanceWorld, element, hits, cut)
     } else if (n.drawMode === 'triangles') {
-      this.#mesh(n, n.worldMatrix, null, hits)
+      this.#mesh(n, n.worldMatrix, null, hits, cut)
     } else if (n.drawMode === 'points') {
       const p = n.geometry.positions
       if (element >= n.geometry.drawnVertices) return null
@@ -109,27 +118,31 @@ export class Raycaster {
     return hits[0] ?? null
   }
 
-  /** @param {Node} node @param {Hit[]} hits */
-  #visit(node, hits) {
+  /** @param {Node} node @param {Hit[]} hits @param {Cut | null} cut the plane cutting this subtree, from above */
+  #visit(node, hits, cut) {
     if (!node.visible || !node.pickable) return
+    if (node.clip) cut = cutBy(node)
     const n = /** @type {any} */ (node)
     if (n.drawMode === 'triangles' && n.instanceMatrices) {
       for (let i = 0; i < n.count; i++) {
         mat4.multiply(instanceWorld, n.worldMatrix, n.instanceMatrices.subarray(i * 16, i * 16 + 16))
-        this.#mesh(n, instanceWorld, i, hits)
+        this.#mesh(n, instanceWorld, i, hits, cut)
       }
     } else if (n.drawMode === 'triangles') {
-      this.#mesh(n, n.worldMatrix, null, hits)
+      this.#mesh(n, n.worldMatrix, null, hits, cut)
     } else if (n.drawMode === 'points') {
       this.#points(n, hits)
     } else if (n.drawMode === 'lines') {
       this.#lines(n, hits)
     }
-    for (const child of node.children) this.#visit(child, hits)
+    for (const child of node.children) this.#visit(child, hits, cut)
   }
 
-  /** @param {Mesh} mesh @param {Float32Array} world @param {number | null} instance @param {Hit[]} hits */
-  #mesh(mesh, world, instance, hits) {
+  /**
+   * @param {Mesh} mesh @param {Float32Array} world @param {number | null} instance @param {Hit[]} hits
+   * @param {Cut | null} [cut] what is past it isn't there; with a cap, the faces behind the cut are
+   */
+  #mesh(mesh, world, instance, hits, cut = null) {
     const g = mesh.geometry
     if (!g.vertexCount) return
     // cheap rejection first
@@ -142,7 +155,11 @@ export class Raycaster {
     // test in the mesh's own space, then report in world space
     const local = this.ray.clone().applyMatrix4(inverse)
     const p = g.positions, idx = g.indices
-    const cullBack = !mesh.material.doubleSided
+    // a cap shows the backs of faces through the cut, so they can be hit too
+    const cullBack = !mesh.material.doubleSided && !cut?.cap
+    // the plane in the mesh's own space: [n, d] times the world matrix
+    if (cut) for (let j = 0; j < 4; j++) localPlane[j] = cut.plane[0] * world[j * 4] + cut.plane[1] * world[j * 4 + 1] + cut.plane[2] * world[j * 4 + 2] + cut.plane[3] * world[j * 4 + 3]
+    const o = local.origin, d = local.direction
     let best = null, bestT = Infinity, bestFace = -1
     for (let f = 0, n = Math.floor(g.drawnCount / 3); f < n; f++) {
       const i0 = idx ? idx[f * 3] : f * 3, i1 = idx ? idx[f * 3 + 1] : f * 3 + 1, i2 = idx ? idx[f * 3 + 2] : f * 3 + 2
@@ -150,6 +167,8 @@ export class Raycaster {
       b.set(p[i1 * 3], p[i1 * 3 + 1], p[i1 * 3 + 2])
       c.set(p[i2 * 3], p[i2 * 3 + 1], p[i2 * 3 + 2])
       const hit = local.intersectTriangle(a, b, c, cullBack)
+      // a hit on the cut-away side isn't there
+      if (hit && cut && localPlane[0] * (o[0] + d[0] * hit.t) + localPlane[1] * (o[1] + d[1] * hit.t) + localPlane[2] * (o[2] + d[2] * hit.t) + localPlane[3] > 0) continue
       if (hit && hit.t < bestT) {
         best = { ...hit, i0, i1, i2 }
         bestT = hit.t
@@ -158,17 +177,24 @@ export class Raycaster {
     }
     if (!best) return
 
-    const point = local.at(best.t).applyMatrix4(world)
+    let point = local.at(best.t).applyMatrix4(world)
     // face normal from the local triangle, into world space with the normal matrix
     a.set(p[best.i0 * 3], p[best.i0 * 3 + 1], p[best.i0 * 3 + 2])
     b.set(p[best.i1 * 3], p[best.i1 * 3 + 1], p[best.i1 * 3 + 2]).sub(a)
     c.set(p[best.i2 * 3], p[best.i2 * 3 + 1], p[best.i2 * 3 + 2]).sub(a)
     const n = b.clone().cross(c)
     const normalMatrix = mat3.normalFromMat4(new Float32Array(9), world)
-    const normal = normalMatrix ? new Vec3(
+    let normal = normalMatrix ? new Vec3(
       normalMatrix[0] * n[0] + normalMatrix[3] * n[1] + normalMatrix[6] * n[2],
       normalMatrix[1] * n[0] + normalMatrix[4] * n[1] + normalMatrix[7] * n[2],
       normalMatrix[2] * n[0] + normalMatrix[5] * n[1] + normalMatrix[8] * n[2]).normalize() : null
+    // a face seen from behind through a capped cut: what was hit is the cut face, on the plane
+    if (cut?.cap && normal && normal.dot(this.ray.direction) > 0) {
+      const P = cut.plane, { origin, direction } = this.ray
+      const across = P[0] * direction[0] + P[1] * direction[1] + P[2] * direction[2]
+      if (across < 0) point = this.ray.at(-(P[0] * origin[0] + P[1] * origin[1] + P[2] * origin[2] + P[3]) / across)
+      normal = new Vec3(P[0], P[1], P[2])
+    }
 
     /** @type {[number, number] | null} */
     let uv = null

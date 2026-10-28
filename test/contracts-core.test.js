@@ -3,7 +3,7 @@ import { expect, it } from 'vitest'
 import {
   AmbientLight, DirectionalLight, Geometry, Group, HemisphereLight, InstancedMesh, Label, Lines, Material, Mesh,
   OrthographicCamera, PerspectiveCamera, PointLight, Points, Scene, SpotLight, Texture, box, create, curve, cylinder,
-  ellipse, grid, icosphere, plane, sphere, torus, axes,
+  ellipse, extrude, grid, icosphere, lathe, plane, sphere, torus, axes,
 } from '../src/index.js'
 import { NODE_HINTS, NODE_OPTIONS } from '../src/scene/Node.js'
 import { GENERATOR_OPTIONS } from '../src/geometry/generators.js'
@@ -223,6 +223,23 @@ generator('torus', torus, {
 generator('icosphere', icosphere, {
   radius: { value: 2, read: (g) => Math.round(Math.hypot(g.positions[0], g.positions[1], g.positions[2]) * 1e4) / 1e4, expect: 2, bad: 0, error: 'radius' },
   detail: { value: 0, read: (g) => g.vertexCount > 0 && g.indices.length / 3, expect: 20, bad: 9, error: 'detail' },
+})
+const profile = [[0, 0], [1, 0], [1, 1], [0, 1]]
+contract('lathe()', {
+  options: GENERATOR_OPTIONS.lathe, make: (o) => lathe({ points: profile, ...o }),
+  rows: {
+    points: { value: [[1, 0], [1, 2]], read: src('points'), bad: [[1, 0]], error: 'points' },
+    segments: { value: 12, read: src('segments'), bad: 2, error: 'segments' },
+  },
+})
+const outline = [[0, 0], [1, 0], [1, 1], [0, 1]]
+contract('extrude()', {
+  options: GENERATOR_OPTIONS.extrude, make: (o) => extrude({ shape: outline, ...o }),
+  rows: {
+    shape: { value: [[0, 0], [2, 0], [0, 2]], read: src('shape'), bad: [[0, 0]], error: 'shape' },
+    holes: { value: [[[0.2, 0.2], [0.4, 0.2], [0.2, 0.4]]], read: src('holes'), default: [], bad: 'none', error: 'holes' },
+    depth: { value: 3, read: src('depth'), default: 1, bad: 0, error: 'depth' },
+  },
 })
 generator('axes', axes, {
   size: { value: 3, read: src('size'), default: 1, bad: 0, error: 'size' },

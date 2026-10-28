@@ -104,6 +104,13 @@ export class ChangeWatch {
     // hidden subtrees aren't drawn, so their insides don't matter until they show again
     if (!node.visible) return
     this.#push(node.overlay ? idOf(node.overlay) : 0)
+    // a section plane moving or changing colour
+    const clip = node.clip
+    if (clip) {
+      this.#pushAll(clip.normal)
+      this.#push(clip.offset)
+      this.#push(clip.cap ? clip.cap.getHex() : -1)
+    } else this.#push(-2)
     this.#pushAll(node.position)
     this.#pushAll(node.quaternion)
     this.#pushAll(node.scale)

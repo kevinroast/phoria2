@@ -4,18 +4,21 @@
 import * as mat4 from '../math/mat4.js'
 import { irradianceSH } from '../irradiance.js'
 import { SHADOW_MAP_SIZE } from '../shadow.js'
-import { COMMON, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
+import { CLIP, COMMON, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
 
 /** @import { Programs } from './programs.js' */
 /** @import { Resources } from './resources.js' */
 /** @import { Texture, DataImage } from '../material/Texture.js' */
 /** @import { FrameDescription, ShadowFrame } from '../frame.js' */
 
-// shadow maps only need depth
+// shadow maps only need depth - of what isn't cut away
 const DEPTH_FRAGMENT = /* glsl */ `
 precision highp float;
+in vec3 vWorldPosition;
 out vec4 fragColor;
+${CLIP}
 void main() {
+  clipAway(vWorldPosition);
   fragColor = vec4(1.0);
 }
 `
@@ -259,10 +262,13 @@ export class Passes {
     gl.polygonOffset(1.5, 2)
     for (const item of shadow.casters) {
       const instances = item.instances
-      const program = this.programs.ready('depth', instances ? ['INSTANCED'] : [], DEPTH)
+      const defines = instances ? ['INSTANCED'] : []
+      if (item.clip) defines.push('CLIP')
+      const program = this.programs.ready('depth', defines, DEPTH)
       gl.useProgram(program.program)
       program.set('uViewProjection', shadow.viewProjection)
       program.set('uModel', item.worldMatrix)
+      if (item.clip) program.set('uClipPlane', item.clip.plane)
       const buffers = this.resources.mesh(item.geometry, instances, true)
       gl.bindVertexArray(buffers.vao)
       const elements = item.geometry.drawnCount - item.geometry.drawnCount % 3

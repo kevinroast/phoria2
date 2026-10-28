@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Geometry } from '../src/geometry/Geometry.js'
-import { axes, box, cylinder, edges, icosphere, plane, sphere, torus } from '../src/geometry/generators.js'
+import { axes, box, cylinder, edges, extrude, icosphere, lathe, plane, sphere, torus } from '../src/geometry/generators.js'
 import { fromPolygons } from '../src/geometry/fromPolygons.js'
 
 // --- helpers ---------------------------------------------------------------------------------
@@ -323,6 +323,114 @@ describe('icosphere', () => {
     expect(() => icosphere({ detial: 1 })).toThrow("icosphere(): unknown option 'detial' - did you mean 'detail'?")
     expect(() => icosphere({ detail: 7 })).toThrow("icosphere(): 'detail' must be a whole number from 0 to 6, got 7")
     expect(() => icosphere({ detail: -1 })).toThrow('from 0 to 6')
+  })
+})
+
+/** The volume a closed mesh encloses - positive only when every face winds outward. */
+function volume(g) {
+  let v = 0
+  for (const [a, b, c] of triangles(g)) v += dot(vec(g.positions, a), cross(vec(g.positions, b), vec(g.positions, c)))
+  return v / 6
+}
+
+const circle = (r, n, cx = 0, cy = 0) => Array.from({ length: n }, (_, i) => [cx + Math.cos(i / n * Math.PI * 2) * r, cy + Math.sin(i / n * Math.PI * 2) * r])
+
+describe('lathe', () => {
+  // a closed can: across the bottom, up the side, in across the top
+  const can = [[0, 0], [1, 0], [1, 2], [0, 2]]
+
+  it('turns a profile about Y into a closed solid, faces out', () => {
+    const g = lathe({ points: can, segments: 64 })
+    expectWellFormed(g)
+    expectUVsUpright(g)
+    expectBounds(g, [-1, 0, -1], [1, 2, 1])
+    // a 64-sided can is a whisker under the round one's 2 pi
+    expect(volume(g)).toBeCloseTo(64 / 2 * Math.sin(Math.PI * 2 / 64) * 2, 5)
+    expect(g.toJSON()).toEqual({ type: 'lathe', points: can, segments: 64 })
+  })
+
+  it('keeps sharp corners sharp and smooths gentle ones', () => {
+    // the can's rim is a right angle: the side and the top keep their own normals there
+    const g = lathe({ points: can, segments: 8 })
+    expect(find(g, [0, 2, 1], [0, 0, 1])).toBeGreaterThanOrEqual(0)
+    expect(find(g, [0, 2, 1], [0, 1, 0])).toBeGreaterThanOrEqual(0)
+    // a bulge turning 5 degrees at its joint: both spans share one normal there, between theirs
+    const bulge = lathe({ points: [[1, 0], [1.1, 0.6], [1.15, 1.2]], segments: 8 })
+    const shared = Array.from({ length: bulge.vertexCount }, (_, k) => k)
+      .filter((k) => len(sub(vec(bulge.positions, k), [0, 0.6, 1.1])) < 1e-6)
+      .map((k) => vec(bulge.normals, k).map((x) => Math.round(x * 1e5) / 1e5))
+    // each span's ring there, each with its seam column
+    expect(shared).toHaveLength(4)
+    for (const n of shared) expect(n).toEqual(shared[0])
+    expect(shared[0][1]).toBeLessThan(0)
+    expect(shared[0][1]).toBeGreaterThan(-0.16)
+  })
+
+  it('closes over the axis without slivers', () => {
+    const g = lathe({ points: [[0, 0], [1, 0.5], [0, 1]], segments: 6 })
+    expectWellFormed(g)
+    // one triangle per segment at each tip, two along nothing - so 6 + 6
+    expect(g.indices.length / 3).toBe(12)
+  })
+
+  it('rejects bad options helpfully', () => {
+    expect(() => lathe()).toThrow("lathe(): 'points' must be a list of [x, y] pairs")
+    expect(() => lathe({ points: [[1, 0]] })).toThrow("'points' needs at least 2 points, got 1")
+    expect(() => lathe({ points: [[1, 0], [1, 0]] })).toThrow('at least two different points')
+    expect(() => lathe({ points: [[1, 0], [-1, 1]] })).toThrow("a radius can't be below 0")
+    expect(() => lathe({ points: [[1, 0], 'up'] })).toThrow("point 1 is 'up'")
+    expect(() => lathe({ points: can, phiSegments: 8 })).toThrow("use 'segments'")
+  })
+})
+
+describe('extrude', () => {
+  const square = [[-1, -1], [1, -1], [1, 1], [-1, 1]]
+
+  it('pushes an outline out along Z, centred, faces out', () => {
+    const g = extrude({ shape: square, depth: 0.5 })
+    expectWellFormed(g)
+    expectOutward(g)
+    expectUVsUpright(g)
+    expectBounds(g, [-1, -1, -0.25], [1, 1, 0.25])
+    expect(volume(g)).toBeCloseTo(2, 6)
+    expect(g.toJSON()).toEqual({ type: 'extrude', shape: square, holes: [], depth: 0.5 })
+  })
+
+  it('fills concave outlines and cuts holes, whichever way round they run', () => {
+    // an L, clockwise
+    const L = extrude({ shape: [[0, 0], [0, 2], [1, 2], [1, 1], [2, 1], [2, 0]] })
+    expectWellFormed(L)
+    expect(volume(L)).toBeCloseTo(3, 6)
+    // two square holes, one each way round
+    const two = extrude({
+      shape: [[0, 0], [4, 0], [4, 2], [0, 2]],
+      holes: [[[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]], [[2.5, 1.5], [3.5, 1.5], [3.5, 0.5], [2.5, 0.5]]],
+    })
+    expectWellFormed(two)
+    expect(volume(two)).toBeCloseTo(6, 6)
+    // a washer: a round hole in a round plate
+    const washer = extrude({ shape: circle(1, 48), holes: [circle(0.5, 32)], depth: 0.2 })
+    expectWellFormed(washer)
+    expect(volume(washer)).toBeCloseTo((24 * Math.sin(Math.PI / 24) - 16 * Math.sin(Math.PI / 16) * 0.25) * 0.2, 6)
+  })
+
+  it('shades a many-sided circle round but keeps a square sharp', () => {
+    const disc = extrude({ shape: circle(1, 24), depth: 1 })
+    // where two sides meet at [1, 0] they share the radial normal
+    expect(find(disc, [1, 0, 0.5], [1, 0, 0])).toBeGreaterThanOrEqual(0)
+    const block = extrude({ shape: square, depth: 1 })
+    expect(find(block, [1, 1, 0.5], [1, 0, 0])).toBeGreaterThanOrEqual(0)
+    expect(find(block, [1, 1, 0.5], [0, 1, 0])).toBeGreaterThanOrEqual(0)
+  })
+
+  it('rejects bad options helpfully', () => {
+    expect(() => extrude({ shape: [[0, 0], [1, 0]] })).toThrow("extrude(): 'shape' needs at least 3 points, got 2")
+    expect(() => extrude({ shape: square, holes: square })).toThrow("'holes' is a list of outlines - for one hole, holes: [outline]")
+    expect(() => extrude({ shape: square, holes: [[[0, 0], [0.5, 0]]] })).toThrow("'holes[0]' needs at least 3 points")
+    expect(() => extrude({ shape: square, holes: 'none' })).toThrow("'holes' must be a list of outlines")
+    expect(() => extrude({ shape: square, depth: 0 })).toThrow("'depth' must be more than 0")
+    expect(() => extrude({ shape: square, amount: 2 })).toThrow("use 'depth'")
+    expect(() => extrude({ shape: [[0, 0], [1, NaN], [1, 1]] })).toThrow('point 1 must be two finite numbers')
   })
 })
 

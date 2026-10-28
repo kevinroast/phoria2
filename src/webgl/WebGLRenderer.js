@@ -371,7 +371,12 @@ export class WebGLRenderer {
     const kind = mode === 'points' ? 'points' : mode === 'lines' ? 'lines' : 'mesh'
     const shadowed = kind === 'mesh' && !!this.#shadow && node.receiveShadow && !material.unlit
 
+    const clip = kind === 'mesh' ? item.clip : null
     const defines = this.#defines(kind, material, geometry.colors !== null, !!instances, shadowed)
+    if (clip) {
+      defines.push('CLIP')
+      if (clip.cap) defines.push('CAP')
+    }
     const programs = this.#gpu.programs
     const program = programs.get(kind, defines)
     if (!programs.isReady(program)) {
@@ -424,6 +429,10 @@ export class WebGLRenderer {
     }
     program.set('uColor', material.color)
     program.set('uOpacity', material.opacity)
+    if (clip) {
+      program.set('uClipPlane', clip.plane)
+      if (clip.cap) program.set('uCapColor', clip.cap)
+    }
     const e = material.emissive, k = material.emissiveIntensity
     program.set('uEmissive', [e[0] * k, e[1] * k, e[2] * k])
     program.set('uRoughness', material.roughness)
@@ -473,13 +482,15 @@ export class WebGLRenderer {
     // triangles
     if (!mat3.normalFromMat4(this.#normalMatrix, worldMatrix)) mat3.identity(this.#normalMatrix)
     program.set('uNormalMatrix', this.#normalMatrix)
-    if (material.doubleSided) {
+    // a mirroring transform (negative scale) reverses the winding - which also says which side is
+    // the back, for double-sided materials and caps
+    gl.frontFace(determinant3(worldMatrix) < 0 ? gl.CW : gl.CCW)
+    if (material.doubleSided || clip?.cap) {
+      // a cap is the back faces seen through the cut
       gl.disable(gl.CULL_FACE)
     } else {
       gl.enable(gl.CULL_FACE)
       gl.cullFace(gl.BACK)
-      // a mirroring transform (negative scale) reverses the winding
-      gl.frontFace(determinant3(worldMatrix) < 0 ? gl.CW : gl.CCW)
     }
     const buffers = this.#gpu.resources.mesh(geometry, instances, true)
     gl.bindVertexArray(buffers.vao)

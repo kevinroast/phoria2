@@ -17,10 +17,11 @@ export { Light, AmbientLight, HemisphereLight, DirectionalLight, PointLight, Spo
 
 // geometry, materials, textures
 export { Geometry } from './geometry/Geometry.js'
-export { box, sphere, plane, cylinder, torus, icosphere, edges, axes, grid } from './geometry/generators.js'
+export { box, sphere, plane, cylinder, torus, icosphere, lathe, extrude, edges, axes, grid } from './geometry/generators.js'
 export { fromPolygons } from './geometry/fromPolygons.js'
 export { Curve, curve, ellipse } from './geometry/Curve.js'
 export { Material } from './material/Material.js'
+export { Clip } from './clip.js'
 export { Texture, loadTexture } from './material/Texture.js'
 
 // values and maths

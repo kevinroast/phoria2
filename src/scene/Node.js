@@ -8,10 +8,12 @@ import { Mat4 } from '../value/Mat4.js'
 import { Quat } from '../value/Quat.js'
 import { Vec3 } from '../value/Vec3.js'
 import { checkOptions, describe, fail } from '../validate.js'
+import { Clip } from '../clip.js'
 
 /** @import { ColorInput, Vec3Input } from '../types.js' */
 /** @import { Hit } from '../Raycaster.js' */
 /** @import { Camera } from './cameras.js' */
+/** @import { ClipOptions } from '../clip.js' */
 
 /**
  * Per-frame behaviour: `(node, dt, t) => void`, with dt and t in seconds.
@@ -38,10 +40,12 @@ import { checkOptions, describe, fail } from '../validate.js'
  *   (null when it leaves the subtree)
  * @property {((hit: Hit) => void) | null} [onClick] called when something in this subtree is clicked
  * @property {((camera: Camera) => boolean) | null} [showFrom] draw this subtree only for cameras this returns true for
+ * @property {ClipOptions | Clip | null} [clip] cut away everything in this subtree on one side of a plane in this
+ *   node's space - for cutaways. The nearest clip above a mesh is the one that cuts it
  */
 
 export const NODE_OPTIONS = ['name', 'position', 'rotation', 'quaternion', 'scale', 'visible', 'pickable',
-  'matrixAutoUpdate', 'children', 'userData', 'onUpdate', 'tooltip', 'highlight', 'onHover', 'onClick', 'showFrom']
+  'matrixAutoUpdate', 'children', 'userData', 'onUpdate', 'tooltip', 'highlight', 'onHover', 'onClick', 'showFrom', 'clip']
 
 // three.js habits that would otherwise fail with a plain "unknown option"
 export const NODE_HINTS = {
@@ -50,6 +54,7 @@ export const NODE_HINTS = {
   translate: "use position: [x, y, z]",
   parent: 'add the node to its parent instead: parent.add(node)',
   type: "'type' is only used in descriptions passed to create() or add()",
+  clippingPlanes: 'use clip: { normal, offset, cap } - one plane, cutting this node and everything under it',
 }
 
 // While a scene update walks the graph, removals are queued and applied afterwards so handlers
@@ -114,6 +119,8 @@ export class Node {
   showFrom = null
   /** An HTML element shown over the canvas while this node is drawn (a chart's legend). @type {HTMLElement | null} */
   overlay = null
+  /** @type {Clip | null} */
+  #clip = null
 
   /** @type {Node | null} */
   #parent = null
@@ -147,7 +154,22 @@ export class Node {
       this[key] = fn
     }
     if (options.highlight != null) this.highlight = Color.fromInput(options.highlight, owner)
+    if (options.clip != null) this.#clip = Clip.fromInput(options.clip, owner)
     if (options.children) for (const child of options.children) this.add(child)
+  }
+
+  /**
+   * The section plane cutting this subtree, or null. Set { normal, offset, cap }, a Clip or null;
+   * move the cut by changing its offset or normal in place.
+   * @returns {Clip | null}
+   */
+  get clip() {
+    return this.#clip
+  }
+
+  /** @param {ClipOptions | Clip | null} value */
+  set clip(value) {
+    this.#clip = value == null ? null : Clip.fromInput(value, this.constructor.name)
   }
 
   /** @returns {Node | null} */
@@ -410,6 +432,7 @@ export class Node {
       onHover: this.onHover,
       onClick: this.onClick,
       showFrom: this.showFrom,
+      clip: this.#clip ? this.#clip.toJSON() : null,
     }
   }
 
@@ -429,6 +452,7 @@ export class Node {
     if (!this.pickable) json.pickable = false
     if (!this.matrixAutoUpdate) json.matrixAutoUpdate = false
     if (this.highlight) json.highlight = this.highlight.getStyle()
+    if (this.#clip) json.clip = this.#clip.toJSON()
     if (Object.keys(this.userData).length) json.userData = this.userData
     Object.assign(json, this.jsonOptions())
     if (this.#children.length) json.children = this.#children.map((c) => c.toJSON())

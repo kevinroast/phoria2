@@ -5,6 +5,7 @@ import { Vec3 } from './value/Vec3.js'
 import { Box3 } from './value/Box3.js'
 import { warnOnce } from './validate.js'
 import { fitShadow } from './shadow.js'
+import { worldPlane } from './clip.js'
 
 /** @import { Scene } from './scene/Scene.js' */
 /** @import { Camera } from './scene/cameras.js' */
@@ -38,6 +39,13 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  */
 
 /**
+ * The section plane cutting a drawable, from the nearest clip above it.
+ * @typedef {object} FrameClip
+ * @property {Float32Array} plane [nx, ny, nz, d] in world space, unit normal: cut away where n.p + d > 0
+ * @property {Color | null} cap fill colour for cut faces (linear), or null for none
+ */
+
+/**
  * @typedef {object} DrawItem
  * @property {Drawable} node
  * @property {Geometry} geometry
@@ -45,6 +53,7 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  * @property {Mat4} worldMatrix
  * @property {InstancedMesh | null} instances
  * @property {number} depth view-space distance of the bounds centre, for sorting
+ * @property {FrameClip | null} clip the plane cutting it, if any
  */
 
 /**
@@ -133,23 +142,25 @@ export function collect(scene, camera) {
   let punctual = 0, directional = 0
   // shadows: what casts (seen or not - a shadow can fall into view from off screen) and what
   // receives; only looked at further when a light casts
-  /** @type {any[]} */
+  /** @type {[any, FrameClip | null][]} */
   const casters = []
   /** @type {any[]} */
   const receivers = []
 
-  /** @param {any} node */
-  const visit = (node) => {
+  /** @param {any} node @param {FrameClip | null} clip the plane cutting this subtree, from above */
+  const visit = (node, clip) => {
     if (!node.visible) return
     // per-camera visibility decides what this frame draws, without touching the scene
     if (node.showFrom && !node.showFrom(camera)) return
+    // the nearest clip cuts this subtree
+    if (node.clip) clip = { plane: worldPlane(node), cap: node.clip.cap }
     if (node.overlay) frame.overlays.push(node.overlay)
     if (node.tooltip) frame.interactive = frame.tooltips = true
     else if (node.highlight || node.onHover || node.onClick) frame.interactive = true
     if (node.isDrawable) {
-      if (node.castShadow && node.drawMode !== 'points' && node.drawMode !== 'lines') casters.push(node)
+      if (node.castShadow && node.drawMode !== 'points' && node.drawMode !== 'lines') casters.push([node, clip])
       if (node.receiveShadow) receivers.push(node)
-      const item = drawItem(node, view, planes)
+      const item = drawItem(node, view, planes, clip)
       if (item) {
         // point sprites with a map nearly always have soft alpha edges, so they blend too
         const blended = node.material.transparent || (node.drawMode === 'points' && node.material.map)
@@ -165,7 +176,7 @@ export function collect(scene, camera) {
     } else if (node.lightKind) {
       addLight(/** @type {Light} */ (node))
     }
-    for (const child of node.children) visit(child)
+    for (const child of node.children) visit(child, clip)
   }
 
   /** @param {any} node */
@@ -192,12 +203,12 @@ export function collect(scene, camera) {
       }
     }
   }
-  visit(scene)
+  visit(scene, null)
 
   // one shadow map, for the first directional light that casts; it goes first, so the shader
   // knows which light the map belongs to
   const sun = frame.lights.findIndex((l) => l.kind === 'directional' && l.castShadow)
-  const items = sun >= 0 ? /** @type {DrawItem[]} */ (casters.map((n) => drawItem(n, view, null)).filter(Boolean)) : []
+  const items = sun >= 0 ? /** @type {DrawItem[]} */ (casters.map(([n, clip]) => drawItem(n, view, null, clip)).filter(Boolean)) : []
   if (items.length) {
     const light = frame.lights[sun]
     const bounds = (/** @type {any} */ n) => n.expandBounds(new Box3())
@@ -221,9 +232,10 @@ export function collect(scene, camera) {
 
 /**
  * @param {Drawable} node @param {Mat4} view @param {Float32Array[] | null} planes null: no culling
- * @returns {DrawItem | null} null when culled
+ * @param {FrameClip | null} clip the plane cutting it
+ * @returns {DrawItem | null} null when culled, or cut away whole
  */
-function drawItem(node, view, planes) {
+function drawItem(node, view, planes, clip) {
   const { geometry, material, worldMatrix } = node
   const instances = 'instanceMatrices' in node ? /** @type {InstancedMesh} */ (node) : null
   if (instances && instances.count === 0) return null
@@ -235,10 +247,16 @@ function drawItem(node, view, planes) {
     Math.hypot(worldMatrix[4], worldMatrix[5], worldMatrix[6]), Math.hypot(worldMatrix[8], worldMatrix[9], worldMatrix[10]))
   // instanced meshes spread their copies anywhere, so they aren't culled as a whole
   if (planes && node.frustumCulled && !instances && !sphereInFrustum(planes, center, box.getRadius() * scale)) return null
+  // all of it on the cut-away side of a clip - points and lines aren't cut, so they stay
+  const cuts = clip && node.drawMode === 'triangles' ? clip : null
+  if (cuts && !instances) {
+    const p = cuts.plane
+    if (p[0] * center[0] + p[1] * center[1] + p[2] * center[2] + p[3] > box.getRadius() * scale) return null
+  }
 
   // distance in front of the camera, along its view direction
   const depth = -(view[2] * center[0] + view[6] * center[1] + view[10] * center[2] + view[14])
-  return { node, geometry, material, worldMatrix, instances, depth }
+  return { node, geometry, material, worldMatrix, instances, depth, clip: cuts }
 }
 
 // a stable key per labelled node, so label elements survive from frame to frame

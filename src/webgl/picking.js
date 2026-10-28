@@ -2,7 +2,7 @@
 // number, the instance, point or segment, and the depth - and read it back. One pass however many
 // instances there are, where testing rays against 100,000 instances on the CPU takes milliseconds.
 // Loaded the first time a View picks.
-import { COMMON, LINES_VERTEX, MESH_VERTEX, POINTS_VERTEX } from './shaders.js'
+import { CLIP, COMMON, LINES_VERTEX, MESH_VERTEX, POINTS_VERTEX } from './shaders.js'
 import * as mat4 from '../math/mat4.js'
 
 /** @import { Programs } from './programs.js' */
@@ -18,10 +18,17 @@ const PICK_FRAGMENT = /* glsl */ `
 precision highp float;
 precision highp int;
 flat in uint vPickElement;
+#ifdef CLIP
+in vec3 vWorldPosition;
+#endif
 uniform uint uPickId;
 layout(location = 0) out uvec4 pickOut;
 ${COMMON}
+${CLIP}
 void main() {
+#ifdef CLIP
+  clipAway(vWorldPosition);
+#endif
 #ifdef ROUND
   vec2 p = gl_PointCoord * 2.0 - 1.0;
   if (dot(p, p) > 1.0) discard;
@@ -216,6 +223,7 @@ export class Picker {
       if (material.sizeAttenuation) defines.push('SIZE_ATTENUATION')
       if (!material.map) defines.push('ROUND')
     }
+    if (kind === 'mesh' && item.clip) defines.push('CLIP')
     const program = this.programs.ready(`pick-${kind}`, defines, SOURCES[kind])
     gl.useProgram(program.program)
     program.set('uView', frame.camera.view)
@@ -225,6 +233,7 @@ export class Picker {
     program.set('uPickId', id)
     program.set('uHighlightIndex', -2)
     program.set('uUvTransform', [1, 1, 0, 0])
+    if (item.clip) program.set('uClipPlane', item.clip.plane)
 
     if (kind === 'lines') {
       gl.disable(gl.CULL_FACE)
@@ -248,7 +257,7 @@ export class Picker {
       return
     }
     program.set('uNormalMatrix', this.#normal)
-    if (material.doubleSided) gl.disable(gl.CULL_FACE)
+    if (material.doubleSided || item.clip?.cap) gl.disable(gl.CULL_FACE)
     else {
       gl.enable(gl.CULL_FACE)
       gl.cullFace(gl.BACK)
