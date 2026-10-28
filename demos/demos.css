@@ -1068,3 +1068,51 @@ button.demo-legend-item {
   overflow-x: auto;
   font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
 }
+
+/* the carbide demo's weapon readout: big digits above the fps, a bar filling to full speed */
+.bot-readout {
+  right: 16px;
+  bottom: 56px;
+  min-width: 190px;
+  padding: 12px 16px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.bot-readout b {
+  display: inline-block;
+  margin: 6px 6px 8px 0;
+  font: 800 38px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0;
+  color: #3df51f;
+  font-variant-numeric: tabular-nums;
+}
+
+.bot-readout em {
+  font-style: normal;
+  color: var(--text-dim);
+}
+
+.bot-readout i {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.bot-readout s {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #3df51f, #f5c518);
+}
+
+.bot-readout small {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}

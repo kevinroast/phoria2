@@ -414,10 +414,14 @@ function buildCell(scene, kind) {
     microtubule: 'Microtubule', pinocytosis: 'Pinocytotic vesicle', chloroplast: 'Chloroplast', amyloplast: 'Amyloplast',
     druse: 'Druse crystal', raphide: 'Raphide crystals', ribosome: 'Ribosome', membrane: 'Cell membrane', wall: 'Cell wall', cytoplasm: 'Cytoplasm',
   }
-  /** A point on the membrane's rim at an angle round the cell - the top is about -PI/2. @param {number} a */
-  const rimAt = (a) => {
+  /**
+   * A point on the outer rim - the animal's membrane, the plant's wall - at an angle round the cell
+   * (the animal's top is about -PI/2; the plant is turned, so its top is about 0) and a height.
+   * @param {number} a @param {number} [y]
+   */
+  const rimAt = (a, y = 0.12) => {
     const [x, z] = outline(a, 0)
-    return [x, 0.12, z]
+    return [x, y, z]
   }
   // where on each part the leader points, in the part's own space
   const POINTS = animal
@@ -425,7 +429,7 @@ function buildCell(scene, kind) {
       cytoplasm: [-1.6, 0, 1.9], vesicles: [0.6, 0.15, 1.0], golgi: [0, 0.3, -0.1], microtubule: [0.55, 0.06, -1.75], mitochondria: [0, 0.24, 0],
       membrane: rimAt(-1.15), centrioles: [0.1, 0.25, 0], lysosome: [0.5, 0.18, -0.6], vacuole: [0, 0.2, 0] }
     : { er: [0.1, 0.08, -1.2], nucleus: [-0.4, 0.3, 0.2], nucleolus: [0, 0.12, 0], amyloplast: [0, 0.2, 0], chloroplast: [0, 0.25, 0],
-      cytoplasm: [-1.0, 0, 1.5], peroxisome: [0, 0.12, 0], wall: [-1.5, 0.25, -2.25], membrane: [1.0, 0.08, -2.05], mitochondria: [0, 0.24, 0],
+      cytoplasm: [-1.0, 0, 1.5], peroxisome: [0, 0.12, 0], wall: rimAt(-0.35, 0.25), membrane: [1.0, 0.08, -2.05], mitochondria: [0, 0.24, 0],
       druse: [0, 0.2, 0], golgi: [0, 0.3, -0.1], vesicles: [0.35, 0.15, 0], vacuole: [0.3, 0.2, 0.5], raphide: [0.1, 0.05, 0] }
   // the ribosomes are everywhere; name one near the edge
   const someDot = dots.reduce((best, d) => (Math.hypot(d[0], d[2]) > Math.hypot(best[0], best[2]) && d[2] > 0.5 ? d : best), [0, 0, 0])
