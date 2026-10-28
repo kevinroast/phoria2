@@ -5,7 +5,7 @@ import {
 } from '../src/index.js'
 import { explain } from '../src/explain.js'
 import { fitBox, framingScale } from '../src/presets.js'
-import { layoutLabels, leaderEnd, placeBox } from '../src/labelLayout.js'
+import { alignColumns, layoutLabels, leaderEnd, placeBox, stackColumns } from '../src/labelLayout.js'
 import { OrbitControl } from '../src/OrbitControl.js'
 import { ChangeWatch } from '../src/watch.js'
 
@@ -53,6 +53,46 @@ describe('labels', () => {
     expect(leaderEnd(300, 140, { left: 16, top: 90, width: 40, height: 20 })).toEqual([56, 110])
     // a point in its own label needs none
     expect(leaderEnd(30, 100, { left: 16, top: 90, width: 40, height: 20 })).toBeNull()
+  })
+
+  it('spaces out a column of callouts in order, each as near its point as it can be', () => {
+    const at = (top, edge = 'left') => ({ top, height: 20, edge })
+    // apart already: left alone
+    const apart = [at(0), at(50)]
+    stackColumns(apart, 400)
+    expect(apart.map((b) => b.top)).toEqual([0, 50])
+    // two wanting the same place: centred on it, one above the other, 4 apart
+    const pair = [at(100), at(100)]
+    stackColumns(pair, 400)
+    expect(pair.map((b) => b.top)).toEqual([88, 112])
+    // three crowding a point: in order, the group centred where they wanted to be
+    const three = [at(110), at(100), at(105)]
+    stackColumns(three, 400)
+    expect(three.map((b) => b.top)).toEqual([129, 81, 105])
+    // the columns are spaced on their own, and labels at no edge aren't touched
+    const sides = [at(100), at(100, 'right'), { top: 100, height: 20, edge: null }]
+    stackColumns(sides, 400)
+    expect(sides.map((b) => b.top)).toEqual([100, 100, 100])
+    // a group running off the top or bottom is kept inside the view
+    const top = [at(0), at(0), at(0)]
+    stackColumns(top, 400)
+    expect(top.map((b) => b.top)).toEqual([0, 24, 48])
+    const bottom = [at(390), at(390)]
+    stackColumns(bottom, 400)
+    expect(bottom.map((b) => b.top)).toEqual([356, 380])
+  })
+
+  it('lines up each column of callouts, and meets them at the inner end of their bottom edge', () => {
+    const boxes = [{ left: 16, width: 40, edge: 'left' }, { left: 16, width: 90, edge: 'left' }, { left: 724, width: 60, edge: 'right' }, { left: 50, width: 30, edge: null }]
+    alignColumns(boxes)
+    // as wide as the widest in the column; the right column keeps its right side where it was
+    expect(boxes.map((b) => [b.left, b.width])).toEqual([[16, 90], [16, 90], [724, 60], [50, 30]])
+    const right = [{ left: 724, width: 60, edge: 'right' }, { left: 694, width: 90, edge: 'right' }]
+    alignColumns(right)
+    expect(right.map((b) => [b.left, b.width])).toEqual([[694, 90], [694, 90]])
+    // the leader meets the end of the underline: inner side, bottom
+    expect(leaderEnd(300, 50, { left: 16, top: 90, width: 90, height: 20 }, 'left')).toEqual([106, 110])
+    expect(leaderEnd(300, 150, { left: 694, top: 90, width: 90, height: 20 }, 'right')).toEqual([694, 110])
   })
 
   it('keeps leader and edge on a label, through JSON, and points callout habits at them', () => {

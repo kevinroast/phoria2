@@ -76,9 +76,18 @@ function paintLabel(ctx, el, frame, scale) {
     ctx.roundRect(x, y, w, h, (parseFloat(cs.borderTopLeftRadius) || 0) * scale)
     ctx.fill()
   }
+  // an underline - a bottom border alone; a full border would need its other sides too
+  const rule = parseFloat(cs.borderBottomWidth) || 0
+  if (rule > 0 && cs.borderBottomStyle !== 'none' && !parseFloat(cs.borderTopWidth)) {
+    ctx.fillStyle = cs.borderBottomColor
+    ctx.fillRect(x, y + h - rule * scale, w, rule * scale)
+  }
   ctx.fillStyle = cs.color
   ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${parseFloat(cs.fontSize) * scale}px ${cs.fontFamily}`
   ctx.textBaseline = 'middle'
-  ctx.fillText(transformText(el.textContent ?? '', cs.textTransform), x + (parseFloat(cs.paddingLeft) || 0) * scale, y + h / 2)
+  const right = cs.textAlign === 'right' || cs.textAlign === 'end'
+  ctx.textAlign = right ? 'right' : 'left'
+  const at = right ? x + w - (parseFloat(cs.paddingRight) || 0) * scale : x + (parseFloat(cs.paddingLeft) || 0) * scale
+  ctx.fillText(transformText(el.textContent ?? '', cs.textTransform), at, y + h / 2)
   ctx.restore()
 }

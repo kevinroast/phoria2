@@ -1,7 +1,7 @@
 // HTML labels over the canvas: one absolutely positioned element per label, moved each frame to its
 // projected position. Crisp at any pixel ratio, styleable with CSS, and selectable/accessible like
 // any text on the page. Overlapping labels give way by priority (see labelLayout.js).
-import { layoutLabels, leaderEnd, placeBox } from './labelLayout.js'
+import { alignColumns, layoutLabels, leaderEnd, placeBox, stackColumns } from './labelLayout.js'
 
 /** @import { FrameLabel } from './frame.js' */
 
@@ -86,6 +86,8 @@ export class LabelLayer {
     for (const { entry } of active) if (entry.width < 0) entry.el.style.display = ''
     for (const { entry } of active) {
       if (entry.width >= 0) continue
+      // its own width, not the column's it was given
+      entry.el.style.minWidth = ''
       entry.width = entry.el.offsetWidth
       entry.height = entry.el.offsetHeight
     }
@@ -96,8 +98,11 @@ export class LabelLayer {
       const [left, top] = placeBox(x, y, entry.width, entry.height, label.style.place, label.style.offset, label.style.edge, rect.width)
       // a label showing last frame holds its place more firmly, so labels don't flicker as the view moves
       return { left, top, width: entry.width, height: entry.height, priority: label.style.priority, overlap: label.style.overlap,
-        depth: label.depth, sticky: entry.showing, covered: !!label.occluded, x, y }
+        depth: label.depth, sticky: entry.showing, covered: !!label.occluded, x, y, edge: label.style.edge }
     })
+    // callouts in a column at an edge are lined up, and spaced out in order, never on top of each other
+    alignColumns(boxes)
+    stackColumns(boxes, rect.height)
     const states = layoutLabels(boxes)
     // remember what shows this frame, for next frame's stickiness
     for (const entry of this.#elements.values()) entry.showing = false
@@ -118,6 +123,10 @@ export class LabelLayer {
       el.style.opacity = state === 'dim' ? DIM_OPACITY : ''
       // whole pixels keep text crisp
       el.style.transform = `translate(${Math.round(box.left)}px, ${Math.round(box.top)}px)`
+      // a column's labels share its width; the right column's text keeps to the edge
+      const edge = label.style.edge
+      const minWidth = edge && entry.width !== box.width ? `${box.width}px` : '', textAlign = edge === 'right' ? 'right' : ''
+      if (el.style.minWidth !== minWidth || el.style.textAlign !== textAlign) Object.assign(el.style, { minWidth, textAlign, boxSizing: minWidth ? 'border-box' : '' })
       // nearer labels stack above further ones, and every dimmed label sits under every shown one
       const near = Math.max(0, Math.round(100000 - label.depth * 100))
       el.style.zIndex = String(state === 'dim' ? Math.min(near, 99999) : 100000 + near)
@@ -152,12 +161,12 @@ export class LabelLayer {
   /**
    * Draw a label's leader: from its point to the nearest point of its box, with a dot on the point.
    * @param {Entry} entry
-   * @param {{ left: number, top: number, width: number, height: number, x: number, y: number }} box
+   * @param {{ left: number, top: number, width: number, height: number, x: number, y: number, edge?: 'left' | 'right' | null }} box
    * @param {number} opacity
    */
   #leader(entry, box, opacity) {
     const { x, y } = box
-    const end = leaderEnd(x, y, box)
+    const end = leaderEnd(x, y, box, box.edge)
     let g = entry.leader
     if (!g) {
       g = /** @type {SVGGElement} */ (document.createElementNS(SVG, 'g'))
@@ -217,7 +226,7 @@ export class LabelLayer {
     if (!entry) {
       const el = document.createElement('div')
       // opacity eases, so dimming and brightening don't flash
-      Object.assign(el.style, { position: 'absolute', left: '0', top: '0', whiteSpace: 'nowrap', willChange: 'transform', transition: 'opacity 0.15s' })
+      Object.assign(el.style, { position: 'absolute', left: '0', top: '0', willChange: 'transform', transition: 'opacity 0.15s' })
       root.append(el)
       entry = { el, text: '', className: '', width: -1, height: -1, showing: false, leader: null, color: '' }
       this.#elements.set(label.key, entry)
@@ -234,6 +243,14 @@ export class LabelLayer {
 
   #ensureRoot() {
     if (this.#root) return this.#root
+    // labels keep to one line unless the page's CSS says otherwise: a rule that any other wins over,
+    // where an inline style would win over every rule
+    if (!document.getElementById('phoria-labels-style')) {
+      const style = document.createElement('style')
+      style.id = 'phoria-labels-style'
+      style.textContent = ':where(.phoria-label) { white-space: nowrap }'
+      document.head.prepend(style)
+    }
     const root = document.createElement('div')
     root.className = 'phoria-labels'
     // its own stacking context, so labels' depth ordering stays below the page's floating UI

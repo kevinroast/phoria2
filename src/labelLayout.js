@@ -37,13 +37,75 @@ export function placeBox(x, y, width, height, place, offset, edge = null, viewWi
 }
 
 /**
+ * Space out the labels in a column at an edge of the view, so callouts never overlap: in each
+ * column they keep the order of their points, top to bottom, at least `gap` apart. Labels that would
+ * run into each other move as a group, centred where they wanted to be on average - so each stays
+ * as near its point as it can - and the group is kept inside the view. Changes each box's top.
+ * @param {{ top: number, height: number, edge?: 'left' | 'right' | null }[]} boxes
+ * @param {number} height the view's height
+ * @param {number} [gap]
+ */
+export function stackColumns(boxes, height, gap = 4) {
+  for (const side of ['left', 'right']) {
+    const column = boxes.filter((b) => b.edge === side).sort((a, b) => a.top - b.top)
+    /** @type {{ items: typeof column, wants: number[], top: number, height: number }[]} */
+    const groups = []
+    for (const box of column) {
+      let group = { items: [box], wants: [box.top], top: box.top, height: box.height }
+      // merge with the group above while they would overlap
+      while (groups.length) {
+        const above = groups[groups.length - 1]
+        if (above.top + above.height + gap <= group.top) break
+        groups.pop()
+        const items = [...above.items, ...group.items], wants = [...above.wants, ...group.wants]
+        let offset = 0, shift = 0
+        for (let i = 0; i < items.length; i++) {
+          shift += wants[i] - offset
+          offset += items[i].height + gap
+        }
+        const total = offset - gap
+        group = { items, wants, top: Math.min(Math.max(shift / items.length, 0), Math.max(0, height - total)), height: total }
+      }
+      groups.push(group)
+    }
+    for (const group of groups) {
+      let top = group.top
+      for (const box of group.items) {
+        box.top = top
+        top += box.height + gap
+      }
+    }
+  }
+}
+
+/**
+ * Line up each column of labels at an edge of the view: every label in it as wide as the widest, the
+ * right column's moved in to keep its right side at the edge - so their leaders all start from the
+ * same line and none runs under a neighbour. Changes each box's width (and left, on the right).
+ * @param {{ left: number, width: number, edge?: 'left' | 'right' | null }[]} boxes
+ */
+export function alignColumns(boxes) {
+  for (const side of ['left', 'right']) {
+    const column = boxes.filter((b) => b.edge === side)
+    const widest = Math.max(0, ...column.map((b) => b.width))
+    for (const b of column) {
+      if (side === 'right') b.left -= widest - b.width
+      b.width = widest
+    }
+  }
+}
+
+/**
  * Where a leader line from a label's point meets its box: the nearest point of the box, or null
- * when the point is in (or touching) the box and needs no line.
+ * when the point is in (or touching) the box and needs no line. A callout in a column at an edge is
+ * met at the inner end of its bottom edge, where an underline ends - and always gets its line.
  * @param {number} x @param {number} y the point
  * @param {{ left: number, top: number, width: number, height: number }} box
+ * @param {'left' | 'right' | null} [edge]
  * @returns {[number, number] | null}
  */
-export function leaderEnd(x, y, box) {
+export function leaderEnd(x, y, box, edge = null) {
+  if (edge) return [edge === 'left' ? box.left + box.width : box.left, box.top + box.height]
   const tx = Math.min(Math.max(x, box.left), box.left + box.width)
   const ty = Math.min(Math.max(y, box.top), box.top + box.height)
   return Math.hypot(tx - x, ty - y) < 2 ? null : [tx, ty]
