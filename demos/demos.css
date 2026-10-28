@@ -1116,3 +1116,15 @@ button.demo-legend-item {
   font-size: 11px;
   color: var(--text-dim);
 }
+
+/* the engine's callouts: small capitals over a rule, joined to their part by a leader line */
+.engine-callout {
+  padding: 1px 2px 3px;
+  border-bottom: 1px solid currentColor;
+  color: #e6e9ee;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
