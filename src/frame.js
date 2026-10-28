@@ -46,6 +46,19 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  */
 
 /**
+ * A section plane's cap: the cut faces of the solids under one clip, filled in its colour. The
+ * renderer finds where the plane passes through solid by counting each pixel's faces into the
+ * stencil buffer, then fills those pixels with the plane - drawn where it is, so nothing in the
+ * same plane fights it, and what is inside the solids stays hidden.
+ * @typedef {object} FrameCap
+ * @property {Float32Array} plane [nx, ny, nz, d], as the clip's
+ * @property {Color} color linear
+ * @property {DrawItem[]} items the opaque meshes under the clip, as drawn
+ * @property {Vec3} center a point on the plane in the middle of the cut
+ * @property {number} radius how far from center the cut reaches, at most
+ */
+
+/**
  * @typedef {object} DrawItem
  * @property {Drawable} node
  * @property {Geometry} geometry
@@ -99,6 +112,7 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  * @property {number} environmentIntensity
  * @property {number} backgroundBlur 0-1
  * @property {ShadowFrame | null} shadow the shadow-casting light's view, when there is one and something casts
+ * @property {FrameCap[]} caps section planes' caps to fill, after the opaque pass
  * @property {{ drawn: number, culled: number }} stats
  * @property {FrameHighlight | null} highlight set by the View for hover highlighting
  * @property {any[]} overlays HTML elements carried by the nodes drawn (node.overlay)
@@ -133,6 +147,7 @@ export function collect(scene, camera) {
     environmentIntensity: scene.environmentIntensity,
     backgroundBlur: scene.backgroundBlur,
     shadow: null,
+    caps: [],
     stats: { drawn: 0, culled: 0 },
     highlight: null,
     overlays: [],
@@ -146,6 +161,9 @@ export function collect(scene, camera) {
   const casters = []
   /** @type {any[]} */
   const receivers = []
+  // the solids under each capped clip
+  /** @type {Map<FrameClip, DrawItem[]>} */
+  const capped = new Map()
 
   /** @param {any} node @param {FrameClip | null} clip the plane cutting this subtree, from above */
   const visit = (node, clip) => {
@@ -165,6 +183,11 @@ export function collect(scene, camera) {
         // point sprites with a map nearly always have soft alpha edges, so they blend too
         const blended = node.material.transparent || (node.drawMode === 'points' && node.material.map)
         ;(blended ? frame.transparent : frame.opaque).push(item)
+        if (item.clip?.cap && !blended) {
+          const solids = capped.get(item.clip)
+          if (solids) solids.push(item)
+          else capped.set(item.clip, [item])
+        }
         frame.stats.drawn++
         if (node.labels) instanceLabels(node, viewProjection, frame.labels)
       } else {
@@ -204,6 +227,7 @@ export function collect(scene, camera) {
     }
   }
   visit(scene, null)
+  for (const [clip, items] of capped) frame.caps.push(capOf(clip, items))
 
   // one shadow map, for the first directional light that casts; it goes first, so the shader
   // knows which light the map belongs to
@@ -257,6 +281,21 @@ function drawItem(node, view, planes, clip) {
   // distance in front of the camera, along its view direction
   const depth = -(view[2] * center[0] + view[6] * center[1] + view[10] * center[2] + view[14])
   return { node, geometry, material, worldMatrix, instances, depth, clip: cuts }
+}
+
+/**
+ * Where a clip's cap goes: the middle of its solids' bounds, brought onto the plane, and how far
+ * the cut can reach from there.
+ * @param {FrameClip} clip @param {DrawItem[]} items
+ * @returns {FrameCap}
+ */
+function capOf(clip, items) {
+  const box = new Box3()
+  for (const item of items) item.node.expandBounds(box)
+  const c = box.getCenter(), p = clip.plane
+  const off = p[0] * c[0] + p[1] * c[1] + p[2] * c[2] + p[3]
+  const center = new Vec3(c[0] - p[0] * off, c[1] - p[1] * off, c[2] - p[2] * off)
+  return { plane: clip.plane, color: /** @type {Color} */ (clip.cap), items, center, radius: box.getRadius() }
 }
 
 // a stable key per labelled node, so label elements survive from frame to frame

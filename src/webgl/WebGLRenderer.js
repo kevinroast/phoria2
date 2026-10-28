@@ -1,13 +1,15 @@
 import * as mat3 from '../math/mat3.js'
+import { Geometry } from '../geometry/Geometry.js'
+import { Material } from '../material/Material.js'
+import { CLIP_ONLY_FRAGMENT, MESH_VERTEX } from './shaders.js'
 import { collect } from '../frame.js'
 import { checkNumber, checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '../validate.js'
 import { GLContext } from './context.js'
 import { SHADOW_MAP_SIZE } from '../shadow.js'
 
-/** @import { FrameDescription, DrawItem, FrameLight } from '../frame.js' */
+/** @import { FrameDescription, DrawItem, FrameLight, FrameCap } from '../frame.js' */
 /** @import { Scene } from '../scene/Scene.js' */
 /** @import { Camera } from '../scene/cameras.js' */
-/** @import { Material } from '../material/Material.js' */
 /** @import { Texture } from '../material/Texture.js' */
 /** @import { Environment } from './passes.js' */
 /** @import { GPUHit } from './picking.js' */
@@ -64,6 +66,15 @@ const TONE_MAPPING = { none: 0, aces: 1, neutral: 2 }
 // material maps and the shader feature each one switches on (all but emissive need lighting)
 const MAP_DEFINES = { roughnessMap: 'ROUGHNESS_MAP', metalnessMap: 'METALNESS_MAP', normalMap: 'NORMAL_MAP', aoMap: 'AO_MAP' }
 const MAP_UNIFORMS = { map: 'uMap', roughnessMap: 'uRoughnessMap', metalnessMap: 'uMetalnessMap', normalMap: 'uNormalMap', aoMap: 'uAoMap', emissiveMap: 'uEmissiveMap' }
+// counting a cap's faces into the stencil: the solids' surfaces, colour and depth left alone
+const CLIP_MASK = /** @type {[string, string]} */ ([MESH_VERTEX, CLIP_ONLY_FRAGMENT])
+// a cap: a square on the plane, two units across, facing +Y until it is placed
+const CAP_SQUARE = new Geometry({
+  positions: [-1, 0, -1, 1, 0, -1, 1, 0, 1, -1, 0, 1], normals: [0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0],
+  uvs: [0, 0, 1, 0, 1, 1, 0, 1], indices: [0, 2, 1, 0, 3, 2],
+})
+// what a cap is drawn as - a plain node, never in a scene
+const CAP_NODE = /** @type {any} */ ({ drawMode: 'triangles', receiveShadow: true, castShadow: false, renderOrder: 0 })
 
 /**
  * Draws a scene with WebGL 2. The View creates one; use it directly to drive your own loop:
@@ -103,6 +114,7 @@ export class WebGLRenderer {
   #wait = false
   /** This frame's light counts and environment, compiled into the lit programs. @type {string[]} */ #lightDefines = []
   #studio = false
+  /** A cap's material, by colour, so each colour compiles and uploads once. @type {Map<number, Material>} */ #capMaterials = new Map()
 
   /** @param {WebGLRendererOptions} options */
   constructor(options) {
@@ -242,6 +254,8 @@ export class WebGLRenderer {
 
     gl.disable(gl.BLEND)
     for (const item of frame.opaque) this.#draw(item, frame, false)
+    // section planes' caps fill the cut faces of the solids just drawn, before anything see-through
+    for (const cap of frame.caps) this.#cap(cap, frame, width, height)
     gl.enable(gl.BLEND)
     for (const item of frame.transparent) this.#draw(item, frame, true)
     gl.depthMask(true)
@@ -373,10 +387,7 @@ export class WebGLRenderer {
 
     const clip = kind === 'mesh' ? item.clip : null
     const defines = this.#defines(kind, material, geometry.colors !== null, !!instances, shadowed)
-    if (clip) {
-      defines.push('CLIP')
-      if (clip.cap) defines.push('CAP')
-    }
+    if (clip) defines.push('CLIP')
     const programs = this.#gpu.programs
     const program = programs.get(kind, defines)
     if (!programs.isReady(program)) {
@@ -429,10 +440,7 @@ export class WebGLRenderer {
     }
     program.set('uColor', material.color)
     program.set('uOpacity', material.opacity)
-    if (clip) {
-      program.set('uClipPlane', clip.plane)
-      if (clip.cap) program.set('uCapColor', clip.cap)
-    }
+    if (clip) program.set('uClipPlane', clip.plane)
     const e = material.emissive, k = material.emissiveIntensity
     program.set('uEmissive', [e[0] * k, e[1] * k, e[2] * k])
     program.set('uRoughness', material.roughness)
@@ -483,10 +491,9 @@ export class WebGLRenderer {
     if (!mat3.normalFromMat4(this.#normalMatrix, worldMatrix)) mat3.identity(this.#normalMatrix)
     program.set('uNormalMatrix', this.#normalMatrix)
     // a mirroring transform (negative scale) reverses the winding - which also says which side is
-    // the back, for double-sided materials and caps
+    // the back, for double-sided materials
     gl.frontFace(determinant3(worldMatrix) < 0 ? gl.CW : gl.CCW)
-    if (material.doubleSided || clip?.cap) {
-      // a cap is the back faces seen through the cut
+    if (material.doubleSided) {
       gl.disable(gl.CULL_FACE)
     } else {
       gl.enable(gl.CULL_FACE)
@@ -505,6 +512,82 @@ export class WebGLRenderer {
     }
     this.info.drawCalls++
     this.info.triangles += elements / 3 * count
+  }
+
+  /**
+   * Fill a section plane's cut through its solids. Each pixel's faces behind the plane are counted
+   * into the stencil - in through a front face, out through a back one - so where the count isn't
+   * zero, the plane there is inside a solid. A square on the plane, lit like any surface, is then
+   * drawn over just those pixels: at the plane's own depth, so faces lying in it can't fight it.
+   * @param {FrameCap} cap @param {FrameDescription} frame @param {number} width @param {number} height
+   */
+  #cap(cap, frame, width, height) {
+    const gl = this.gl
+    const programs = this.#gpu.programs
+    // the counting program, for plain and instanced solids
+    const masks = [false, true].map((instanced) => programs.get('clip-mask', instanced ? ['INSTANCED', 'CLIP'] : ['CLIP'], CLIP_MASK))
+    if (!masks.every((p) => programs.isReady(p))) {
+      if (!this.#wait) {
+        this.info.compiling++
+        return
+      }
+      for (const instanced of [false, true]) programs.ready('clip-mask', instanced ? ['INSTANCED', 'CLIP'] : ['CLIP'], CLIP_MASK)
+    }
+    gl.enable(gl.STENCIL_TEST)
+    gl.enable(gl.SCISSOR_TEST)
+    gl.scissor(0, 0, width, height)
+    gl.clearStencil(0)
+    gl.clear(gl.STENCIL_BUFFER_BIT)
+    gl.disable(gl.SCISSOR_TEST)
+    // count every face, hidden or not, without drawing a thing
+    gl.colorMask(false, false, false, false)
+    gl.depthMask(false)
+    gl.disable(gl.DEPTH_TEST)
+    gl.disable(gl.CULL_FACE)
+    gl.stencilFunc(gl.ALWAYS, 0, 0xff)
+    gl.stencilOpSeparate(gl.BACK, gl.KEEP, gl.KEEP, gl.INCR_WRAP)
+    gl.stencilOpSeparate(gl.FRONT, gl.KEEP, gl.KEEP, gl.DECR_WRAP)
+    for (const item of cap.items) {
+      const program = masks[item.instances ? 1 : 0]
+      gl.useProgram(program.program)
+      program.set('uViewProjection', frame.camera.viewProjection)
+      program.set('uModel', item.worldMatrix)
+      program.set('uClipPlane', cap.plane)
+      gl.frontFace(determinant3(item.worldMatrix) < 0 ? gl.CW : gl.CCW)
+      const buffers = this.#gpu.resources.mesh(item.geometry, item.instances, true)
+      gl.bindVertexArray(buffers.vao)
+      const elements = item.geometry.drawnCount - item.geometry.drawnCount % 3
+      const count = item.instances ? item.instances.count : 1
+      if (buffers.indexType) gl.drawElementsInstanced(gl.TRIANGLES, elements, buffers.indexType, 0, count)
+      else gl.drawArraysInstanced(gl.TRIANGLES, 0, elements, count)
+      this.info.drawCalls++
+    }
+    gl.colorMask(true, true, true, true)
+    // then the plane, just where the count says
+    gl.stencilFunc(gl.NOTEQUAL, 0, 0xff)
+    gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP)
+    this.#draw(this.#capItem(cap), frame, false)
+    gl.disable(gl.STENCIL_TEST)
+  }
+
+  /** A cap's square, laid on its plane over the cut and facing out of it. @param {FrameCap} cap @returns {DrawItem} */
+  #capItem(cap) {
+    const hex = cap.color.getHex()
+    let material = this.#capMaterials.get(hex)
+    if (!material) this.#capMaterials.set(hex, material = new Material({ color: cap.color.getStyle(), roughness: 0.6 }))
+    // axes for the square: y along the plane's normal, x and z across it
+    const [nx, ny, nz] = cap.plane
+    const across = Math.abs(nx) < 0.9 ? [1, 0, 0] : [0, 1, 0]
+    let ax = ny * across[2] - nz * across[1], ay = nz * across[0] - nx * across[2], az = nx * across[1] - ny * across[0]
+    const l = Math.hypot(ax, ay, az)
+    ax /= l
+    ay /= l
+    az /= l
+    // x cross y gives z, so the square keeps facing +y - out of the cut
+    const bx = ay * nz - az * ny, by = az * nx - ax * nz, bz = ax * ny - ay * nx
+    const s = cap.radius * 1.05, c = cap.center
+    const worldMatrix = /** @type {any} */ (new Float32Array([ax * s, ay * s, az * s, 0, nx, ny, nz, 0, bx * s, by * s, bz * s, 0, c[0], c[1], c[2], 1]))
+    return { node: CAP_NODE, geometry: CAP_SQUARE, material, worldMatrix, instances: null, depth: 0, clip: null }
   }
 
   /**

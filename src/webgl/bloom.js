@@ -215,8 +215,9 @@ export class Bloom {
     gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, color)
     const depth = /** @type {WebGLRenderbuffer} */ (gl.createRenderbuffer())
     gl.bindRenderbuffer(gl.RENDERBUFFER, depth)
-    gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.DEPTH_COMPONENT24, width, height)
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth)
+    // with stencil, for section planes' caps
+    gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.DEPTH24_STENCIL8, width, height)
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, depth)
 
     const texture = (w, h, format) => {
       const t = /** @type {WebGLTexture} */ (gl.createTexture())

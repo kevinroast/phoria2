@@ -4,24 +4,14 @@
 import * as mat4 from '../math/mat4.js'
 import { irradianceSH } from '../irradiance.js'
 import { SHADOW_MAP_SIZE } from '../shadow.js'
-import { CLIP, COMMON, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
+import { CLIP_ONLY_FRAGMENT, COMMON, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
 
 /** @import { Programs } from './programs.js' */
 /** @import { Resources } from './resources.js' */
 /** @import { Texture, DataImage } from '../material/Texture.js' */
 /** @import { FrameDescription, ShadowFrame } from '../frame.js' */
 
-// shadow maps only need depth - of what isn't cut away
-const DEPTH_FRAGMENT = /* glsl */ `
-precision highp float;
-in vec3 vWorldPosition;
-out vec4 fragColor;
-${CLIP}
-void main() {
-  clipAway(vWorldPosition);
-  fragColor = vec4(1.0);
-}
-`
+
 
 // a panorama behind everything, seen in the camera's direction
 const BACKGROUND_FRAGMENT = /* glsl */ `
@@ -104,7 +94,8 @@ void main() {
 `
 
 
-const DEPTH = /** @type {[string, string]} */ ([MESH_VERTEX, DEPTH_FRAGMENT])
+// shadow maps only need depth - of what isn't cut away
+const DEPTH = /** @type {[string, string]} */ ([MESH_VERTEX, CLIP_ONLY_FRAGMENT])
 const BACKGROUND = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, BACKGROUND_FRAGMENT])
 const PREFILTER = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, PREFILTER_FRAGMENT])
 

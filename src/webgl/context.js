@@ -52,7 +52,8 @@ export class GLContext {
       clearTimeout(before.timer)
       released.delete(canvas)
     }
-    const gl = canvas.getContext('webgl2', { antialias, alpha: true, premultipliedAlpha: true, powerPreference: 'high-performance' })
+    // a stencil buffer for section planes' caps
+    const gl = canvas.getContext('webgl2', { antialias, alpha: true, premultipliedAlpha: true, stencil: true, powerPreference: 'high-performance' })
     if (!gl) fail('WebGLRenderer', 'WebGL 2 is not available in this browser or on this device')
     this.gl = /** @type {WebGL2RenderingContext} */ (gl)
     this.programs = new Programs(this.gl)

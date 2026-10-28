@@ -1,7 +1,8 @@
 // Section planes: a node's clip cuts its subtree away on one side of a plane - in what is drawn,
 // what casts shadows, and what picking and the raycaster can hit.
 import { describe, expect, it } from 'vitest'
-import { Clip, DirectionalLight, Group, Lines, Mesh, PerspectiveCamera, Points, Raycaster, Scene, box, collect, create, edges } from '../src/index.js'
+import { Clip, DirectionalLight, Group, Lines, Mesh, PerspectiveCamera, Points, Raycaster, Scene, WebGLRenderer, box, collect, create, edges } from '../src/index.js'
+import { fakeCanvas, fakeGL } from './fakes.js'
 import { worldPlane } from '../src/clip.js'
 import { ChangeWatch } from '../src/watch.js'
 
@@ -115,6 +116,79 @@ describe('clipping in frames', () => {
     const frame = collect(scene, camera())
     const c = frame.shadow?.casters.find((i) => i.node === caster)
     expect(c && rounded(c.clip.plane)).toEqual([0, 0, 1, 0])
+  })
+})
+
+describe('caps', () => {
+  it('gathers each capped clip’s opaque solids, with a point on the plane in the middle of them', () => {
+    const scene = new Scene()
+    const capped = scene.add(new Group({ position: [0, 1, 0], clip: { normal: [0, 0, 1], offset: 0.5, cap: '#ff0000' } }))
+    const a = capped.add(new Mesh({ geometry: box(2), position: [-2, 0, 0] }))
+    const b = capped.add(new Mesh({ geometry: box(2), position: [2, 0, 0] }))
+    // see-through parts and an uncapped clip have no cap
+    capped.add(new Mesh({ geometry: box(1), material: { opacity: 0.5 } }))
+    scene.add(new Group({ clip: { normal: [1, 0, 0] } })).add(new Mesh({ geometry: box() }))
+    scene.updateWorldTree()
+    const frame = collect(scene, camera())
+    expect(frame.caps).toHaveLength(1)
+    const [cap] = frame.caps
+    expect(cap.items.map((i) => i.node)).toEqual([a, b])
+    expect(cap.color.getHex()).toBe(0xff0000)
+    expect(rounded(cap.plane)).toEqual([0, 0, 1, -0.5])
+    // the middle of the two boxes, brought onto the plane at z = 0.5
+    expect(rounded(cap.center)).toEqual([0, 1, 0.5])
+    expect(cap.radius).toBeGreaterThan(3)
+  })
+
+  it('are drawn by counting faces into the stencil, then filling the plane where the count is not zero', () => {
+    const { gl } = fakeGL()
+    // a record of the stencil calls made, by GL constant name
+    const names = new Map()
+    const calls = []
+    const recording = new Proxy(gl, {
+      get(target, key) {
+        const value = target[key]
+        if (typeof key === 'string' && /^[A-Z0-9_]+$/.test(key)) names.set(value, key)
+        if (typeof key === 'string' && /^(stencil|enable|disable|colorMask|clear$)/.test(key)) {
+          return (...args) => {
+            calls.push([key, ...args.map((a) => names.get(a) ?? a)])
+            return value(...args)
+          }
+        }
+        return value
+      },
+    })
+    let attributes = null
+    const canvas = fakeCanvas(recording)
+    const getContext = canvas.getContext
+    canvas.getContext = (type, options) => {
+      if (type === 'webgl2') attributes = options
+      return getContext(type, options)
+    }
+    const renderer = new WebGLRenderer({ canvas })
+    renderer.setSize(10, 10)
+    const scene = new Scene()
+    scene.add(new Group({ clip: { normal: [0, 0, 1], cap: '#ff0000' } })).add(new Mesh({ geometry: box() }))
+    renderer.render(scene, camera())
+    // the context has a stencil buffer to count into
+    expect(attributes.stencil).toBe(true)
+    const stencil = calls.filter(([name, what]) => name.startsWith('stencil') || what === 'STENCIL_TEST' || name === 'colorMask')
+    expect(stencil).toEqual([
+      ['enable', 'STENCIL_TEST'],
+      ['colorMask', false, false, false, false],
+      ['stencilFunc', 'ALWAYS', 0, 0xff],
+      ['stencilOpSeparate', 'BACK', 'KEEP', 'KEEP', 'INCR_WRAP'],
+      ['stencilOpSeparate', 'FRONT', 'KEEP', 'KEEP', 'DECR_WRAP'],
+      ['colorMask', true, true, true, true],
+      ['stencilFunc', 'NOTEQUAL', 0, 0xff],
+      ['stencilOp', 'KEEP', 'KEEP', 'KEEP'],
+      ['disable', 'STENCIL_TEST'],
+    ])
+    // and nothing of the sort without a cap
+    calls.length = 0
+    scene.children[0].clip.cap = null
+    renderer.render(scene, camera())
+    expect(calls.some(([, what]) => what === 'STENCIL_TEST')).toBe(false)
   })
 })
 

@@ -22,8 +22,6 @@ const FIRES = [0, 3 * Math.PI, Math.PI, 2 * Math.PI]
 // pistons 1 and 4 go up together, 2 and 3 opposite
 const PHASES = [0, Math.PI, Math.PI, 0]
 const CUT_COLOUR = '#d2382c'
-// where two cut parts meet, a hairline apart: faces in one plane would fight to be seen through the cut
-const SEAM = 0.003
 
 const ABOUT = {
   block: 'Cylinder block - cast aluminium, bored for the four cylinders',
@@ -66,7 +64,7 @@ function part(kind, options) {
 
 function casing() {
   const g = new Group()
-  const bottom = 0.9 + SEAM, top = DECK - SEAM
+  const bottom = 0.9, top = DECK
   // the block in plan, bored for the cylinders, from the crankcase up to the deck
   const blockShape = [[-2.1, -0.65], [2.1, -0.65], [2.1, 0.65], [-2.1, 0.65]]
   const bores = CYLINDERS.map((x) => outline.circle({ radius: BORE, segments: 48, center: [x, 0] }))
@@ -77,19 +75,19 @@ function casing() {
   g.add(part('crankcase', { geometry: extrude({ shape: crankcase, depth: 4.2, axis: 'x' }), material: iron }))
   // its end walls, with a hole for the crankshaft
   const end = [[0.65, 0.9], [0.95, 0.3], [0.95, -0.7], [0.8, -0.9], [-0.8, -0.9], [-0.95, -0.7], [-0.95, 0.3], [-0.65, 0.9]]
-  for (const x of [-2.15 - SEAM, 2.15 + SEAM]) {
+  for (const x of [-2.15, 2.15]) {
     g.add(part('crankcase', { geometry: extrude({ shape: end, holes: [outline.circle(0.26)], depth: 0.1, axis: 'x' }), position: [x, 0, 0], material: iron }))
   }
   // the head, and the cam cover over it: an arch in section, round the camshafts
   g.add(part('head', { geometry: box({ width: 4.3, height: HEAD_TOP - DECK, depth: 1.3 }), position: [0, (DECK + HEAD_TOP) / 2, 0], material: alloy }))
   const arch = [[0.72, 0], ...outline.arc({ radius: 0.72, from: 0, to: Math.PI, center: [0, 0.35] }), [-0.72, 0],
     [-0.62, 0], ...outline.arc({ radius: 0.62, from: Math.PI, to: 0, center: [0, 0.35] }), [0.62, 0]]
-  g.add(part('cover', { geometry: extrude({ shape: arch, depth: 4.2, axis: 'x' }), position: [0, HEAD_TOP + SEAM, 0], material: paint }))
+  g.add(part('cover', { geometry: extrude({ shape: arch, depth: 4.2, axis: 'x' }), position: [0, HEAD_TOP, 0], material: paint }))
   // the sump, narrowing to its floor
   const sump = [[0.82, 0], [0.7, -0.6], [-0.7, -0.6], [-0.82, 0], [-0.74, 0], [-0.63, -0.52], [0.63, -0.52], [0.74, 0]]
-  g.add(part('sump', { geometry: extrude({ shape: sump, depth: 4.0, axis: 'x' }), position: [0, -0.9 - SEAM, 0], material: iron }))
-  for (const x of [-2.04 - SEAM, 2.04 + SEAM]) {
-    g.add(part('sump', { geometry: extrude({ shape: [[0.82, 0], [0.7, -0.6], [-0.7, -0.6], [-0.82, 0]], depth: 0.08, axis: 'x' }), position: [x, -0.9 - SEAM, 0], material: iron }))
+  g.add(part('sump', { geometry: extrude({ shape: sump, depth: 4.0, axis: 'x' }), position: [0, -0.9, 0], material: iron }))
+  for (const x of [-2.04, 2.04]) {
+    g.add(part('sump', { geometry: extrude({ shape: [[0.82, 0], [0.7, -0.6], [-0.7, -0.6], [-0.82, 0]], depth: 0.08, axis: 'x' }), position: [x, -0.9, 0], material: iron }))
   }
   return g
 }

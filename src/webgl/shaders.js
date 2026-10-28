@@ -30,6 +30,18 @@ void clipAway(vec3 p) {}
 #endif
 `
 
+// depth or stencil only - of what isn't cut away
+export const CLIP_ONLY_FRAGMENT = /* glsl */ `
+precision highp float;
+in vec3 vWorldPosition;
+out vec4 fragColor;
+${CLIP}
+void main() {
+  clipAway(vWorldPosition);
+  fragColor = vec4(1.0);
+}
+`
+
 export const COMMON = /* glsl */ `
 vec3 srgbToLinear(vec3 c) {
   return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
@@ -159,9 +171,6 @@ flat in float vHighlight;
 
 uniform vec4 uHighlight;     // linear colour, and how far to move towards it
 uniform vec3 uColor;         // linear
-#ifdef CAP
-uniform vec3 uCapColor;      // linear: a cut solid's inside, seen through the cut, shows as this
-#endif
 uniform float uOpacity;
 uniform vec3 uEmissive;      // linear, intensity applied
 #ifdef MAP
@@ -340,13 +349,6 @@ void main() {
 #ifdef EMISSIVE_MAP
   emissive *= texture(uEmissiveMap, vUv).rgb;
 #endif
-#ifdef CAP
-  // the back of a face, seen through the cut: the solid's cut face, in the cap colour
-  if (!gl_FrontFacing) {
-    base = vec4(uCapColor, 1.0);
-    emissive = vec3(0.0);
-  }
-#endif
 
 #ifdef LIT
 #ifdef FLAT_SHADING
@@ -354,20 +356,13 @@ void main() {
 #else
   vec3 n = normalize(vNormal);
 #endif
-#if defined(DOUBLE_SIDED) || defined(CAP)
+#ifdef DOUBLE_SIDED
   if (!gl_FrontFacing) n = -n;
-#endif
-#ifdef CAP
-  // lit as a flat face lying on the plane, facing out of the cut
-  if (!gl_FrontFacing) n = uClipPlane.xyz;
 #endif
   vec3 surfaceNormal = n;
 #ifdef NORMAL_MAP
   vec3 m = texture(uNormalMap, vUv).xyz * 2.0 - 1.0;
   m.xy *= uNormalScale;
-#ifdef CAP
-  if (gl_FrontFacing)
-#endif
   n = perturbNormal(n, m);
 #endif
   vec3 v = normalize(uCameraPosition - vWorldPosition);

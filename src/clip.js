@@ -1,7 +1,8 @@
 // Section planes: a node's `clip` cuts away everything in its subtree on one side of a plane, for
 // cutaways - an engine with its block opened up, a building with a wall off. The plane lives in the
 // node's own space, so it moves and turns with the node. Drawing, shadows, picking and the
-// raycaster all leave out what is cut away; a cap colour fills the cut faces of closed shapes.
+// raycaster all leave out what is cut away; a cap colour fills the cut faces of closed shapes - a
+// surface lying on the plane itself, so parts that touch join cleanly and what's inside stays hidden.
 import { Color } from './value/Color.js'
 import { Vec3 } from './value/Vec3.js'
 import { checkNumber, checkOptions, describe, fail } from './validate.js'
@@ -15,7 +16,8 @@ import { checkNumber, checkOptions, describe, fail } from './validate.js'
  *   (default [0, 0, 1]: the front, towards a camera that hasn't moved)
  * @property {number} [offset] how far along the normal from the node's origin the plane lies (default 0)
  * @property {ColorInput | null} [cap] fill colour for the cut faces of closed shapes, lit as a flat
- *   face on the plane; null leaves them open, showing the inside (default null)
+ *   face on the plane; null leaves them open, showing the inside (default null). Caps need closed
+ *   solids: an open surface (a plane, an open tube) under a capped clip would fill in wrongly
  */
 
 export const CLIP_OPTIONS = ['normal', 'offset', 'cap']
