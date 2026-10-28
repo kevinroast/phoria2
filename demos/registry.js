@@ -31,12 +31,12 @@ export const DEMOS = [
   { name: 'volcano', title: 'a volcano erupting, cut away to show the magma inside - callouts with leader lines' },
   { name: 'carbide', title: 'Carbide, the Robot Wars champion 2017 - a double wedge on yellow wheels, steel bar weapon spinning up' },
   { name: 'cells', title: 'an animal and a plant cell, cut open - a labelled science poster, hover a part to light it' },
+  { name: 'skull', title: 'the human skull, as an anatomy plate - every bone coloured and named in Latin; hover for English, click a bone or its name to draw it out' },
   { name: 'galaxy', title: 'a spiral galaxy - 200,000 additive stars, old and young, round a glowing core' },
   { name: 'fireworks', title: 'fireworks over a city across the water - rockets with physics, four burst shapes, reflections' },
   { name: 'paint', title: 'a paint cannon - click the wall to aim; drops splat and drip into its canvas textures', orbit: false },
   //{ name: 'space', title: 'Cobra Mk IIIs over a gas giant as a comet flies by - and an Elite mode in green vector lines', orbit: false },
   // tests of the API on bigger tasks go here with hidden: true - reachable by name
   // (demo.html?name=...), not listed in the gallery
-  { name: 'skull', title: 'the human skull, as an anatomy plate - every bone coloured and named in Latin; hover for English, click a bone or its name to draw it out', hidden: true },
   { name: 'harbour', title: 'a harbour on a foggy night - lamps and a lighthouse beam casting shadows through the mist', hidden: true },
 ]
