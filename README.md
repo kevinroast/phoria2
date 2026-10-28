@@ -27,7 +27,7 @@ Or straight from a CDN, with no build step:
 </script>
 ```
 
-To use more than the core - charts, particles or glTF - map each import to the package's own
+To use more than the core - charts, particles, glTF or motion - map each import to the package's own
 files, so they share one copy of the core (the CDN's ready-made `+esm` builds each bundle their
 own). Pin the version so a new release can't change your page:
 
@@ -35,10 +35,11 @@ own). Pin the version so a new release can't change your page:
 <script type="importmap">
 {
   "imports": {
-    "phoria2": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.2/dist/phoria2.js",
-    "phoria2/charts": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.2/dist/charts.js",
-    "phoria2/particles": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.2/dist/particles.js",
-    "phoria2/gltf": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.2/dist/gltf.js"
+    "phoria2": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.3/dist/phoria2.js",
+    "phoria2/charts": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.3/dist/charts.js",
+    "phoria2/particles": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.3/dist/particles.js",
+    "phoria2/gltf": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.3/dist/gltf.js",
+    "phoria2/motion": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.3/dist/motion.js"
   }
 }
 </script>
