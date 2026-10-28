@@ -49,5 +49,6 @@ export { PhoriaError } from './validate.js'
 /** @typedef {import('./tooltip.js').TooltipContent} TooltipContent */
 /** @typedef {import('./Raycaster.js').Hit} Hit */
 /** @typedef {import('./scene/drawables.js').LabelPlacement} LabelPlacement */
+/** @typedef {import('./scene/drawables.js').LabelPlace} LabelPlace */
 /** @typedef {import('./scene/drawables.js').InstanceLabels} InstanceLabels */
 /** @typedef {import('./snapshot.js').ImageOptions} ImageOptions */

@@ -595,7 +595,7 @@ export class View {
     // draw - complete, shaders and all - and read back in the same task, while the drawing
     // buffer is still there
     this.#render(true)
-    return snapshot(this.canvas, this.#labels.shown, options ?? {})
+    return snapshot(this.canvas, this.#labels.shown, options ?? {}, this.#labels.leaders)
   }
 
   /**

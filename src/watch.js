@@ -155,10 +155,11 @@ export class ChangeWatch {
 
   /** @param {any} label */
   #label(label) {
-    this.#strings.push(label.text, label.className, label.place, label.overlap)
+    this.#strings.push(label.text, label.className, label.place, label.overlap, label.edge ?? '')
     this.#pushAll(label.offset)
     this.#push(label.priority)
     this.#push(label.occlude ? 1 : 0)
+    this.#push(label.leader ? 1 : 0)
   }
 
   /** @param {any} light */

@@ -39,6 +39,12 @@ import { NODE_OPTIONS, Node } from './Node.js'
  * @property {'hide' | 'dim' | 'show'} [overlap] when the label is covered - by a higher-priority label, or by
  *   geometry with occlude - 'hide' drops it, 'dim' draws it faint and behind; 'show' always shows it (default 'hide')
  * @property {boolean} [occlude] the label counts as covered when geometry is in front of its point (default false)
+ * @property {boolean} [leader] a line from the label's point to the label, with a dot on the point - for
+ *   callouts set off to the side with offset, as on a diagram (default false). It takes the label's text
+ *   colour; style it with CSS on .phoria-leader
+ * @property {'left' | 'right' | null} [edge] set the label at the view's left or right edge, level with its
+ *   point - callouts in a column down the side of a diagram, with leader: true. offset then moves it in from
+ *   the edge and up or down (default null: by its point)
  */
 /** @typedef {'center' | 'above' | 'below' | 'left' | 'right'} LabelPlace */
 
@@ -55,8 +61,13 @@ import { NODE_OPTIONS, Node } from './Node.js'
  */
 
 export const LABEL_PLACES = /** @type {LabelPlace[]} */ (['center', 'above', 'below', 'left', 'right'])
-const PLACEMENT_OPTIONS = ['place', 'offset', 'className', 'priority', 'overlap', 'occlude']
+const PLACEMENT_OPTIONS = ['place', 'offset', 'className', 'priority', 'overlap', 'occlude', 'leader', 'edge']
 const LABEL_HINTS = {
+  line: 'use leader: true - a line from the point to the label',
+  callout: "use leader: true, with edge: 'left' | 'right' to line the labels up down the side",
+  column: "use edge: 'left' | 'right' - the label sits at that edge of the view, level with its point",
+  align: "use edge: 'left' | 'right' - the label sits at that edge of the view, level with its point",
+  pointer: 'use leader: true - a line from the point to the label',
   anchor: "use place: 'center' | 'above' | 'below' | 'left' | 'right' (where the label goes)",
   position: 'labels per instance sit on their instance - offset moves them in pixels',
   zIndex: "use 'priority': higher stays when labels overlap",
@@ -80,6 +91,8 @@ function placement(owner, o) {
     priority: o.priority === undefined ? 0 : checkNumber(owner, 'priority', o.priority),
     overlap: o.overlap === undefined ? 'hide' : checkOneOf(owner, 'overlap', o.overlap, ['hide', 'dim', 'show']),
     occlude: !!o.occlude,
+    leader: !!o.leader,
+    edge: o.edge == null ? null : /** @type {'left' | 'right'} */ (checkOneOf(owner, 'edge', o.edge, ['left', 'right'])),
   }
 }
 
@@ -462,6 +475,10 @@ export class Label extends Node {
   overlap = 'hide'
   /** The label counts as covered when geometry is in front of its point. */
   occlude = false
+  /** A line from the label's point to the label, for callouts. */
+  leader = false
+  /** Set at the view's left or right edge, level with its point, or null for by its point. @type {'left' | 'right' | null} */
+  edge = null
 
   /** @param {LabelOptions} options */
   constructor(options) {
@@ -486,7 +503,7 @@ export class Label extends Node {
   /** @returns {Record<string, unknown>} */
   cloneOptions() {
     return { ...super.cloneOptions(), text: this.text, className: this.className, place: this.place,
-      offset: [...this.offset], priority: this.priority, overlap: this.overlap, occlude: this.occlude }
+      offset: [...this.offset], priority: this.priority, overlap: this.overlap, occlude: this.occlude, leader: this.leader, edge: this.edge }
   }
 
   /** @returns {Record<string, unknown>} */
@@ -499,6 +516,8 @@ export class Label extends Node {
     if (this.priority) json.priority = this.priority
     if (this.overlap !== 'hide') json.overlap = this.overlap
     if (this.occlude) json.occlude = true
+    if (this.leader) json.leader = true
+    if (this.edge) json.edge = this.edge
     return json
   }
 }

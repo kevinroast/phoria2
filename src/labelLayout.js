@@ -5,6 +5,8 @@
 
 // gap between a point and a label placed beside it, in CSS pixels
 const GAP = 6
+// how far labels set at an edge of the view sit in from it, in CSS pixels
+const EDGE = 16
 // grid cell size for finding neighbours quickly
 const CELL = 64
 // how far two labels may run into each other before one gives way: a label newly showing
@@ -19,15 +21,32 @@ const KEEP_OVERLAP = 0.5
  * @param {number} width @param {number} height the label's size
  * @param {LabelPlace} place where the label goes relative to the point
  * @param {[number, number]} offset extra shift in pixels
+ * @param {'left' | 'right' | null} [edge] set at that edge of the view instead, level with the point
+ * @param {number} [viewWidth] the view's width, for edge: 'right'
  * @returns {[number, number]}
  */
-export function placeBox(x, y, width, height, place, offset) {
+export function placeBox(x, y, width, height, place, offset, edge = null, viewWidth = 0) {
+  // at an edge of the view, level with the point: offset moves it in from the edge, and up or down
+  if (edge) return [edge === 'left' ? EDGE + offset[0] : viewWidth - EDGE - width - offset[0], y - height / 2 + offset[1]]
   let left = x - width / 2, top = y - height / 2
   if (place === 'above') top = y - height - GAP
   else if (place === 'below') top = y + GAP
   else if (place === 'left') left = x - width - GAP
   else if (place === 'right') left = x + GAP
   return [left + offset[0], top + offset[1]]
+}
+
+/**
+ * Where a leader line from a label's point meets its box: the nearest point of the box, or null
+ * when the point is in (or touching) the box and needs no line.
+ * @param {number} x @param {number} y the point
+ * @param {{ left: number, top: number, width: number, height: number }} box
+ * @returns {[number, number] | null}
+ */
+export function leaderEnd(x, y, box) {
+  const tx = Math.min(Math.max(x, box.left), box.left + box.width)
+  const ty = Math.min(Math.max(y, box.top), box.top + box.height)
+  return Math.hypot(tx - x, ty - y) < 2 ? null : [tx, ty]
 }
 
 /**

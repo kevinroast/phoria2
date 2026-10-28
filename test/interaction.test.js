@@ -5,7 +5,7 @@ import {
 } from '../src/index.js'
 import { explain } from '../src/explain.js'
 import { fitBox, framingScale } from '../src/presets.js'
-import { layoutLabels, placeBox } from '../src/labelLayout.js'
+import { layoutLabels, leaderEnd, placeBox } from '../src/labelLayout.js'
 import { OrbitControl } from '../src/OrbitControl.js'
 import { ChangeWatch } from '../src/watch.js'
 
@@ -41,6 +41,28 @@ describe('labels', () => {
     expect(placeBox(100, 100, 40, 20, 'below', [0, 0])).toEqual([80, 106])
     expect(placeBox(100, 100, 40, 20, 'left', [0, 0])).toEqual([54, 90])
     expect(placeBox(100, 100, 40, 20, 'right', [5, -5])).toEqual([111, 85])
+  })
+
+  it('sets callouts in a column at an edge of the view, level with their point, with a leader to them', () => {
+    // 16px in from the edge whatever the point's x; offset moves it in and up or down
+    expect(placeBox(300, 100, 40, 20, 'center', [0, 0], 'left', 800)).toEqual([16, 90])
+    expect(placeBox(300, 100, 40, 20, 'above', [10, -9], 'left', 800)).toEqual([26, 81])
+    expect(placeBox(300, 100, 40, 20, 'center', [0, 0], 'right', 800)).toEqual([744, 90])
+    // the leader meets the box's nearest point - its near side, or a corner
+    expect(leaderEnd(300, 100, { left: 16, top: 90, width: 40, height: 20 })).toEqual([56, 100])
+    expect(leaderEnd(300, 140, { left: 16, top: 90, width: 40, height: 20 })).toEqual([56, 110])
+    // a point in its own label needs none
+    expect(leaderEnd(30, 100, { left: 16, top: 90, width: 40, height: 20 })).toBeNull()
+  })
+
+  it('keeps leader and edge on a label, through JSON, and points callout habits at them', () => {
+    const label = new Label({ text: 'Vent', position: [0, 1, 0], leader: true, edge: 'right', offset: [0, -9] })
+    expect([label.leader, label.edge]).toEqual([true, 'right'])
+    expect(label.toJSON()).toMatchObject({ leader: true, edge: 'right' })
+    expect(new Label({ text: 'plain' }).toJSON()).not.toHaveProperty('edge')
+    expect(() => new Label({ text: 'x', edge: /** @type {any} */ ('top') })).toThrow('edge')
+    expect(() => new Label({ text: 'x', /** @type {any} */ callout: true })).toThrow('use leader: true')
+    expect(() => new Label({ text: 'x', /** @type {any} */ column: 'left' })).toThrow("use edge: 'left' | 'right'")
   })
 
   it('hides overlapping labels by priority, then nearness, and always shows overlap: show', () => {

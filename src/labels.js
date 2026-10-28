@@ -1,7 +1,7 @@
 // HTML labels over the canvas: one absolutely positioned element per label, moved each frame to its
 // projected position. Crisp at any pixel ratio, styleable with CSS, and selectable/accessible like
 // any text on the page. Overlapping labels give way by priority (see labelLayout.js).
-import { layoutLabels, placeBox } from './labelLayout.js'
+import { layoutLabels, leaderEnd, placeBox } from './labelLayout.js'
 
 /** @import { FrameLabel } from './frame.js' */
 
@@ -16,7 +16,14 @@ import { layoutLabels, placeBox } from './labelLayout.js'
  * @property {number} offscreen behind the camera or outside the view
  */
 
-/** @typedef {{ el: HTMLDivElement, text: string, className: string, width: number, height: number, showing: boolean }} Entry */
+/** @typedef {{ el: HTMLDivElement, text: string, className: string, width: number, height: number, showing: boolean, leader: SVGGElement | null, color: string }} Entry */
+
+/**
+ * A leader line as drawn, in CSS pixels over the canvas - for image export.
+ * @typedef {{ from: [number, number], to: [number, number], color: string, opacity: number }} Leader
+ */
+
+const SVG = 'http://www.w3.org/2000/svg'
 
 // how faint a covered label is drawn, with overlap: 'dim'
 const DIM_OPACITY = '0.4'
@@ -26,6 +33,9 @@ export class LabelLayer {
   /** @type {Map<any, Entry>} */ #elements = new Map()
   /** Elements shown in the last frame, for image export. @type {HTMLDivElement[]} */
   shown = []
+  /** Leader lines drawn in the last frame, for image export. @type {Leader[]} */
+  leaders = []
+  /** The lines from labels' points to callouts, under the labels. @type {SVGSVGElement | null} */ #lines = null
   /** Node overlays mounted in the layer. @type {Set<HTMLElement>} */ #overlays = new Set()
 
   /** @param {HTMLCanvasElement} canvas */
@@ -49,6 +59,7 @@ export class LabelLayer {
     /** @type {LabelStats} */
     const stats = { total: labels.length, shown: 0, overlapped: 0, dimmed: 0, occluded: 0, offscreen: 0 }
     this.shown = []
+    this.leaders = []
     if (!labels.length && !this.#elements.size && !overlays.length && !this.#overlays.size && !this.#root) return stats
     const root = this.#ensureRoot()
     this.#mount(root, overlays)
@@ -68,6 +79,7 @@ export class LabelLayer {
     for (const [key, entry] of this.#elements) {
       if (seen.has(key)) continue
       entry.el.remove()
+      entry.leader?.remove()
       this.#elements.delete(key)
     }
     // 2. measure new or changed labels (one layout pass for all of them)
@@ -81,10 +93,10 @@ export class LabelLayer {
     const boxes = active.map(({ label, entry }) => {
       const x = (label.ndc[0] * 0.5 + 0.5) * rect.width
       const y = (0.5 - label.ndc[1] * 0.5) * rect.height
-      const [left, top] = placeBox(x, y, entry.width, entry.height, label.style.place, label.style.offset)
+      const [left, top] = placeBox(x, y, entry.width, entry.height, label.style.place, label.style.offset, label.style.edge, rect.width)
       // a label showing last frame holds its place more firmly, so labels don't flicker as the view moves
       return { left, top, width: entry.width, height: entry.height, priority: label.style.priority, overlap: label.style.overlap,
-        depth: label.depth, sticky: entry.showing, covered: !!label.occluded }
+        depth: label.depth, sticky: entry.showing, covered: !!label.occluded, x, y }
     })
     const states = layoutLabels(boxes)
     // remember what shows this frame, for next frame's stickiness
@@ -109,8 +121,16 @@ export class LabelLayer {
       // nearer labels stack above further ones, and every dimmed label sits under every shown one
       const near = Math.max(0, Math.round(100000 - label.depth * 100))
       el.style.zIndex = String(state === 'dim' ? Math.min(near, 99999) : 100000 + near)
+      if (label.style.leader) this.#leader(entry, box, state === 'dim' ? +DIM_OPACITY : 1)
+      else if (entry.leader) {
+        entry.leader.remove()
+        entry.leader = null
+      }
     })
-    for (const entry of hidden) entry.el.style.display = 'none'
+    for (const entry of hidden) {
+      entry.el.style.display = 'none'
+      if (entry.leader) entry.leader.style.display = 'none'
+    }
     return stats
   }
 
@@ -129,13 +149,66 @@ export class LabelLayer {
     }
   }
 
+  /**
+   * Draw a label's leader: from its point to the nearest point of its box, with a dot on the point.
+   * @param {Entry} entry
+   * @param {{ left: number, top: number, width: number, height: number, x: number, y: number }} box
+   * @param {number} opacity
+   */
+  #leader(entry, box, opacity) {
+    const { x, y } = box
+    const end = leaderEnd(x, y, box)
+    let g = entry.leader
+    if (!g) {
+      g = /** @type {SVGGElement} */ (document.createElementNS(SVG, 'g'))
+      g.append(document.createElementNS(SVG, 'line'), document.createElementNS(SVG, 'circle'))
+      this.#ensureLines().append(g)
+      entry.leader = g
+    }
+    // the label's own text colour (read once per look), unless CSS on .phoria-leader says otherwise
+    const color = entry.color ||= getComputedStyle(entry.el).color
+    g.setAttribute('class', `phoria-leader${entry.className.slice('phoria-label'.length)}`)
+    g.setAttribute('stroke', color)
+    g.setAttribute('fill', color)
+    g.style.display = ''
+    g.style.opacity = String(opacity)
+    const [line, dot] = /** @type {[SVGLineElement, SVGCircleElement]} */ (/** @type {unknown} */ ([...g.children]))
+    // a point inside its own label needs no line
+    line.style.display = end ? '' : 'none'
+    if (end) {
+      line.setAttribute('x1', String(x))
+      line.setAttribute('y1', String(y))
+      line.setAttribute('x2', String(end[0]))
+      line.setAttribute('y2', String(end[1]))
+      line.setAttribute('stroke-width', '1')
+    }
+    dot.setAttribute('cx', String(x))
+    dot.setAttribute('cy', String(y))
+    dot.setAttribute('r', '2.5')
+    dot.setAttribute('stroke', 'none')
+    if (end) this.leaders.push({ from: [x, y], to: end, color, opacity })
+  }
+
+  /** The SVG the leader lines go in, under every label. @returns {SVGSVGElement} */
+  #ensureLines() {
+    if (this.#lines) return this.#lines
+    const svg = /** @type {SVGSVGElement} */ (document.createElementNS(SVG, 'svg'))
+    svg.setAttribute('class', 'phoria-leaders')
+    Object.assign(svg.style, { position: 'absolute', left: '0', top: '0', width: '100%', height: '100%', overflow: 'visible', zIndex: '0' })
+    this.#ensureRoot().prepend(svg)
+    this.#lines = svg
+    return svg
+  }
+
   dispose() {
     for (const el of this.#overlays) el.remove()
     this.#overlays.clear()
     this.#root?.remove()
     this.#root = null
+    this.#lines = null
     this.#elements.clear()
     this.shown = []
+    this.leaders = []
   }
 
   /** @param {FrameLabel} label @param {HTMLDivElement} root @returns {Entry} */
@@ -146,7 +219,7 @@ export class LabelLayer {
       // opacity eases, so dimming and brightening don't flash
       Object.assign(el.style, { position: 'absolute', left: '0', top: '0', whiteSpace: 'nowrap', willChange: 'transform', transition: 'opacity 0.15s' })
       root.append(el)
-      entry = { el, text: '', className: '', width: -1, height: -1, showing: false }
+      entry = { el, text: '', className: '', width: -1, height: -1, showing: false, leader: null, color: '' }
       this.#elements.set(label.key, entry)
     }
     const className = `phoria-label${label.style.className ? ` ${label.style.className}` : ''}`
@@ -154,6 +227,7 @@ export class LabelLayer {
       entry.el.textContent = entry.text = label.text
       entry.el.className = entry.className = className
       entry.width = entry.height = -1
+      entry.color = ''
     }
     return entry
   }
