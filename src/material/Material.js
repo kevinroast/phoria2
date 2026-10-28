@@ -69,6 +69,9 @@ const HINTS = {
  * from what is actually used, so an unlit colour costs no lighting maths.
  */
 export class Material {
+  /** The options it takes, and hints for names people reach for instead. */
+  static OPTIONS = OPTIONS
+  static HINTS = HINTS
   name = ''
   /** @type {number} */ opacity = 1
   /** Drop pixels with less alpha than this - hard-edged cut-outs, drawn with the opaque pass. @type {number} */ alphaTest = 0

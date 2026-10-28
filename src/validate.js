@@ -99,6 +99,21 @@ export function checkNumber(owner, name, v) {
 }
 
 /**
+ * A number within limits: from min (or above it, with above: true) up to max.
+ * @param {string} owner @param {string} name @param {unknown} v
+ * @param {number} [min] @param {number} [max] @param {{ above?: boolean }} [options]
+ * @returns {number}
+ */
+export function checkRange(owner, name, v, min = -Infinity, max = Infinity, { above = false } = {}) {
+  const n = checkNumber(owner, name, v)
+  if ((above ? !(n > min) : n < min) || n > max) {
+    const limits = max === Infinity ? (above ? `above ${min}` : `${min} or more`) : above ? `above ${min} and up to ${max}` : `from ${min} to ${max}`
+    fail(owner, `'${name}' must be ${limits}, got ${n}`)
+  }
+  return n
+}
+
+/**
  * @template {string} T
  * @param {string} owner @param {string} name @param {unknown} v @param {readonly T[]} allowed
  * @returns {T}

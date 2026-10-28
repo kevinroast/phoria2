@@ -19,17 +19,23 @@ import { checkNumber, checkOptions } from '../validate.js'
  *     const body = new Body({ velocity: [0, 20, 0], gravity: [0, -9.8, 0] })
  *     rocket.onUpdate(body.update)
  */
+const OPTIONS = ['velocity', 'gravity', 'drag']
+const HINTS = {
+  impulse: 'call body.impulse([x, y, z]) after creating it',
+  mass: 'a Body has no mass - impulse() changes velocity directly',
+}
+
 export class Body {
+  /** The options it takes, and hints for names people reach for instead. */
+  static OPTIONS = OPTIONS
+  static HINTS = HINTS
   velocity = new Vec3()
   gravity = new Vec3()
   drag = 0
 
   /** @param {BodyOptions} [options] */
   constructor(options = {}) {
-    checkOptions('Body', options, ['velocity', 'gravity', 'drag'], {
-      impulse: 'call body.impulse([x, y, z]) after creating it',
-      mass: 'a Body has no mass - impulse() changes velocity directly',
-    })
+    checkOptions('Body', options, OPTIONS, HINTS)
     if (options.velocity !== undefined) this.velocity.copy(options.velocity, 'Body')
     if (options.gravity !== undefined) this.gravity.copy(options.gravity, 'Body')
     if (options.drag !== undefined) this.drag = Math.max(0, checkNumber('Body', 'drag', options.drag))

@@ -30,7 +30,16 @@ import { EASES } from './ease.js'
  *     story.add(2, (t) => { capsule.visible = t > 0 }, { label: 'Separation' })
  *     view.start((dt) => story.update(dt))
  */
+const OPTIONS = ['loop', 'speed']
+const HINTS = { repeat: "use 'loop: true'", autoplay: 'a timeline plays from the start - call pause() to hold it' }
+/** What add() takes, and hints for names people reach for instead. */
+export const STEP_OPTIONS = ['label', 'ease']
+export const STEP_HINTS = { name: "use 'label'", easing: "use 'ease'" }
+
 export class Timeline {
+  /** The options it takes, and hints for names people reach for instead. */
+  static OPTIONS = OPTIONS
+  static HINTS = HINTS
   /** @type {Step[]} */ #steps = []
   #time = 0
   #playing = true
@@ -41,7 +50,7 @@ export class Timeline {
 
   /** @param {TimelineOptions} [options] */
   constructor(options = {}) {
-    checkOptions('Timeline', options, ['loop', 'speed'], { repeat: "use 'loop: true'", autoplay: 'a timeline plays from the start - call pause() to hold it' })
+    checkOptions('Timeline', options, OPTIONS, HINTS)
     if (options.loop !== undefined) this.loop = !!options.loop
     if (options.speed !== undefined) this.speed = checkNumber('Timeline', 'speed', options.speed)
   }
@@ -57,7 +66,7 @@ export class Timeline {
     checkNumber('Timeline.add()', 'duration', duration)
     if (duration < 0) fail('Timeline.add()', `'duration' is seconds, 0 or more, got ${duration}`)
     if (typeof run !== 'function') fail('Timeline.add()', `takes (duration, (t) => { ... }), got ${describe(run)} for the step`)
-    checkOptions('Timeline.add()', options, ['label', 'ease'], { name: "use 'label'", easing: "use 'ease'" })
+    checkOptions('Timeline.add()', options, STEP_OPTIONS, STEP_HINTS)
     const ease = typeof options.ease === 'function' ? options.ease : EASES[options.ease ?? 'linear']
     if (!ease) fail('Timeline.add()', `ease '${options.ease}' - expected ${Object.keys(EASES).map((e) => `'${e}'`).join(', ')}, or a function`)
     this.#steps.push({ start: this.duration, duration, run, label: options.label ?? '', ease })

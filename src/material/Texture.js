@@ -24,8 +24,17 @@ import { checkOneOf, checkOptions, describe, fail } from '../validate.js'
 const OPTIONS = ['image', 'url', 'colorSpace', 'wrap', 'repeat', 'offset', 'filter', 'mipmaps', 'flipY']
 const DEFAULTS = { colorSpace: 'srgb', wrap: 'repeat', repeat: [1, 1], offset: [0, 0], filter: 'linear', mipmaps: true, flipY: false }
 
+const HINTS = {
+  src: "use 'url' for the image address",
+  encoding: "use colorSpace: 'srgb' | 'linear'",
+  wrapS: "use wrap: 'repeat' | 'clamp' | 'mirror' (applies to both directions)",
+}
+
 /** An image for a material map. Canvas and video textures: set `needsUpdate()` after drawing. */
 export class Texture {
+  /** The options it takes, and hints for names people reach for instead. */
+  static OPTIONS = OPTIONS
+  static HINTS = HINTS
   /** @type {TextureImage | null} null until loaded */
   image = null
   /** @type {string | null} */
@@ -51,11 +60,7 @@ export class Texture {
   /** @param {TextureOptions | string} [options] options, or just a url */
   constructor(options = {}) {
     if (typeof options === 'string') options = { url: options }
-    checkOptions('Texture', options, OPTIONS, {
-      src: "use 'url' for the image address",
-      encoding: "use colorSpace: 'srgb' | 'linear'",
-      wrapS: "use wrap: 'repeat' | 'clamp' | 'mirror' (applies to both directions)",
-    })
+    checkOptions('Texture', options, OPTIONS, HINTS)
     const o = { ...DEFAULTS, ...options }
     this.colorSpace = checkOneOf('Texture', 'colorSpace', o.colorSpace, ['srgb', 'linear'])
     this.wrap = checkOneOf('Texture', 'wrap', o.wrap, ['repeat', 'clamp', 'mirror'])

@@ -78,6 +78,14 @@ const tmpMat3 = new Float32Array(9)
 export class Node {
   /** The description type, used by create() and toJSON(). */
   static type = 'node'
+  /**
+   * The options it takes, and hints for names people reach for instead. A subclass with options of
+   * its own adds to its parent's: static get OPTIONS() { return [...super.OPTIONS, 'blink'] }
+   * @type {string[]}
+   */
+  static OPTIONS = NODE_OPTIONS
+  /** @type {Record<string, string>} */
+  static HINTS = NODE_HINTS
 
   name = ''
   /** @type {Vec3} */ position = new Vec3()
@@ -117,7 +125,7 @@ export class Node {
   /** @param {NodeOptions} [options] */
   constructor(options = {}) {
     const Class = /** @type {typeof Node & { OPTIONS?: string[], HINTS?: Record<string, string> }} */ (new.target)
-    checkOptions(Class.name, options, Class.OPTIONS ?? NODE_OPTIONS, { ...NODE_HINTS, ...Class.HINTS })
+    checkOptions(Class.name, options, Class.OPTIONS, { ...NODE_HINTS, ...Class.HINTS })
     this.rotation.onChange = () => quat.fromEulerXYZ(this.quaternion, this.rotation.x, this.rotation.y, this.rotation.z)
     this.quaternion.onChange = () => this.rotation.setFromQuat(this.quaternion)
 
@@ -419,6 +427,8 @@ export class Node {
     if (!this.scale.equals([1, 1, 1])) json.scale = this.scale.toArray()
     if (!this.visible) json.visible = false
     if (!this.pickable) json.pickable = false
+    if (!this.matrixAutoUpdate) json.matrixAutoUpdate = false
+    if (this.highlight) json.highlight = this.highlight.getStyle()
     if (Object.keys(this.userData).length) json.userData = this.userData
     Object.assign(json, this.jsonOptions())
     if (this.#children.length) json.children = this.#children.map((c) => c.toJSON())

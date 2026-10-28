@@ -1,53 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Material, Mesh, PerspectiveCamera, Scene, Texture, box, sphere } from '../src/index.js'
 import { WebGLRenderer, bloomSettings } from '../src/webgl/WebGLRenderer.js'
-
-// A stand-in WebGL 2 context that does nothing but count the GPU objects made and freed, and the
-// draws, so leaks show without a GPU. Constants are stable made-up numbers; every other call is a
-// no-op. With `parallel`, it offers background shader compiling, finished when compiled.done is set.
-function fakeGL({ parallel = false } = {}) {
-  const compiled = { done: false }
-  const draws = { count: 0 }
-  const live = new Set()
-  const lost = { count: 0, now: false, restores: 0 }
-  const consts = new Map()
-  const constant = (name) => {
-    if (!consts.has(name)) consts.set(name, 1000 + consts.size)
-    return consts.get(name)
-  }
-  const make = (kind) => () => {
-    const o = { kind }
-    live.add(o)
-    return o
-  }
-  const free = (o) => live.delete(o)
-  const gl = {
-    createBuffer: make('buffer'), createTexture: make('texture'), createVertexArray: make('vertex array'),
-    createFramebuffer: make('framebuffer'), createRenderbuffer: make('renderbuffer'), createProgram: make('program'),
-    createShader: () => ({}),
-    deleteBuffer: free, deleteTexture: free, deleteVertexArray: free, deleteFramebuffer: free, deleteRenderbuffer: free,
-    deleteProgram: free, deleteShader() {},
-    getShaderParameter: () => true,
-    // 0x91b1 is COMPLETION_STATUS_KHR: is a program compiled yet?
-    getProgramParameter: (_p, name) => (name === constant('ACTIVE_UNIFORMS') ? 0 : name === 0x91b1 ? compiled.done : true),
-    getExtension: (name) => (name === 'WEBGL_lose_context' ? { loseContext: () => { lost.count++; lost.now = true; live.clear() }, restoreContext: () => { lost.restores++; lost.now = false } }
-      : name === 'KHR_parallel_shader_compile' && parallel ? {} : null),
-    drawElements: () => draws.count++,
-    drawArrays: () => draws.count++,
-    isContextLost: () => lost.now,
-  }
-  const proxy = new Proxy(gl, {
-    get: (target, key) => (key in target ? target[key] : typeof key === 'string' && /^[A-Z0-9_]+$/.test(key) ? constant(key) : () => {}),
-  })
-  const count = (kind) => [...live].filter((o) => o.kind === kind).length
-  return { gl: proxy, live, lost, count, compiled, draws }
-}
-
-const fakeCanvas = (gl) => ({
-  width: 0, height: 0,
-  getContext: (type) => (type === 'webgl2' ? gl : type === '2d' ? { drawImage() {}, globalCompositeOperation: '' } : null),
-  addEventListener() {}, removeEventListener() {},
-})
+import { fakeCanvas, fakeGL } from './fakes.js'
 
 const camera = () => new PerspectiveCamera({ position: [0, 0, 10], target: [0, 0, 0], aspect: 1 })
 const pixels = () => new Texture({ image: { data: new Uint8Array([255, 0, 0, 255]), width: 1, height: 1 } })

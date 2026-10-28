@@ -120,7 +120,11 @@ export class Emitter extends Points {
     if (/** @type {any} */ (options)?.geometry !== undefined) fail('Emitter', "an Emitter makes its own geometry - size it with 'max'")
     const max = options?.max ?? 1000
     if (!Number.isInteger(max) || max < 1) fail('Emitter', `'max' must be a whole number of 1 or more, got ${describe(max)}`)
-    const material = options?.material instanceof Material ? options.material : { ...DEFAULT_MATERIAL, ...options?.material }
+    const given = options?.material
+    if (given !== undefined && !(given instanceof Material) && (!given || typeof given !== 'object' || Array.isArray(given))) {
+      fail('Emitter', `'material' is a Material or material options such as { size: 0.2 }, got ${describe(given)}`)
+    }
+    const material = given instanceof Material ? given : { ...DEFAULT_MATERIAL, ...given }
     const geometry = new Geometry({ positions: new Float32Array(max * 3), colors: new Float32Array(max * 3) })
     geometry.drawCount = 0
     super({ ...options, geometry, material })

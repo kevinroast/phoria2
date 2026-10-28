@@ -17,6 +17,8 @@ const OPTIONS = ['positions', 'normals', 'uvs', 'colors', 'indices']
  * return one; build your own from arrays. Change the arrays in place and call needsUpdate().
  */
 export class Geometry {
+  /** The options it takes. */
+  static OPTIONS = OPTIONS
   /** @type {Float32Array} */ positions
   /** @type {Float32Array | null} */ uvs = null
   /** @type {Float32Array | null} */ colors = null

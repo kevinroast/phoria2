@@ -136,8 +136,14 @@ export class Chart extends Group {
 
   /** A new chart from the same spec and transform. @returns {any} */
   clone() {
-    const { name, position, quaternion, scale, visible, pickable } = super.cloneOptions()
-    return new Chart({ ...this.#input, name, position, quaternion, scale, visible, pickable })
+    // the node options a chart takes (its tooltip and highlight are its own, in its spec)
+    const { name, position, quaternion, scale, visible, pickable, onHover, onClick, showFrom } = super.cloneOptions()
+    const copy = new Chart({ ...this.#input, name, position, quaternion, scale, visible, pickable, onHover, onClick, showFrom })
+    // as Node.clone() does - but not the update handlers, which include this chart's own
+    copy.userData = structuredClone(this.userData)
+    copy.matrixAutoUpdate = this.matrixAutoUpdate
+    if (!copy.matrixAutoUpdate) copy.matrix.copy(this.matrix)
+    return copy
   }
 
   /** @param {boolean} animate */

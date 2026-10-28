@@ -1,6 +1,6 @@
 import * as mat3 from '../math/mat3.js'
 import { collect } from '../frame.js'
-import { checkNumber, checkOneOf, checkOptions, describe, fail, warnOnce } from '../validate.js'
+import { checkNumber, checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '../validate.js'
 import { GLContext } from './context.js'
 import { SHADOW_MAP_SIZE } from '../shadow.js'
 
@@ -39,6 +39,10 @@ import { SHADOW_MAP_SIZE } from '../shadow.js'
 
 const OPTIONS = ['canvas', 'shared', 'antialias', 'toneMapping', 'exposure', 'pixelRatio', 'bloom']
 const BLOOM = { strength: 1, radius: 0.6, threshold: 0.6 }
+/** What bloom: { ... } takes, and hints for names people reach for instead. */
+export const BLOOM_OPTIONS = Object.keys(BLOOM)
+export const BLOOM_HINTS = { intensity: "use 'strength'", amount: "use 'strength'", size: "use 'radius'", blur: "use 'radius'" }
+const HINTS = { alpha: 'the canvas is always transparent where the scene has no background' }
 
 /**
  * Bloom options as settings: true for the defaults, false or null for none.
@@ -49,7 +53,7 @@ export function bloomSettings(owner, value) {
   if (value === undefined || value === null || value === false) return null
   if (value === true) return { ...BLOOM }
   if (typeof value !== 'object') fail(owner, `bloom is true, false or { strength, radius, threshold }, got ${describe(value)}`)
-  checkOptions(`${owner} bloom`, value, Object.keys(BLOOM), { intensity: "use 'strength'", amount: "use 'strength'", size: "use 'radius'", blur: "use 'radius'" })
+  checkOptions(`${owner} bloom`, value, BLOOM_OPTIONS, BLOOM_HINTS)
   const settings = { ...BLOOM }
   for (const key of /** @type {(keyof BloomOptions)[]} */ (Object.keys(BLOOM))) {
     if (value[key] !== undefined) settings[key] = checkNumber(`${owner} bloom`, key, value[key])
@@ -70,6 +74,9 @@ const MAP_UNIFORMS = { map: 'uMap', roughnessMap: 'uRoughnessMap', metalnessMap:
  *     renderer.render(scene, camera)
  */
 export class WebGLRenderer {
+  /** The options it takes, and hints for names people reach for instead. */
+  static OPTIONS = OPTIONS
+  static HINTS = HINTS
   /** The canvas the picture ends up on. @type {HTMLCanvasElement | OffscreenCanvas} */ canvas
   /** @type {ToneMapping} */ toneMapping = 'neutral'
   exposure = 1
@@ -99,12 +106,12 @@ export class WebGLRenderer {
 
   /** @param {WebGLRendererOptions} options */
   constructor(options) {
-    checkOptions('WebGLRenderer', options, OPTIONS, { alpha: 'the canvas is always transparent where the scene has no background' })
+    checkOptions('WebGLRenderer', options, OPTIONS, HINTS)
     if (!options?.canvas) fail('WebGLRenderer', "'canvas' is required")
     this.canvas = options.canvas
     if (options.toneMapping !== undefined) this.toneMapping = checkOneOf('WebGLRenderer', 'toneMapping', options.toneMapping, ['aces', 'neutral', 'none'])
-    if (options.exposure !== undefined) this.exposure = options.exposure
-    if (options.pixelRatio !== undefined) this.pixelRatio = options.pixelRatio
+    if (options.exposure !== undefined) this.exposure = checkRange('WebGLRenderer', 'exposure', options.exposure, 0)
+    if (options.pixelRatio !== undefined) this.pixelRatio = checkRange('WebGLRenderer', 'pixelRatio', options.pixelRatio, 0, Infinity, { above: true })
     this.#bloom = bloomSettings('WebGLRenderer', options.bloom)
 
     if (options.shared) {

@@ -1,0 +1,33 @@
+// The options every node takes, as contract rows - shared by the contracts of every node class.
+import { vi } from 'vitest'
+import { Group, Scene } from '../src/index.js'
+import { rounded } from './contract.js'
+
+const hex = (c) => c.getHex()
+
+// --- every node takes these
+export const nodeRows = () => ({
+  name: { value: 'thing', read: (n) => n.name, default: '' },
+  position: { value: [1, 2, 3], read: (n) => n.position.toArray(), default: [0, 0, 0], bad: 'up', error: "'up'" },
+  rotation: { value: [0.1, 0.2, 0.3], read: (n) => rounded([n.rotation.x, n.rotation.y, n.rotation.z]), bad: 'up', error: "'up'" },
+  quaternion: { value: [0, 0, 0.6, 0.8], read: (n) => rounded(n.quaternion), bad: 'up', error: "'up'" },
+  scale: { value: [2, 3, 4], read: (n) => n.scale.toArray(), default: [1, 1, 1], bad: 'up', error: "'up'" },
+  visible: { value: false, read: (n) => n.visible, default: true },
+  pickable: { value: false, read: (n) => n.pickable, default: true },
+  matrixAutoUpdate: { value: false, read: (n) => n.matrixAutoUpdate, default: true },
+  children: { fresh: () => [new Group({ name: 'kid' })], read: (n) => n.children.map((c) => c.name).filter((c) => c === 'kid'), expect: ['kid'] },
+  userData: { value: { id: 7 }, read: (n) => n.userData },
+  onUpdate: {
+    fresh: () => vi.fn(), keep: false,
+    check: (n, fn) => {
+      const scene = n instanceof Scene ? n : /** @type {Scene} */ (new Scene().add(n).root)
+      scene.update(0.1, 1)
+      if (!fn.mock.calls.length) throw new Error('onUpdate was not called')
+    },
+  },
+  tooltip: { value: () => 'tip', read: (n) => typeof n.tooltip, expect: 'function', bad: 'tip', error: 'function', keep: false },
+  highlight: { value: '#ff0000', read: (n) => hex(n.highlight), expect: 0xff0000, bad: 'notacolour', error: 'notacolour' },
+  onHover: { value: () => {}, read: (n) => typeof n.onHover, expect: 'function', bad: 1, error: 'function', keep: false },
+  onClick: { value: () => {}, read: (n) => typeof n.onClick, expect: 'function', bad: 1, error: 'function', keep: false },
+  showFrom: { value: () => {}, read: (n) => typeof n.showFrom, expect: 'function', bad: 1, error: 'function', keep: false },
+})

@@ -69,10 +69,11 @@ const LABEL_HINTS = {
   align: "use edge: 'left' | 'right' - the label sits at that edge of the view, level with its point",
   pointer: 'use leader: true - a line from the point to the label',
   anchor: "use place: 'center' | 'above' | 'below' | 'left' | 'right' (where the label goes)",
-  position: 'labels per instance sit on their instance - offset moves them in pixels',
   zIndex: "use 'priority': higher stays when labels overlap",
   collision: "use overlap: 'hide' | 'dim' | 'show'",
 }
+// labels per instance or point take one more: they can't be moved anywhere but by offset
+const INSTANCE_LABEL_HINTS = { ...LABEL_HINTS, position: 'labels per instance sit on their instance - offset moves them in pixels' }
 
 /**
  * Validated placement options, with defaults filled in.
@@ -105,7 +106,7 @@ function instanceLabels(owner, v) {
   const o = /** @type {Record<string, any>} */ (v)
   for (const key of Object.keys(o)) {
     if (key !== 'text' && key !== 'at' && !PLACEMENT_OPTIONS.includes(key)) {
-      fail(owner, `unknown labels option '${key}'${LABEL_HINTS[key] ? ` - ${LABEL_HINTS[key]}` : ` - expected text, at, ${PLACEMENT_OPTIONS.join(', ')}`}`)
+      fail(owner, `unknown labels option '${key}'${INSTANCE_LABEL_HINTS[key] ? ` - ${INSTANCE_LABEL_HINTS[key]}` : ` - expected text, at, ${PLACEMENT_OPTIONS.join(', ')}`}`)
     }
   }
   const at = o.at === undefined ? 'top' : checkOneOf(owner, 'labels.at', o.at, ['top', 'center'])
@@ -119,7 +120,6 @@ const DRAWABLE_OPTIONS = [...NODE_OPTIONS, 'geometry', 'material', 'castShadow',
 const DRAWABLE_HINTS = {
   mesh: "pass 'geometry' and 'material' directly",
   materials: "one 'material' per node - use a Group of meshes for several",
-  userData: "use 'data' for what this node shows - picking returns it as hit.datum",
   rows: "use 'data' - one row per instance or point",
 }
 

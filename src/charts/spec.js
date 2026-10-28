@@ -2,7 +2,7 @@
 // and every mistake explained - including Vega-Lite, ECharts and Plotly habits - since a spec is
 // exactly what an agent writes.
 import { Color } from '../value/Color.js'
-import { describe, didYouMean, fail } from '../validate.js'
+import { checkNumber, checkRange, describe, didYouMean, fail } from '../validate.js'
 import { toDate } from './scales.js'
 
 /** @typedef {'quantitative' | 'nominal' | 'ordinal' | 'temporal'} FieldType */
@@ -23,13 +23,13 @@ import { toDate } from './scales.js'
  */
 
 export const MARKS = /** @type {Mark[]} */ (['bar', 'point', 'line', 'area', 'surface', 'network'])
-const CHANNELS = ['x', 'y', 'z', 'color', 'size', 'opacity', 'label', 'key', 'detail']
-const OPTIONS = ['mark', 'data', 'encoding', 'tooltip', 'box', 'stack', 'width', 'layout', 'flat', 'steps', 'seed', 'spacing',
+export const CHANNELS = ['x', 'y', 'z', 'color', 'size', 'opacity', 'label', 'key', 'detail']
+export const OPTIONS = ['mark', 'data', 'encoding', 'tooltip', 'box', 'stack', 'width', 'layout', 'flat', 'steps', 'seed', 'spacing',
   'source', 'target', 'link', 'highlight', 'legend', 'theme', 'overlap', 'transition', 'title', '$schema', 'description', ...CHANNELS]
-const CHANNEL_OPTIONS = ['field', 'type', 'title', 'format', 'scale', 'axis', 'value', 'priority', 'legend']
+export const CHANNEL_OPTIONS = ['field', 'type', 'title', 'format', 'scale', 'axis', 'value', 'priority', 'legend']
 
 // what other chart libraries call things
-const OPTION_HINTS = {
+export const OPTION_HINTS = {
   series: "phoria2 charts map fields to channels instead of listing series - e.g. { mark: 'bar', x: 'month', y: 'sales', color: 'region' }",
   xAxis: "axes come from the channels - use x: { field, axis: { title } }",
   yAxis: "axes come from the channels - use y: { field, axis: { title } }",
@@ -43,7 +43,6 @@ const OPTION_HINTS = {
   layer: 'layers aren\'t supported yet - add several charts to the same scene with the same box',
   hconcat: 'put each chart in its own View', vconcat: 'put each chart in its own View', concat: 'put each chart in its own View',
   height: "the canvas sets the size in pixels; 'box' sets the chart's size in the scene",
-  size: "'size' is a channel; the chart's size in the scene is 'box: [x, y, z]'",
   colour: "use 'color'", colors: "use color: { field, scale: { range: [...] } }",
   nodes: "a network's nodes and links go in data: { nodes, links }", links: "a network's nodes and links go in data: { nodes, links }",
 }
@@ -51,7 +50,7 @@ const MARK_HINTS = {
   scatter: 'point', scatter3d: 'point', circle: 'point', dots: 'point', column: 'bar', bars: 'bar', histogram: 'bar',
   heatmap: 'surface', mesh3d: 'surface', graph: 'network', tree: 'network', ribbon: 'area', lines: 'line', rect: 'bar',
 }
-const CHANNEL_HINTS = {
+export const CHANNEL_HINTS = {
   overlap: "set overlap on the chart - { overlap: 'dim' | 'hide' | 'show' } - it applies to all the chart's labels",
   aggregate: 'aggregate the rows first (e.g. sum per month) - charts draw rows as given',
   bin: 'bin the rows first - charts draw rows as given',
@@ -94,6 +93,10 @@ export function normalise(input) {
   } else {
     for (const name of mark === 'surface' ? ['x', 'z', 'y'] : ['x', 'y']) {
       if (!channels[name]) fail('chart()', `a '${mark}' chart needs ${name} - e.g. ${name}: '${fields[0] ?? 'field'}'`)
+      // bars, lines, areas and surfaces are laid out along these scales; only points can sit at a constant
+      if (mark !== 'point' && channels[name].field === null) {
+        fail('chart()', `${name} on a '${mark}' chart lays its marks out along a scale - it needs a field, not a constant value - e.g. ${name}: '${fields[0] ?? 'field'}'`)
+      }
     }
   }
 
@@ -115,6 +118,12 @@ export function normalise(input) {
 
   const options = {}
   for (const key of OPTIONS) if (!CHANNELS.includes(key) && !['mark', 'data', 'encoding', 'tooltip', 'link'].includes(key) && input[key] !== undefined) options[key] = input[key]
+  // a network's force layout: how long it settles, where it starts, how far apart nodes sit
+  if (options.steps !== undefined && (!Number.isInteger(options.steps) || options.steps < 1)) {
+    fail('chart()', `'steps' is how many steps the force layout takes, a whole number of 1 or more, got ${describe(options.steps)}`)
+  }
+  if (options.seed !== undefined) checkNumber('chart()', 'seed', options.seed)
+  if (options.spacing !== undefined) checkRange('chart()', 'spacing', options.spacing, 0, Infinity, { above: true })
   if (options.box !== undefined && (!Array.isArray(options.box) || options.box.length !== 3 || !options.box.every((n) => n > 0))) {
     fail('chart()', `'box' is the chart's size in the scene, [x, y, z] above 0, got ${describe(options.box)}`)
   }
@@ -194,6 +203,8 @@ function channel(name, spec, rows, fields) {
     }
     if (o.field === undefined && o.value === undefined) fail(owner, `${name} needs a field (or a constant value)`)
   } else {
+    // a size given as [x, y, z] meant the chart's size
+    if (name === 'size' && Array.isArray(spec)) fail(owner, "'size' is a channel - the chart's size in the scene is 'box: [x, y, z]'")
     return fail(owner, `${name} must be a field name or { field, ... }, got ${describe(spec)}`)
   }
   const field = o.field ?? null

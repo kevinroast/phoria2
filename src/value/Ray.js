@@ -92,7 +92,12 @@ export class Ray {
     const denom = a * c - b * b
     let s = denom > 1e-12 ? (a * e - b * dd) / denom : 0
     s = Math.min(1, Math.max(0, s))
-    const t = Math.max(0, b * s - dd)
+    let t = b * s - dd
+    // nearest behind the ray's start: from the start, the nearest point of the segment is another one
+    if (t < 0) {
+      t = 0
+      s = c > 1e-12 ? Math.min(1, Math.max(0, e / c)) : 0
+    }
     const px = this.origin[0] + d[0] * t - (v0[0] + ex * s)
     const py = this.origin[1] + d[1] * t - (v0[1] + ey * s)
     const pz = this.origin[2] + d[2] * t - (v0[2] + ez * s)

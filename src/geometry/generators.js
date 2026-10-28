@@ -6,6 +6,18 @@ import { checkNumber, checkOptions, describe, fail } from '../validate.js'
 
 const TAU = Math.PI * 2
 
+/** What each generator takes (a number alone sets the first, where that makes sense). */
+export const GENERATOR_OPTIONS = {
+  box: ['size', 'width', 'height', 'depth', 'segments'],
+  sphere: ['radius', 'segments', 'rings'],
+  plane: ['size', 'width', 'depth', 'segments'],
+  cylinder: ['radius', 'radiusTop', 'height', 'segments', 'caps'],
+  torus: ['radius', 'tube', 'segments', 'tubeSegments'],
+  icosphere: ['radius', 'detail'],
+  axes: ['size'],
+  grid: ['size', 'divisions'],
+}
+
 /**
  * @typedef {object} BoxOptions
  * @property {number} [size] sets width, height and depth together, default 1
@@ -71,7 +83,7 @@ const SEGMENT_HINT = "has one 'segments' option, used for every face"
  */
 export function box(options) {
   const owner = 'box()'
-  const o = resolve(owner, options, ['size', 'width', 'height', 'depth', 'segments'], (n) => ({ size: n }), {
+  const o = resolve(owner, options, GENERATOR_OPTIONS.box, (n) => ({ size: n }), {
     widthSegments: `box() ${SEGMENT_HINT}`,
     heightSegments: `box() ${SEGMENT_HINT}`,
     depthSegments: `box() ${SEGMENT_HINT}`,
@@ -119,7 +131,7 @@ const BOX_FACES = [
  */
 export function sphere(options) {
   const owner = 'sphere()'
-  const o = resolve(owner, options, ['radius', 'segments', 'rings'], (n) => ({ radius: n }), {
+  const o = resolve(owner, options, GENERATOR_OPTIONS.sphere, (n) => ({ radius: n }), {
     widthSegments: "sphere(): use 'segments' for the divisions around the sphere",
     heightSegments: "sphere(): use 'rings' for the divisions from pole to pole",
   })
@@ -155,7 +167,7 @@ export function sphere(options) {
  */
 export function plane(options) {
   const owner = 'plane()'
-  const o = resolve(owner, options, ['size', 'width', 'depth', 'segments'], (n) => ({ size: n }), {
+  const o = resolve(owner, options, GENERATOR_OPTIONS.plane, (n) => ({ size: n }), {
     height: "plane() lies in the x-z plane - use 'depth' rather than 'height'",
     widthSegments: `plane() ${SEGMENT_HINT}`,
     heightSegments: `plane() ${SEGMENT_HINT}`,
@@ -186,7 +198,7 @@ export function plane(options) {
  */
 export function cylinder(options) {
   const owner = 'cylinder()'
-  const o = resolve(owner, options, ['radius', 'radiusTop', 'height', 'segments', 'caps'], null, {
+  const o = resolve(owner, options, GENERATOR_OPTIONS.cylinder, null, {
     radiusBottom: "cylinder(): use 'radius' for the bottom radius",
     radialSegments: "cylinder(): use 'segments' for the divisions around the cylinder",
     openEnded: "cylinder(): use 'caps: false' for an open tube",
@@ -252,7 +264,7 @@ function cap(m, radius, y, side, segments) {
  */
 export function torus(options) {
   const owner = 'torus()'
-  const o = resolve(owner, options, ['radius', 'tube', 'segments', 'tubeSegments'], null, {
+  const o = resolve(owner, options, GENERATOR_OPTIONS.torus, null, {
     tubularSegments: "torus(): use 'segments' for the divisions around the ring",
     radialSegments: "torus(): use 'tubeSegments' for the divisions around the tube",
   })
@@ -287,7 +299,7 @@ export function torus(options) {
  */
 export function icosphere(options) {
   const owner = 'icosphere()'
-  const o = resolve(owner, options, ['radius', 'detail'], (n) => ({ radius: n }), {
+  const o = resolve(owner, options, GENERATOR_OPTIONS.icosphere, (n) => ({ radius: n }), {
     subdivisions: "icosphere(): use 'detail' (0-6) for the subdivision level",
   })
   const radius = size(owner, 'radius', o.radius, 1)
@@ -415,7 +427,7 @@ const COPLANAR = Math.cos(Math.PI / 180)
  */
 export function axes(options) {
   const owner = 'axes()'
-  const o = resolve(owner, options, ['size'], (n) => ({ size: n }))
+  const o = resolve(owner, options, GENERATOR_OPTIONS.axes, (n) => ({ size: n }))
   const s = size(owner, 'size', o.size, 1)
   const g = new Geometry({
     positions: [0, 0, 0, s, 0, 0, 0, 0, 0, 0, s, 0, 0, 0, 0, 0, 0, s],
@@ -434,7 +446,7 @@ export function axes(options) {
  */
 export function grid(options) {
   const owner = 'grid()'
-  const o = resolve(owner, options, ['size', 'divisions'], (n) => ({ size: n }), {
+  const o = resolve(owner, options, GENERATOR_OPTIONS.grid, (n) => ({ size: n }), {
     segments: "grid() uses 'divisions' for the number of squares along each side",
   })
   const s = size(owner, 'size', o.size, 10)

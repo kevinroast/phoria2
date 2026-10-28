@@ -39,6 +39,16 @@ import { checkNumber, checkOneOf, checkOptions, describe, fail } from '../valida
  * @property {number} [sides] around the tube, default 8
  */
 
+/** What curve(), curve.line(), curve.tube() and ellipse() take, and hints for names people reach for instead. */
+export const CURVE_OPTIONS = ['closed', 'tension']
+export const CURVE_HINTS = { loop: "use 'closed: true'", smooth: "the curve is always smooth - 'tension' (0-1) sets how tight" }
+export const LINE_OPTIONS = ['segments', 'dash']
+export const LINE_HINTS = { dashed: "use 'dash: [on, off]' - lengths in the curve's units" }
+export const TUBE_OPTIONS = ['radius', 'segments', 'sides']
+export const TUBE_HINTS = { tubularSegments: "use 'segments'", radialSegments: "use 'sides'" }
+// an ellipse takes the two radii of its plane as well: radiusX and radiusZ in 'xz'
+export const ELLIPSE_OPTIONS = ['plane', 'radius', 'center', 'tilt']
+
 const SAMPLES = 48 // per span between control points, for measuring length
 
 /** A smooth curve. Make one with curve(points) or ellipse(options). */
@@ -55,7 +65,7 @@ export class Curve {
    */
   constructor(points, options = {}) {
     if (!Array.isArray(points) || points.length < 2) fail('curve()', `needs an array of two or more points, got ${describe(points)}`)
-    checkOptions('curve()', options, ['closed', 'tension'], { loop: "use 'closed: true'", smooth: "the curve is always smooth - 'tension' (0-1) sets how tight" })
+    checkOptions('curve()', options, CURVE_OPTIONS, CURVE_HINTS)
     this.#points = points.map((p) => Vec3.fromInput(p, 'curve()'))
     this.#closed = !!options.closed
     this.#tension = options.tension === undefined ? 0 : checkNumber('curve()', 'tension', options.tension)
@@ -118,7 +128,7 @@ export class Curve {
    * @returns {Geometry}
    */
   line(options = {}) {
-    checkOptions('curve.line()', options, ['segments', 'dash'], { dashed: "use 'dash: [on, off]' - lengths in the curve's units" })
+    checkOptions('curve.line()', options, LINE_OPTIONS, LINE_HINTS)
     const segments = this.#segments('curve.line()', options.segments)
     const step = this.length / segments
     /** @type {number[]} */
@@ -148,7 +158,7 @@ export class Curve {
    * @returns {Geometry}
    */
   tube(options = {}) {
-    checkOptions('curve.tube()', options, ['radius', 'segments', 'sides'], { tubularSegments: "use 'segments'", radialSegments: "use 'sides'" })
+    checkOptions('curve.tube()', options, TUBE_OPTIONS, TUBE_HINTS)
     const radius = options.radius === undefined ? 0.1 : checkNumber('curve.tube()', 'radius', options.radius)
     const sides = options.sides === undefined ? 8 : Math.max(3, Math.round(checkNumber('curve.tube()', 'sides', options.sides)))
     const segments = this.#segments('curve.tube()', options.segments)
@@ -261,7 +271,7 @@ export function ellipse(options = {}) {
   const [u, v] = [...plane].map((a) => 'xyz'.indexOf(a))
   const name = (a) => `radius${'XYZ'[a]}`
   const off = name(3 - u - v)
-  checkOptions('ellipse()', options, ['plane', 'radius', name(u), name(v), 'center', 'tilt'], {
+  checkOptions('ellipse()', options, [...ELLIPSE_OPTIONS, name(u), name(v)], {
     [off]: `an ellipse in '${plane}' has '${name(u)}' and '${name(v)}' - set plane for another`,
   })
   const r = options.radius === undefined ? 1 : checkNumber('ellipse()', 'radius', options.radius)

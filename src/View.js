@@ -12,7 +12,7 @@ import { Scene } from './scene/Scene.js'
 import { Camera, PerspectiveCamera } from './scene/cameras.js'
 import { DirectionalLight, HemisphereLight } from './scene/lights.js'
 import { WebGLRenderer } from './webgl/WebGLRenderer.js'
-import { checkOneOf, checkOptions, describe, fail, warnOnce } from './validate.js'
+import { checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from './validate.js'
 
 /** @import { OrbitOptions } from './OrbitControl.js' */
 /** @import { CameraPreset, FramingKeep } from './presets.js' */
@@ -69,6 +69,7 @@ import { checkOneOf, checkOptions, describe, fail, warnOnce } from './validate.j
 
 const OPTIONS = ['canvas', 'scene', 'camera', 'orbit', 'background', 'renderMode', 'framing', 'highlight', 'tooltip', 'pixelRatio',
   'antialias', 'context', 'toneMapping', 'exposure', 'bloom', 'autoLight', 'maxDelta']
+const FRAMING_OPTIONS = ['keep', 'aspect']
 const HINTS = {
   renderer: 'the View makes its renderer - read it from view.renderer',
   controls: "use orbit: true (or orbit options); the control is then view.controls",
@@ -103,6 +104,11 @@ let ownContexts = 0
  *     view.start((dt) => cube.rotateY(0.6 * dt))
  */
 export class View {
+  /** The options it takes, and hints for names people reach for instead. */
+  static OPTIONS = OPTIONS
+  static HINTS = HINTS
+  /** What framing: { ... } takes. */
+  static FRAMING_OPTIONS = FRAMING_OPTIONS
   /** @type {HTMLCanvasElement} */ canvas
   /** @type {Scene} */ scene
   /** @type {Camera} */ #camera
@@ -187,6 +193,8 @@ export class View {
     if (this.#autoFrame) this.#autoFrameFrom = cameraPlace(this.#camera)
 
     const context = options.context === undefined ? 'auto' : checkOneOf('View', 'context', options.context, ['auto', 'own', 'shared'])
+    // the renderer checks these too; checked here, the error names the View
+    if (options.exposure !== undefined) checkRange('View', 'exposure', options.exposure, 0)
     const shared = context === 'shared' || (context === 'auto' && ownContexts >= OWN_CONTEXTS)
     this.renderer = new WebGLRenderer({ canvas: this.canvas, shared, antialias: options.antialias, toneMapping: options.toneMapping, exposure: options.exposure, bloom: options.bloom })
     if (!shared) {
@@ -200,10 +208,10 @@ export class View {
       this.invalidate()
     }
     if (options.autoLight !== undefined) this.autoLight = !!options.autoLight
-    if (options.maxDelta !== undefined) this.maxDelta = options.maxDelta
+    if (options.maxDelta !== undefined) this.maxDelta = checkRange('View', 'maxDelta', options.maxDelta, 0, Infinity, { above: true })
     if (options.renderMode !== undefined) this.renderMode = checkOneOf('View', 'renderMode', options.renderMode, ['auto', 'always', 'manual'])
     if (options.pixelRatio !== undefined) {
-      this.#pixelRatio = options.pixelRatio
+      this.#pixelRatio = checkRange('View', 'pixelRatio', options.pixelRatio, 0, Infinity, { above: true })
       this.#explicitPixelRatio = true
     }
     if (options.orbit !== undefined && options.orbit !== false && options.orbit !== true &&
@@ -223,7 +231,7 @@ export class View {
     if (options.framing !== undefined) {
       // 'both' is short for { keep: 'both' }
       const f = typeof options.framing === 'string' ? { keep: options.framing } : options.framing
-      checkOptions('View', f, ['keep', 'aspect'], {}, 'framing')
+      checkOptions('View', f, FRAMING_OPTIONS, {}, 'framing')
       if (f.keep !== undefined) this.#keep = checkOneOf('View', 'framing.keep', f.keep, ['height', 'width', 'both'])
       if (f.aspect !== undefined) {
         if (!(f.aspect > 0)) fail('View', `framing.aspect is a width / height above 0, got ${describe(f.aspect)}`)
@@ -393,6 +401,9 @@ export class View {
     if (frame.tooltips && !this.#tooltip) this.#loadTooltip()
     this.lastFrame = frame
     this.#dirty = false
+    // remember what was drawn - including what drawing changed, such as fitting the camera - so
+    // the next frame compares against it and doesn't draw the same picture again
+    if (this.renderMode === 'auto') this.#watch.changed(this.scene, this.camera)
     // things may have moved under a still pointer
     if (this.#pointer && this.#needsHover()) this.#pickPending = true
     return frame

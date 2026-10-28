@@ -1,5 +1,5 @@
 import { Vec3 } from './value/Vec3.js'
-import { checkOneOf, checkOptions, fail } from './validate.js'
+import { checkOneOf, checkOptions, checkRange, describe, fail } from './validate.js'
 
 /** @import { Camera } from './scene/cameras.js' */
 
@@ -23,9 +23,36 @@ import { checkOneOf, checkOptions, fail } from './validate.js'
 
 const OPTIONS = ['enabled', 'mode', 'rotateSpeed', 'zoomSpeed', 'zoom', 'zoomToCursor', 'pan', 'inertia', 'autoRotate',
   'minDistance', 'maxDistance', 'minPitch', 'maxPitch']
+const HINTS = {
+  enableDamping: "use 'inertia' (0 to turn it off)",
+  enableRotate: "use mode: 'map' to make dragging pan instead of turning",
+  rotate: "use mode: 'map' to make dragging pan instead of turning",
+  enableZoom: "use 'zoom'",
+  enablePan: "use 'pan'",
+  screenSpacePanning: 'panning always follows the screen',
+  dampingFactor: "use 'inertia': the fraction of speed kept each 1/60 s (default 0.85)",
+  target: 'set camera.target - the control orbits around it',
+}
 const LIMIT = Math.PI / 2 - 0.001
 // fastest fling, radians per second
 const MAX_FLING = 4
+
+/** Check the numbers and modes in orbit options. @param {Record<string, any>} o */
+function checkSettings(o) {
+  const owner = 'OrbitControl'
+  if (o.mode !== undefined) checkOneOf(owner, 'mode', o.mode, ['orbit', 'map'])
+  if (o.rotateSpeed !== undefined) checkRange(owner, 'rotateSpeed', o.rotateSpeed, 0)
+  if (o.zoomSpeed !== undefined) checkRange(owner, 'zoomSpeed', o.zoomSpeed, 0)
+  // the share of speed kept each 1/60 s: 1 would never slow down
+  if (o.inertia !== undefined) checkRange(owner, 'inertia', o.inertia, 0, 0.99)
+  if (o.autoRotate !== undefined && typeof o.autoRotate !== 'boolean' && (typeof o.autoRotate !== 'number' || !Number.isFinite(o.autoRotate))) {
+    fail(owner, `'autoRotate' is true, false or a speed in radians per second, got ${describe(o.autoRotate)}`)
+  }
+  if (o.minDistance !== undefined) checkRange(owner, 'minDistance', o.minDistance, 0)
+  if (o.maxDistance !== undefined) checkRange(owner, 'maxDistance', o.maxDistance, 0, Infinity, { above: true })
+  if (o.minPitch !== undefined) checkRange(owner, 'minPitch', o.minPitch, -Math.PI / 2, Math.PI / 2)
+  if (o.maxPitch !== undefined) checkRange(owner, 'maxPitch', o.maxPitch, -Math.PI / 2, Math.PI / 2)
+}
 
 /**
  * Mouse and touch camera control: drag (or one finger) orbits the camera around its target,
@@ -35,6 +62,9 @@ const MAX_FLING = 4
  * each frame; standalone, call update(dt) yourself for inertia and auto-rotate.
  */
 export class OrbitControl {
+  /** The options it takes, and hints for names people reach for instead. */
+  static OPTIONS = OPTIONS
+  static HINTS = HINTS
   enabled = true
   /** 'map' makes every drag pan. @type {'orbit' | 'map'} */
   mode = 'orbit'
@@ -68,21 +98,15 @@ export class OrbitControl {
    * @param {OrbitOptions} [options]
    */
   constructor(camera, element, options = {}) {
-    checkOptions('OrbitControl', options, OPTIONS, {
-      enableDamping: "use 'inertia' (0 to turn it off)",
-      enableRotate: "use mode: 'map' to make dragging pan instead of turning",
-      rotate: "use mode: 'map' to make dragging pan instead of turning",
-      enableZoom: "use 'zoom'",
-      enablePan: "use 'pan'",
-      screenSpacePanning: 'panning always follows the screen',
-      dampingFactor: "use 'inertia': the fraction of speed kept each 1/60 s (default 0.85)",
-      target: 'set camera.target - the control orbits around it',
-    })
+    checkOptions('OrbitControl', options, OPTIONS, HINTS)
     if (!camera || !('target' in camera)) fail('OrbitControl', 'expects a camera, e.g. new OrbitControl(view.camera, view.canvas)')
     this.camera = camera
     this.element = element
+    checkSettings(options)
     Object.assign(this, options)
-    if (options.mode !== undefined) checkOneOf('OrbitControl', 'mode', options.mode, ['orbit', 'map'])
+    // the limits must still make sense with the defaults they're paired with
+    if (this.minDistance > this.maxDistance) fail('OrbitControl', `'minDistance' (${this.minDistance}) is more than 'maxDistance' (${this.maxDistance})`)
+    if (this.minPitch > this.maxPitch) fail('OrbitControl', `'minPitch' (${this.minPitch}) is more than 'maxPitch' (${this.maxPitch})`)
     camera.target ??= new Vec3()
 
     // touch-action: none stops the browser claiming touch drags for scrolling before we see them

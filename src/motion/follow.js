@@ -33,6 +33,11 @@ import { checkOneOf, checkOptions, describe, fail } from '../validate.js'
  */
 
 const FORWARD = ['-z', '+z', '-y', '+y', '-x', '+x']
+/** What face() and follow() take, and hints for names people reach for instead. */
+export const FACE_OPTIONS = ['forward', 'up']
+export const FACE_HINTS = { nose: "use 'forward' - which of the model's axes is its nose" }
+export const FOLLOW_OPTIONS = ['orient', 'forward', 'up']
+export const FOLLOW_HINTS = { rotate: "use 'orient'", lookAhead: 'the node faces along the curve - orient: false leaves it as it is', nose: "use 'forward' - which of the model's axes is its nose" }
 // the turn that takes each nose axis onto -Z, as [axis, angle]
 const TO_MINUS_Z = {
   '-z': null,
@@ -54,7 +59,7 @@ const TO_MINUS_Z = {
  * @returns {Node}
  */
 export function face(node, direction, options = {}) {
-  checkOptions('face()', options, ['forward', 'up'], { nose: "use 'forward' - which of the model's axes is its nose" })
+  checkOptions('face()', options, FACE_OPTIONS, FACE_HINTS)
   const forward = /** @type {Forward} */ (options.forward === undefined ? '-z' : checkOneOf('face()', 'forward', options.forward, FORWARD))
   const ahead = node.position.clone().add(Vec3.fromInput(direction, 'face()'))
   let up = options.up === undefined ? undefined : Vec3.fromInput(options.up, 'face() up')
@@ -88,7 +93,7 @@ export function face(node, direction, options = {}) {
  */
 export function follow(node, path, t, options = {}) {
   if (!(path instanceof Curve)) fail('follow()', `takes (node, curve, t) - make the curve with curve([...points]) or ellipse({...}), got ${describe(path)}`)
-  checkOptions('follow()', options, ['orient', 'forward', 'up'], { rotate: "use 'orient'", lookAhead: 'the node faces along the curve - orient: false leaves it as it is', nose: "use 'forward' - which of the model's axes is its nose" })
+  checkOptions('follow()', options, FOLLOW_OPTIONS, FOLLOW_HINTS)
   node.position.copy(path.at(t))
   if (options.orient !== false) face(node, path.tangentAt(t), { forward: options.forward, up: options.up })
   return node

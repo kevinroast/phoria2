@@ -6,7 +6,14 @@ const types = new Map()
 
 /**
  * Let create() build descriptions of this node class, by its static `type`. Sub-path modules
- * (phoria2/charts) register theirs when imported.
+ * (phoria2/charts) register theirs when imported. A class with options of its own adds them to its
+ * parent's, so the node options still work:
+ *
+ *     class Beacon extends Group {
+ *       static type = 'beacon'
+ *       static get OPTIONS() { return [...super.OPTIONS, 'blink'] }
+ *     }
+ *     registerType(Beacon)
  * @param {(new (options: any) => any) & { type: string }} Class
  */
 export function registerType(Class) {

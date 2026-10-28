@@ -34,8 +34,13 @@ export class Animation {
     this.duration = tracks.reduce((d, t) => Math.max(d, t.times[t.times.length - 1] ?? 0), 0)
   }
 
-  /** Start (or carry on) playing. @returns {this} */
+  /** Start (or carry on) playing - from the start again, for a clip that doesn't loop and has finished. @returns {this} */
   play() {
+    if (!this.loop && this.duration) {
+      // at the end it is heading for: start over (from the end, playing backwards)
+      if (this.speed >= 0 && this.time >= this.duration) this.seek(0)
+      else if (this.speed < 0 && this.time <= 0) this.seek(this.duration)
+    }
     this.playing = true
     return this
   }
