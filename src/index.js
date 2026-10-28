@@ -23,6 +23,7 @@ export { fromPolygons } from './geometry/fromPolygons.js'
 export { Curve, curve, ellipse } from './geometry/Curve.js'
 export { Material } from './material/Material.js'
 export { Clip } from './clip.js'
+export { Fog } from './fog.js'
 export { Texture, loadTexture } from './material/Texture.js'
 
 // values and maths

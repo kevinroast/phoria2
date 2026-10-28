@@ -29,6 +29,7 @@ nodeContract(Scene, (o) => new Scene(o), {
   environment: { value: 'studio', read: (s) => s.environment, bad: 42, error: 'environment' },
   environmentIntensity: { value: 0.5, read: (s) => s.environmentIntensity, default: 1, bad: 'bright', error: 'environmentIntensity' },
   backgroundBlur: { value: 0.3, read: (s) => s.backgroundBlur, default: 0, bad: 'soft', error: 'backgroundBlur' },
+  fog: { value: { color: '#203040', density: 0.08 }, read: (s) => s.fog?.toJSON() ?? null, default: null, bad: 'thick', error: "'fog' must be" },
 })
 
 // --- drawables
@@ -123,6 +124,7 @@ nodeContract(SpotLight, (o) => new SpotLight(o), {
   range: { value: 5, read: (l) => l.range, default: 0, bad: -1, error: 'range' },
   angle: { value: 0.4, read: (l) => l.angle, default: Math.PI / 6, bad: 2, error: 'angle' },
   penumbra: { value: 0.5, read: (l) => l.penumbra, default: 0.1, bad: 2, error: 'penumbra' },
+  castShadow: { value: true, read: (l) => l.castShadow, default: false },
 })
 
 // --- materials and textures
@@ -143,6 +145,7 @@ contract('Material', {
     unlit: { value: true, read: (m) => m.unlit, default: false, bad: 'yes', error: 'unlit' },
     flatShading: { value: true, read: (m) => m.flatShading, default: false, bad: 'yes', error: 'flatShading' },
     doubleSided: { value: true, read: (m) => m.doubleSided, default: false, bad: 'yes', error: 'doubleSided' },
+    fog: { value: false, read: (m) => m.fog, default: true, bad: 'thick', error: 'fog' },
     vertexColors: { value: true, read: (m) => m.vertexColors, default: false, bad: 'yes', error: 'vertexColors' },
     depthWrite: { value: false, read: (m) => m.depthWrite, default: true, bad: 'no', error: 'depthWrite' },
     depthTest: { value: false, read: (m) => m.depthTest, default: true, bad: 'no', error: 'depthTest' },

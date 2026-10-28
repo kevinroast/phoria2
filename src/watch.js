@@ -94,6 +94,13 @@ export class ChangeWatch {
     else this.#texture(env)
     this.#push(scene.environmentIntensity)
     this.#push(scene.backgroundBlur)
+    const fog = scene.fog
+    if (fog) {
+      this.#pushAll(fog.color)
+      this.#push(fog.density)
+      this.#push(fog.near)
+      this.#push(fog.far)
+    } else this.#push(-1)
     this.#node(scene)
   }
 
@@ -148,7 +155,7 @@ export class ChangeWatch {
     this.#push(m.normalScale)
     this.#push(m.aoMapIntensity)
     this.#push((m.unlit ? 1 : 0) | (m.flatShading ? 2 : 0) | (m.doubleSided ? 4 : 0) | (m.vertexColors ? 8 : 0) |
-      (m.depthWrite ? 16 : 0) | (m.depthTest ? 32 : 0) | (m.sizeAttenuation ? 64 : 0) | (m.blending === 'additive' ? 128 : 0) | (m.transparent ? 256 : 0))
+      (m.depthWrite ? 16 : 0) | (m.depthTest ? 32 : 0) | (m.sizeAttenuation ? 64 : 0) | (m.blending === 'additive' ? 128 : 0) | (m.transparent ? 256 : 0) | (m.fog ? 512 : 0))
     for (const [, texture] of m.textures) this.#texture(texture)
   }
 

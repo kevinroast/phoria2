@@ -30,6 +30,7 @@ import { Texture } from './Texture.js'
  * @property {boolean} [flatShading] faceted look from face normals (default false)
  * @property {boolean} [doubleSided] draw back faces too (default false)
  * @property {boolean} [vertexColors] multiply by the geometry's colors (default false)
+ * @property {boolean} [fog] fade into the scene's fog with distance (default true) - false for a sky or a far backdrop
  * @property {'normal' | 'additive'} [blending] (default 'normal')
  * @property {boolean} [depthWrite] (default true)
  * @property {boolean} [depthTest] (default true)
@@ -41,12 +42,12 @@ import { Texture } from './Texture.js'
 const MAPS = ['map', 'roughnessMap', 'metalnessMap', 'normalMap', 'aoMap', 'emissiveMap']
 // data maps hold numbers, not colours
 const LINEAR_MAPS = new Set(['roughnessMap', 'metalnessMap', 'normalMap', 'aoMap'])
-const FLAGS = ['unlit', 'flatShading', 'doubleSided', 'vertexColors', 'depthWrite', 'depthTest', 'sizeAttenuation', 'transparent']
+const FLAGS = ['unlit', 'flatShading', 'doubleSided', 'vertexColors', 'depthWrite', 'depthTest', 'sizeAttenuation', 'transparent', 'fog']
 const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiveIntensity: [0, Infinity], size: [0, Infinity], width: [0, Infinity],
   alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1] }
 const DEFAULTS = {
   name: '', opacity: 1, alphaTest: 0, roughness: 0.5, metalness: 0, normalScale: 1, aoMapIntensity: 1, emissiveIntensity: 1, unlit: false, flatShading: false,
-  doubleSided: false, vertexColors: false, blending: 'normal', depthWrite: true, depthTest: true,
+  doubleSided: false, vertexColors: false, blending: 'normal', depthWrite: true, depthTest: true, fog: true,
   size: 1, sizeAttenuation: true, width: 1,
 }
 const OPTIONS = ['name', 'color', 'emissive', ...MAPS, ...FLAGS, ...Object.keys(NUMBERS), 'blending']
@@ -84,6 +85,8 @@ export class Material {
   flatShading = false
   doubleSided = false
   vertexColors = false
+  /** Fades into the scene's fog with distance. */
+  fog = true
   /** @type {'normal' | 'additive'} */ blending = 'normal'
   depthWrite = true
   depthTest = true

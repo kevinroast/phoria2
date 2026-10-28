@@ -4,7 +4,7 @@ import { Mat4 } from './value/Mat4.js'
 import { Vec3 } from './value/Vec3.js'
 import { Box3 } from './value/Box3.js'
 import { warnOnce } from './validate.js'
-import { fitShadow } from './shadow.js'
+import { fitShadow, fitSpotShadow, SPOT_TILES } from './shadow.js'
 import { worldPlane } from './clip.js'
 
 /** @import { Scene } from './scene/Scene.js' */
@@ -35,7 +35,8 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  * @property {number} [range] point, spot (0 = unlimited)
  * @property {number} [angle] spot
  * @property {number} [penumbra] spot
- * @property {boolean} [castShadow] directional
+ * @property {boolean} [castShadow] directional, spot
+ * @property {number} [shadowTile] spot: which spot shadow is its, or -1
  */
 
 /**
@@ -92,6 +93,16 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  */
 
 /**
+ * A spot light's view of the scene for its shadow: its tile in the spot shadow map.
+ * @typedef {object} SpotShadowFrame
+ * @property {FrameLight} light
+ * @property {number} tile 0 - 3
+ * @property {Mat4} viewProjection world to the light's clip space
+ * @property {number} texelAngle a shadow map texel's size at a distance of 1, for the bias
+ * @property {DrawItem[]} casters what it draws, culled to the light's view
+ */
+
+/**
  * The hovered thing to tint: a whole node, or one of its instances or points.
  * @typedef {object} FrameHighlight
  * @property {Node} node
@@ -111,7 +122,9 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  * @property {Scene['environment']} environment
  * @property {number} environmentIntensity
  * @property {number} backgroundBlur 0-1
+ * @property {import('./fog.js').Fog | null} fog distance fog
  * @property {ShadowFrame | null} shadow the shadow-casting light's view, when there is one and something casts
+ * @property {SpotShadowFrame[]} spotShadows spot lights' shadows, up to four
  * @property {FrameCap[]} caps section planes' caps to fill, after the opaque pass
  * @property {{ drawn: number, culled: number }} stats
  * @property {FrameHighlight | null} highlight set by the View for hover highlighting
@@ -146,7 +159,9 @@ export function collect(scene, camera) {
     environment: scene.environment,
     environmentIntensity: scene.environmentIntensity,
     backgroundBlur: scene.backgroundBlur,
+    fog: scene.fog,
     shadow: null,
+    spotShadows: [],
     caps: [],
     stats: { drawn: 0, culled: 0 },
     highlight: null,
@@ -220,7 +235,7 @@ export function collect(scene, camera) {
         warnOnce(scene, `more than ${LIGHT_LIMITS.punctual} point and spot lights - the extras are ignored`)
       } else if (kind === 'spot') {
         frame.lights.push({ kind: 'spot', node, color: node.color, intensity: node.intensity, position: node.worldPosition,
-          direction: node.worldDirection, range: node.range, angle: node.angle, penumbra: node.penumbra })
+          direction: node.worldDirection, range: node.range, angle: node.angle, penumbra: node.penumbra, castShadow: node.castShadow, shadowTile: -1 })
       } else {
         frame.lights.push({ kind: 'point', node, color: node.color, intensity: node.intensity, position: node.worldPosition, range: node.range })
       }
@@ -232,8 +247,29 @@ export function collect(scene, camera) {
   // one shadow map, for the first directional light that casts; it goes first, so the shader
   // knows which light the map belongs to
   const sun = frame.lights.findIndex((l) => l.kind === 'directional' && l.castShadow)
-  const items = sun >= 0 ? /** @type {DrawItem[]} */ (casters.map(([n, clip]) => drawItem(n, view, null, clip)).filter(Boolean)) : []
-  if (items.length) {
+  const spots = frame.lights.filter((l) => l.kind === 'spot' && l.castShadow)
+  const items = sun >= 0 || spots.length ? /** @type {DrawItem[]} */ (casters.map(([n, clip]) => drawItem(n, view, null, clip)).filter(Boolean)) : []
+  if (spots.length > SPOT_TILES) warnOnce(scene, `more than ${SPOT_TILES} spot lights cast shadows - the extras don't`)
+  if (items.length && spots.length) {
+    const boxes = items.map((c) => c.node.expandBounds(new Box3()))
+    const receiving = receivers.map((n) => n.expandBounds(new Box3()))
+    for (const light of spots.slice(0, SPOT_TILES)) {
+      const at = /** @type {Vec3} */ (light.position)
+      // the light's own fitting - a lamp round it - doesn't shadow it
+      const own = boxes.map((b) => b.containsPoint(at))
+      const fit = fitSpotShadow(at, /** @type {Vec3} */ (light.direction), /** @type {number} */ (light.angle), light.range ?? 0, boxes.filter((_, i) => !own[i]), receiving)
+      if (!fit) continue
+      const planes = frustumPlanes(fit.viewProjection)
+      const seen = items.filter((item, i) => {
+        if (own[i]) return false
+        const box = boxes[i]
+        return sphereInFrustum(planes, box.getCenter(), box.getRadius())
+      })
+      light.shadowTile = frame.spotShadows.length
+      frame.spotShadows.push({ light, tile: light.shadowTile, viewProjection: fit.viewProjection, texelAngle: fit.texelAngle, casters: seen })
+    }
+  }
+  if (items.length && sun >= 0) {
     const light = frame.lights[sun]
     const bounds = (/** @type {any} */ n) => n.expandBounds(new Box3())
     const fit = fitShadow(/** @type {Vec3} */ (light.direction), items.map((c) => bounds(c.node)), receivers.map(bounds))

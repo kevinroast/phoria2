@@ -64,6 +64,47 @@ export function fitShadow(direction, casters, receivers, size = SHADOW_MAP_SIZE)
   return { viewProjection, texelSize: Math.max(x1 - x0, y1 - y0) / size }
 }
 
+/** Spot shadows' map: four tiles of half its size, one a light. */
+export const SPOT_ATLAS_SIZE = 2048
+export const SPOT_TILES = 4
+
+/**
+ * A spot light's view for its shadow: from the light along its cone, wide enough for the cone,
+ * from just short of the nearest caster to the furthest receiver (or the light's range).
+ * @param {ArrayLike<number>} position @param {ArrayLike<number>} direction
+ * @param {number} angle the cone's half-angle @param {number} range 0 for unlimited
+ * @param {Box3[]} casters @param {Box3[]} receivers
+ * @returns {{ viewProjection: Mat4, texelAngle: number } | null} texelAngle: a shadow map texel's size at a distance of 1
+ */
+export function fitSpotShadow(position, direction, angle, range, casters, receivers) {
+  const boxes = casters.filter((b) => !b.isEmpty())
+  if (!boxes.length) return null
+  const d = normalized(direction)
+  const up = Math.abs(d[1]) > 0.99 ? [0, 0, 1] : [0, 1, 0]
+  const eye = Float32Array.from(position), at = Float32Array.from([position[0] + d[0], position[1] + d[1], position[2] + d[2]])
+  const view = mat4.lookAt(mat4.create(), eye, at, Float32Array.from(up))
+  let near = Infinity, far = 0
+  const depths = (/** @type {Box3} */ b, /** @type {boolean} */ caster) => {
+    for (let i = 0; i < 8; i++) {
+      const px = i & 1 ? b.max[0] : b.min[0], py = i & 2 ? b.max[1] : b.min[1], pz = i & 4 ? b.max[2] : b.min[2]
+      const z = -(view[2] * px + view[6] * py + view[10] * pz + view[14])
+      if (caster && z < near) near = z
+      if (z > far) far = z
+    }
+  }
+  for (const b of boxes) depths(b, true)
+  for (const b of receivers) if (!b.isEmpty()) depths(b, false)
+  near = Math.max(0.05, near * 0.9)
+  if (range > 0) far = Math.min(far, range)
+  far = Math.max(far * 1.02, near * 2)
+  // a little wider than the cone, so its soft edge isn't cut off
+  const fov = Math.min(2 * angle * 1.1 + 0.05, Math.PI * 0.95)
+  const projection = mat4.perspective(mat4.create(), fov, 1, near, far)
+  const viewProjection = new Mat4()
+  mat4.multiply(viewProjection, projection, view)
+  return { viewProjection, texelAngle: 2 * Math.tan(fov / 2) / (SPOT_ATLAS_SIZE / 2) }
+}
+
 /** @param {ArrayLike<number>} v @returns {number[]} */
 function normalized(v) {
   const len = Math.hypot(v[0], v[1], v[2]) || 1

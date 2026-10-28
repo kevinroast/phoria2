@@ -35,5 +35,6 @@ export const DEMOS = [
   //{ name: 'space', title: 'Cobra Mk IIIs over a gas giant as a comet flies by - and an Elite mode in green vector lines', orbit: false },
   // tests of the API on bigger tasks go here with hidden: true - reachable by name
   // (demo.html?name=...), not listed in the gallery
+  { name: 'harbour', title: 'a harbour on a foggy night - lamps and a lighthouse beam casting shadows through the mist', hidden: true },
   { name: 'engine', title: 'an inline four, cut away - pistons, valves and crank running, section plane through the cylinders', hidden: true },
 ]

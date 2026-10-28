@@ -14,7 +14,7 @@ const LIGHT_HINTS = {
   distance: "use 'range' (0 = infinite)",
   decay: 'falloff is physical (inverse square), as in glTF - limit it with range',
   attenuation: "use 'range' - falloff is physical (inverse square)",
-  shadow: "use 'castShadow: true' (directional lights)",
+  shadow: "use 'castShadow: true' (directional and spot lights)",
 }
 
 /**
@@ -221,17 +221,20 @@ export class SpotLight extends AimedLight {
   static type = 'spot-light'
   /** @type {LightKind} */
   static kind = 'spot'
-  static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'range', 'angle', 'penumbra'] }
+  static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'range', 'angle', 'penumbra', 'castShadow'] }
 
   range = 0
+  /** Cast shadows: up to four spot lights a scene can. Anything round the light itself - its own lamp - doesn't block it. */
+  castShadow = false
   /** Half-angle of the cone in radians. */
   angle = Math.PI / 6
   /** Softness of the edge, 0 (hard) to 1. */
   penumbra = 0.1
 
-  /** @param {AimedLightOptions & { range?: number, angle?: number, penumbra?: number }} [options] */
+  /** @param {AimedLightOptions & { range?: number, angle?: number, penumbra?: number, castShadow?: boolean }} [options] */
   constructor(options = {}) {
     super(options)
+    if (options.castShadow !== undefined) this.castShadow = !!options.castShadow
     if (options.range !== undefined) this.range = rangeOf('SpotLight', options.range)
     if (options.angle !== undefined) {
       this.angle = checkNumber('SpotLight', 'angle', options.angle)
@@ -245,7 +248,7 @@ export class SpotLight extends AimedLight {
 
   /** @returns {Record<string, unknown>} */
   cloneOptions() {
-    return { ...super.cloneOptions(), range: this.range, angle: this.angle, penumbra: this.penumbra }
+    return { ...super.cloneOptions(), range: this.range, angle: this.angle, penumbra: this.penumbra, castShadow: this.castShadow }
   }
 
   /** @returns {Record<string, unknown>} */
@@ -255,6 +258,7 @@ export class SpotLight extends AimedLight {
     if (this.range) json.range = this.range
     if (this.angle !== Math.PI / 6) json.angle = this.angle
     if (this.penumbra !== 0.1) json.penumbra = this.penumbra
+    if (this.castShadow) json.castShadow = true
     return json
   }
 }

@@ -30,6 +30,32 @@ void clipAway(vec3 p) {}
 #endif
 `
 
+// distance fog, applied to the final colour so it meets a background of the same colour; additive
+// glows fade out rather than towards the fog's colour
+export const FOG = /* glsl */ `
+#ifdef FOG
+uniform vec3 uFogColor;   // linear
+uniform vec2 uFogRange;   // linear fog: near, far
+uniform float uFogDensity; // exponential fog
+in float vFogDepth;
+vec3 fogged(vec3 c) {
+#ifdef FOG_LINEAR
+  float f = clamp((vFogDepth - uFogRange.x) / max(uFogRange.y - uFogRange.x, 1e-4), 0.0, 1.0);
+#else
+  float d = uFogDensity * vFogDepth;
+  float f = 1.0 - exp(-d * d);
+#endif
+#ifdef FOG_ADD
+  return c * (1.0 - f);
+#else
+  return mix(c, uFogColor, f);
+#endif
+}
+#else
+vec3 fogged(vec3 c) { return c; }
+#endif
+`
+
 // depth or stencil only - of what isn't cut away
 export const CLIP_ONLY_FRAGMENT = /* glsl */ `
 precision highp float;
@@ -116,6 +142,10 @@ uniform mat3 uNormalMatrix;
 uniform mat4 uViewProjection;
 uniform vec4 uUvTransform; // repeat xy, offset zw
 uniform int uHighlightIndex; // -2 none, -1 the whole node, otherwise the instance
+#ifdef FOG
+uniform mat4 uView;
+out float vFogDepth;
+#endif
 
 out vec3 vWorldPosition;
 out vec3 vNormal;
@@ -153,6 +183,9 @@ void main() {
   vNormal = uNormalMatrix * n;
   vUv = uv * uUvTransform.xy + uUvTransform.zw;
   gl_Position = uViewProjection * world;
+#ifdef FOG
+  vFogDepth = -(uView * world).z;
+#endif
 #ifdef PICK
   vPickElement = uint(gl_InstanceID);
 #endif
@@ -232,12 +265,21 @@ uniform mat4 uShadowMatrix;         // world to shadow map [0, 1] coordinates an
 uniform float uShadowTexel;         // 1 / map size
 uniform float uShadowBias;          // world units to push the lookup out along the normal
 #endif
+#ifdef SPOT_SHADOWS
+uniform sampler2DShadow uSpotShadowMap;      // spot lights' depth, a tile each
+uniform mat4 uSpotShadowMatrix[4];           // world to a tile's coordinates and depth
+uniform vec4 uSpotShadowTile[4];             // each tile's bounds in the map: x0, y0, x1, y1
+uniform float uSpotShadowBias[4];            // world units a unit of distance, to push the lookup out along the normal
+uniform float uSpotShadowTexel;              // 1 / map size
+uniform float uPunctualShadow[NUM_PUNCTUAL]; // which tile a point or spot light's shadow is in, or -1
+#endif
 #endif
 
 out vec4 fragColor;
 
 ${COMMON}
 ${CLIP}
+${FOG}
 ${TONE_MAP}
 
 #ifdef LIT
@@ -333,6 +375,25 @@ float shadowAt(vec3 n, vec3 l) {
   return lit / 9.0;
 }
 #endif
+#ifdef SPOT_SHADOWS
+// up to four spot lights' shadows share one depth map, a tile each
+float spotShadowAt(int k, vec3 n, float distance) {
+  // push the lookup out along the normal, more for surfaces further from the light
+  vec3 p = vWorldPosition + n * uSpotShadowBias[k] * distance;
+  vec4 s = uSpotShadowMatrix[k] * vec4(p, 1.0);
+  if (s.w <= 0.0) return 1.0;
+  vec3 c = s.xyz / s.w;
+  vec4 tile = uSpotShadowTile[k];
+  if (c.x <= tile.x || c.x >= tile.z || c.y <= tile.y || c.y >= tile.w || c.z >= 1.0) return 1.0;
+  // nine filtered comparisons, kept inside the tile so a neighbour's shadow doesn't bleed in
+  vec2 lo = tile.xy + uSpotShadowTexel, hi = tile.zw - uSpotShadowTexel;
+  float lit = 0.0;
+  for (int x = -1; x <= 1; x++) {
+    for (int y = -1; y <= 1; y++) lit += texture(uSpotShadowMap, vec3(clamp(c.xy + vec2(x, y) * uSpotShadowTexel * 1.5, lo, hi), c.z));
+  }
+  return lit / 9.0;
+}
+#endif
 #endif
 
 void main() {
@@ -401,7 +462,12 @@ void main() {
     if (range > 0.0) falloff *= pow(clamp(1.0 - pow(d / range, 4.0), 0.0, 1.0), 2.0);
     float cosAngle = dot(-l, uPunctualDirection[i]);
     float cone = smoothstep(uPunctualCone[i].x, uPunctualCone[i].y, cosAngle);
-    color += shade(n, v, l, uPunctualColor[i] * falloff * cone, diffuse, f0, a);
+    vec3 radiance = uPunctualColor[i] * falloff * cone;
+#ifdef SPOT_SHADOWS
+    float tile = uPunctualShadow[i];
+    if (tile >= 0.0 && cone > 0.0) radiance *= spotShadowAt(int(tile), surfaceNormal, d);
+#endif
+    color += shade(n, v, l, radiance, diffuse, f0, a);
   }
 #endif
 
@@ -433,6 +499,7 @@ void main() {
   vec3 color = base.rgb + emissive;
 #endif
   color = mix(color, uHighlight.rgb, vHighlight * uHighlight.a);
+  color = fogged(color);
 
   // premultiplied alpha, so the canvas composites correctly over the page
   fragColor = vec4(linearToSrgb(color) * base.a, base.a);
@@ -455,12 +522,18 @@ flat out float vHighlight;
 #ifdef PICK
 flat out uint vPickElement; // which instance, point or segment, for GPU picking
 #endif
+#ifdef FOG
+out float vFogDepth;
+#endif
 
 ${COMMON}
 
 void main() {
   vec4 viewPosition = uView * (uModel * vec4(position, 1.0));
   gl_Position = uProjection * viewPosition;
+#ifdef FOG
+  vFogDepth = -viewPosition.z;
+#endif
 #ifdef SIZE_ATTENUATION
   // perspective shrinks with distance; an orthographic projection (w row 0, 0, 0, 1) doesn't
   float depth = uProjection[3][3] == 1.0 ? 1.0 : max(-viewPosition.z, 1e-4);
@@ -492,6 +565,7 @@ uniform sampler2D uMap;
 out vec4 fragColor;
 
 ${COMMON}
+${FOG}
 
 void main() {
   vec4 base = vec4(uColor * vColor, uOpacity);
@@ -505,7 +579,7 @@ void main() {
   base.a *= 1.0 - smoothstep(1.0 - edge, 1.0, r);
 #endif
   if (base.a <= 0.0) discard;
-  base.rgb = mix(base.rgb, uHighlight.rgb, vHighlight * uHighlight.a);
+  base.rgb = fogged(mix(base.rgb, uHighlight.rgb, vHighlight * uHighlight.a));
   fragColor = vec4(linearToSrgb(base.rgb) * base.a, base.a);
 }
 `
@@ -527,6 +601,9 @@ uniform float uNear;
 out vec3 vColor;
 #ifdef PICK
 flat out uint vPickElement; // which instance, point or segment, for GPU picking
+#endif
+#ifdef FOG
+out float vFogDepth;
 #endif
 
 ${COMMON}
@@ -553,6 +630,9 @@ void main() {
   vec2 normal = vec2(-dir.y, dir.x);
 
   vec4 clip = mix(ca, cb, corner.x);
+#ifdef FOG
+  vFogDepth = -mix(a.z, b.z, corner.x);
+#endif
   // extend past each end by half the width so joins look continuous
   vec2 offset = normal * corner.y * uWidth * 0.5 + dir * (corner.x * 2.0 - 1.0) * uWidth * 0.5;
   clip.xy += offset / (uResolution * 0.5) * clip.w;
@@ -576,9 +656,10 @@ uniform float uOpacity;
 out vec4 fragColor;
 
 ${COMMON}
+${FOG}
 
 void main() {
-  vec3 color = uColor * vColor;
+  vec3 color = fogged(uColor * vColor);
   fragColor = vec4(linearToSrgb(color) * uOpacity, uOpacity);
 }
 `

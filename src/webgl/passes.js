@@ -3,13 +3,13 @@
 // directional shadow map. Each keeps its GL objects and frees them on reset() after a lost context.
 import * as mat4 from '../math/mat4.js'
 import { irradianceSH } from '../irradiance.js'
-import { SHADOW_MAP_SIZE } from '../shadow.js'
+import { SHADOW_MAP_SIZE, SPOT_ATLAS_SIZE } from '../shadow.js'
 import { CLIP_ONLY_FRAGMENT, COMMON, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
 
 /** @import { Programs } from './programs.js' */
 /** @import { Resources } from './resources.js' */
 /** @import { Texture, DataImage } from '../material/Texture.js' */
-/** @import { FrameDescription, ShadowFrame } from '../frame.js' */
+/** @import { FrameDescription, ShadowFrame, SpotShadowFrame, DrawItem } from '../frame.js' */
 
 
 
@@ -115,6 +115,7 @@ const ENV_LEVELS = 6
 export class Passes {
   /** @type {WeakMap<Texture, Environment>} */ #environments = new WeakMap()
   /** @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #shadow = null
+  /** Spot lights' shadows, a tile each. @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #spotShadow = null
   /** @type {WebGLVertexArrayObject | null} */ #empty = null
   /** Rendering to float textures, which environments need. */
   floatTargets = false
@@ -131,6 +132,7 @@ export class Passes {
   reset() {
     this.#environments = new WeakMap()
     this.#shadow = null
+    this.#spotShadow = null
     this.#empty = null
     this.floatTargets = !!this.gl.getExtension('EXT_color_buffer_float')
   }
@@ -239,9 +241,47 @@ export class Passes {
    */
   shadowMap(shadow) {
     const gl = this.gl
-    const target = this.#shadowTarget()
-    gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer)
+    this.#shadow ??= this.#depthTarget(SHADOW_MAP_SIZE)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.#shadow.framebuffer)
     gl.viewport(0, 0, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE)
+    this.#beginDepth()
+    this.#drawDepth(shadow.casters, shadow.viewProjection)
+    this.#endDepth()
+    // clip space to [0, 1] texture coordinates and depth
+    const toTexture = new Float32Array([0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 0.5, 0, 0.5, 0.5, 0.5, 1])
+    return { texture: this.#shadow.texture, matrix: mat4.multiply(new Float32Array(16), toTexture, shadow.viewProjection) }
+  }
+
+  /**
+   * Draw spot lights' shadow casters' depth, each into its tile of one map. Returns the map, each
+   * light's matrix from world space to its tile's coordinates, and each tile's bounds.
+   * @param {SpotShadowFrame[]} spots
+   * @returns {{ texture: WebGLTexture, matrices: Float32Array, tiles: Float32Array, bias: Float32Array, texel: number }}
+   */
+  spotShadowMaps(spots) {
+    const gl = this.gl
+    this.#spotShadow ??= this.#depthTarget(SPOT_ATLAS_SIZE)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.#spotShadow.framebuffer)
+    gl.viewport(0, 0, SPOT_ATLAS_SIZE, SPOT_ATLAS_SIZE)
+    this.#beginDepth()
+    const matrices = new Float32Array(16 * 4), tiles = new Float32Array(4 * 4), bias = new Float32Array(4)
+    const half = SPOT_ATLAS_SIZE / 2
+    for (const spot of spots) {
+      const x = spot.tile % 2, y = Math.floor(spot.tile / 2)
+      gl.viewport(x * half, y * half, half, half)
+      this.#drawDepth(spot.casters, spot.viewProjection)
+      // clip space to this tile's part of the map, and depth to [0, 1]
+      const toTile = new Float32Array([0.25, 0, 0, 0, 0, 0.25, 0, 0, 0, 0, 0.5, 0, x * 0.5 + 0.25, y * 0.5 + 0.25, 0.5, 1])
+      matrices.set(mat4.multiply(new Float32Array(16), toTile, spot.viewProjection), spot.tile * 16)
+      tiles.set([x * 0.5, y * 0.5, x * 0.5 + 0.5, y * 0.5 + 0.5], spot.tile * 4)
+      bias[spot.tile] = spot.texelAngle * 1.5
+    }
+    this.#endDepth()
+    return { texture: this.#spotShadow.texture, matrices, tiles, bias, texel: 1 / SPOT_ATLAS_SIZE }
+  }
+
+  #beginDepth() {
+    const gl = this.gl
     gl.depthMask(true)
     gl.enable(gl.DEPTH_TEST)
     gl.depthFunc(gl.LEQUAL)
@@ -251,13 +291,24 @@ export class Passes {
     gl.disable(gl.CULL_FACE)
     gl.enable(gl.POLYGON_OFFSET_FILL)
     gl.polygonOffset(1.5, 2)
-    for (const item of shadow.casters) {
+  }
+
+  #endDepth() {
+    const gl = this.gl
+    gl.disable(gl.POLYGON_OFFSET_FILL)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+  }
+
+  /** @param {DrawItem[]} casters @param {ArrayLike<number>} viewProjection */
+  #drawDepth(casters, viewProjection) {
+    const gl = this.gl
+    for (const item of casters) {
       const instances = item.instances
       const defines = instances ? ['INSTANCED'] : []
       if (item.clip) defines.push('CLIP')
       const program = this.programs.ready('depth', defines, DEPTH)
       gl.useProgram(program.program)
-      program.set('uViewProjection', shadow.viewProjection)
+      program.set('uViewProjection', viewProjection)
       program.set('uModel', item.worldMatrix)
       if (item.clip) program.set('uClipPlane', item.clip.plane)
       const buffers = this.resources.mesh(item.geometry, instances, true)
@@ -267,20 +318,15 @@ export class Passes {
       if (buffers.indexType) gl.drawElementsInstanced(gl.TRIANGLES, elements, buffers.indexType, 0, count)
       else gl.drawArraysInstanced(gl.TRIANGLES, 0, elements, count)
     }
-    gl.disable(gl.POLYGON_OFFSET_FILL)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-    // clip space to [0, 1] texture coordinates and depth
-    const toTexture = new Float32Array([0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 0.5, 0, 0.5, 0.5, 0.5, 1])
-    return { texture: target.texture, matrix: mat4.multiply(new Float32Array(16), toTexture, shadow.viewProjection) }
   }
 
-  #shadowTarget() {
-    if (this.#shadow) return this.#shadow
+  /** A depth texture to draw shadows into and compare against. @param {number} size */
+  #depthTarget(size) {
     const gl = this.gl
     const texture = /** @type {WebGLTexture} */ (gl.createTexture())
     gl.activeTexture(gl.TEXTURE15)
     gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE)
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, size, size)
     // compare in the sampler, with linear filtering: four comparisons blended per lookup
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL)
@@ -294,8 +340,7 @@ export class Passes {
     gl.drawBuffers([gl.NONE])
     gl.readBuffer(gl.NONE)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-    this.#shadow = { texture, framebuffer }
-    return this.#shadow
+    return { texture, framebuffer }
   }
 
   /** @param {number} width @param {number} height @param {number} levels */

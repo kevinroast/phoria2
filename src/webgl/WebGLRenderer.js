@@ -108,6 +108,7 @@ export class WebGLRenderer {
   #copy = null
   /** This frame's prefiltered environment, when it is an HDR image. @type {Environment | null} */ #environment = null
   /** This frame's shadow map, when something casts. @type {{ texture: WebGLTexture, matrix: Float32Array, texel: number, bias: number } | null} */ #shadow = null
+  /** This frame's spot shadow map, when spot lights cast. @type {ReturnType<import('./passes.js').Passes['spotShadowMaps']> | null} */ #spotShadow = null
   /** @type {Float32Array} */ #normalMatrix = new Float32Array(9)
   /** @type {Record<string, any>} */ #lights = {}
   /** This frame waits for shaders to compile rather than leaving things out. */
@@ -210,7 +211,7 @@ export class WebGLRenderer {
 
     const env = frame.environment
     const bg = frame.background
-    const passes = gpu.loadPasses(!!frame.shadow || (typeof env === 'object' && !!env.image) || (!!bg && !('getHex' in bg) && !!bg.image))
+    const passes = gpu.loadPasses(!!frame.shadow || frame.spotShadows.length > 0 || (typeof env === 'object' && !!env.image) || (!!bg && !('getHex' in bg) && !!bg.image))
     this.#environment = passes && typeof env === 'object' ? passes.environment(env) : null
     if (passes && typeof env === 'object' && env.image && !this.#environment) {
       warnOnce(env, env.isHDR ? "this device can't render to float textures, which HDR environments need - lighting without it"
@@ -224,6 +225,7 @@ export class WebGLRenderer {
     } else {
       this.#shadow = null
     }
+    this.#spotShadow = passes && frame.spotShadows.length ? passes.spotShadowMaps(frame.spotShadows) : null
 
     // with bloom, the scene is drawn into a buffer of its own first (drawn plainly while its code loads)
     const bloom = this.#bloom ? gpu.loadBloom() : null
@@ -330,7 +332,7 @@ export class WebGLRenderer {
     const punctual = frame.lights.filter((l) => l.kind === 'point' || l.kind === 'spot').length
     const dirDirection = new Float32Array(directional * 3), dirColor = new Float32Array(directional * 3)
     const pos = new Float32Array(punctual * 3), color = new Float32Array(punctual * 3)
-    const range = new Float32Array(punctual), direction = new Float32Array(punctual * 3)
+    const range = new Float32Array(punctual), direction = new Float32Array(punctual * 3), shadowTile = new Float32Array(punctual).fill(-1)
     const cone = new Float32Array(punctual * 2)
     let dirCount = 0, punctualCount = 0
     /** @param {number[] | Float32Array} out @param {number} offset @param {FrameLight} l @param {ArrayLike<number>} [c] */
@@ -357,6 +359,7 @@ export class WebGLRenderer {
         range[i] = l.range ?? 0
         if (l.kind === 'spot') {
           direction.set(/** @type {ArrayLike<number>} */ (l.direction), i * 3)
+          shadowTile[i] = l.shadowTile ?? -1
           const angle = /** @type {number} */ (l.angle)
           cone[i * 2] = Math.cos(angle)
           cone[i * 2 + 1] = Math.cos(angle * (1 - (l.penumbra ?? 0)))
@@ -373,7 +376,7 @@ export class WebGLRenderer {
       uAmbient: ambient, uHemisphereSky: sky, uHemisphereGround: ground,
       uDirectionalDirection: dirDirection, uDirectionalColor: dirColor,
       uPunctualPosition: pos, uPunctualColor: color, uPunctualRange: range,
-      uPunctualDirection: direction, uPunctualCone: cone,
+      uPunctualDirection: direction, uPunctualCone: cone, uPunctualShadow: shadowTile,
     }
   }
 
@@ -383,10 +386,19 @@ export class WebGLRenderer {
     const { node, geometry, material, worldMatrix, instances } = item
     const mode = /** @type {any} */ (node).drawMode
     const kind = mode === 'points' ? 'points' : mode === 'lines' ? 'lines' : 'mesh'
-    const shadowed = kind === 'mesh' && !!this.#shadow && node.receiveShadow && !material.unlit
+    const receives = kind === 'mesh' && node.receiveShadow && !material.unlit
+    const shadowed = receives && !!this.#shadow
 
     const clip = kind === 'mesh' ? item.clip : null
     const defines = this.#defines(kind, material, geometry.colors !== null, !!instances, shadowed)
+    const spotShadowed = receives && !!this.#spotShadow
+    if (spotShadowed) defines.push('SPOT_SHADOWS')
+    const fog = material.fog ? frame.fog : null
+    if (fog) {
+      defines.push('FOG')
+      if (fog.linear) defines.push('FOG_LINEAR')
+      if (material.blending === 'additive') defines.push('FOG_ADD')
+    }
     if (clip) defines.push('CLIP')
     const programs = this.#gpu.programs
     const program = programs.get(kind, defines)
@@ -416,18 +428,31 @@ export class WebGLRenderer {
         for (const [name, value] of Object.entries(this.#lights)) program.set(name, value)
         const env = this.#environment
         if (env) {
-          program.set('uEnvMap', env.prefiltered)
           program.set('uEnvMaxLod', env.maxLod)
           program.set('uEnvSH', env.sh)
           program.set('uEnvIntensity', frame.environmentIntensity)
         }
         if (shadowed && this.#shadow) {
-          program.set('uShadowMap', this.#shadow.texture)
           program.set('uShadowMatrix', this.#shadow.matrix)
           program.set('uShadowTexel', this.#shadow.texel)
           program.set('uShadowBias', this.#shadow.bias)
         }
+        const spot = this.#spotShadow
+        if (spotShadowed && spot) {
+          program.set('uSpotShadowMatrix', spot.matrices)
+          program.set('uSpotShadowTile', spot.tiles)
+          program.set('uSpotShadowBias', spot.bias)
+          program.set('uSpotShadowTexel', spot.texel)
+        }
       }
+    }
+    // the frame's own textures are bound every draw, not once a frame: other programs drawn in
+    // between bind their maps to the same texture units, and a shadow sampler left reading an
+    // ordinary texture makes the draw fail
+    if (kind === 'mesh' && !material.unlit) {
+      if (this.#environment) program.set('uEnvMap', this.#environment.prefiltered)
+      if (shadowed && this.#shadow) program.set('uShadowMap', this.#shadow.texture)
+      if (spotShadowed && this.#spotShadow) program.set('uSpotShadowMap', this.#spotShadow.texture)
     }
 
     program.set('uModel', worldMatrix)
@@ -440,6 +465,11 @@ export class WebGLRenderer {
     }
     program.set('uColor', material.color)
     program.set('uOpacity', material.opacity)
+    if (fog) {
+      program.set('uFogColor', fog.color)
+      program.set('uFogRange', [fog.near, fog.far])
+      program.set('uFogDensity', fog.density)
+    }
     if (clip) program.set('uClipPlane', clip.plane)
     const e = material.emissive, k = material.emissiveIntensity
     program.set('uEmissive', [e[0] * k, e[1] * k, e[2] * k])
