@@ -22,6 +22,8 @@ export const DEMOS = [
   { name: 'lights', title: 'lights in two moods - sunset and neon - and a swinging lamp that carries its spot light' },
   { name: 'textures', title: 'photo textures with normal and ARM maps, a live canvas screen, nearest and linear filtering' },
   { name: 'particles', title: 'particle emitters in three set pieces - a fountain, a brazier and falling snow' },
+  { name: 'harbour', title: 'a harbour on a foggy night - lamps and a lighthouse beam casting shadows through the mist' },
+  { name: 'pumpkin', title: "a jack-o'-lantern - a candle inside casting shadows all round, its light escaping only through the carved face" },
   { name: 'viewer', title: 'a glTF product viewer - full material maps, an HDR studio, shadows, animation' },
   { name: 'models', title: 'hand-made models from raw points and polygons - drawn solid, as edges and as points' },
   { section: 'Showcase', name: 'solar', title: 'a solar system - nested orbits, planets painted in code, a sun that lights them, click to follow' },
@@ -32,12 +34,10 @@ export const DEMOS = [
   { name: 'carbide', title: 'Carbide, the Robot Wars champion 2017 - a double wedge on yellow wheels, steel bar weapon spinning up' },
   { name: 'cells', title: 'an animal and a plant cell, cut open - a labelled science poster, hover a part to light it' },
   { name: 'skull', title: 'the human skull, as an anatomy plate - every bone coloured and named in Latin; hover for English, click a bone or its name to draw it out' },
-  { name: 'pumpkin', title: "a jack-o'-lantern - a candle inside casting shadows all round, its light escaping only through the carved face", hidden: true },
   { name: 'galaxy', title: 'a spiral galaxy - 200,000 additive stars, old and young, round a glowing core' },
   { name: 'fireworks', title: 'fireworks over a city across the water - rockets with physics, four burst shapes, reflections' },
   { name: 'paint', title: 'a paint cannon - click the wall to aim; drops splat and drip into its canvas textures', orbit: false },
   //{ name: 'space', title: 'Cobra Mk IIIs over a gas giant as a comet flies by - and an Elite mode in green vector lines', orbit: false },
   // tests of the API on bigger tasks go here with hidden: true - reachable by name
   // (demo.html?name=...), not listed in the gallery
-  { name: 'harbour', title: 'a harbour on a foggy night - lamps and a lighthouse beam casting shadows through the mist', hidden: true },
 ]

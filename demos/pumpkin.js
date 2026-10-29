@@ -53,7 +53,9 @@ export default function run({ canvas, gui, info }) {
   scene.add(new DirectionalLight({ direction: [0.5, -0.7, 1], color: '#8ea2ff', intensity: 0.5, castShadow: true }))
 
   // the skin waxy and streaked; the flesh pale and matt, lit only by the candle
-  const carved = carve(FACES.classic)
+  // the scary face to start with; the panel picks another
+  const settings = { face: /** @type {keyof typeof FACES} */ ('scary') }
+  const carved = carve(FACES[settings.face])
   const skin = scene.add(new Mesh({ geometry: carved.skin, material: { vertexColors: true, roughness: 0.5, bumpMap: streaks(), bumpScale: 0.0003 }, castShadow: true, receiveShadow: true }))
   // a real lantern's light bounces round inside it, so the flesh glows a little all over
   const flesh = scene.add(new Mesh({ geometry: carved.flesh, material: { vertexColors: true, roughness: 0.85, emissive: '#ff7a1c', emissiveIntensity: 0.3 }, castShadow: true, receiveShadow: true }))
@@ -71,7 +73,6 @@ export default function run({ canvas, gui, info }) {
   }))
   const candle = scene.add(new PointLight({ position: flameAt, color: '#ff9a3c', intensity: 0.5, range: 4, castShadow: true }))
 
-  const settings = { face: 'classic' }
   gui.add(settings, 'face', { Classic: 'classic', Scary: 'scary', Cute: 'cute' }).name('face').onChange((/** @type {keyof typeof FACES} */ name) => {
     // the old carving's geometry goes with it
     const old = [skin.geometry, flesh.geometry]
