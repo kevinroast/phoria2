@@ -1012,6 +1012,12 @@ button.demo-legend-item {
   overflow: auto;
 }
 
+/* the chart lab: fewer, bigger tiles, each tall enough for a whole chart and its key - the grid scrolls */
+.demo-chartlab {
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  grid-auto-rows: 300px;
+}
+
 .demo-tile {
   display: flex;
   flex-direction: column;

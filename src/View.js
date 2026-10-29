@@ -472,7 +472,11 @@ export class View {
     this.#height = h
     this.renderer.setSize(w, h, this.#pixelRatio)
     this.camera.aspect = w / h
+    // keeping the framing can move the camera; that isn't the app placing it, so a camera still
+    // waiting to be fitted to the scene stays waiting
+    const waiting = this.#autoFrame && samePlace(cameraPlace(this.camera), this.#autoFrameFrom)
     this.#keepFraming()
+    if (waiting) this.#autoFrameFrom = cameraPlace(this.camera)
     this.#dirty = true
   }
 

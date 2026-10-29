@@ -492,8 +492,10 @@ export default function run({ canvas, gui, info }) {
   const views = /** @type {const} */ (['animal', 'plant']).map((kind, i) => {
     const view = new View({
       // turn and zoom, but no panning - the cell stays in the middle of its part of the poster
-      canvas: canvases[i], orbit: { pan: false, minPitch: 0.35, maxPitch: 1.45, minDistance: 6, maxDistance: 20 },
-      camera: { position: [0, 11.2, 10.1], target: [0, -0.2, 0.15], fov: 38 }, framing: 'both', highlight: '#ffffff',
+      canvas: canvases[i], orbit: { pan: false, minPitch: 0.35, minDistance: 6, maxDistance: 20 },
+      // face on, straight down at the cut, as the poster draws it - a hair to the front, so the
+      // back of the cell is up the page
+      camera: { position: [0, 14.93, 0.18], target: [0, -0.2, 0.15], fov: 38 }, framing: 'both', highlight: '#ffffff',
       tooltip: (hit) => ABOUT[kindOf(hit?.node)] ?? null,
     })
     const { scene } = view

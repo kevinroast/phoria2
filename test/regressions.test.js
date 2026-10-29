@@ -817,4 +817,15 @@ describe('the first fit', () => {
     expect(view.camera.aspect).toBe(4)
     view.dispose()
   })
+
+  it('still fits the scene when keeping the framing moved the camera first', () => {
+    const canvas = /** @type {any} */ (page.canvas())
+    const view = new View({ canvas, framing: 'both' })
+    view.scene.add(new Mesh({ geometry: box(2), position: [5, 0, 0] }))
+    // narrower than when made: keeping 'both' in view backs the camera off before it is fitted
+    canvas.clientWidth = 150
+    view.render()
+    expect(/** @type {any} */ (view.camera).target[0]).toBeCloseTo(5, 0)
+    view.dispose()
+  })
 })

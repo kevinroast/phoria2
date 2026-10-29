@@ -31,14 +31,14 @@ export default function run({ canvas, info }) {
     links: [['api', 'auth'], ['api', 'db'], ['api', 'cache'], ['api', 'queue'], ['queue', 'worker'], ['worker', 'db'], ['auth', 'cache']].map(([source, target]) => ({ source, target })) }
 
   const tiles = [
-    { title: 'Sales by region (£k)', camera: persp([9.87, 9.168, 13.344], [0.212, 2.143, -0.134]), spec: { mark: 'bar', data: sales, x: 'month', z: 'region', y: 'sales', color: 'region' } },
-    { title: 'Visitors by channel', camera: ortho([11.53, 9.742, 18.372], [-0.539, 2.953, -0.668], 12.578), spec: { mark: 'area', data: traffic, x: 'date', y: 'visitors', color: 'channel', stack: true } },
-    { title: 'Customers', camera: persp([11.853, 6.067, 12.635], [0.108, 1.984, 0.202]), spec: { mark: 'point', data: scatter, x: 'spend', y: 'visits', z: 'tenure', color: 'segment' } },
-    { title: 'Latency by hour (ms)', camera: persp([7.073, 8.78, 14.983], [-0.912, 0.571, 0.887]), spec: { mark: 'surface', data: latency, x: 'hour', z: 'day', y: 'latency', color: { field: 'latency', scale: { scheme: 'heat' } } } },
-    { title: 'Units by product', camera: ortho([4.63, 9.183, 22.286], [-0.391, 2.563, 0.258], 11.321), spec: { mark: 'bar', data: products, x: 'product', y: 'units', label: 'units', color: '#76b7b2' } },
-    { title: 'Error rate (%)', camera: ortho([9.689, 11.452, 19.992], [-0.288, 2.884, 0.465], 10.188), spec: { mark: 'line', data: errors, x: 'time', y: 'rate', color: '#e15759' } },
-    { title: 'Services', camera: persp([2.21, 6.022, 7.175], [0.63, 3.729, -0.914]), spec: { mark: 'network', data: net, color: { field: 'status', scale: { domain: ['healthy', 'degraded'], range: ['#59a14f', '#f2b134'] } }, label: 'id' } },
-    { title: 'Stacked sales', camera: ortho([10.178, 9.591, 19.54], [-0.709, 2.793, -0.197], 10.298), spec: { mark: 'bar', data: sales, x: 'month', y: 'sales', color: 'region', stack: true } },
+    { title: 'Sales by region (£k)', camera: persp([8.904, 8.465, 11.996], [0.212, 2.143, -0.134]), spec: { mark: 'bar', data: sales, x: 'month', z: 'region', y: 'sales', color: 'region' } },
+    { title: 'Visitors by channel', camera: ortho([11.53, 9.742, 18.372], [-0.539, 2.953, -0.668], 11.32), spec: { mark: 'area', data: traffic, x: 'date', y: 'visitors', color: 'channel', stack: true } },
+    { title: 'Customers', camera: persp([10.678, 5.659, 11.392], [0.108, 1.984, 0.202]), spec: { mark: 'point', data: scatter, x: 'spend', y: 'visits', z: 'tenure', color: 'segment' } },
+    { title: 'Latency by hour (ms)', camera: persp([6.275, 7.959, 13.573], [-0.912, 0.571, 0.887]), spec: { mark: 'surface', data: latency, x: 'hour', z: 'day', y: 'latency', color: { field: 'latency', scale: { scheme: 'heat' } } } },
+    { title: 'Units by product', camera: ortho([4.63, 9.183, 22.286], [-0.391, 2.563, 0.258], 10.189), spec: { mark: 'bar', data: products, x: 'product', y: 'units', label: 'units', color: '#76b7b2' } },
+    { title: 'Error rate (%)', camera: ortho([9.689, 11.452, 19.992], [-0.288, 2.884, 0.465], 9.169), spec: { mark: 'line', data: errors, x: 'time', y: 'rate', color: '#e15759' } },
+    { title: 'Services', camera: persp([2.052, 5.793, 6.366], [0.63, 3.729, -0.914]), spec: { mark: 'network', data: net, color: { field: 'status', scale: { domain: ['healthy', 'degraded'], range: ['#59a14f', '#f2b134'] } }, label: 'id' } },
+    { title: 'Stacked sales', camera: ortho([10.178, 9.591, 19.54], [-0.709, 2.793, -0.197], 9.268), spec: { mark: 'bar', data: sales, x: 'month', y: 'sales', color: 'region', stack: true } },
   ]
   const views = tiles.map(({ title, camera, spec }) => {
     const tile = document.createElement('section')

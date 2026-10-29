@@ -16,17 +16,25 @@ const WIDTH = 960, HEIGHT = 600, SCALE = 0.5
 const WAIT = { viewer: 7, pumpkin: 7, harbour: 5, fireworks: 6, paint: 7, particles: 5, space: 4.5, textures: 5, lights: 5, artemis: 4, cpu: 4, volcano: 5, engine: 4.5, skull: 5 }
 // several views on one page: captured from the page, not one view's toImage() - for cells, the
 // whole poster: both cells, their titles and the paper behind them
-const PAGE = ['dashboard', 'cells']
+const PAGE = ['dashboard', 'chartlab', 'cells']
 // set a demo up for its picture first - scene-json aims off-centre to clear its editor panel, which
 // the picture leaves out: its turntable goes back to the start, with the objects side by side, and it
 // is framed in the middle from a little to the right and above; artemis stops on its way home, with
 // the whole route drawn; cpu is running, its traces alight; volcano is erupting, its lava running;
-// cells is scrolled past the poster's heading, to the two cells, its scrollbar hidden; carbide is
+// cells loses the room it leaves for the title, as the tile grids do, and its scrollbar; carbide is
 // seen from a little closer than its framing, which leaves room for the blade's whole sweep; the
 // planner has its meeting table selected - outline, handle and distances to the walls - and is
 // framed close, filling the card; the viewer's turntable stops with the model facing front, the
 // camera back on the line it opens on
+// a grid of tiles fills the picture: the room it leaves for the title and the readout - both hidden
+// for the picture - goes to the tiles, and its scrollbar is hidden
+const TILES = `const grid = document.querySelector('.demo-dashboard')
+  Object.assign(grid.style, { inset: '12px', scrollbarWidth: 'none' })`
 const PREPARE = {
+  dashboard: TILES,
+  // in the dashboard's denser grid, so the picture shows more than two tiles
+  chartlab: `${TILES}
+    grid.classList.remove('demo-chartlab')`,
   viewer: `view.controls.autoRotate = false
     const { position: p, target: t } = view.camera, d = p.distanceTo(t), l = Math.hypot(2.4, 1.6, 3.2)
     p.set(t[0] + 2.4 / l * d, t[1] + 1.6 / l * d, t[2] + 3.2 / l * d)
@@ -38,8 +46,7 @@ const PREPARE = {
   carbide: `const { position: p, target: t } = view.camera
     p.set(t[0] + (p[0] - t[0]) * 0.7, t[1] + (p[1] - t[1]) * 0.7, t[2] + (p[2] - t[2]) * 0.7)
     view.invalidate()`,
-  cells: `document.querySelector('.cells-poster').style.scrollbarWidth = 'none'
-    document.querySelector('.cells-pair').scrollIntoView({ block: 'center' })`,
+  cells: `Object.assign(document.querySelector('.cells-poster').style, { paddingTop: '16px', scrollbarWidth: 'none' })`,
   // played for a moment, so the fountain's sparks have built up
   volcano: `(async () => {
     story.seekStep(4)

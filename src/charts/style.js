@@ -23,10 +23,13 @@ const CSS = `
   color: inherit; font: inherit; text-align: left; cursor: pointer; }
 :where(.phoria-legend-item.off) { opacity: 0.35; }
 :where(.phoria-legend-swatch) { width: 10px; height: 10px; border-radius: 2px; flex: none; }
-:where(.phoria-legend-key) { display: flex; gap: 6px; margin: 6px 0; }
-:where(.phoria-legend-ramp) { width: 10px; height: 140px; border-radius: 2px; flex: none; }
-:where(.phoria-legend-scale) { position: relative; min-width: 28px; font-size: 11px; font-variant-numeric: tabular-nums; }
-:where(.phoria-legend-scale > span) { position: absolute; left: 0; transform: translateY(50%); white-space: nowrap; opacity: 0.8; }
+/* a number key is up to 140px tall and gives way in a short view, so the legend never scrolls; its
+   values share one grid cell, so the widest sets the key's width, each raised to its place */
+:where(.phoria-legend-key) { display: flex; gap: 6px; margin: 6px 0; flex: 0 1 140px; min-height: 48px; }
+:where(.phoria-legend-ramp) { width: 10px; border-radius: 2px; flex: none; }
+:where(.phoria-legend-scale) { display: grid; font-size: 11px; font-variant-numeric: tabular-nums; }
+:where(.phoria-legend-scale > span) { grid-area: 1 / 1; align-self: end; position: relative; transform: translateY(50%);
+  white-space: nowrap; opacity: 0.8; }
 `
 
 export function addStyle() {
