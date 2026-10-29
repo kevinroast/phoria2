@@ -352,6 +352,38 @@ planButton.onclick = () => { view.camera = 'top'; view.controls.mode = 'map' }  
 threeDButton.onclick = () => { view.camera = 'perspective'; view.controls.mode = 'orbit' }
 ```
 
+**Camera recipes** - the camera is moved by `frame()`, by its control, or by setting its `position`
+and `target` yourself; the orbit always turns about wherever the target is.
+
+- **Which way is up on screen**: from `'top'`, screen right is +x and screen up is -z (north on a
+  map is -z). From `'front'`, right is +x and up is +y.
+- **Fly to something**: `view.frame(node, { duration: 1 })` - the glide eases in and out, and a
+  press or the wheel takes over.
+- **Back to the start**: `view.frame(undefined, { direction: 'perspective', duration: 0.6 })`
+  (or the preset the view started with).
+- **Follow something that moves** - move the camera and its target by as much as it moved, so the
+  view keeps its angle and the user can still orbit round it:
+
+  ```js
+  let last = null
+  view.start(() => {
+    if (!followed) return
+    const now = followed.updateWorld().worldPosition
+    if (last) {
+      const moved = now.clone().sub(last)
+      view.camera.position.add(moved)
+      view.camera.target.add(moved)
+    }
+    last = now
+  })
+  // to start: last = null; followed = planet; view.frame(planet) - and to stop, followed = null
+  ```
+- **Turn to an angle**: `view.controls.spherical = { yaw, pitch, distance }` (see Conventions).
+- **Light far from a point light**: point and spot light falls off with the square of distance, so
+  intensity scales with distance squared - a sun lighting planets 20 units away wants an intensity
+  of about 400 and a `HemisphereLight` fill for their dark sides; things meant to glow regardless
+  can be `unlit` or `emissive`.
+
 ## Interaction
 
 ```js
@@ -363,6 +395,9 @@ view.on('hover', (hit) => show(hit?.datum))                 // fires when the th
 
 - A **hit** is `{ node, instance, datum, point, distance, normal, face, uv }`. `datum` is the
   `data` row for the instance or point hit, or the node's own `data`.
+- The **nearest surface** under the pointer is the hit - a link drawn over a site's top wins the
+  hover there. To let one kind of thing through, give it `pickable: false`; to choose among
+  everything under the pointer, `view.pickAll(event)` lists every hit, nearest first.
 - **Tooltip** content: a string (new lines kept), an HTML element, or `{ title, rows }` with rows as
   an object `{ name: value }`. Return null for none. Styled by the `.phoria-tooltip` class.
 - **highlight** tints the hovered node, instance or point. A drag never counts as a click.

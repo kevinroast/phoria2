@@ -837,3 +837,45 @@ describe("a chart's description", () => {
     expect(chart({ mark: 'bar', data, x: 'm', y: 's', highlight: '#ff0000' }).toJSON().highlight).toBe('#ff0000')
   })
 })
+
+describe('the camera recipes in llms-full.txt', () => {
+  it('follows a moving node, keeping the angle it is seen from', () => {
+    const view = new View({ canvas: page.canvas(), camera: { position: [0, 4, 10], target: [0, 0, 0] } })
+    const planet = view.scene.add(new Mesh({ geometry: box(1), position: [3, 0, 0] }))
+    planet.onUpdate((node, dt) => { node.position.x += dt * 2 })
+    /** @type {any} */
+    let followed = null, last = null
+    // the recipe, as written
+    const cam = /** @type {any} */ (view.camera)
+    view.start(() => {
+      if (!followed) return
+      const now = followed.updateWorld().worldPosition
+      if (last) {
+        const moved = now.clone().sub(last)
+        cam.position.add(moved)
+        cam.target.add(moved)
+      }
+      last = now
+    })
+    last = null
+    followed = planet
+    view.frame(planet)
+    const camera = /** @type {any} */ (view.camera)
+    const offset = camera.position.clone().sub(camera.target).toArray()
+    for (let i = 0; i < 30; i++) view.step(1 / 30)
+    // still looking at the planet, from the same angle and distance
+    expect(camera.target.distanceTo(planet.updateWorld().worldPosition)).toBeLessThan(0.1)
+    camera.position.clone().sub(camera.target).toArray().forEach((v, i) => expect(v).toBeCloseTo(offset[i]))
+    view.dispose()
+  })
+
+  it("has 'top' looking down with +x to the right and -z up the screen", () => {
+    const top = new View({ canvas: page.canvas(), camera: 'top' })
+    top.scene.add(new Mesh({ geometry: box(1) }))
+    top.render()
+    const m = top.camera.worldMatrix
+    expect([m[0], m[1], m[2]].map((v) => Math.round(v) + 0)).toEqual([1, 0, 0])
+    expect([m[4], m[5], m[6]].map((v) => Math.round(v) + 0)).toEqual([0, 0, -1])
+    top.dispose()
+  })
+})
