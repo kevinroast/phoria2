@@ -56,13 +56,21 @@ export class Raycaster {
    */
   setFromCamera(ndc, camera) {
     camera.updateWorld()
-    const inv = mat4.invert(new Float32Array(16), mat4.multiply(new Float32Array(16), camera.projectionMatrix, camera.viewMatrix))
-    if (!inv) return this
-    const near = new Vec3(ndc[0], ndc[1], -1).applyMatrix4(inv)
-    const far = new Vec3(ndc[0], ndc[1], 1).applyMatrix4(inv)
-    if (/** @type {any} */ (camera.constructor).type === 'orthographic-camera') this.ray.origin.copy(near)
-    else this.ray.origin.copy(camera.worldPosition)
-    this.ray.direction.copy(far).sub(near).normalize()
+    if (/** @type {any} */ (camera.constructor).type === 'orthographic-camera') {
+      // parallel rays: from the near plane, straight through to the far one
+      const inv = mat4.invert(new Float32Array(16), mat4.multiply(new Float32Array(16), camera.projectionMatrix, camera.viewMatrix))
+      if (!inv) return this
+      const near = new Vec3(ndc[0], ndc[1], -1).applyMatrix4(inv)
+      this.ray.origin.copy(near)
+      this.ray.direction.copy(new Vec3(ndc[0], ndc[1], 1).applyMatrix4(inv)).sub(near).normalize()
+      return this
+    }
+    // from the camera along the pixel's line of sight, worked out in the camera's own space and
+    // turned to the world - exact whatever the near and far planes (far: Infinity included)
+    const p = camera.projectionMatrix, m = camera.worldMatrix
+    const x = (ndc[0] + p[8]) / p[0], y = (ndc[1] + p[9]) / p[5]
+    this.ray.origin.copy(camera.worldPosition)
+    this.ray.direction.set(m[0] * x + m[4] * y - m[8], m[1] * x + m[5] * y - m[9], m[2] * x + m[6] * y - m[10]).normalize()
     return this
   }
 

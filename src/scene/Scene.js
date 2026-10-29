@@ -2,7 +2,7 @@ import { Color } from '../value/Color.js'
 import { Texture } from '../material/Texture.js'
 import { checkNumber, describe, fail } from '../validate.js'
 import { Fog } from '../fog.js'
-import { NODE_OPTIONS, Node, beginWalk, endWalk } from './Node.js'
+import { NODE_OPTIONS, Node } from './Node.js'
 
 /** @import { NodeOptions } from './Node.js' */
 /** @import { ColorInput } from '../types.js' */
@@ -114,12 +114,7 @@ export class Scene extends Node {
    * @returns {this}
    */
   update(dt, t) {
-    beginWalk()
-    try {
-      runHandlers(this, dt, t)
-    } finally {
-      endWalk()
-    }
+    runHandlers(this, dt, t, new Set())
     this.updateWorldTree()
     return this
   }
@@ -159,12 +154,16 @@ export class Scene extends Node {
   }
 }
 
-// Handlers run for invisible nodes too - behaviour may be what makes them visible again. Children
-// are read by index with the length taken up front, so handlers can add nodes (seen next frame);
-// removals are deferred until the walk ends.
-/** @param {Node} node @param {number} dt @param {number} t */
-function runHandlers(node, dt, t) {
-  if (node.hasHandlers) node.runHandlers(dt, t)
+// Handlers run for invisible nodes too - behaviour may be what makes them visible again. Each
+// node's children are copied before they are walked, so handlers can add, remove and move nodes -
+// themselves included - without the walk skipping or losing one; a node that moves to a parent
+// walked later still runs once a frame.
+/** @param {Node} node @param {number} dt @param {number} t @param {Set<Node>} ran */
+function runHandlers(node, dt, t, ran) {
+  if (node.hasHandlers && !ran.has(node)) {
+    ran.add(node)
+    node.runHandlers(dt, t)
+  }
   const children = node.children
-  for (let i = 0, n = children.length; i < n; i++) runHandlers(children[i], dt, t)
+  if (children.length) for (const child of [...children]) runHandlers(child, dt, t, ran)
 }

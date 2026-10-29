@@ -85,8 +85,11 @@ export class Programs {
   }
 
   /** Forget everything - after a lost context. */
+  /** Forget every program - after a lost context, when they are already gone. */
   reset() {
     this.#cache.clear()
+    // a lost context drops its extensions: ask again, which turns it back on (or finds it gone)
+    this.#parallel = !!this.gl.getExtension('KHR_parallel_shader_compile')
   }
 
   dispose() {

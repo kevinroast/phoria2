@@ -47,7 +47,8 @@ export function networkMark(ctx, host) {
   let at = []
   /** @type {any[]} */ let links = []
   /** @type {any[]} */ let rowsNow = []
-  let hovered = -1
+  /** the hovered node by its key, not its row - rows move and go when the data changes; null for none */
+  /** @type {unknown} */ let hovered = null
 
   const mark = {
     nodes: [...linkNodes, active, nodesMesh, ...(packets ? [packets] : [])],
@@ -71,6 +72,11 @@ export function networkMark(ctx, host) {
     apply(state, t) {
       const n = state.length / t.stride
       rowsNow = t.rows
+      // a hovered node that has gone from the data is hovered no longer
+      if (hovered !== null && !rowsNow.some((r) => keyOf(r) === hovered)) {
+        hovered = null
+        active.visible = false
+      }
       if (n > nodesMesh.instanceMatrices.length / 16) fail('chart()', 'a network update can add at most as many nodes again as it started with - make a new chart for a bigger graph')
       nodesMesh.count = n
       nodesMesh.data = t.rows
@@ -102,7 +108,7 @@ export function networkMark(ctx, host) {
         node.visible = bucket.positions.length > 0
         node.data = bucket.rows
       })
-      if (hovered >= 0) showNeighbours(hovered)
+      if (hovered !== null) showNeighbours(hovered)
     },
     enter(item) {
       item[3] = 0
@@ -132,19 +138,19 @@ export function networkMark(ctx, host) {
   const neighbours = (o.highlight ?? 'neighbours') === 'neighbours'
   if (neighbours) {
     host.onHover((hit) => {
-      const i = hit && hit.node === nodesMesh ? hit.instance : -1
-      if (i === hovered) return
-      hovered = i
-      active.visible = i >= 0
-      if (i >= 0) showNeighbours(i)
+      const key = hit && hit.node === nodesMesh && hit.instance !== null ? keyOf(rowsNow[hit.instance]) : null
+      if (key === hovered) return
+      hovered = key
+      active.visible = key !== null
+      if (key !== null) showNeighbours(key)
       // recolour every node for the dimming, or back
       for (let k = 0; k < nodesMesh.count; k++) nodesMesh.setColor(k, dimmed(k, ctx.rgb(rowsNow[k])))
     })
   }
 
-  /** @param {number} i */
-  function showNeighbours(i) {
-    const key = keyOf(rowsNow[i]), p = []
+  /** @param {unknown} key */
+  function showNeighbours(key) {
+    const p = []
     for (const l of links) {
       if (l[source] !== key && l[target] !== key) continue
       const a = rowsNow.findIndex((r) => keyOf(r) === l[source]), b = rowsNow.findIndex((r) => keyOf(r) === l[target])
@@ -156,9 +162,10 @@ export function networkMark(ctx, host) {
 
   /** A node's colour, dimmed while another node and its neighbours are highlighted. @param {number} k @param {number[]} rgb */
   function dimmed(k, rgb) {
-    if (hovered < 0 || !neighbours || k === hovered) return rgb
-    const key = keyOf(rowsNow[hovered]), other = keyOf(rowsNow[k])
-    const near = links.some((l) => (l[source] === key && l[target] === other) || (l[target] === key && l[source] === other))
+    if (hovered === null || !neighbours) return rgb
+    const other = keyOf(rowsNow[k])
+    if (other === hovered) return rgb
+    const near = links.some((l) => (l[source] === hovered && l[target] === other) || (l[target] === hovered && l[source] === other))
     if (near) return rgb
     const c = new Color().setSRGB(rgb[0], rgb[1], rgb[2]).lerp(ctx.theme === 'light' ? '#ffffff' : '#202024', 0.65)
     return c.toSRGB()

@@ -2,7 +2,8 @@ node_modules
 dist
 dist-demos
 
-# kept locally, not published: planning notes, the API design notes and the agent eval
+# kept locally, not published: planning notes, the API design notes, code reviews and the agent eval
 PHORIA2.md
 API-DESIGN.md
+REVIEW.md
 eval/

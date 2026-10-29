@@ -86,24 +86,6 @@ export const NODE_HINTS = {
   selected: "outline what's selected: node.outline = '#ffcc00'",
 }
 
-// While a scene update walks the graph, removals are queued and applied afterwards so handlers
-// can remove nodes (even themselves) without the walk skipping a sibling.
-let walking = 0
-/** @type {Array<() => void>} */
-const pending = []
-
-/** @internal Used by Scene.update() around its walk. */
-export function beginWalk() {
-  walking++
-}
-
-/** @internal */
-export function endWalk() {
-  if (--walking === 0) {
-    while (pending.length) pending.shift()()
-  }
-}
-
 const UP = new Float32Array([0, 1, 0])
 const tmpMat = new Float32Array(16)
 const tmpMat3 = new Float32Array(9)
@@ -292,11 +274,10 @@ export class Node {
     return /** @type {T} */ (nodes[0])
   }
 
-  /** Remove children. Safe inside update handlers: applied after the frame's walk. @param {...Node} nodes @returns {this} */
+  /** Remove children. Safe inside update handlers and traverse(): the walk goes on over the children as they were. @param {...Node} nodes @returns {this} */
   remove(...nodes) {
     for (const node of nodes) {
-      if (walking) pending.push(() => node.#parent === this && this.#detach(node))
-      else if (node.#parent === this) this.#detach(node)
+      if (node.#parent === this) this.#detach(node)
     }
     return this
   }
@@ -313,10 +294,14 @@ export class Node {
     node.#parent = null
   }
 
-  /** Visit this node and every descendant, depth first. @param {(node: Node) => void} fn */
+  /**
+   * Visit this node and every descendant, depth first. The children are copied before they are
+   * visited, so fn can remove or move nodes without the walk skipping one.
+   * @param {(node: Node) => void} fn
+   */
   traverse(fn) {
     fn(this)
-    for (const child of this.#children) child.traverse(fn)
+    if (this.#children.length) for (const child of [...this.#children]) child.traverse(fn)
   }
 
   /** The first descendant (or this) with a name. @param {string} name @returns {Node | undefined} */

@@ -16,6 +16,7 @@ const UPLOAD_UNIT = 15
  * @property {WebGLBuffer[]} buffers
  * @property {number} count indices or vertices to draw
  * @property {number} indexType gl.UNSIGNED_SHORT / gl.UNSIGNED_INT, or 0 when not indexed
+ * @property {Geometry} geometry the geometry they were made from - an instanced mesh can be given another
  * @property {number} version geometry version they were made from
  * @property {number} instanceVersion instance data version (instanced meshes)
  * @property {WebGLBuffer | null} [matrixBuffer] per-instance matrices, refilled when only they change
@@ -84,9 +85,11 @@ export class Resources {
     this.#mark(key)
     const cache = withNormals ? this.#triangles : this.#points
     let entry = cache.get(key)
-    if (entry && entry.version === geometry.version && (!instances || entry.instanceVersion === instances.version)) return entry
+    // instanced buffers are kept by the node, so check it still has the same geometry
+    const same = entry?.geometry === geometry
+    if (entry && same && entry.version === geometry.version && (!instances || entry.instanceVersion === instances.version)) return entry
     const layout = layoutOf(geometry, instances, withNormals)
-    if (entry && entry.layout === layout) {
+    if (entry && same && entry.layout === layout) {
       // the data changed but kept its shape (moving vertices, particles, instances): refill in place
       if (entry.version !== geometry.version) {
         const a = /** @type {Record<string, WebGLBuffer>} */ (entry.attributes)
@@ -109,8 +112,14 @@ export class Resources {
       }
       return entry
     }
-    if (entry) this.#free(entry)
-    else this.#watch(geometry, key, cache)
+    if (entry) {
+      this.#free(entry)
+      // given another geometry: the old one is no longer held here, and the new one is watched
+      if (!same) {
+        this.counts.geometries--
+        this.#watch(geometry, key, cache)
+      }
+    } else this.#watch(geometry, key, cache)
 
     const gl = this.gl
     const vao = /** @type {WebGLVertexArrayObject} */ (gl.createVertexArray())
@@ -162,7 +171,7 @@ export class Resources {
     }
     gl.bindVertexArray(null)
 
-    entry = { vao, buffers, count: geometry.elementCount, indexType, version: geometry.version,
+    entry = { vao, buffers, count: geometry.elementCount, indexType, geometry, version: geometry.version,
       instanceVersion: instances?.version ?? 0, matrixBuffer, colorBuffer, attributes, layout }
     cache.set(key, entry)
     return entry
@@ -227,7 +236,7 @@ export class Resources {
     gl.vertexAttribPointer(ATTRIBUTES.corner, 2, gl.FLOAT, false, 0, 0)
     gl.bindVertexArray(null)
 
-    entry = { vao, buffers, count: segments, indexType: 0, version: geometry.version, instanceVersion: 0 }
+    entry = { vao, buffers, count: segments, indexType: 0, geometry, version: geometry.version, instanceVersion: 0 }
     this.#lines.set(geometry, entry)
     return entry
   }
@@ -342,6 +351,8 @@ export class Resources {
     this.#usedBy = new WeakMap()
     this.#white = null
     this.#corners = null
+    // extensions go with a lost context; the next texture asks for this one again
+    this.#aniso = undefined
     this.counts = { geometries: 0, textures: 0 }
   }
 
@@ -351,7 +362,8 @@ export class Resources {
     this.counts.geometries++
     geometry.onDispose(() => {
       const entry = cache.get(key)
-      if (!entry) return
+      // gone, or the node has another geometry now
+      if (!entry || entry.geometry !== geometry) return
       this.#free(entry)
       cache.delete(key)
       this.counts.geometries--

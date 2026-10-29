@@ -220,6 +220,9 @@ export class WebGLRenderer {
       warnOnce(env, env.isHDR ? "this device can't render to float textures, which HDR environments need - lighting without it"
         : "'environment' needs an HDR image (a .hdr file) - lighting without it")
     }
+    // an HDR background is prefiltered here too, before the scene's target is bound: prefiltering
+    // draws into targets of its own and leaves the framebuffer and viewport behind it
+    if (passes && bg && !('getHex' in bg) && bg.isHDR) passes.environment(bg)
     // the light's view first, into its own depth texture
     const shadow = passes ? frame.shadow : null
     if (shadow && passes) {

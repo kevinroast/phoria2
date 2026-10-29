@@ -265,6 +265,9 @@ export class View {
       const target = old.target ?? new Vec3()
       camera = cameraPreset(camera, { target, distance: Math.max(1e-3, old.position.distanceTo(target)) })
       this.#autoFrame = true
+    } else {
+      // a camera given explicitly stays where it was put, as one given to the constructor does
+      this.#autoFrame = false
     }
     if (!(camera instanceof Camera)) fail('View', `'camera' must be a camera or a preset name, got ${describe(camera)}`)
     this.#camera = camera
@@ -790,18 +793,22 @@ export class View {
     this.#rafId = 0
     const dt = this.#lastTime ? Math.min(this.maxDelta, (now - this.#lastTime) / 1000) : 0
     this.#lastTime = now
-    if (this.#running) {
-      this.time += dt
-      this.#onFrame?.(dt, this.time)
-      this.scene.update(dt, this.time)
+    try {
+      if (this.#running) {
+        this.time += dt
+        this.#onFrame?.(dt, this.time)
+        this.scene.update(dt, this.time)
+      }
+      this.controls?.update(dt)
+      if (this.#pickPending) this.#updateHover()
+      const draw = this.#dirty || this.renderMode === 'always' ||
+        (this.renderMode === 'auto' && this.#watch.changed(this.scene, this.camera))
+      if (draw) this.render()
+    } finally {
+      // the next frame comes even if this one threw - the error still reaches the console, but one
+      // bad handler doesn't freeze the view. In manual mode, sleep until something asks for a frame
+      if (this.renderMode !== 'manual' || (this.#running && this.#onFrame) || this.#dirty || this.#pickPending) this.#schedule()
     }
-    this.controls?.update(dt)
-    if (this.#pickPending) this.#updateHover()
-    const draw = this.#dirty || this.renderMode === 'always' ||
-      (this.renderMode === 'auto' && this.#watch.changed(this.scene, this.camera))
-    if (draw) this.render()
-    // in manual mode, sleep until something asks for a frame
-    if (this.renderMode !== 'manual' || (this.#running && this.#onFrame) || this.#dirty || this.#pickPending) this.#schedule()
   }
 
   #needsHover() {
