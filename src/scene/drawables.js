@@ -379,7 +379,20 @@ export class InstancedMesh extends Mesh {
 
   /** @param {Box3} box */
   expandBounds(box) {
-    if (!this.count || !this.geometry.vertexCount) return box
+    this.eachInstanceBox((x0, y0, z0, x1, y1, z1) => {
+      box.expandByXYZ(x0, y0, z0)
+      box.expandByXYZ(x1, y1, z1)
+    })
+    return box
+  }
+
+  /**
+   * @internal Each instance's world box, as its low and high corners - for fitting a view round the
+   * instances themselves rather than the box round them all.
+   * @param {(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) => void} fn
+   */
+  eachInstanceBox(fn) {
+    if (!this.count || !this.geometry.vertexCount) return
     const local = this.geometry.bounds
     // each instance's box from the geometry's centre and half size: the centre moves with the
     // matrix, and the half size grows by the matrix's absolute values - no allocation per instance
@@ -394,10 +407,8 @@ export class InstancedMesh extends Mesh {
       const hx = Math.abs(m[0]) * ex + Math.abs(m[4]) * ey + Math.abs(m[8]) * ez
       const hy = Math.abs(m[1]) * ex + Math.abs(m[5]) * ey + Math.abs(m[9]) * ez
       const hz = Math.abs(m[2]) * ex + Math.abs(m[6]) * ey + Math.abs(m[10]) * ez
-      box.expandByXYZ(x - hx, y - hy, z - hz)
-      box.expandByXYZ(x + hx, y + hy, z + hz)
+      fn(x - hx, y - hy, z - hz, x + hx, y + hy, z + hz)
     }
-    return box
   }
 
   /** @returns {Record<string, unknown>} */

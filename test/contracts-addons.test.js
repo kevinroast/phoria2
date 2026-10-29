@@ -19,7 +19,7 @@ const network = {
   nodes: [{ id: 'a', tier: 1 }, { id: 'b', tier: 2 }, { id: 'c', tier: 2 }],
   links: [{ source: 'a', target: 'b', from: 'a', to: 'b', w: 2 }, { source: 'a', target: 'c', from: 'a', to: 'c', w: 1 }],
 }
-const NETWORK_ONLY = ['layout', 'flat', 'steps', 'seed', 'spacing', 'source', 'target', 'link']
+const NETWORK_ONLY = ['layout', 'flat', 'steps', 'seed', 'source', 'target', 'link']
 const makeChart = (o) => chart(Object.keys(o).some((k) => NETWORK_ONLY.includes(k))
   ? { mark: 'network', data: network, transition: false, ...o }
   : { mark: 'bar', data: rows, x: 'month', y: 'sales', transition: false, ...o })
@@ -48,7 +48,6 @@ contract('chart()', {
     flat: { value: true, read: opt('flat') },
     steps: { value: 20, read: opt('steps'), bad: 'many', error: 'steps' },
     seed: { value: 3, read: opt('seed'), bad: 'random', error: 'seed' },
-    spacing: { value: 2, read: opt('spacing'), bad: 'wide', error: 'spacing' },
     source: { value: 'from', read: opt('source'), bad: 'nowhere', error: 'nowhere' },
     target: { value: 'to', read: opt('target'), bad: 'nowhere', error: 'nowhere' },
     link: { value: { width: 'w' }, only: "a network's link channels, drawn as its links", bad: { thickness: 'w' }, error: 'link has no' },

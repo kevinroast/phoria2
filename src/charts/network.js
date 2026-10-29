@@ -40,7 +40,8 @@ export function networkMark(ctx) {
   // links in up to three widths; each segment carries its link's row
   const linkNodes = WIDTHS.map((width) => new Lines({ geometry: new Geometry({ positions: [0, 0, 0, 0, 0, 0] }), material: { width, vertexColors: true }, data: [] }))
   const active = new Lines({ geometry: new Geometry({ positions: [] }), material: { width: 4, color: '#7fd3ff' }, pickable: false, visible: false })
-  const packets = linkCh.flow ? new Points({ geometry: new Geometry({ positions: [] }), material: { size: 0.022 * Math.min(...ctx.box), color: '#bff0ff' }, pickable: false }) : null
+  // packets small beside the nodes, so the traffic reads as motion along the links, not more nodes
+  const packets = linkCh.flow ? new Points({ geometry: new Geometry({ positions: [] }), material: { size: 0.012 * Math.min(...ctx.box), color: '#bff0ff' }, pickable: false }) : null
   /** @type {{ a: number, b: number, speed: number, phase: number }[]} */
   let flows = []
   /** the drawn node positions, by row index, as of the last apply */
@@ -236,43 +237,62 @@ export function networkMark(ctx) {
     return raw.map((p) => [(p[0] - c[0]) * s, o.flat ? 0 : (p[1] - c[1]) * s + h / 2, (p[2] - c[2]) * s])
   }
 
-  /** Force-directed: links pull, everything repels, cooling over a fixed number of steps. */
+  /**
+   * An organic layout by stress: nodes are placed so the distance between any two is as near as it
+   * can be to the number of links between them. Every link comes out about the same length, a node
+   * with one link sits beside its neighbour rather than flung out, and the whole spreads evenly -
+   * where a force layout leaves a dense middle and far-off leaves, which then set the scale.
+   */
   function force(keys, pairs) {
-    const n = keys.length, rand = random(o.seed ?? 1), k = o.spacing ?? 1
+    const n = keys.length, rand = random(o.seed ?? 1), dims = o.flat ? [0, 2] : [0, 1, 2]
     const warm = keys.some((key) => placed.has(key))
     const steps = o.steps ?? (warm ? 60 : 300)
+    // links between every pair: breadth first from each node; parts not joined sit a hop beyond the furthest
+    const near = keys.map(() => /** @type {number[]} */ ([]))
+    for (const [a, b] of pairs) {
+      near[a].push(b)
+      near[b].push(a)
+    }
+    const hops = new Float32Array(n * n).fill(Infinity)
+    let furthest = 1
+    for (let s = 0; s < n; s++) {
+      const queue = [s]
+      hops[s * n + s] = 0
+      for (let q = 0; q < queue.length; q++) {
+        const at = queue[q], h = hops[s * n + at] + 1
+        for (const t of near[at]) {
+          if (hops[s * n + t] !== Infinity) continue
+          hops[s * n + t] = h
+          furthest = Math.max(furthest, h)
+          queue.push(t)
+        }
+      }
+    }
     const p = keys.map((key, i) => {
       if (placed.has(key)) return [...placed.get(key)]
       // a new node starts beside a neighbour that is already placed, or anywhere
-      const pair = pairs.find(([a, b]) => (a === i && placed.has(keys[b])) || (b === i && placed.has(keys[a])))
-      const from = pair ? placed.get(keys[pair[0] === i ? pair[1] : pair[0]]) : [0, 0, 0]
-      const spread = pair ? k * 0.5 : Math.cbrt(n) * k
+      const next = near[i].find((j) => placed.has(keys[j]))
+      const from = next === undefined ? [0, 0, 0] : placed.get(keys[next])
+      const spread = next === undefined ? Math.sqrt(n) : 0.5
       return [from[0] + (rand() - 0.5) * spread, o.flat ? 0 : from[1] + (rand() - 0.5) * spread, from[2] + (rand() - 0.5) * spread]
     })
-    const disp = p.map(() => [0, 0, 0])
+    // each node in turn moves to where its distances to all the others fit best, nearer ones counting more
+    const to = [0, 0, 0]
     for (let step = 0; step < steps; step++) {
-      const heat = (warm ? 0.02 : 0.1) * Math.sqrt(n) * k * (1 - step / steps)
-      for (const v of disp) v.fill(0)
       for (let i = 0; i < n; i++) {
-        for (let j = i + 1; j < n; j++) {
+        to.fill(0)
+        let weights = 0
+        for (let j = 0; j < n; j++) {
+          if (i === j) continue
+          const h = hops[i * n + j], want = h === Infinity ? furthest + 1 : h, w = 1 / (want * want)
           const dx = p[i][0] - p[j][0], dy = p[i][1] - p[j][1], dz = p[i][2] - p[j][2]
-          const f = (k * k) / Math.max(dx * dx + dy * dy + dz * dz, 0.01)
-          disp[i][0] += dx * f; disp[i][1] += dy * f; disp[i][2] += dz * f
-          disp[j][0] -= dx * f; disp[j][1] -= dy * f; disp[j][2] -= dz * f
+          const len = Math.hypot(dx, dy, dz) || 1e-6
+          to[0] += w * (p[j][0] + want * dx / len)
+          to[1] += w * (p[j][1] + want * dy / len)
+          to[2] += w * (p[j][2] + want * dz / len)
+          weights += w
         }
-      }
-      for (const [a, b] of pairs) {
-        const dx = p[a][0] - p[b][0], dy = p[a][1] - p[b][1], dz = p[a][2] - p[b][2]
-        const f = Math.hypot(dx, dy, dz) / k
-        disp[a][0] -= dx * f; disp[a][1] -= dy * f; disp[a][2] -= dz * f
-        disp[b][0] += dx * f; disp[b][1] += dy * f; disp[b][2] += dz * f
-      }
-      for (let i = 0; i < n; i++) {
-        // a little gravity keeps disconnected parts from drifting off
-        for (let c = 0; c < 3; c++) disp[i][c] -= p[i][c] * 0.05
-        const len = Math.hypot(...disp[i]) || 1, move = Math.min(len, heat) / len
-        for (let c = 0; c < 3; c++) p[i][c] += disp[i][c] * move
-        if (o.flat) p[i][1] = 0
+        if (weights) for (const c of dims) p[i][c] = to[c] / weights
       }
     }
     placed = new Map(keys.map((key, i) => [key, p[i]]))

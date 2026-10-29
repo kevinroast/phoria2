@@ -1197,15 +1197,33 @@ function corners(box) {
   return out
 }
 
+// past this many instances or vertices, a drawable is fitted by the box round it all
+const FIT_DETAIL = 4000
+
 /**
- * The corners of each thing a camera draws of a subtree, as node.boundsFrom() counts them: a box
- * each, so the empty space between things doesn't count as filled.
+ * The points a camera draws of a subtree, to fit a view round: the corners of each thing's box, so
+ * the empty space between things doesn't count as filled - and closer still, the corners of each
+ * instance and the vertices of lines and points, so a cloud of them isn't fitted by the corners of
+ * the cube round it.
  * @param {Node} node @param {Camera} camera @returns {number[][]}
  */
 function drawnPoints(node, camera) {
   node.updateWorld()
+  /** @type {number[][]} */
   const points = []
-  node.eachShownTo(camera, (n) => points.push(...corners(n.expandBounds(new Box3()))))
+  node.eachShownTo(camera, (n) => {
+    const d = /** @type {any} */ (n)
+    if ('instanceMatrices' in d && d.count <= FIT_DETAIL) {
+      d.eachInstanceBox((x0, y0, z0, x1, y1, z1) => { points.push(...corners(new Box3([x0, y0, z0], [x1, y1, z1]))) })
+    } else if ((d.drawMode === 'lines' || d.drawMode === 'points') && d.geometry.vertexCount <= FIT_DETAIL) {
+      // the vertices drawn - every one, when indices pick them
+      const g = d.geometry, p = g.positions, m = d.worldMatrix, count = g.indices ? g.vertexCount : g.drawnVertices
+      for (let i = 0; i < count; i++) {
+        const x = p[i * 3], y = p[i * 3 + 1], z = p[i * 3 + 2]
+        points.push([m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]])
+      }
+    } else points.push(...corners(n.expandBounds(new Box3())))
+  })
   return points
 }
 

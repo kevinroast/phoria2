@@ -92,6 +92,67 @@ export function legend(items, { title, onToggle } = {}) {
   return el
 }
 
+/**
+ * A "show chart spec" switch in the controls, and the panel it opens: the chart() call that makes this
+ * chart, as it stands - read from chart.toJSON() twice a second while open, so it follows the
+ * controls and live data. Long lists of rows show their first few.
+ * @param {any} gui @param {any} chart
+ */
+export function showSpec(gui, chart) {
+  const panel = document.createElement('div')
+  panel.className = 'code-panel spec-panel'
+  panel.hidden = true
+  panel.innerHTML = '<p>The spec</p><pre></pre>'
+  const pre = /** @type {HTMLPreElement} */ (panel.querySelector('pre'))
+  document.body.append(panel)
+  const refresh = () => {
+    // a chart's JSON is its spec, with the type create() reads it by
+    const spec = chart.toJSON()
+    delete spec.type
+    const text = `chart(${literal(spec, '')})`
+    if (pre.textContent !== text) pre.textContent = text
+  }
+  let timer = 0
+  gui.add({ spec: false }, 'spec').name('show chart spec').onChange((on) => {
+    panel.hidden = !on
+    clearInterval(timer)
+    if (!on) return
+    refresh()
+    timer = setInterval(refresh, 500)
+  })
+}
+
+// rows shown of a long list of them
+const ROWS = 3
+
+/**
+ * A value as JavaScript source: objects on one line when they fit, dates as new Date(...),
+ * functions as written, and a long list of rows cut to its first few - a row to a line.
+ * @param {unknown} v @param {string} indent @param {boolean} [line] all on one line, however long
+ * @returns {string}
+ */
+function literal(v, indent, line = false) {
+  const inner = `${indent}  `
+  if (v instanceof Date) return `new Date('${v.toISOString().replace('T00:00:00.000Z', '')}')`
+  if (typeof v === 'function') return String(v)
+  if (typeof v === 'string') return `'${v.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+  if (Array.isArray(v)) {
+    const rows = v.length > ROWS && v.every((r) => r && typeof r === 'object' && !Array.isArray(r))
+    const items = (rows ? v.slice(0, ROWS) : v).map((x) => literal(x, inner, line || rows))
+    if (rows) items.push(`// ... ${v.length - ROWS} more rows`)
+    const flat = `[${items.join(', ')}]`
+    return line || (!rows && flat.length <= 64 && !flat.includes('\n')) ? flat
+      : `[\n${items.map((x, i) => `${inner}${x}${i < items.length - 1 && !items[i + 1].startsWith('//') ? ',' : ''}`).join('\n')}\n${indent}]`
+  }
+  if (v && typeof v === 'object') {
+    const items = Object.entries(v).filter(([, x]) => x !== undefined)
+      .map(([k, x]) => `${/^[A-Za-z_$][\w$]*$/.test(k) ? k : `'${k}'`}: ${literal(x, inner, line)}`)
+    const flat = items.length ? `{ ${items.join(', ')} }` : '{}'
+    return line || (flat.length <= 64 && !flat.includes('\n')) ? flat : `{\n${items.map((x) => `${inner}${x},`).join('\n')}\n${indent}}`
+  }
+  return String(v)
+}
+
 /** Save a Blob as a file. @param {Blob} blob @param {string} name */
 export function download(blob, name) {
   const a = document.createElement('a')

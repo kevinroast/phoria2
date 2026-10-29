@@ -154,6 +154,8 @@ export default function run({ canvas, gui, info }) {
   }
   build()
   view.frame(graph, { padding: 0.05 })
+  // a quarter closer than the fit: the dense middle fills the view, the outer reaches run off its edges
+  view.controls?.zoomBy(0.8)
   view.on('hover', (hit) => light(hit?.datum ?? null))
 
   // the legend: the recency ramp, and link types to switch on and off

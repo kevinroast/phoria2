@@ -1,6 +1,6 @@
 import { View } from 'phoria2'
 import { chart } from 'phoria2/charts'
-import { random } from './kit.js'
+import { random, showSpec } from './kit.js'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -30,5 +30,6 @@ export default function run({ canvas, gui, info }) {
   info.textContent = 'Hover the surface to read off a value'
   gui.add({ next: () => surface.update(week()) }, 'next').name('next week')
   gui.add(settings, 'scheme', ['heat', 'viridis', 'cool', 'blues']).onChange((scheme) => surface.update(spec(scheme)))
+  showSpec(gui, surface)
   return view
 }

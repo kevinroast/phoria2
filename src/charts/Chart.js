@@ -124,9 +124,11 @@ export class Chart extends Group {
   }
 
   toJSON() {
-    // the children are made from the spec, so the spec is the description
+    // the children are made from the spec, so the spec is the description - and the highlight is
+    // the spec's, or none, not the colour the chart turned it into
     const json = super.toJSON()
     delete json.children
+    if (this.#input.highlight === undefined) delete json.highlight
     return json
   }
 

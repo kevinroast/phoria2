@@ -2,7 +2,7 @@
 // and every mistake explained - including Vega-Lite, ECharts and Plotly habits - since a spec is
 // exactly what an agent writes.
 import { Color } from '../value/Color.js'
-import { checkNumber, checkRange, describe, didYouMean, fail } from '../validate.js'
+import { checkNumber, describe, didYouMean, fail } from '../validate.js'
 import { toDate } from './scales.js'
 
 /** @typedef {'quantitative' | 'nominal' | 'ordinal' | 'temporal'} FieldType */
@@ -24,7 +24,7 @@ import { toDate } from './scales.js'
 
 export const MARKS = /** @type {Mark[]} */ (['bar', 'point', 'line', 'area', 'surface', 'network'])
 export const CHANNELS = ['x', 'y', 'z', 'color', 'size', 'opacity', 'label', 'key', 'detail']
-export const OPTIONS = ['mark', 'data', 'encoding', 'tooltip', 'box', 'stack', 'width', 'layout', 'flat', 'steps', 'seed', 'spacing',
+export const OPTIONS = ['mark', 'data', 'encoding', 'tooltip', 'box', 'stack', 'width', 'layout', 'flat', 'steps', 'seed',
   'source', 'target', 'link', 'highlight', 'legend', 'theme', 'overlap', 'transition', 'title', '$schema', 'description', ...CHANNELS]
 export const CHANNEL_OPTIONS = ['field', 'type', 'title', 'format', 'scale', 'axis', 'value', 'priority', 'legend']
 
@@ -118,13 +118,12 @@ export function normalise(input) {
 
   const options = {}
   for (const key of OPTIONS) if (!CHANNELS.includes(key) && !['mark', 'data', 'encoding', 'tooltip', 'link'].includes(key) && input[key] !== undefined) options[key] = input[key]
-  // a network's force layout: how long it settles, where it starts, how far apart nodes sit
+  // a network's force layout: how long it settles, and where it starts
   if (options.steps !== undefined && (!Number.isInteger(options.steps) || options.steps < 1)) {
     fail('chart()', `'steps' is how many steps the force layout takes, a whole number of 1 or more, got ${describe(options.steps)}`)
   }
   if (options.seed !== undefined) checkNumber('chart()', 'seed', options.seed)
   if (options.legend?.ticks !== undefined) checkTicks('legend', options.legend.ticks)
-  if (options.spacing !== undefined) checkRange('chart()', 'spacing', options.spacing, 0, Infinity, { above: true })
   if (options.box !== undefined && (!Array.isArray(options.box) || options.box.length !== 3 || !options.box.every((n) => n > 0))) {
     fail('chart()', `'box' is the chart's size in the scene, [x, y, z] above 0, got ${describe(options.box)}`)
   }

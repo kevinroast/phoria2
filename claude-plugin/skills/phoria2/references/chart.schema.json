@@ -74,9 +74,8 @@
       ]
     },
     "flat": { "type": "boolean", "description": "Lay a force-directed network out in a plane." },
-    "steps": { "type": "integer", "minimum": 0, "description": "Force layout steps (default 300; 60 on updates)." },
-    "seed": { "type": "number", "description": "Force layout seed - the same seed and data give the same layout." },
-    "spacing": { "type": "number", "exclusiveMinimum": 0, "description": "Force layout spacing between nodes." },
+    "steps": { "type": "integer", "minimum": 0, "description": "Layout steps for 'force' (default 300; 60 on updates)." },
+    "seed": { "type": "number", "description": "Layout seed for 'force' - the same seed and data give the same layout." },
     "source": { "type": "string", "description": "The link field naming a link's first node (default 'source')." },
     "target": { "type": "string", "description": "The link field naming a link's second node (default 'target')." },
     "link": {

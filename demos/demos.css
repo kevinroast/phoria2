@@ -1061,6 +1061,14 @@ button.demo-legend-item {
   color: var(--text);
 }
 
+/* a chart's spec, on demand: bottom left, above the readout and well clear of the title, scrolling when long */
+.spec-panel {
+  bottom: 64px;
+  height: calc((100vh - 254px) * 0.7);
+  width: min(460px, calc(100vw - 32px));
+  overflow: auto;
+}
+
 .code-panel p {
   margin: 0 0 6px;
   font-size: 11px;

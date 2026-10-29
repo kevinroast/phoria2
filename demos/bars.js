@@ -1,6 +1,6 @@
 import { View } from 'phoria2'
 import { chart } from 'phoria2/charts'
-import { random } from './kit.js'
+import { random, showSpec } from './kit.js'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const REGIONS = ['North', 'South', 'East', 'West']
@@ -31,5 +31,6 @@ export default function run({ canvas, gui, info }) {
   // what labels covered by another label or a bar do - one rule for values, ticks and axis titles
   gui.add(settings, 'overlap', { 'dim covered': 'dim', 'hide covered': 'hide', 'show all': 'show' }).name('covered labels')
     .onChange((overlap) => bars.update({ overlap }))
+  showSpec(gui, bars)
   return view
 }

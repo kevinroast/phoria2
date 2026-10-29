@@ -1,6 +1,6 @@
 import { View } from 'phoria2'
 import { chart } from 'phoria2/charts'
-import { random } from './kit.js'
+import { random, showSpec } from './kit.js'
 
 const STATUS = { healthy: '#59a14f', degraded: '#f2b134', down: '#e15759' }
 const SEVERITY = { healthy: 0, degraded: 1, down: 2 }
@@ -43,6 +43,8 @@ export default function run({ canvas, gui, info }) {
     legend: { position: 'bottom-right' },
   }
   const map = view.scene.add(chart({ ...spec, layout: layouts.force }))
+  // a wider margin than the default keeps the outer services clear of the title and controls
+  view.frame(map, { padding: 0.4 })
 
   // failing a service degrades whatever calls it
   const fail = () => {
@@ -69,9 +71,10 @@ export default function run({ canvas, gui, info }) {
   info.textContent = 'Hover a service to trace its dependencies'
   gui.add({ layout: 'force' }, 'layout', Object.keys(layouts)).onChange((name) => {
     map.update({ layout: layouts[name] })
-    view.frame(map)
+    view.frame(map, { padding: 0.4, duration: 0.8 })
   })
   gui.add({ fail }, 'fail').name('fail a service')
   gui.add({ recover }, 'recover').name('recover all')
+  showSpec(gui, map)
   return view
 }

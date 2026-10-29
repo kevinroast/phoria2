@@ -829,3 +829,11 @@ describe('the first fit', () => {
     view.dispose()
   })
 })
+
+describe("a chart's description", () => {
+  it("holds the highlight its spec gave, and none it didn't", () => {
+    const data = [{ m: 'a', s: 1 }]
+    expect(chart({ mark: 'bar', data, x: 'm', y: 's' }).toJSON()).not.toHaveProperty('highlight')
+    expect(chart({ mark: 'bar', data, x: 'm', y: 's', highlight: '#ff0000' }).toJSON().highlight).toBe('#ff0000')
+  })
+})

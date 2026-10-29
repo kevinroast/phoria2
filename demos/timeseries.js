@@ -1,6 +1,6 @@
 import { View } from 'phoria2'
 import { chart } from 'phoria2/charts'
-import { random } from './kit.js'
+import { random, showSpec } from './kit.js'
 
 const CHANNELS = [
   { name: 'Organic', base: 900, trend: 2.5 },
@@ -28,18 +28,20 @@ export default function run({ canvas, gui, info }) {
   }
   const layouts = {
     'stacked areas': { ...shared, stack: true, z: null },
-    'ribbons in depth': { ...shared, stack: false, z: { field: 'channel', title: 'Channel' } },
+    // the first channel is nearest: the smallest in front, so the tallest stands behind, not in the way
+    'ribbons in depth': { ...shared, stack: false, z: { field: 'channel', title: 'Channel', scale: { domain: CHANNELS.map((c) => c.name).reverse() } } },
     'lines': { ...shared, mark: 'line', stack: false, z: null },
   }
   const traffic = view.scene.add(chart({ ...layouts['stacked areas'], data: rows, box: [12, 6, 4] }))
 
-  const settings = { layout: 'stacked areas', live: false }
+  const settings = { layout: 'stacked areas', live: true }
   gui.add(settings, 'layout', Object.keys(layouts)).onChange((name) => {
     traffic.update(layouts[name])
     // ribbons read best from an angle, stacks and lines flat on
     view.camera = name === 'ribbons in depth' ? 'perspective' : 'front'
   })
   gui.add(settings, 'live').name('live data')
+  showSpec(gui, traffic)
   info.textContent = 'Hover a point for its day'
 
   let wait = 0

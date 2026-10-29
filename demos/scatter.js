@@ -1,6 +1,6 @@
 import { View } from 'phoria2'
 import { chart } from 'phoria2/charts'
-import { random } from './kit.js'
+import { random, showSpec } from './kit.js'
 
 const SEGMENTS = [
   { name: 'Enterprise', count: 150, centre: [72, 62, 7], spread: [12, 13, 1.6] },
@@ -26,7 +26,7 @@ export default function run({ canvas, gui, info }) {
   })))
 
   const view = new View({ canvas, orbit: true, background: '#18181c', camera: 'perspective' })
-  view.scene.add(chart({
+  const customersChart = view.scene.add(chart({
     mark: 'point', data: customers,
     x: { field: 'spend', title: 'Spend ($k)' }, y: { field: 'visits', title: 'Visits / month' }, z: { field: 'tenure', title: 'Tenure (years)' },
     color: { field: 'segment', title: 'Segment' },
@@ -44,5 +44,6 @@ export default function run({ canvas, gui, info }) {
     // the flat projections pan rather than turn, like a 2D chart
     if (view.controls) view.controls.mode = name === '3D' ? 'orbit' : 'map'
   })
+  showSpec(gui, customersChart)
   return view
 }
