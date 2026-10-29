@@ -4,7 +4,7 @@ import * as quat from '../math/quat.js'
 import { Mat4 } from '../value/Mat4.js'
 import { Vec3 } from '../value/Vec3.js'
 import { checkNumber, fail } from '../validate.js'
-import { NODE_OPTIONS, Node } from './Node.js'
+import { NODE_OPTIONS, Node, inParentSpace } from './Node.js'
 
 /** @import { NodeOptions } from './Node.js' */
 /** @import { Vec3Input } from '../types.js' */
@@ -66,6 +66,18 @@ export class Camera extends Node {
   updateMatrix() {
     if (this.target) aimAt(this, this.target)
     return super.updateMatrix()
+  }
+
+  /**
+   * Look at a world position or node. A camera with a target keeps aiming at it - every View camera
+   * has one, and its orbit control turns about it - so the target moves there instead.
+   * @param {import('../types.js').Vec3Input | Node} target @param {import('../types.js').Vec3Input} [up]
+   * @returns {this}
+   */
+  lookAt(target, up) {
+    if (!this.target) return super.lookAt(target, up)
+    this.target.copy(inParentSpace(this, target))
+    return this
   }
 
   /** The projection matrix for the current settings. @returns {Mat4} */

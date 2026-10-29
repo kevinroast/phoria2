@@ -3,6 +3,9 @@ import { checkOneOf, checkOptions, checkRange, describe, fail } from './validate
 
 /** @import { Camera } from './scene/cameras.js' */
 
+/** How far (CSS pixels) a press moves before it is a drag rather than a click - the View's rule too. */
+export const DRAG_START = 4
+
 /**
  * @typedef {object} OrbitOptions
  * @property {boolean} [enabled] (default true)
@@ -89,6 +92,8 @@ export class OrbitControl {
   #lastMove = 0
   #panning = false
   #dragged = false
+  /** where the press began, to tell a drag from a tap that wobbles @type {{ x: number, y: number }} */
+  #pressed = { x: 0, y: 0 }
   #pinchDistance = 0
   /** @type {() => void} */ #removeListeners
 
@@ -259,6 +264,7 @@ export class OrbitControl {
     // capture is best-effort: it throws for pointers the browser doesn't know, such as scripted events
     try { this.element.setPointerCapture(e.pointerId) } catch { /* drags still work inside the element */ }
     this.#pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    this.#pressed = { x: e.clientX, y: e.clientY }
     this.#dragged = false
     this.#velocity = { yaw: 0, pitch: 0 }
     this.#lastMove = performance.now()
@@ -275,7 +281,8 @@ export class OrbitControl {
     const dx = e.clientX - last.x, dy = e.clientY - last.y
     last.x = e.clientX
     last.y = e.clientY
-    if (Math.abs(dx) + Math.abs(dy) > 0) this.#dragged = true
+    // a tap that moves a pixel or two is still a click - touch and pens nearly always do
+    if (!this.#dragged && Math.hypot(e.clientX - this.#pressed.x, e.clientY - this.#pressed.y) >= DRAG_START) this.#dragged = true
 
     if (this.#pointers.size >= 2) {
       // two fingers: pinch zooms, moving together pans (applied per finger, so halve it)

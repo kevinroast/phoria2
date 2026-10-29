@@ -47,6 +47,10 @@ export class Raycaster {
   far = Infinity
   /** How close (world units) a ray must pass to a point or line to hit it. */
   threshold = 0.1
+  /** The camera it was aimed from (setFromCamera): what showFrom hides from it can't be hit. @type {Camera | null} */
+  camera = null
+  /** Skip nodes with pickable: false. Off to find everything solid in the way, as label occlusion does. */
+  pickableOnly = true
 
   /**
    * Aim the ray through a position on screen.
@@ -56,6 +60,7 @@ export class Raycaster {
    */
   setFromCamera(ndc, camera) {
     camera.updateWorld()
+    this.camera = camera
     if (/** @type {any} */ (camera.constructor).type === 'orthographic-camera') {
       // parallel rays: from the near plane, straight through to the far one
       const inv = mat4.invert(new Float32Array(16), mat4.multiply(new Float32Array(16), camera.projectionMatrix, camera.viewMatrix))
@@ -76,7 +81,8 @@ export class Raycaster {
 
   /**
    * Everything the ray hits, nearest first. Invisible and unpickable nodes (and their children)
-   * are skipped. World matrices are brought up to date first.
+   * are skipped, and so are those showFrom hides from the camera it was aimed from - only what is
+   * drawn is hit. World matrices are brought up to date first.
    * @param {Node | Node[]} targets
    * @returns {Hit[]}
    */
@@ -129,7 +135,8 @@ export class Raycaster {
 
   /** @param {Node} node @param {Hit[]} hits @param {Cut | null} cut the plane cutting this subtree, from above */
   #visit(node, hits, cut) {
-    if (!node.visible || !node.pickable) return
+    if (!node.visible || (this.pickableOnly && !node.pickable)) return
+    if (this.camera && node.showFrom && !node.showFrom(this.camera)) return
     if (node.clip) cut = cutBy(node)
     const n = /** @type {any} */ (node)
     if (n.drawMode === 'triangles' && n.instanceMatrices) {

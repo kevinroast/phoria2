@@ -154,7 +154,7 @@ const group = view.scene.add(new Group({ position: [0, 1, 0] }))   // add() retu
 group.add(new Mesh({ geometry: sphere(), material: { color: 'teal' } }))
 node.onUpdate((node, dt, t) => { node.rotation.y += dt })
 scene.find('lamp'); scene.findAll((n) => n.name.startsWith('rack')); scene.traverse((n) => {})
-node.translate(x, y, z); node.rotateY(rad); node.lookAt([0, 0, 0])
+node.translate(x, y, z); node.rotateY(rad); node.lookAt([0, 0, 0])  // a camera with a target moves its target; a light shines there
 node.remove(child); node.removeFromParent(); node.dispose()
 node.bounds              // world-space Box3: .min, .max, .getCenter(), .getSize()
 node.boundsFrom(camera)  // the same, for only what that camera draws (hidden and showFrom-off parts left out)
@@ -283,7 +283,9 @@ Properties: `color`, `opacity`, `roughness` (0.5), `metalness` (0), `emissive`,
 A **bump map** is a height texture (red channel) shown as bumps - no normal map to make, so it suits
 heights drawn in code. `bumpScale` is how high a height of 1 stands, in the mesh's units. Textures
 take `anisotropy` (default 8, up to the GPU's limit, 1 for off), which keeps floors and roads sharp
-into the distance. A cut-out (`alphaTest`) casts the shadow of what is left of it.
+into the distance. A cut-out (`alphaTest`) casts the shadow of what is left of it. A Texture given to a
+data map (`normalMap`, `bumpMap`, `roughnessMap`, `metalnessMap`, `aoMap`) is read as data, not colour,
+unless its `colorSpace` was set on purpose - `normalMap: await loadTexture('n.png')` just works.
 
 **Models without UVs** (scans, CAD exports) can still take maps: `triplanar: 40` projects them
 from the mesh's three axes instead of using UVs, repeating 40 times per unit of the mesh's own space.
@@ -383,7 +385,9 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
 - **Channels**: `x`, `y`, `z`, `color`, `size`, `opacity`, `label` (text on each mark), `key` (row
   identity for animated updates; default `id`), `detail`. Each is a field name or
   `{ field, type, title, format, scale, axis, priority, legend }`; `color` can also be a constant colour.
-  `scale`: `{ domain, range, scheme, zero, nice, type: 'linear' | 'log' }`; schemes: `'category'`,
+  `scale`: `{ domain, range, scheme, zero, nice, type: 'linear' | 'log' }`; a colour field's `type` picks a ramp
+  (quantitative) or a colour per value (anything else), and a ramp's domain can have more than two stops
+  (`[0, 50, 100]` for a diverging scheme); schemes: `'category'`,
   `'viridis'`, `'blues'`, `'heat'`, `'cool'`, `'redblue'`. `axis: false` or `{ title, format }`.
 - **Formats** (`format` on a channel, an axis or a tooltip field) are `Intl.NumberFormat` /
   `DateTimeFormat` options, or a function `(value) => string`:

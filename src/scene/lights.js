@@ -1,7 +1,7 @@
 import { Color } from '../value/Color.js'
 import { Vec3 } from '../value/Vec3.js'
 import { checkNumber, fail } from '../validate.js'
-import { NODE_OPTIONS, Node } from './Node.js'
+import { NODE_OPTIONS, Node, inParentSpace } from './Node.js'
 
 /** @import { NodeOptions } from './Node.js' */
 /** @import { ColorInput, Vec3Input } from '../types.js' */
@@ -138,6 +138,19 @@ class AimedLight extends Light {
       this.direction.normalize()
     }
     if (options.target !== undefined) this.target = Vec3.fromInput(options.target, owner)
+  }
+
+  /**
+   * Shine at a world position or node: the target moves there, or the direction turns to it. (A
+   * light's own rotation doesn't aim it - its direction or target does.)
+   * @param {Vec3Input | Node} target
+   * @returns {this}
+   */
+  lookAt(target) {
+    const at = inParentSpace(this, target)
+    if (this.target) this.target.copy(at)
+    else if (!at.equals(this.position, 1e-9)) this.direction.copy(at.sub(this.position).normalize())
+    return this
   }
 
   /** The light's direction in world space, as of the last update. @returns {Vec3} */

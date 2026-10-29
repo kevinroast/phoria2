@@ -238,6 +238,8 @@ export class WebGLRenderer {
 
     // with bloom, the scene is drawn into a buffer of its own first (drawn plainly while its code loads)
     const bloom = this.#bloom ? gpu.loadBloom() : null
+    // its buffers are big: once no view on this context wants bloom, they go (and come back if one does)
+    if (!bloom && gpu.bloom && ![...gpu.users].some((u) => /** @type {any} */ (u).bloom)) gpu.bloom.dispose()
     if (bloom) bloom.begin(width, height)
     else {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null)

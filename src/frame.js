@@ -240,13 +240,13 @@ export function collect(scene, camera) {
           else capped.set(item.clip, [item])
         }
         frame.stats.drawn++
-        if (node.labels) instanceLabels(node, viewProjection, frame.labels)
+        if (node.labels) instanceLabels(node, viewProjection, view, frame.labels)
       } else {
         frame.stats.culled++
       }
     } else if (node.isLabel) {
       const position = node.worldPosition
-      frame.labels.push({ key: node, node, index: null, text: node.text, style: node, position, ...project(position, viewProjection) })
+      frame.labels.push({ key: node, node, index: null, text: node.text, style: node, position, ...project(position, viewProjection, view) })
     } else if (node.lightKind) {
       addLight(/** @type {Light} */ (node))
     }
@@ -393,9 +393,9 @@ let nextId = 1
 
 /**
  * Labels for every instance or point that has text, from the node's `labels` option.
- * @param {any} node InstancedMesh or Points @param {Mat4} viewProjection @param {FrameLabel[]} out
+ * @param {any} node InstancedMesh or Points @param {Mat4} viewProjection @param {Mat4} view @param {FrameLabel[]} out
  */
-function instanceLabels(node, viewProjection, out) {
+function instanceLabels(node, viewProjection, view, out) {
   const { labels, worldMatrix: w } = node
   let id = ids.get(node)
   if (id === undefined) ids.set(node, id = nextId++)
@@ -428,20 +428,26 @@ function instanceLabels(node, viewProjection, out) {
       w[1] * x + w[5] * y + w[9] * z + w[13],
       w[2] * x + w[6] * y + w[10] * z + w[14])
     const style = byRow ? { ...labels, priority: labels.priority(row, i) } : labels
-    out.push({ key: `${id}:${i}`, node, index: i, text: String(text), style, position, ...project(position, viewProjection) })
+    out.push({ key: `${id}:${i}`, node, index: i, text: String(text), style, position, ...project(position, viewProjection, view) })
   }
 }
 
-/** Where a world position lands on screen. @param {Vec3} position @param {Mat4} viewProjection */
-function project(position, viewProjection) {
+/**
+ * Where a world position lands on screen, and how far in front of the camera it is - along the view,
+ * in world units, for both kinds of camera (an orthographic one's clip w is always 1).
+ * @param {Vec3} position @param {Mat4} viewProjection @param {Mat4} view
+ */
+function project(position, viewProjection, view) {
   const m = viewProjection
   const x = m[0] * position[0] + m[4] * position[1] + m[8] * position[2] + m[12]
   const y = m[1] * position[0] + m[5] * position[1] + m[9] * position[2] + m[13]
   const z = m[2] * position[0] + m[6] * position[1] + m[10] * position[2] + m[14]
   const w = m[3] * position[0] + m[7] * position[1] + m[11] * position[2] + m[15]
   const ndc = /** @type {[number, number]} */ ([x / w, y / w])
-  const visible = w > 0 && Math.abs(ndc[0]) <= 1 && Math.abs(ndc[1]) <= 1 && z / w <= 1
-  return { ndc, depth: w, visible }
+  // in front of the near plane and short of the far one, as well as inside the edges
+  const visible = w > 0 && Math.abs(ndc[0]) <= 1 && Math.abs(ndc[1]) <= 1 && z / w >= -1 && z / w <= 1
+  const depth = -(view[2] * position[0] + view[6] * position[1] + view[10] * position[2] + view[14])
+  return { ndc, depth, visible }
 }
 
 // The six planes (a, b, c, d with the normal pointing inwards) of a view-projection matrix.

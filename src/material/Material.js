@@ -1,5 +1,5 @@
 import { Color } from '../value/Color.js'
-import { checkNumber, checkOneOf, checkOptions, describe, fail } from '../validate.js'
+import { checkNumber, checkOneOf, checkOptions, describe, fail, warnOnce } from '../validate.js'
 import { Texture } from './Texture.js'
 
 /** @import { ColorInput } from '../types.js' */
@@ -187,6 +187,14 @@ export class Material {
       return
     }
     if (value instanceof Texture) {
+      // a data slot reads its texture as numbers, not colour: one left at the default colour space
+      // (loadTexture('n.png'), say) is switched; one set to srgb on purpose is kept, with a word
+      if (LINEAR_MAPS.has(slot) && value.colorSpace === 'srgb') {
+        if (!value.colorSpaceSet) {
+          value.colorSpace = 'linear'
+          value.needsUpdate()
+        } else warnOnce(value, `'${slot}' holds data, not colour, so its texture should be colorSpace: 'linear' - this one is 'srgb', and will be decoded as colour`)
+      }
       this.#maps[slot] = value
       return
     }
@@ -228,7 +236,11 @@ export class Material {
 
   /** @returns {Material} */
   clone() {
-    return new Material(this.toJSON(true))
+    const copy = new Material(this.toJSON(true))
+    // the colours exactly: a description rounds them to 8-bit sRGB and can't hold values past 1
+    copy.color.set(this.#color)
+    copy.emissive.set(this.#emissive)
+    return copy
   }
 
   /** Release GPU resources for this material (programs are shared and kept). */

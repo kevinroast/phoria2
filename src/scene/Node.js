@@ -559,6 +559,18 @@ export class Node {
   }
 }
 
+/**
+ * @internal Where a world position or node is in a node's parent's space - the space its position,
+ * and a camera's or light's target, are in.
+ * @param {Node} node @param {Vec3Input | Node} target
+ * @returns {Vec3}
+ */
+export function inParentSpace(node, target) {
+  const at = target instanceof Node ? target.updateWorld().worldPosition : Vec3.fromInput(target, `${node.constructor.name}.lookAt()`)
+  const parent = node.parent
+  return parent ? at.applyMatrix4(parent.updateWorld().worldMatrix.clone().invert()) : at
+}
+
 /** @param {unknown} n @returns {Node} */
 function toNode(n) {
   if (n instanceof Node) return n

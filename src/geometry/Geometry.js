@@ -116,8 +116,13 @@ export class Geometry {
     return this.#bounds ??= new Box3().expandByPositions(this.positions)
   }
 
-  /** Call after editing the arrays in place. @returns {this} */
+  /** Call after editing the arrays in place. It is no longer what its generator made, so toJSON() saves the arrays. @returns {this} */
   needsUpdate() {
+    this.source = null
+    return this.#changed()
+  }
+
+  #changed() {
     this.version++
     this.#bounds = null
     return this
@@ -156,7 +161,8 @@ export class Geometry {
       }
     }
     this.normals = normals
-    return this.needsUpdate()
+    // normals follow from the positions, which a generator would make again: it is still its shape
+    return this.#changed()
   }
 
   /** A copy with its own arrays. @returns {Geometry} */

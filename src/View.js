@@ -1,6 +1,6 @@
 import { collect } from './frame.js'
 import { LabelLayer } from './labels.js'
-import { OrbitControl } from './OrbitControl.js'
+import { DRAG_START, OrbitControl } from './OrbitControl.js'
 import { cameraPreset, fitPoints, framingScale } from './presets.js'
 import { Raycaster } from './Raycaster.js'
 import { ChangeWatch } from './watch.js'
@@ -86,8 +86,6 @@ const EVENT_HINTS = {
   mouseleave: 'hover', pointerleave: 'hover', tap: 'click', pick: 'click', select: 'click', pointerdown: 'click', mousedown: 'click',
 }
 // how far the highlight colour is mixed in
-// how far (CSS pixels) a press moves before it is a drag rather than a click
-const DRAG_START = 4
 const HIGHLIGHT_AMOUNT = 0.45
 // views that get a WebGL context of their own before 'auto' starts sharing one
 const OWN_CONTEXTS = 4
@@ -131,6 +129,7 @@ export class View {
   #running = true
   #disposed = false
   #ownContext = false
+  #ownCanvas = false
   #rafId = 0
   #lastTime = 0
   #dirty = true
@@ -181,6 +180,8 @@ export class View {
   constructor(options = {}) {
     checkOptions('View', options, OPTIONS, HINTS)
     this.canvas = resolveCanvas(options.canvas)
+    // one it made itself goes with it
+    this.#ownCanvas = options.canvas === undefined
 
     if (options.scene === undefined) this.scene = new Scene()
     else if (options.scene instanceof Scene) this.scene = options.scene
@@ -380,9 +381,22 @@ export class View {
   step(dt) {
     this.time += dt
     this.#onFrame?.(dt, this.time)
-    this.controls?.update(dt)
+    // the same order as the live loop, so a stepped frame is the frame a user sees
     this.scene.update(dt, this.time)
+    this.#updateControls(dt)
     return this.#render(true)
+  }
+
+  /**
+   * Move the camera by its control: auto-rotation and the glide after a drag. That isn't the app
+   * moving the camera, so a camera still waiting to be fitted to the scene stays waiting.
+   * @param {number} dt
+   */
+  #updateControls(dt) {
+    if (!this.controls) return
+    const waiting = this.#autoFrame && samePlace(cameraPlace(this.camera), this.#autoFrameFrom)
+    this.controls.update(dt)
+    if (waiting) this.#autoFrameFrom = cameraPlace(this.camera)
   }
 
   /**
@@ -424,8 +438,18 @@ export class View {
 
   /** Match the drawing buffer and camera to the canvas's displayed size. Automatic; call after manual changes. */
   resize() {
-    const w = this.canvas.clientWidth || this.canvas.width || 1
-    const h = this.canvas.clientHeight || this.canvas.height || 1
+    const cw = this.canvas.clientWidth, ch = this.canvas.clientHeight
+    // hidden (display: none, a closed tab): keep the size it had, and pick up where it was when shown
+    if ((!cw || !ch) && this.#width) return
+    // a canvas sized only by its width and height attributes grows with every buffer it is given - at a
+    // pixel ratio of 2, without end. Seen growing to exactly the buffer just set, it is held at its size
+    if (this.#width && this.#pixelRatio !== 1 && cw === Math.round(this.#width * this.#pixelRatio) && ch === Math.round(this.#height * this.#pixelRatio)) {
+      this.canvas.style.width = `${this.#width}px`
+      this.canvas.style.height = `${this.#height}px`
+      return
+    }
+    const w = cw || this.canvas.width || 1
+    const h = ch || this.canvas.height || 1
     if (!this.#explicitPixelRatio) this.#pixelRatio = Math.min(globalThis.devicePixelRatio || 1, 2)
     this.#width = w
     this.#height = h
@@ -760,6 +784,7 @@ export class View {
     this.#tooltip?.dispose()
     this.renderer.dispose(this.scene)
     if (this.#ownContext) ownContexts--
+    if (this.#ownCanvas) this.canvas.remove()
   }
 
   // widen or narrow the view so the framing chosen with `framing.keep` survives a change of shape
@@ -799,7 +824,7 @@ export class View {
         this.#onFrame?.(dt, this.time)
         this.scene.update(dt, this.time)
       }
-      this.controls?.update(dt)
+      this.#updateControls(dt)
       if (this.#pickPending) this.#updateHover()
       const draw = this.#dirty || this.renderMode === 'always' ||
         (this.renderMode === 'auto' && this.#watch.changed(this.scene, this.camera))
@@ -845,8 +870,10 @@ export class View {
   #setHovered(hit) {
     const p = this.#pointer
     const before = this.#hovered
+    // the same thing under the pointer: the same node, instance and row of data - a line's segments
+    // and a surface's rows are told apart by their data, without a plain mesh changing per triangle
     const same = before === hit || (before && hit && before.node === hit.node && before.instance === hit.instance &&
-      (/** @type {any} */ (hit.node).drawMode !== 'points' || before.face === hit.face))
+      before.datum === hit.datum && (/** @type {any} */ (hit.node).drawMode !== 'points' || before.face === hit.face))
     this.#hovered = hit
     if (p && hit && this.#tooltip) this.#tooltip.show(hit, p.clientX, p.clientY)
     else this.#tooltip?.hide()
@@ -894,7 +921,9 @@ export class View {
   #occlude(frame) {
     const labels = /** @type {(import('./frame.js').FrameLabel & { occluded?: boolean })[]} */ (frame.labels)
     if (!labels.some((l) => l.style.occlude && l.visible)) return
+    // everything solid hides what is behind it, pickable or not
     const raycaster = new Raycaster()
+    raycaster.pickableOnly = false
     for (const label of labels) {
       if (!label.style.occlude || !label.visible) continue
       raycaster.setFromCamera(label.ndc, this.camera)

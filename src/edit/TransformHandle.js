@@ -3,6 +3,7 @@
 // same size on screen however far away, snapping to a grid and to angles, and recording undo.
 import { Group } from '../scene/Node.js'
 import { Mesh } from '../scene/drawables.js'
+import { Quat } from '../value/Quat.js'
 import { Vec3 } from '../value/Vec3.js'
 import { cylinder, torus } from '../geometry/generators.js'
 import { checkNumber, checkOneOf, checkOptions, describe, fail } from '../validate.js'
@@ -62,9 +63,9 @@ export class TransformHandle {
 
   /** @type {View} */ #view
   /** @type {Node | null} */ #target = null
-  /** The target's own onDrag, kept while the handle drags it. @type {((drag: Drag) => void) | null} */ #targetDrag = null
+  /** The node whose onDrag the handle took over, and that onDrag, to give back. @type {{ node: Node, onDrag: ((drag: Drag) => void) | null } | null} */ #taken = null
   /** @type {Record<string, Mesh>} */ #parts = {}
-  /** Where the target was as a drag began, and the undo it will record. @type {{ position: Vec3, rotation: number, angle: number, done: ((label?: string) => boolean) | null } | null} */ #from = null
+  /** Where the target was as a drag began, and the undo it will record. @type {{ position: Vec3, rotation: number, quaternion: Quat, angle: number, done: ((label?: string) => boolean) | null } | null} */ #from = null
 
   /** @param {TransformHandleOptions} options */
   constructor(options) {
@@ -110,12 +111,13 @@ export class TransformHandle {
   /** @param {Node | null} node */
   set target(node) {
     if (node === this.#target) return
-    // give back the old target's own drag
-    if (this.#target && this.dragTarget) this.#target.onDrag = this.#targetDrag
+    // give back the old target's own drag - whatever dragTarget says now
+    if (this.#taken) this.#taken.node.onDrag = this.#taken.onDrag
+    this.#taken = null
     this.#target = node ?? null
     this.node.visible = !!node
     if (node && this.dragTarget) {
-      this.#targetDrag = node.onDrag
+      this.#taken = { node, onDrag: node.onDrag }
       node.onDrag = (drag) => this.#drag('free', drag)
     }
     if (node) this.#follow()
@@ -190,7 +192,7 @@ export class TransformHandle {
       const start = drag.ray.intersectPlane(drag.plane.normal, drag.plane.point)
       const p = start !== null ? drag.ray.at(start) : center
       this.#from = {
-        position: target.position.clone(), rotation: target.rotation.y,
+        position: target.position.clone(), rotation: yawOf(target.quaternion), quaternion: target.quaternion.clone(),
         angle: Math.atan2(p[2] - center[2], p[0] - center[0]),
         done: this.history ? this.history.transform(target) : null,
       }
@@ -228,10 +230,26 @@ export class TransformHandle {
     if (result === null) return
     const placed = /** @type {Placement} */ (result ?? proposal)
     target.position.copy(placed.position)
-    target.rotation.y = placed.rotation
+    // the turn about the vertical since the drag began, before the rotation it began with - so a
+    // yaw past 90 degrees, or a tilt, comes through as it was
+    const turned = new Quat().setFromAxisAngle([0, 1, 0], placed.rotation - from.rotation)
+    target.quaternion.copy(turned.multiply(from.quaternion))
     this.#follow()
     this.onChange?.(target, 'move')
   }
+}
+
+/**
+ * Which way a rotation faces about the vertical, in radians: where it turns the x axis. Euler y
+ * can't say - a quaternion read back as Euler angles gives y between -90 and 90 degrees, with x and z
+ * flipped to make up the rest.
+ * @param {Quat} q
+ * @returns {number}
+ */
+function yawOf(q) {
+  const [x, y, z, w] = q
+  // the rotated x axis, (1 - 2(y² + z²), 2(xy + zw), 2(xz - yw)), seen from above
+  return Math.atan2(-2 * (x * z - y * w), 1 - 2 * (y * y + z * z))
 }
 
 /** @param {string} name @param {unknown} v */

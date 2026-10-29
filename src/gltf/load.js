@@ -527,5 +527,7 @@ function lineList(g, mode) {
 
 /** @param {Geometry} g @param {number[]} indices @param {boolean} triangles keep normals (lines have none) */
 function withIndices(g, indices, triangles) {
-  return new Geometry({ positions: g.positions, normals: triangles ? g.normals : undefined, uvs: g.uvs ?? undefined, colors: g.colors ?? undefined, indices })
+  // only normals the file gave - reading g.normals would work them out from the strip's own indices,
+  // taken as a triangle list; the new geometry works them out from its real triangles instead
+  return new Geometry({ positions: g.positions, normals: triangles && g.hasNormals ? g.normals : undefined, uvs: g.uvs ?? undefined, colors: g.colors ?? undefined, indices })
 }

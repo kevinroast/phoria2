@@ -57,6 +57,31 @@ vec3 fogged(vec3 c) { return c; }
 `
 
 // depth or stencil only - of what isn't cut away
+// How a map is read: by UV, or projected from the mesh's three axes (triplanar) - the same in every pass
+// that reads one, so a cut-out's shadow has the holes it is drawn with. Needs vUv declared first.
+const SAMPLING = /* glsl */ `
+#ifdef TRIPLANAR
+in vec3 vObjectPosition;
+in vec3 vObjectNormal;
+in mat3 vObjectToWorld;
+uniform float uTriplanar; // repeats per unit of the mesh's own space
+
+// how much each axis's projection counts: mostly the one the surface faces, blended at the turns
+vec3 triplanarWeights(vec3 n) {
+  vec3 w = pow(abs(n), vec3(4.0));
+  return w / (w.x + w.y + w.z);
+}
+// a map seen from the three axes and blended - for meshes with no UVs, scans and CAD models
+vec4 triplanar(sampler2D s) {
+  vec3 p = vObjectPosition * uTriplanar, w = triplanarWeights(normalize(vObjectNormal));
+  return texture(s, p.zy) * w.x + texture(s, p.xz) * w.y + texture(s, p.xy) * w.z;
+}
+#define SAMPLE(s) triplanar(s)
+#else
+#define SAMPLE(s) texture(s, vUv)
+#endif
+`
+
 export const CLIP_ONLY_FRAGMENT = /* glsl */ `
 precision highp float;
 in vec3 vWorldPosition;
@@ -68,6 +93,7 @@ uniform float uOpacity;
 uniform float uAlphaTest;
 #ifdef MAP
 uniform sampler2D uMap;
+${SAMPLING}
 #endif
 #endif
 ${CLIP}
@@ -76,7 +102,7 @@ void main() {
 #ifdef ALPHA_TEST
   float alpha = uOpacity;
 #ifdef MAP
-  alpha *= texture(uMap, vUv).a;
+  alpha *= SAMPLE(uMap).a;
 #endif
   if (alpha < uAlphaTest) discard;
 #endif
@@ -249,27 +275,7 @@ uniform float uAlphaTest;
 uniform sampler2D uEmissiveMap;
 #endif
 
-#ifdef TRIPLANAR
-in vec3 vObjectPosition;
-in vec3 vObjectNormal;
-in mat3 vObjectToWorld;
-uniform float uTriplanar; // repeats per unit of the mesh's own space
-
-// how much each axis's projection counts: mostly the one the surface faces, blended at the turns
-vec3 triplanarWeights(vec3 n) {
-  vec3 w = pow(abs(n), vec3(4.0));
-  return w / (w.x + w.y + w.z);
-}
-// a map seen from the three axes and blended - for meshes with no UVs, scans and CAD models
-vec4 triplanar(sampler2D s) {
-  vec3 p = vObjectPosition * uTriplanar, w = triplanarWeights(normalize(vObjectNormal));
-  return texture(s, p.zy) * w.x + texture(s, p.xz) * w.y + texture(s, p.xy) * w.z;
-}
-#define SAMPLE(s) triplanar(s)
-#else
-#define SAMPLE(s) texture(s, vUv)
-#endif
-
+${SAMPLING}
 #ifdef LIT
 uniform vec3 uCameraPosition;
 uniform float uRoughness;
@@ -530,11 +536,12 @@ void main() {
 
 #ifdef LIT
 #ifdef FLAT_SHADING
+  // from the screen-space slope: it faces the camera whichever side of the face is seen
   vec3 n = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
 #else
   vec3 n = normalize(vNormal);
 #endif
-#ifdef DOUBLE_SIDED
+#if defined(DOUBLE_SIDED) && !defined(FLAT_SHADING)
   if (!gl_FrontFacing) n = -n;
 #endif
   vec3 surfaceNormal = n;

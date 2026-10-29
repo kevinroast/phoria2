@@ -7,7 +7,7 @@ import { registerType } from '../registry.js'
 import { describe, fail } from '../validate.js'
 import { chartFrame } from './axes.js'
 import { legend } from './legend.js'
-import { barMark, lineMark, pointMark, surfaceMark } from './marks.js'
+import { barMark, lineMark, pointMark, stackKey, surfaceMark } from './marks.js'
 import { networkMark } from './network.js'
 import { SCHEMES, scaleBand, scaleColor, scaleLinear, scaleLog, scaleTime, toDate } from './scales.js'
 import { normalise } from './spec.js'
@@ -163,7 +163,7 @@ export class Chart extends Group {
     this.scales = scalesFor(spec, box)
     const color = this.scales.color
     const fallback = Color.fromInput(ch.color?.field ? SCHEMES.category[0] : ch.color?.value ?? SCHEMES.category[0], 'chart()').toSRGB()
-    const linkColors = spec.link.color?.field ? scaleColor({ domain: distinct(spec.links.map((l) => spec.link.color.get(l))), ...colorOptions(spec.link.color) }) : null
+    const linkColors = spec.link.color?.field ? colorScale(spec.link.color, spec.links.map((l) => spec.link.color.get(l))) : null
     Object.assign(this.#ctx, {
       spec, box, theme, overlap, scales: this.scales,
       size: this.scales.size ?? null,
@@ -177,7 +177,7 @@ export class Chart extends Group {
     if (signature !== this.#signature) {
       this.#signature = signature
       if (this.#mark) this.remove(.../** @type {any[]} */ (this.#mark.nodes))
-      this.#mark = makeMark(spec.mark, this.#ctx, this)
+      this.#mark = makeMark(spec.mark, this.#ctx)
       for (const node of this.#mark.nodes) this.add(node)
       this.#current = this.#shown = null
       this.#tween = null
@@ -332,13 +332,13 @@ function sameShape(a, b) {
   return key(a) === key(b)
 }
 
-/** @param {string} mark @param {MarkContext} ctx @param {Chart} host */
-function makeMark(mark, ctx, host) {
+/** @param {string} mark @param {MarkContext} ctx */
+function makeMark(mark, ctx) {
   if (mark === 'bar') return barMark(ctx)
   if (mark === 'point') return pointMark(ctx)
   if (mark === 'line' || mark === 'area') return lineMark(ctx, mark === 'area')
   if (mark === 'surface') return surfaceMark(ctx)
-  return networkMark(ctx, { onHover: (fn) => { host.onHover = fn } })
+  return networkMark(ctx)
 }
 
 /** @param {ReturnType<typeof normalise>} spec @returns {[number, number, number]} */
@@ -371,6 +371,17 @@ function extent(values) {
 /** @param {Channel} c */
 function colorOptions(c) {
   return { scheme: c.scale.scheme, range: c.scale.range }
+}
+
+/**
+ * A channel's colour scale: its type says ramp or categories - not the shape of its values, which
+ * can't tell two nominal years from a numeric range.
+ * @param {any} c the channel @param {any[]} values @param {keyof typeof SCHEMES} [scheme] the default scheme
+ */
+function colorScale(c, values, scheme) {
+  return c.type === 'quantitative'
+    ? scaleColor({ kind: 'sequential', domain: c.scale.domain ?? extent(values), ...colorOptions(c), scheme: c.scale.scheme ?? scheme })
+    : scaleColor({ kind: 'categorical', domain: c.scale.domain ?? distinct(values), ...colorOptions(c) })
 }
 
 /** The value a row is coloured by: the colour field, or (for surfaces, by default) its height. */
@@ -411,9 +422,7 @@ function scalesFor(spec, box) {
   if (color?.field || spec.mark === 'surface') {
     const c = color?.field ? color : ch.y
     const values = rows.map((r) => c.get(r))
-    out.color = c.type === 'quantitative'
-      ? scaleColor({ domain: c.scale.domain ?? extent(values), scheme: c.scale.scheme ?? (spec.mark === 'surface' && !color?.field ? 'viridis' : undefined), range: c.scale.range })
-      : scaleColor({ domain: c.scale.domain ?? distinct(values), ...colorOptions(c) })
+    out.color = colorScale(c, values, spec.mark === 'surface' && !color?.field ? 'viridis' : undefined)
   }
   const size = ch.size
   if (size?.field) {
@@ -430,7 +439,7 @@ function stackTotals(spec) {
   const ch = spec.channels, totals = new Map()
   for (const r of spec.rows) {
     const v = Number(ch.y.get(r)) || 0
-    const k = `${ch.x?.get(r)}|${ch.z ? ch.z.get(r) : ''}|${v < 0 ? '-' : '+'}`
+    const k = stackKey(ch, r, v)
     totals.set(k, (totals.get(k) ?? 0) + v)
   }
   return [...totals.values()]

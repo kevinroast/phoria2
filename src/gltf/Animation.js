@@ -67,10 +67,16 @@ export class Animation {
 
   /** @internal Advance by dt seconds when playing. @param {number} dt */
   advance(dt) {
-    if (!this.playing || !this.duration) return
+    if (!this.playing) return
+    // a clip of one key is a pose: hold it
+    if (!this.duration) {
+      this.apply()
+      return
+    }
     let t = this.time + dt * this.speed
     if (this.loop) t = ((t % this.duration) + this.duration) % this.duration
-    else if (t >= this.duration || t <= 0) {
+    else if (this.speed >= 0 ? t >= this.duration : t <= 0) {
+      // it has run off the end it is heading for - not the one it starts at, as on the first frame
       t = Math.min(Math.max(t, 0), this.duration)
       this.playing = false
     }

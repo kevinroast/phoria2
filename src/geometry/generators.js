@@ -448,10 +448,10 @@ export function extrude(options) {
     outline: "extrude(): use 'shape' for the outline, as [x, y] pairs",
     bevelEnabled: "extrude() has no bevel - round the shape's corners instead",
   })
-  const shape = pairs(owner, 'shape', o.shape, 3)
+  const shape = withoutRepeats(pairs(owner, 'shape', o.shape, 3))
   if (o.holes !== undefined && !Array.isArray(o.holes)) fail(owner, `'holes' must be a list of outlines, got ${describe(o.holes)}`)
   if (typeof o.holes?.[0]?.[0] === 'number') fail(owner, "'holes' is a list of outlines - for one hole, holes: [outline]")
-  const holes = /** @type {unknown[]} */ (o.holes ?? []).map((h, i) => pairs(owner, `holes[${i}]`, h, 3))
+  const holes = /** @type {unknown[]} */ (o.holes ?? []).map((h, i) => withoutRepeats(pairs(owner, `holes[${i}]`, h, 3)))
   const depth = size(owner, 'depth', o.depth, 1)
   const axis = axisOf(owner, o.axis, 'z')
   const front = depth / 2
@@ -790,4 +790,20 @@ function count(owner, name, value, fallback, min = 1, max = Infinity) {
     fail(owner, `'${name}' must be a whole number ${range}, got ${describe(value)}`)
   }
   return /** @type {number} */ (value)
+}
+
+/**
+ * An outline without repeated points. Two in a row - or a last point back at the first, as joined arcs
+ * and a rounded rect's straight-less ends give - make a side of no length, which has no direction to
+ * face and would crease the smooth sides either side of it (lathe() skips them the same way).
+ * @template {ArrayLike<number>} P
+ * @param {P[]} points
+ * @returns {P[]}
+ */
+function withoutRepeats(points) {
+  const kept = points.filter((p, i) => {
+    const q = points[(i + points.length - 1) % points.length]
+    return p[0] !== q[0] || p[1] !== q[1]
+  })
+  return kept.length >= 3 ? kept : points
 }

@@ -100,6 +100,8 @@ export function fakePage() {
       for (const fn of this.listeners.get(type) ?? []) fn({ type, clientX: 0, clientY: 0, buttons: 0, preventDefault() {}, stopImmediatePropagation() {}, ...event })
     }
     after() {}
+    removed = false
+    remove() { this.removed = true }
   }
   const observer = class { observe() {} disconnect() {} unobserve() {} }
   // animation frames run when the test says, with the time it gives

@@ -43,7 +43,9 @@ export class Texture {
   /** @type {string | null} */
   url = null
   /** @type {'srgb' | 'linear'} */
-  colorSpace = 'srgb'
+  #colorSpace = 'srgb'
+  /** set by the app, rather than left to its default - a material's data slot leaves it alone then */
+  #colorSpaceSet = false
   /** @type {'repeat' | 'clamp' | 'mirror'} */
   wrap = 'repeat'
   repeat = [1, 1]
@@ -67,7 +69,8 @@ export class Texture {
     if (typeof options === 'string') options = { url: options }
     checkOptions('Texture', options, OPTIONS, HINTS)
     const o = { ...DEFAULTS, ...options }
-    this.colorSpace = checkOneOf('Texture', 'colorSpace', o.colorSpace, ['srgb', 'linear'])
+    this.#colorSpace = checkOneOf('Texture', 'colorSpace', o.colorSpace, ['srgb', 'linear'])
+    this.#colorSpaceSet = options.colorSpace !== undefined
     this.wrap = checkOneOf('Texture', 'wrap', o.wrap, ['repeat', 'clamp', 'mirror'])
     this.filter = checkOneOf('Texture', 'filter', o.filter, ['linear', 'nearest'])
     this.repeat = pair('repeat', o.repeat)
@@ -91,6 +94,16 @@ export class Texture {
   }
 
   /** Call after redrawing a canvas or advancing a video. @returns {this} */
+  /** 'srgb' for colour (decoded to linear by the GPU), 'linear' for data such as normals and roughness. Call needsUpdate() after changing it. @returns {'srgb' | 'linear'} */
+  get colorSpace() { return this.#colorSpace }
+  set colorSpace(v) {
+    this.#colorSpace = checkOneOf('Texture', 'colorSpace', v, ['srgb', 'linear'])
+    this.#colorSpaceSet = true
+  }
+
+  /** @internal Whether the app chose the colour space, rather than leaving the default. @returns {boolean} */
+  get colorSpaceSet() { return this.#colorSpaceSet }
+
   needsUpdate() {
     this.version++
     return this

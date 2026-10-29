@@ -6,6 +6,17 @@ import { box as boxGeometry, icosphere } from '../geometry/generators.js'
 import { InstancedMesh, Lines, Mesh, Points } from '../scene/drawables.js'
 import { fail } from '../validate.js'
 
+/**
+ * Where a row stacks: on the others at its x and in its depth series, negatives down from zero on
+ * their own. One rule for the bars, the lines and areas, and the y domain they are drawn in.
+ * @param {any} ch the spec's channels @param {any} row @param {number} v its y value
+ * @returns {string}
+ */
+export function stackKey(ch, row, v) {
+  const xv = ch.x?.get(row)
+  return `${xv instanceof Date ? xv.getTime() : xv}|${ch.z ? ch.z.get(row) : ''}|${v < 0 ? '-' : '+'}`
+}
+
 /** @import { Node } from '../scene/Node.js' */
 /** @import { Scale, ColorScale } from './scales.js' */
 /** @import { Channel, normalise } from './spec.js' */
@@ -82,7 +93,7 @@ export function barMark(ctx) {
         const v = Number(ch.y.get(row)) || 0
         let y0 = base, y1 = y(v)
         if (ctx.spec.options.stack) {
-          const at = `${ch.x.get(row)}|${ch.z ? ch.z.get(row) : ''}|${v < 0 ? '-' : '+'}`
+          const at = stackKey(ch, row, v)
           const below = stacks.get(at) ?? 0
           y0 = y(below)
           y1 = y(below + v)
@@ -229,7 +240,7 @@ export function lineMark(ctx, area) {
       for (const s of series) {
         for (const row of s) {
           const xv = ch.x.get(row), v = Number(ch.y.get(row)) || 0
-          const at = xv instanceof Date ? xv.getTime() : xv
+          const at = stackKey(ch, row, v)
           const below = ctx.spec.options.stack ? totals.get(at) ?? 0 : 0
           if (ctx.spec.options.stack) totals.set(at, below + v)
           state.set([x(xv), y(below + v), pos(z, ch.z, row), y(below)], i * 4)

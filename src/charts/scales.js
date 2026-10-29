@@ -37,12 +37,17 @@ function formatter(option, fallback, date = false) {
   return fallback
 }
 
-/** Plain numbers to a step's precision; compact (1.2K) from ten thousand. @param {number} step @param {number} max */
+/**
+ * Plain numbers to a step's precision; compact (1.2K) from ten thousand, while the steps are big
+ * enough to tell apart in it - 10,000 to 10,010 would read 10K at every tick.
+ * @param {number} step @param {number} max
+ */
 function numberFormat(step, max) {
   const digits = Math.max(0, Math.min(6, -Math.floor(Math.log(step || 1) / LOG10)))
   const plain = new Intl.NumberFormat(undefined, { maximumFractionDigits: digits })
   const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 })
-  return (v) => (Math.abs(max) >= 1e4 ? compact : plain).format(v)
+  const useCompact = Math.abs(max) >= 1e4 && step >= Math.abs(max) / 100
+  return (v) => (useCompact ? compact : plain).format(v)
 }
 
 /** @param {unknown} v @param {string} name @returns {[number, number]} */
@@ -134,6 +139,20 @@ const INTERVALS = [
   [30 * MINUTE, 'm'], [HOUR, 'h'], [3 * HOUR, 'h'], [6 * HOUR, 'h'], [12 * HOUR, 'h'], [DAY, 'd'], [2 * DAY, 'd'], [7 * DAY, 'w'],
   [30 * DAY, 'M'], [91 * DAY, 'Q'], [365 * DAY, 'Y'],
 ]
+/**
+ * Each unit as a calendar field to step - read it, set it, and its rough size in ms.
+ * @type {Record<string, [(d: Date) => number, (d: Date, v: number) => void, number]>}
+ */
+const CALENDAR = {
+  s: [(d) => d.getSeconds(), (d, v) => d.setSeconds(v), SECOND],
+  m: [(d) => d.getMinutes(), (d, v) => d.setMinutes(v), MINUTE],
+  h: [(d) => d.getHours(), (d, v) => d.setHours(v), HOUR],
+  d: [(d) => d.getDate(), (d, v) => d.setDate(v), DAY],
+  w: [(d) => d.getDate(), (d, v) => d.setDate(v), DAY],
+  M: [(d) => d.getMonth(), (d, v) => d.setMonth(v), 30 * DAY],
+  Q: [(d) => d.getMonth(), (d, v) => d.setMonth(v), 30 * DAY],
+  Y: [(d) => d.getFullYear(), (d, v) => d.setFullYear(v), 365 * DAY],
+}
 const DATE_FORMATS = {
   s: { hour: '2-digit', minute: '2-digit', second: '2-digit' }, m: { hour: '2-digit', minute: '2-digit' }, h: { hour: '2-digit', minute: '2-digit' },
   d: { month: 'short', day: 'numeric' }, w: { month: 'short', day: 'numeric' }, M: { month: 'short', year: 'numeric' },
@@ -164,21 +183,30 @@ export function scaleTime({ domain, range = [0, 1], format }) {
   scale.invert = (y) => new Date(/** @type {number} */ (inner.invert?.(y)))
   scale.ticks = (count = 5) => {
     const [ms, unit] = pick(count)
-    const out = []
+    const [get, set, size] = CALENDAR[unit]
+    // whole steps of the unit - years nicely, as 1, 2, 5, 10 ...
+    let n = Math.max(1, Math.round(ms / size))
+    if (unit === 'Y') {
+      const years = span / size / count, p = 10 ** Math.floor(Math.log10(years || 1))
+      n = Math.max(1, [1, 2, 5, 10].map((m) => m * p).find((v) => v >= years) ?? 10 * p)
+    }
     const d = new Date(t0)
-    // start on a boundary of the interval's unit
+    // start on a boundary of the unit, at a multiple of the step within the next unit up: quarters
+    // in Jan, Apr, Jul and Oct, quarter hours on the quarter
     d.setMilliseconds(0)
     if (unit !== 's') d.setSeconds(0)
     if (!'sm'.includes(unit)) d.setMinutes(0)
     if ('dwMQY'.includes(unit)) d.setHours(0)
     if ('MQY'.includes(unit)) d.setDate(1)
     if (unit === 'Y') d.setMonth(0)
-    const months = unit === 'M' ? 1 : unit === 'Q' ? 3 : unit === 'Y' ? 12 : 0
-    while (d.getTime() < t0) months ? d.setMonth(d.getMonth() + months) : d.setTime(d.getTime() + /** @type {number} */ (ms))
+    const first = unit === 'd' ? 1 : 0
+    if (unit !== 'w') set(d, Math.floor((get(d) - first) / n) * n + first)
+    // steps through the calendar, in local time, so ticks stay on round times across daylight saving
+    while (d.getTime() < t0) set(d, get(d) + n)
+    const out = []
     for (let i = 0; d.getTime() <= t1 && i < 200; i++) {
       out.push(new Date(d))
-      if (months) d.setMonth(d.getMonth() + months)
-      else d.setTime(d.getTime() + /** @type {number} */ (ms))
+      set(d, get(d) + n)
     }
     return out
   }
@@ -236,22 +264,32 @@ export const SCHEMES = {
  *
  *     scaleColor({ domain: ['ok', 'warn', 'down'], range: ['#59a14f', '#f2b134', '#e15759'] })
  *     scaleColor({ domain: [18, 35], scheme: 'heat' })
- * @param {{ domain: any[], scheme?: keyof typeof SCHEMES, range?: string[] }} options numbers in the domain make a
- *   sequential scale, anything else categorical
+ * @param {{ domain: any[], scheme?: keyof typeof SCHEMES, range?: string[], kind?: 'sequential' | 'categorical' }} options
+ *   kind: a ramp through the domain's numbers (two or more - [0, 50, 100] for a diverging scheme), or a colour
+ *   per value. Without it, two numbers make a ramp and anything else categories
  * @returns {ColorScale}
  */
-export function scaleColor({ domain, scheme, range }) {
+export function scaleColor({ domain, scheme, range, kind }) {
   if (scheme !== undefined && !(scheme in SCHEMES)) {
     fail('charts', `colour scheme '${scheme}' isn't one we have - use ${Object.keys(SCHEMES).map((k) => `'${k}'`).join(', ')}, or a range of colours`)
   }
-  const sequential = domain.length === 2 && domain.every((v) => typeof v === 'number')
+  const sequential = kind ? kind === 'sequential' : domain.length === 2 && domain.every((v) => typeof v === 'number')
+  if (sequential && (domain.length < 2 || domain.some((v) => typeof v !== 'number'))) fail('charts', `a sequential colour scale needs two or more numbers in its domain, got ${describe(domain)}`)
   const stops = (range ?? SCHEMES[scheme ?? (sequential ? 'viridis' : 'category')]).map((c) => Color.fromInput(c, 'charts'))
   /** @type {ColorScale} */
   let scale
   if (sequential) {
-    const [d0, d1] = domain
+    // where a value is along the domain, 0 - 1: piece by piece when it has more than two numbers
+    const along = (/** @type {number} */ v) => {
+      const last = domain.length - 1
+      let j = 0
+      while (j < last - 1 && v > domain[j + 1]) j++
+      const local = (v - domain[j]) / (domain[j + 1] - domain[j] || 1)
+      return Math.min(1, Math.max(0, (j + local) / last))
+    }
     scale = /** @type {ColorScale} */ ((v) => {
-      const t = Math.min(1, Math.max(0, (v - d0) / (d1 - d0 || 1))) * (stops.length - 1)
+      if (stops.length < 2) return stops[0].clone()
+      const t = along(v) * (stops.length - 1)
       const i = Math.min(stops.length - 2, Math.floor(t))
       return stops[i].clone().lerp(stops[i + 1], t - i)
     })

@@ -394,7 +394,9 @@ export class Passes {
       if (item.clip) defines.push('CLIP')
       // a cut-out's shadow has its holes: the map's alpha against the material's threshold
       const material = item.material, cutout = material.alphaTest > 0
-      if (cutout) defines.push('ALPHA_TEST', ...(material.map ? ['MAP'] : []))
+      // read the map as the drawn surface reads it - projected, for a triplanar one
+      const triplanar = cutout && !!material.map && material.triplanar > 0
+      if (cutout) defines.push('ALPHA_TEST', ...(material.map ? ['MAP'] : []), ...(triplanar ? ['TRIPLANAR'] : []))
       const program = this.programs.ready('depth', defines, DEPTH)
       gl.useProgram(program.program)
       program.set('uViewProjection', viewProjection)
@@ -406,6 +408,7 @@ export class Passes {
         const map = material.map
         program.set('uUvTransform', map ? [map.repeat[0], map.repeat[1], map.offset[0], map.offset[1]] : [1, 1, 0, 0])
         if (map) program.set('uMap', this.resources.texture(map))
+        if (triplanar) program.set('uTriplanar', material.triplanar)
       }
       const buffers = this.resources.mesh(item.geometry, instances, true)
       gl.bindVertexArray(buffers.vao)

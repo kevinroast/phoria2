@@ -25,17 +25,17 @@ const WIDTHS = [1.2, 2.5, 4.5]
 
 /**
  * @param {MarkContext} ctx
- * @param {{ onHover: (fn: ((hit: any) => void) | null) => void }} host lets the mark handle hovering
  * @returns {Mark}
  */
-export function networkMark(ctx, host) {
+export function networkMark(ctx) {
   const o = ctx.spec.options
   const keyOf = keyGetter(ctx)
   const linkCh = ctx.spec.link
   const source = o.source ?? 'source', target = o.target ?? 'target'
   /** @type {Map<any, number[]>} layout positions by key, kept between updates for stability */
   let placed = new Map()
-  const nodesMesh = new InstancedMesh({ geometry: icosphere({ radius: 1, detail: 2 }), material: { roughness: 0.35 }, count: Math.max(8, ctx.spec.rows.length * 2), labels: labelsOf(ctx, 'above') })
+  const makeNodes = (/** @type {number} */ capacity) => new InstancedMesh({ geometry: icosphere({ radius: 1, detail: 2 }), material: { roughness: 0.35 }, count: capacity, labels: labelsOf(ctx, 'above') })
+  let nodesMesh = makeNodes(Math.max(8, ctx.spec.rows.length * 2))
   nodesMesh.count = 0
   // links in up to three widths; each segment carries its link's row
   const linkNodes = WIDTHS.map((width) => new Lines({ geometry: new Geometry({ positions: [0, 0, 0, 0, 0, 0] }), material: { width, vertexColors: true }, data: [] }))
@@ -77,7 +77,17 @@ export function networkMark(ctx, host) {
         hovered = null
         active.visible = false
       }
-      if (n > nodesMesh.instanceMatrices.length / 16) fail('chart()', 'a network update can add at most as many nodes again as it started with - make a new chart for a bigger graph')
+      if (n > nodesMesh.instanceMatrices.length / 16) {
+        // more nodes than room - arriving and leaving ones together, in a transition: a bigger mesh,
+        // swapped in place, keeping its hover handler
+        const bigger = makeNodes(n * 2)
+        bigger.onHover = nodesMesh.onHover
+        nodesMesh.parent?.add(bigger)
+        nodesMesh.parent?.remove(nodesMesh)
+        nodesMesh.dispose()
+        mark.nodes[mark.nodes.indexOf(nodesMesh)] = bigger
+        nodesMesh = bigger
+      }
       nodesMesh.count = n
       nodesMesh.data = t.rows
       const keys = t.rows.map(keyOf)
@@ -137,7 +147,9 @@ export function networkMark(ctx, host) {
   // neighbour highlight: the hovered node's links light up, and nodes it doesn't touch dim
   const neighbours = (o.highlight ?? 'neighbours') === 'neighbours'
   if (neighbours) {
-    host.onHover((hit) => {
+    // on the nodes themselves, so the chart's own onHover stays the app's: the view tells this one
+    // the hit while the pointer is over a node, and null when it leaves them
+    nodesMesh.onHover = (hit) => {
       const key = hit && hit.node === nodesMesh && hit.instance !== null ? keyOf(rowsNow[hit.instance]) : null
       if (key === hovered) return
       hovered = key
@@ -145,7 +157,7 @@ export function networkMark(ctx, host) {
       if (key !== null) showNeighbours(key)
       // recolour every node for the dimming, or back
       for (let k = 0; k < nodesMesh.count; k++) nodesMesh.setColor(k, dimmed(k, ctx.rgb(rowsNow[k])))
-    })
+    }
   }
 
   /** @param {unknown} key */
