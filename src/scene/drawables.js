@@ -128,8 +128,8 @@ export class Drawable extends Node {
   static OPTIONS = DRAWABLE_OPTIONS
   static HINTS = DRAWABLE_HINTS
 
-  /** @type {Geometry} */ geometry
-  /** @type {Material} */ material
+  /** @type {Geometry} */ #geometry
+  /** @type {Material} */ #material
   castShadow = false
   receiveShadow = false
   /** Draw order override within its pass; lower first. */
@@ -146,8 +146,8 @@ export class Drawable extends Node {
     if (!options || options.geometry === undefined) {
       fail(owner, `'geometry' is required, e.g. new ${owner}({ geometry: box(1), material: { color: 'orange' } })`)
     }
-    this.geometry = resolveGeometry(options.geometry, owner)
-    this.material = resolveMaterial(options.material)
+    this.#geometry = resolveGeometry(options.geometry, owner)
+    this.#material = resolveMaterial(options.material)
     if (options.castShadow !== undefined) this.castShadow = !!options.castShadow
     if (options.receiveShadow !== undefined) this.receiveShadow = !!options.receiveShadow
     if (options.renderOrder !== undefined) this.renderOrder = checkNumber(owner, 'renderOrder', options.renderOrder)
@@ -155,6 +155,19 @@ export class Drawable extends Node {
     if (options.data !== undefined) this.data = options.data
     this.checkGeometry()
   }
+
+  /** What it draws. Assign a Geometry, or a description of one; it is checked as the constructor checks it. @returns {Geometry} */
+  get geometry() { return this.#geometry }
+  /** @param {Geometry | import('../geometry/Geometry.js').GeometryOptions} v */
+  set geometry(v) {
+    this.#geometry = resolveGeometry(v, this.constructor.name)
+    this.checkGeometry()
+  }
+
+  /** How it looks. Assign a Material, or its options - mesh.material = { color: 'red' } makes one. @returns {Material} */
+  get material() { return this.#material }
+  /** @param {Material | import('../material/Material.js').MaterialOptions} v */
+  set material(v) { this.#material = resolveMaterial(v) }
 
   /**
    * The data for a hit: this node's row at `index` when data is an array and the node draws many

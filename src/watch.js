@@ -120,7 +120,10 @@ export class ChangeWatch {
       this.#push(clip.cap ? clip.cap.getHex() : -1)
     } else this.#push(-2)
     // which pointer handlers it has: the frame says whether anything can be clicked or dragged
-    this.#push((node.onClick ? 1 : 0) | (node.onHover ? 2 : 0) | (node.tooltip ? 4 : 0) | (node.onDrag ? 8 : 0) | (node.highlight ? 16 : 0))
+    this.#push((node.handlersFor('click').length ? 1 : 0) | (node.handlersFor('hover').length ? 2 : 0) | (node.tooltip ? 4 : 0) | (node.onDrag ? 8 : 0) | (node.highlightWhole ? 16 : 0))
+    // what hovering tints it with - a different colour shows straight away on what is hovered
+    if (node.highlight) this.#pushAll(node.highlight)
+    else this.#push(-4)
     const outline = node.outline
     if (outline) {
       this.#pushAll(outline.color)
@@ -129,6 +132,8 @@ export class ChangeWatch {
     this.#pushAll(node.position)
     this.#pushAll(node.quaternion)
     this.#pushAll(node.scale)
+    // a node that keeps its own matrix is moved by editing it
+    if (!node.matrixAutoUpdate) this.#pushAll(node.matrix)
     if (node.isDrawable) this.#drawable(node)
     else if (node.isLabel) this.#label(node)
     else if (node.lightKind) this.#light(node)

@@ -2,6 +2,7 @@
 // supports is what the tests check - and an option added without a row, or a row left for an option
 // that has gone, fails the suite by name.
 import { describe, expect, it } from 'vitest'
+import { ChangeWatch } from '../src/watch.js'
 
 /**
  * How one option is checked.
@@ -20,6 +21,8 @@ import { describe, expect, it } from 'vitest'
  * @property {false} [keep] leave it out of the JSON and clone round trips (functions, live objects)
  * @property {string} [jsonGap] a known gap: the setting is lost through toJSON() - expected to fail until fixed
  * @property {string} [cloneGap] a known gap: the setting is lost through clone() - expected to fail until fixed
+ * @property {string} [quiet] why changing it needs no redraw - it doesn't change the picture (a name, user data)
+ * @property {(made: any, value: any) => void} [apply] changes it on a live one, where plain assignment can't
  */
 
 /**
@@ -33,8 +36,11 @@ import { describe, expect, it } from 'vitest'
  * @param {(made: any) => any} [contract.json] makes a new one from what made.toJSON() writes
  * @param {(made: any) => any} [contract.clone]
  * @param {Record<string, string>} [contract.deadHints] known gaps: hints for names it takes, so they never show
+ * @param {(made: any) => { scene: any, camera: any }} [contract.watch] puts one in a scene, for checking that changing
+ *   each option redraws a view - every option must, or say why not (quiet)
+ * @param {(made: any, key: string, value: any) => void} [contract.change] how a live one is changed (default: assign it)
  */
-export function contract(name, { options, hints = {}, make, rows, json, clone, deadHints = {} }) {
+export function contract(name, { options, hints = {}, make, rows, json, clone, deadHints = {}, watch, change }) {
   describe(`${name} options`, () => {
     it('has a row for every option it takes, and none for an option it does not', () => {
       expect(options.filter((o) => !Object.hasOwn(rows, o)), 'options with no row').toEqual([])
@@ -80,6 +86,20 @@ export function contract(name, { options, hints = {}, make, rows, json, clone, d
             verify(clone(make({ [key]: v })), v)
           })
         }
+      }
+      if (watch && has && !row.quiet) {
+        it(`redraws a view when ${key} changes`, () => {
+          const made = make({})
+          const { scene, camera } = watch(made)
+          const watcher = new ChangeWatch()
+          watcher.changed(scene, camera)
+          expect(watcher.changed(scene, camera), 'settled').toBe(false)
+          const v = value()
+          if (row.apply) row.apply(made, v)
+          else if (change) change(made, key, v)
+          else made[key] = v
+          expect(watcher.changed(scene, camera), `${key} changed and a view wouldn't redraw`).toBe(true)
+        })
       }
       if (Object.hasOwn(row, 'default')) {
         it(`defaults ${key}`, () => expect(/** @type {(m: any) => any} */ (row.read)(make({}))).toEqual(row.default))

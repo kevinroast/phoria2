@@ -2,7 +2,7 @@
 import { expect, it } from 'vitest'
 import {
   AmbientLight, DirectionalLight, Geometry, Group, HemisphereLight, InstancedMesh, Label, Lines, Material, Mesh,
-  OrthographicCamera, PerspectiveCamera, PointLight, Points, Scene, SpotLight, Texture, box, create, curve, cylinder,
+  Camera, OrthographicCamera, PerspectiveCamera, PointLight, Points, Scene, SpotLight, Texture, box, create, curve, cylinder,
   ellipse, extrude, grid, icosphere, lathe, outline, plane, sphere, torus, axes,
 } from '../src/index.js'
 import { NODE_HINTS, NODE_OPTIONS } from '../src/scene/Node.js'
@@ -17,9 +17,23 @@ const pixels = () => ({ data: new Uint8Array([255, 0, 0, 255]), width: 1, height
 const viaJSON = (n) => create(n.toJSON())
 const viaClone = (n) => n.clone()
 
+/** Somewhere to watch for redraws: a scene holding it (or it, as the scene or the camera). @param {any} made */
+const watchNode = (made) => {
+  if (made instanceof Scene) return { scene: made, camera: new PerspectiveCamera() }
+  const scene = new Scene()
+  scene.add(made)
+  return { scene, camera: made instanceof Camera ? made : new PerspectiveCamera() }
+}
+/** A material or texture on a mesh in a scene. @param {Material} material */
+const watchMaterial = (material) => {
+  const scene = new Scene()
+  scene.add(new Mesh({ geometry: box(1), material }))
+  return { scene, camera: new PerspectiveCamera() }
+}
+
 /** A node class's contract: the node rows and its own. */
 const nodeContract = (Class, make, rows = {}, deadHints = {}) => contract(Class.name, {
-  options: Class.OPTIONS ?? NODE_OPTIONS, hints: { ...NODE_HINTS, ...Class.HINTS }, make, rows: { ...nodeRows(), ...rows }, json: viaJSON, clone: viaClone, deadHints,
+  options: Class.OPTIONS ?? NODE_OPTIONS, hints: { ...NODE_HINTS, ...Class.HINTS }, make, rows: { ...nodeRows(), ...rows }, json: viaJSON, clone: viaClone, deadHints, watch: watchNode,
 })
 
 nodeContract(Group, (o) => new Group(o))
@@ -39,7 +53,7 @@ const drawableRows = (geometry = () => box(1)) => ({
   castShadow: { value: true, read: (n) => n.castShadow, default: false },
   receiveShadow: { value: true, read: (n) => n.receiveShadow, default: false },
   renderOrder: { value: 2, read: (n) => n.renderOrder, default: 0, bad: 'first', error: 'renderOrder' },
-  frustumCulled: { value: false, read: (n) => n.frustumCulled, default: true },
+  frustumCulled: { value: false, read: (n) => n.frustumCulled, default: true, quiet: 'only changes what is off screen' },
   data: { value: { id: 3 }, read: (n) => n.data, default: null },
 })
 const labelsRow = { value: { text: (d) => d, place: 'above' }, read: (n) => n.labels?.place, expect: 'above', bad: { text: 'not a function' }, error: 'labels', keep: /** @type {false} */ (false) }
@@ -50,9 +64,13 @@ nodeContract(InstancedMesh, (o) => new InstancedMesh({ geometry: box(1), ...(o.c
   ...drawableRows(),
   data: { value: [{ id: 1 }, { id: 2 }], read: (n) => [n.data, n.count], expect: [[{ id: 1 }, { id: 2 }], 2] },
   count: { value: 3, read: (n) => n.count, bad: 1.5, error: 'count' },
-  instances: { value: [{ position: [1, 2, 3] }, { scale: 2 }], read: (n) => [n.count, n.instanceMatrices[12], n.instanceMatrices[16 + 5]], expect: [2, 1, 2], bad: [{ spin: 1 }], error: 'spin' },
-  instanceMatrices: { value: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 0, 0, 1], read: (n) => n.instanceMatrices[12], expect: 5, bad: [1, 2, 3], error: 'instanceMatrices' },
-  instanceColors: { value: [1, 0, 0], read: (n) => Array.from(n.instanceColors), expect: [1, 0, 0], bad: [1, 0], error: 'instanceColors' },
+  instances: { value: [{ position: [1, 2, 3] }, { scale: 2 }], read: (n) => [n.count, n.instanceMatrices[12], n.instanceMatrices[16 + 5]], expect: [2, 1, 2], bad: [{ spin: 1 }], error: 'spin',
+    // set at construction; afterwards one at a time
+    apply: (n, list) => n.setInstance(0, list[0]) },
+  instanceMatrices: { value: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 0, 0, 1], read: (n) => n.instanceMatrices[12], expect: 5, bad: [1, 2, 3], error: 'instanceMatrices',
+    apply: (n, m) => { n.instanceMatrices.set(m); n.needsUpdate() } },
+  instanceColors: { value: [1, 0, 0], read: (n) => Array.from(n.instanceColors), expect: [1, 0, 0], bad: [1, 0], error: 'instanceColors',
+    apply: (n, c) => n.setColor(0, c) },
   labels: labelsRow,
 })
 
@@ -131,10 +149,10 @@ nodeContract(SpotLight, (o) => new SpotLight(o), {
 // --- materials and textures
 const materialMap = (name) => ({ fresh: () => new Texture({ image: pixels() }), read: (m) => m[name] instanceof Texture, expect: true, bad: 42, error: name })
 contract('Material', {
-  options: Material.OPTIONS, hints: Material.HINTS, make: (o) => new Material(o),
+  options: Material.OPTIONS, hints: Material.HINTS, make: (o) => new Material(o), watch: watchMaterial,
   json: (m) => new Material(m.toJSON(true)), clone: (m) => m.clone(),
   rows: {
-    name: { value: 'shiny', read: (m) => m.name, default: '' },
+    name: { value: 'shiny', read: (m) => m.name, default: '', quiet: 'a name' },
     color: { value: '#ff0000', read: (m) => hex(m.color), expect: 0xff0000, default: 0xffffff, bad: 'notacolour', error: 'notacolour' },
     emissive: { value: '#00ff00', read: (m) => hex(m.emissive), expect: 0x00ff00, default: 0x000000, bad: 'notacolour', error: 'notacolour' },
     map: materialMap('map'),
@@ -170,6 +188,9 @@ contract('Material', {
 
 contract('Texture', {
   options: Texture.OPTIONS, hints: Texture.HINTS, make: (o) => new Texture({ ...(o.url === undefined ? { image: pixels() } : {}), ...o }),
+  watch: (t) => watchMaterial(new Material({ map: t })),
+  // a texture changed after it is made is uploaded again on needsUpdate(), as its docs say
+  change: (t, key, v) => { t[key] = v; t.needsUpdate() },
   rows: {
     image: { fresh: pixels, check: (t, image) => { if (t.image !== image) throw new Error('not the image given') } },
     url: { value: 'textures/missing.png', read: (t) => t.url, only: 'loading needs a browser' },

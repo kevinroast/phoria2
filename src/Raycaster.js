@@ -49,8 +49,6 @@ export class Raycaster {
   threshold = 0.1
   /** The camera it was aimed from (setFromCamera): what showFrom hides from it can't be hit. @type {Camera | null} */
   camera = null
-  /** Skip nodes with pickable: false. Off to find everything solid in the way, as label occlusion does. */
-  pickableOnly = true
 
   /**
    * Aim the ray through a position on screen.
@@ -98,6 +96,30 @@ export class Raycaster {
   }
 
   /**
+   * The surfaces among what a frame drew that the ray meets, nearest first - its triangles, instanced
+   * or not, cut as they were drawn. For questions about the picture just drawn, such as whether a
+   * label is hidden behind something: what was drawn is the answer, pickable or not.
+   * @param {import('./frame.js').DrawItem[]} items
+   * @returns {Hit[]}
+   */
+  intersectDrawn(items) {
+    /** @type {Hit[]} */
+    const hits = []
+    for (const item of items) {
+      const n = /** @type {any} */ (item.node)
+      if (n.drawMode !== 'triangles') continue
+      const cut = item.clip ? { plane: item.clip.plane, cap: !!item.clip.cap } : null
+      if (item.instances) {
+        for (let i = 0; i < item.instances.count; i++) {
+          mat4.multiply(instanceWorld, item.worldMatrix, item.instances.instanceMatrices.subarray(i * 16, i * 16 + 16))
+          this.#mesh(n, instanceWorld, i, hits, cut)
+        }
+      } else this.#mesh(n, item.worldMatrix, null, hits, cut)
+    }
+    return hits.filter((h) => h.distance >= this.near && h.distance <= this.far).sort((x, y) => x.distance - y.distance)
+  }
+
+  /**
    * Where the ray meets one instance, point or segment of a drawable - the CPU half of GPU picking,
    * which finds what is under the pointer and leaves the exact point, face and uv to this.
    * @param {Node} node a Mesh, InstancedMesh, Points or Lines
@@ -135,7 +157,7 @@ export class Raycaster {
 
   /** @param {Node} node @param {Hit[]} hits @param {Cut | null} cut the plane cutting this subtree, from above */
   #visit(node, hits, cut) {
-    if (!(this.camera ? node.shownTo(this.camera) : node.visible) || (this.pickableOnly && !node.pickable)) return
+    if (!(this.camera ? node.shownTo(this.camera) : node.visible) || !node.pickable) return
     if (node.clip) cut = cutBy(node)
     const n = /** @type {any} */ (node)
     if (n.drawMode === 'triangles' && n.instanceMatrices) {

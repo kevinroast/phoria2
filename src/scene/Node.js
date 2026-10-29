@@ -86,6 +86,8 @@ export const NODE_HINTS = {
   selected: "outline what's selected: node.outline = '#ffcc00'",
 }
 
+/** @type {Function[]} */
+const NO_HANDLERS = []
 const UP = new Float32Array([0, 1, 0])
 const tmpMat = new Float32Array(16)
 const tmpMat3 = new Float32Array(9)
@@ -104,10 +106,10 @@ export class Node {
   static HINTS = NODE_HINTS
 
   name = ''
-  /** @type {Vec3} */ position = new Vec3()
-  /** @type {Vec3} */ scale = new Vec3(1, 1, 1)
-  /** Kept in sync with `rotation`. @type {Quat} */ quaternion = new Quat()
-  /** Euler angles in radians, XYZ order; kept in sync with `quaternion`. @type {Euler} */ rotation = new Euler()
+  #position = new Vec3()
+  #scale = new Vec3(1, 1, 1)
+  #quaternion = new Quat()
+  #rotation = new Euler()
   visible = true
   /** Include in picking. */
   pickable = true
@@ -138,6 +140,8 @@ export class Node {
   #highlight = null
   /** Hovering any part of this subtree tints all of it, not just the part under the pointer. */
   highlightWhole = false
+  /** Hover and click listeners besides onHover and onClick, made on the first on(). @type {{ hover: Set<Function>, click: Set<Function> } | null} */
+  #listeners = null
 
   /** @type {Node | null} */
   #parent = null
@@ -145,6 +149,23 @@ export class Node {
   #children = []
   /** @type {UpdateHandler[]} */
   #handlers = []
+
+  /** Where it is, in its parent's space. Assigning copies the value in: node.position = [1, 2, 3]. @returns {Vec3} */
+  get position() { return this.#position }
+  /** @param {Vec3Input} v */
+  set position(v) { this.#position.copy(v, this.constructor.name) }
+  /** Its size along each axis; assigning copies, and a number scales all three. @returns {Vec3} */
+  get scale() { return this.#scale }
+  /** @param {Vec3Input | number} v */
+  set scale(v) { this.#scale.copy(/** @type {any} */ (v), this.constructor.name) }
+  /** Euler angles in radians, XYZ order; kept in sync with quaternion. Assigning copies. @returns {Euler} */
+  get rotation() { return this.#rotation }
+  /** @param {Vec3Input} v */
+  set rotation(v) { this.#rotation.copy(/** @type {any} */ (v), this.constructor.name) }
+  /** Kept in sync with rotation. Assigning copies, normalised. @returns {Quat} */
+  get quaternion() { return this.#quaternion }
+  /** @param {ArrayLike<number>} v */
+  set quaternion(v) { this.#quaternion.copy(v, this.constructor.name).normalize() }
 
   /** @param {NodeOptions} [options] */
   constructor(options = {}) {
@@ -330,6 +351,32 @@ export class Node {
       const i = this.#handlers.indexOf(fn)
       if (i !== -1) this.#handlers.splice(i, 1)
     }
+  }
+
+  /**
+   * Listen for the pointer on this subtree as well as its own onHover and onClick - for add-ons, and
+   * anything that mustn't replace the app's handler. Returns a function that stops listening. (A drag
+   * has one handler, onDrag: one thing moves a node at a time.)
+   * @param {'hover' | 'click'} event
+   * @param {(hit: Hit | null) => void} fn hover hears null when the pointer leaves
+   * @returns {() => void}
+   */
+  on(event, fn) {
+    const owner = this.constructor.name
+    if (event !== 'hover' && event !== 'click') fail(owner, `on() listens for 'hover' or 'click', got ${describe(event)}${event === 'drag' ? " - a drag has one handler: onDrag" : ''}`)
+    if (typeof fn !== 'function') fail(owner, `on('${event}', fn) needs a function, got ${describe(fn)}`)
+    this.#listeners ??= { hover: new Set(), click: new Set() }
+    const set = this.#listeners[event]
+    set.add(fn)
+    return () => { set.delete(fn) }
+  }
+
+  /** @internal Everything to tell of the pointer on this node: its own handler, then its listeners. @param {'hover' | 'click'} event @returns {Function[]} */
+  handlersFor(event) {
+    const own = event === 'hover' ? this.onHover : this.onClick
+    const more = this.#listeners?.[event]
+    if (!more?.size) return own ? [own] : NO_HANDLERS
+    return own ? [own, ...more] : [...more]
   }
 
   /** @internal Run this node's update handlers. @param {number} dt @param {number} t */

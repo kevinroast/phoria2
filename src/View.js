@@ -169,7 +169,10 @@ export class View {
    */
   #drag = null
   // a drag just ended: the click the browser sends after it isn't one
-  #dragEnded = false
+  /** The orbit's pointer handlers, once it has handed the pointer to the view. @type {ReturnType<OrbitControl['handOverPointer']> | null} */
+  #orbitPointer = null
+  /** The press in progress, and whether it has moved far enough to be a drag rather than a click. @type {{ id: number, x: number, y: number, moved: boolean } | null} */
+  #press = null
   /** @type {Hit | null} */ #hovered = null
   // used for scenes without lights; never added to the scene itself
   #autoSky = new HemisphereLight({ sky: '#ffffff', ground: '#444444', intensity: 0.5 })
@@ -233,6 +236,8 @@ export class View {
       // a plan view pans like a map unless told otherwise
       const mode = orbit.mode ?? (options.camera === 'top' ? 'map' : undefined)
       this.controls = new OrbitControl(this.camera, this.canvas, mode ? { ...orbit, mode } : orbit)
+      // the view owns the pointer and gives the orbit the presses that aren't drags of a node
+      this.#orbitPointer = this.controls.handOverPointer()
     }
     if (options.highlight !== undefined) this.#setHighlight(options.highlight)
     if (options.tooltip !== undefined) this.tooltip(options.tooltip)
@@ -877,7 +882,7 @@ export class View {
       this.canvas.style.cursor = hit && nearestAbove(hit.node, 'onDrag') ? 'grab' : hit && this.#clickable(hit) ? 'pointer' : ''
     }
     // node handlers: those that lose the pointer hear null, those that gain or keep it hear the hit
-    const was = handlersAbove(before?.node, 'onHover'), now = handlersAbove(hit?.node, 'onHover')
+    const was = handlersAbove(before?.node, 'hover'), now = handlersAbove(hit?.node, 'hover')
     for (const fn of was) if (!now.includes(fn)) fn(null)
     for (const fn of now) fn(hit)
     for (const fn of this.#handlers.hover) fn(hit, p?.event ?? null)
@@ -885,7 +890,7 @@ export class View {
 
   /** Does clicking this hit do anything? @param {Hit} hit */
   #clickable(hit) {
-    return this.#handlers.click.size > 0 || handlersAbove(hit.node, 'onClick').length > 0
+    return this.#handlers.click.size > 0 || handlersAbove(hit.node, 'click').length > 0
   }
 
   /** @param {Hit | null} hit @returns {FrameHighlight | null} */
@@ -915,16 +920,15 @@ export class View {
   #occlude(frame) {
     const labels = /** @type {(import('./frame.js').FrameLabel & { occluded?: boolean })[]} */ (frame.labels)
     if (!labels.some((l) => l.style.occlude && l.visible)) return
-    // everything solid hides what is behind it, pickable or not
+    // what this frame drew hides what is behind it - the same surfaces the picture shows
     const raycaster = new Raycaster()
-    raycaster.pickableOnly = false
+    const drawn = [...frame.opaque, ...frame.transparent]
     for (const label of labels) {
       if (!label.style.occlude || !label.visible) continue
       raycaster.setFromCamera(label.ndc, this.camera)
       const distance = label.position.distanceTo(raycaster.ray.origin)
       // only solid surfaces hide labels, and not the instance or point being labelled
-      const blocker = raycaster.intersect(this.scene).find((h) => /** @type {any} */ (h.node).drawMode === 'triangles' &&
-        !(h.node === label.node && (label.index === null || h.instance === label.index)))
+      const blocker = raycaster.intersectDrawn(drawn).find((h) => !(h.node === label.node && (label.index === null || h.instance === label.index)))
       label.occluded = !!blocker && blocker.distance < distance * 0.995
     }
   }
@@ -937,7 +941,10 @@ export class View {
     }
     const move = (e) => {
       this.#pointer = at(e)
-      this.#moveDrag(e, this.#pointer)
+      const press = this.#press
+      if (press && press.id === e.pointerId && !press.moved && Math.hypot(this.#pointer.x - press.x, this.#pointer.y - press.y) >= DRAG_START) press.moved = true
+      if (this.#drag) this.#moveDrag(e, this.#pointer)
+      else this.#orbitPointer?.move(e)
       this.#dragging = e.buttons !== 0
       if (this.#dragging) this.#tooltip?.hide()
       else this.#tooltip?.move(e.clientX, e.clientY)
@@ -951,21 +958,26 @@ export class View {
       this.#schedule()
     }
     const up = (e) => {
-      this.#endDrag(e)
+      if (this.#drag) this.#endDrag(e)
+      else this.#orbitPointer?.up(e)
       this.#dragging = false
       this.#pickPending = true
       this.#schedule()
     }
-    // a press on something with onDrag is the beginning of dragging it, not of orbiting
+    // every press starts here: on something with onDrag it drags that, anywhere else it orbits - and
+    // one that moves far enough, either way, isn't a click
     const down = (e) => {
       // a new press replaces a drag whose letting go never arrived (released outside the window, say)
       if (this.#drag?.id === e.pointerId) return
       this.#drag = null
-      if (!this.lastFrame?.draggable || (e.pointerType === 'mouse' && e.button !== 0)) return
-      const hit = this.pick(e)
+      const pressedAt = at(e)
+      this.#press = { id: e.pointerId, x: pressedAt.x, y: pressedAt.y, moved: false }
+      const hit = this.lastFrame?.draggable && !(e.pointerType === 'mouse' && e.button !== 0) ? this.pick(e) : null
       const node = hit && nearestAbove(hit.node, 'onDrag')
-      if (!hit || !node) return
-      this.controls?.cancel()
+      if (!hit || !node) {
+        this.#orbitPointer?.down(e)
+        return
+      }
       try { canvas.setPointerCapture(e.pointerId) } catch { /* drags still work inside the canvas */ }
       const p = at(e)
       const start = hit.point.clone()
@@ -975,13 +987,14 @@ export class View {
       this.#drag = { drag, id: e.pointerId, x: p.x, y: p.y, press: drag.ray, started: false }
     }
     const click = (e) => {
-      if (this.#dragEnded) {
-        this.#dragEnded = false
+      // the end of a drag - of a node or of the orbit - isn't a click
+      if (this.#press?.moved) {
+        this.#press = null
         return
       }
       if (!this.#handlers.click.size && !this.lastFrame?.interactive) return
       const hit = this.pick(e)
-      if (hit) for (const fn of handlersAbove(hit.node, 'onClick')) fn(hit)
+      if (hit) for (const fn of handlersAbove(hit.node, 'click')) fn(hit)
       for (const fn of this.#handlers.click) fn(hit, e)
     }
     canvas.addEventListener('pointerdown', down)
@@ -1064,9 +1077,6 @@ export class View {
     d.drag.phase = 'end'
     d.drag.event = e
     d.drag.node.onDrag?.(d.drag)
-    this.#dragEnded = true
-    // a click may not follow (it ended off the canvas); don't let it eat the next real one
-    setTimeout(() => { this.#dragEnded = false }, 0)
     this.canvas.style.cursor = ''
     this.invalidate()
   }
@@ -1119,12 +1129,12 @@ function nearestAbove(node, key) {
 }
 
 /**
- * A node's handlers of one kind and its ancestors', nearest first.
- * @param {any} node @param {'onHover' | 'onClick'} key @returns {Function[]}
+ * A node's hover or click handlers and its ancestors', nearest first: each one's own, then its listeners.
+ * @param {any} node @param {'hover' | 'click'} event @returns {Function[]}
  */
-function handlersAbove(node, key) {
+function handlersAbove(node, event) {
   const list = []
-  for (let n = node; n; n = n.parent) if (n[key]) list.push(n[key])
+  for (let n = node; n; n = n.parent) list.push(...n.handlersFor(event))
   return list
 }
 

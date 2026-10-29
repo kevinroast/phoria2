@@ -96,6 +96,7 @@ export class OrbitControl {
   #pressed = { x: 0, y: 0 }
   #pinchDistance = 0
   /** @type {() => void} */ #removeListeners
+  /** @type {(() => void) | null} */ #removePointer = null
 
   /**
    * @param {Camera} camera its target is the pivot; set to the origin if it has none
@@ -133,15 +134,33 @@ export class OrbitControl {
     element.addEventListener('wheel', wheel, { passive: false })
     element.addEventListener('contextmenu', menu)
     element.addEventListener('click', click, true)
-    this.#removeListeners = () => {
+    this.#pointerHandlers = { down, move, up }
+    this.#removePointer = () => {
       element.removeEventListener('pointerdown', down)
       element.removeEventListener('pointermove', move)
       element.removeEventListener('pointerup', up)
       element.removeEventListener('pointercancel', up)
-      element.removeEventListener('wheel', wheel)
-      element.removeEventListener('contextmenu', menu)
       element.removeEventListener('click', click, true)
     }
+    this.#removeListeners = () => {
+      this.#removePointer?.()
+      element.removeEventListener('wheel', wheel)
+      element.removeEventListener('contextmenu', menu)
+    }
+  }
+
+  /** @type {{ down: (e: PointerEvent) => void, move: (e: PointerEvent) => void, up: (e: PointerEvent) => void }} */
+  #pointerHandlers
+
+  /**
+   * @internal Give the pointer to a View, which routes each press - to this orbit, or to dragging a
+   * node - and decides what counts as a click. The wheel stays here. Returns what to call for each.
+   * @returns {{ down: (e: PointerEvent) => void, move: (e: PointerEvent) => void, up: (e: PointerEvent) => void }}
+   */
+  handOverPointer() {
+    this.#removePointer?.()
+    this.#removePointer = null
+    return this.#pointerHandlers
   }
 
   /** The target (pivot). @returns {Vec3} */

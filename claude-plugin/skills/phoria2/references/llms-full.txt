@@ -52,7 +52,7 @@ The other sub-paths follow the same pattern: `dist/gltf.js`, `dist/motion.js`, `
 - **Angles** are radians, except a perspective camera's `fov`, which is degrees.
 - **Vectors in**: `[x, y, z]` arrays (objects `{ x, y, z }` also work). On objects, `position`,
   `rotation`, `scale` are small vector classes: `node.position.set(1, 2, 3)`, `node.rotation.y += 0.1`,
-  `node.scale.x = 2` all work.
+  `node.scale.x = 2` and `node.position = [1, 2, 3]` (copied in) all work.
 - **Colours**: `'#ff8800'`, `'#f80'`, `0xff8800`, CSS names (`'orange'`), `'rgb(255 136 0)'`, or
   `[r, g, b]` 0-1. Inputs are sRGB.
 - **Time** is seconds. Handlers get what they act on as an argument (arrow functions are fine).
@@ -278,7 +278,8 @@ Properties: `color`, `opacity`, `roughness` (0.5), `metalness` (0), `emissive`,
 (`'normal'` | `'additive'`), `alphaTest` (cut-outs: drop pixels with less alpha - leaves, fences),
 `map`, `normalMap`/`normalScale`, `bumpMap`/`bumpScale`, `roughnessMap`, `metalnessMap`, `aoMap`,
 `emissiveMap`; `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
-`mesh.material.color.set('#0f0')`, `mesh.material.opacity = 0.5`.
+`mesh.material.color.set('#0f0')`, `mesh.material.opacity = 0.5`, or a whole new one: `mesh.material = { color: 'red' }`
+(options become a Material, as in the constructor; `mesh.geometry = box(2)` likewise).
 
 A **bump map** is a height texture (red channel) shown as bumps - no normal map to make, so it suits
 heights drawn in code. `bumpScale` is how high a height of 1 stands, in the mesh's units. Textures
@@ -342,6 +343,9 @@ view.on('hover', (hit) => show(hit?.datum))                 // fires when the th
   under the pointer. Add `highlightWhole: true` to tint the whole subtree as one thing (a piece of
   furniture, a machine) whichever part is hovered. Without the View's `highlight`, only nodes with
   their own highlight light up - leave it off to keep floors and walls plain.
+- `onHover` and `onClick` are the app's own handler for a node; to add more without replacing it
+  (an add-on, a second concern), `node.on('hover' | 'click', fn)` - it returns a function that stops
+  listening. Both run. A drag has one handler, `onDrag`: one thing moves a node at a time.
 - **Dragging**: `onDrag: (drag) => ...` on a node makes its subtree draggable. A press on it starts a
   drag (not an orbit) once the pointer has moved 4 px - until then it can still click - and the click
   after a drag is dropped. `drag` is `{ phase, hit, node, ray, plane, start, point, delta, event }`:

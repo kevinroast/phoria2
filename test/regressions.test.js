@@ -101,7 +101,9 @@ describe("the network chart's hover", () => {
   it('survives the hovered node leaving the data', () => {
     const scene = new Scene()
     const c = scene.add(chart({ mark: 'network', data: { nodes: nodes(10), links: ring(nodes(10)) } }))
-    parts(c).mesh.onHover?.({ node: parts(c).mesh, instance: 9 })
+    const mesh = parts(c).mesh
+    for (const fn of mesh.handlersFor('hover')) fn({ node: mesh, instance: 9 })
+    expect(parts(c).active.visible).toBe(true)
     c.update({ nodes: nodes(5), links: ring(nodes(5)) })
     // through the update's transition and past it
     for (let i = 1; i <= 20; i++) expect(() => scene.update(0.05, i * 0.05)).not.toThrow()
@@ -113,7 +115,7 @@ describe("the network chart's hover", () => {
     const ns = nodes(6)
     const c = scene.add(chart({ mark: 'network', data: { nodes: ns, links: ring(ns) } }))
     const { mesh, active } = parts(c)
-    mesh.onHover?.({ node: mesh, instance: 0 })
+    for (const fn of mesh.handlersFor('hover')) fn({ node: mesh, instance: 0 })
     c.update({ nodes: [...ns].reverse(), links: ring(ns) })
     for (let i = 1; i <= 20; i++) scene.update(0.05, i * 0.05)
     // n0 is now the last row; its two links start or end where it is drawn
@@ -233,20 +235,22 @@ describe('interaction', () => {
   const frame = () => page.frame((clock += 16))
   const viewOf = (options = {}) => new View({ canvas: page.canvas(), camera: { position: [0, 0, 10], target: [0, 0, 0] }, ...options })
 
-  it('keeps a tap that wobbles a pixel or two a click, with orbit on', () => {
+  it('keeps a tap that wobbles a pixel or two a click, with orbit on - and a drag not one', () => {
     const view = viewOf({ orbit: true })
-    /** Press, move, let go and click; whether the orbit control swallowed the click. */
+    let clicks = 0
+    view.on('click', () => clicks++)
+    const c = /** @type {any} */ (view.canvas)
+    /** Press, move, let go and click - as a browser sends them. */
     const gesture = (dx) => {
-      let swallowed = false
-      const c = /** @type {any} */ (view.canvas)
       c.dispatch('pointerdown', { clientX: 100, clientY: 50, button: 0, pointerId: 1, pointerType: 'touch' })
       c.dispatch('pointermove', { clientX: 100 + dx, clientY: 51, pointerId: 1, pointerType: 'touch' })
       c.dispatch('pointerup', { clientX: 100 + dx, clientY: 51, pointerId: 1, pointerType: 'touch' })
-      c.dispatch('click', { clientX: 100 + dx, clientY: 51, stopImmediatePropagation: () => { swallowed = true } })
-      return swallowed
+      c.dispatch('click', { clientX: 100 + dx, clientY: 51 })
     }
-    expect(gesture(2)).toBe(false)
-    expect(gesture(30)).toBe(true)
+    gesture(2)
+    expect(clicks).toBe(1)
+    gesture(30)
+    expect(clicks).toBe(1)
     view.dispose()
   })
 
@@ -607,5 +611,67 @@ describe('lifecycle and labels', () => {
     expect(by.near.depth).toBeCloseTo(18, 4)
     expect(by.far.depth).toBeCloseTo(24, 4)
     expect(by.behind.visible).toBe(false)
+  })
+})
+
+describe('change watching', () => {
+  it('redraws when a node that keeps its own matrix has it edited', async () => {
+    const { ChangeWatch } = await import('../src/watch.js')
+    const scene = new Scene()
+    const fixed = scene.add(new Mesh({ geometry: box(), matrixAutoUpdate: false }))
+    const camera = new PerspectiveCamera()
+    const watch = new ChangeWatch()
+    watch.changed(scene, camera)
+    fixed.matrix[12] = 5
+    expect(watch.changed(scene, camera)).toBe(true)
+  })
+})
+
+describe('handlers and the pointer', () => {
+  const viewOf = (options = {}) => new View({ canvas: page.canvas(), camera: { position: [0, 0, 10], target: [0, 0, 0] }, ...options })
+
+  it("adds hover and click listeners beside a node's own handler, without replacing it", () => {
+    const view = viewOf()
+    const cube = view.scene.add(new Mesh({ geometry: box(2), name: 'cube' }))
+    const seen = []
+    cube.onClick = () => seen.push('own')
+    const stop = cube.on('click', () => seen.push('listener'))
+    view.render()
+    const p = view.project([0, 0, 0])
+    const c = /** @type {any} */ (view.canvas)
+    c.dispatch('click', { clientX: p.x, clientY: p.y })
+    expect(seen).toEqual(['own', 'listener'])
+    stop()
+    c.dispatch('click', { clientX: p.x, clientY: p.y })
+    expect(seen).toEqual(['own', 'listener', 'own'])
+    expect(() => cube.on(/** @type {any} */ ('drag'), () => {})).toThrow('onDrag')
+    view.dispose()
+  })
+
+  it('drags a draggable node without orbiting, orbits anywhere else, and clicks after neither', () => {
+    const view = viewOf({ orbit: true })
+    const moves = []
+    view.scene.add(new Mesh({ geometry: box(2), onDrag: (d) => moves.push(d.phase) }))
+    let clicks = 0
+    view.on('click', () => clicks++)
+    view.render()
+    const c = /** @type {any} */ (view.canvas)
+    const drag = (from, dx) => {
+      c.dispatch('pointerdown', { clientX: from.x, clientY: from.y, button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse' })
+      for (let i = 1; i <= 4; i++) c.dispatch('pointermove', { clientX: from.x + dx * i / 4, clientY: from.y, buttons: 1, pointerId: 1, pointerType: 'mouse' })
+      c.dispatch('pointerup', { clientX: from.x + dx, clientY: from.y, button: 0, pointerId: 1, pointerType: 'mouse' })
+      c.dispatch('click', { clientX: from.x + dx, clientY: from.y })
+    }
+    const camera = view.camera.position.toArray()
+    // on the box: the box is dragged, the camera stays
+    drag(view.project([0, 0, 0]), 40)
+    expect(moves).toContain('start')
+    expect(moves.at(-1)).toBe('end')
+    expect(view.camera.position.toArray()).toEqual(camera)
+    // off it, in the corner: the camera orbits
+    drag({ x: 10, y: 10 }, 40)
+    expect(view.camera.position.toArray()).not.toEqual(camera)
+    expect(clicks).toBe(0)
+    view.dispose()
   })
 })

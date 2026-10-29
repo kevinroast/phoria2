@@ -223,7 +223,7 @@ export function collect(scene, camera) {
     if (node.overlay) frame.overlays.push(node.overlay)
     if (node.onDrag) frame.interactive = frame.draggable = true
     if (node.tooltip) frame.interactive = frame.tooltips = true
-    else if (node.highlight || node.onHover || node.onClick) frame.interactive = true
+    else if (node.highlight || node.handlersFor('hover').length || node.handlersFor('click').length) frame.interactive = true
     if (node.isDrawable) {
       if (node.castShadow && node.drawMode !== 'points' && node.drawMode !== 'lines') casters.push([node, clip])
       if (node.receiveShadow) receivers.push(node)

@@ -81,7 +81,7 @@ export function networkMark(ctx) {
         // more nodes than room - arriving and leaving ones together, in a transition: a bigger mesh,
         // swapped in place, keeping its hover handler
         const bigger = makeNodes(n * 2)
-        bigger.onHover = nodesMesh.onHover
+        if (neighbours) bigger.on('hover', hover)
         nodesMesh.parent?.add(bigger)
         nodesMesh.parent?.remove(nodesMesh)
         nodesMesh.dispose()
@@ -149,15 +149,17 @@ export function networkMark(ctx) {
   if (neighbours) {
     // on the nodes themselves, so the chart's own onHover stays the app's: the view tells this one
     // the hit while the pointer is over a node, and null when it leaves them
-    nodesMesh.onHover = (hit) => {
-      const key = hit && hit.node === nodesMesh && hit.instance !== null ? keyOf(rowsNow[hit.instance]) : null
-      if (key === hovered) return
-      hovered = key
-      active.visible = key !== null
-      if (key !== null) showNeighbours(key)
-      // recolour every node for the dimming, or back
-      for (let k = 0; k < nodesMesh.count; k++) nodesMesh.setColor(k, dimmed(k, ctx.rgb(rowsNow[k])))
-    }
+    nodesMesh.on('hover', hover)
+  }
+  /** @param {any} hit */
+  function hover(hit) {
+    const key = hit && hit.node === nodesMesh && hit.instance !== null ? keyOf(rowsNow[hit.instance]) : null
+    if (key === hovered) return
+    hovered = key
+    active.visible = key !== null
+    if (key !== null) showNeighbours(key)
+    // recolour every node for the dimming, or back
+    for (let k = 0; k < nodesMesh.count; k++) nodesMesh.setColor(k, dimmed(k, ctx.rgb(rowsNow[k])))
   }
 
   /** @param {unknown} key */
