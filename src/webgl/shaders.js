@@ -342,6 +342,7 @@ uniform samplerCubeShadow uPointShadowMap; // a point light's depth all round it
 uniform float uPointShadowIndex;           // which punctual light it is
 uniform vec2 uPointShadowNearFar;          // its faces' near and far planes
 uniform float uPointShadowTexel;           // a texel's size at a distance of 1
+uniform float uPointShadowBias;            // world units a unit of distance, to push the lookup out along the normal
 #endif
 #endif
 
@@ -499,7 +500,7 @@ float spotShadowAt(int k, vec3 n, float distance) {
 // this point's depth in whichever face it falls in
 float pointShadowAt(vec3 light, vec3 n, float distance) {
   // push the lookup out along the normal, more for surfaces further from the light
-  vec3 d = vWorldPosition + n * uPointShadowTexel * 1.5 * distance - light;
+  vec3 d = vWorldPosition + n * uPointShadowBias * distance - light;
   vec3 a = abs(d);
   float z = max(a.x, max(a.y, a.z));
   float near = uPointShadowNearFar.x, far = uPointShadowNearFar.y;
@@ -509,10 +510,10 @@ float pointShadowAt(vec3 light, vec3 n, float distance) {
   vec3 dir = d / length(d);
   vec3 u = normalize(cross(dir, abs(dir.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
   vec3 w = cross(dir, u);
-  float step = uPointShadowTexel * 1.5;
+  float spread = uPointShadowTexel * 1.5;
   float lit = 0.0;
   for (int x = -1; x <= 1; x++) {
-    for (int y = -1; y <= 1; y++) lit += texture(uPointShadowMap, vec4(dir + (u * float(x) + w * float(y)) * step, depth));
+    for (int y = -1; y <= 1; y++) lit += texture(uPointShadowMap, vec4(dir + (u * float(x) + w * float(y)) * spread, depth));
   }
   return lit / 9.0;
 }

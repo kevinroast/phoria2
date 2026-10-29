@@ -23,6 +23,8 @@ export class Programs {
   /** @type {Map<string, Program>} */ #cache = new Map()
   /** Compiling off the main thread is possible. */
   #parallel
+  /** Full-screen passes have no attributes, but still want a vertex array of their own. @type {WebGLVertexArrayObject | null} */
+  #empty = null
 
   /** @param {WebGL2RenderingContext} gl */
   constructor(gl) {
@@ -88,13 +90,27 @@ export class Programs {
   /** Forget every program - after a lost context, when they are already gone. */
   reset() {
     this.#cache.clear()
+    this.#empty = null
     // a lost context drops its extensions: ask again, which turns it back on (or finds it gone)
     this.#parallel = !!this.gl.getExtension('KHR_parallel_shader_compile')
+  }
+
+  /**
+   * Draw one triangle over the whole target with the program in use - a full-screen pass, its corners
+   * made in the vertex shader from the vertex index. Depth, culling and blending are the pass's own.
+   */
+  drawFullscreen() {
+    const gl = this.gl
+    this.#empty ??= gl.createVertexArray()
+    gl.bindVertexArray(this.#empty)
+    gl.drawArrays(gl.TRIANGLES, 0, 3)
   }
 
   dispose() {
     for (const p of this.#cache.values()) this.gl.deleteProgram(p.program)
     this.#cache.clear()
+    if (this.#empty) this.gl.deleteVertexArray(this.#empty)
+    this.#empty = null
   }
 
   /**

@@ -264,14 +264,9 @@ export class Picker {
     else {
       gl.enable(gl.CULL_FACE)
       gl.cullFace(gl.BACK)
-      gl.frontFace(mirrored(worldMatrix) ? gl.CW : gl.CCW)
+      gl.frontFace(mat4.determinant(worldMatrix) < 0 ? gl.CW : gl.CCW)
     }
-    const buffers = this.resources.mesh(geometry, instances, true)
-    gl.bindVertexArray(buffers.vao)
-    const count = instances ? instances.count : 1
-    const elements = geometry.drawnCount - geometry.drawnCount % 3
-    if (buffers.indexType) gl.drawElementsInstanced(gl.TRIANGLES, elements, buffers.indexType, 0, count)
-    else gl.drawArraysInstanced(gl.TRIANGLES, 0, elements, count)
+    this.resources.drawTriangles(geometry, instances)
   }
 
   #ensureTarget() {
@@ -309,7 +304,3 @@ function pickable(frame) {
   return [...items.filter((item) => item.material.depthTest), ...items.filter((item) => !item.material.depthTest)]
 }
 
-/** @param {ArrayLike<number>} m 4x4 */
-function mirrored(m) {
-  return m[0] * (m[5] * m[10] - m[6] * m[9]) - m[4] * (m[1] * m[10] - m[2] * m[9]) + m[8] * (m[1] * m[6] - m[2] * m[5]) < 0
-}

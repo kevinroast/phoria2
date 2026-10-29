@@ -1,4 +1,4 @@
-import { collect } from './frame.js'
+import { collect, toScreen } from './frame.js'
 import { LabelLayer } from './labels.js'
 import { DRAG_START, OrbitControl } from './OrbitControl.js'
 import { cameraPreset, fitPoints, framingScale } from './presets.js'
@@ -601,14 +601,8 @@ export class View {
    * @returns {{ x: number, y: number, depth: number, visible: boolean }}
    */
   project(point) {
-    const p = Vec3.fromInput(point, 'View'), m = this.#viewProjection()
-    const cx = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], cy = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]
-    const cz = m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14], cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15]
-    const x = cx / cw, y = cy / cw, z = cz / cw
-    return {
-      x: (x * 0.5 + 0.5) * this.#width, y: (0.5 - y * 0.5) * this.#height, depth: z * 0.5 + 0.5,
-      visible: cw > 0 && Math.abs(x) <= 1 && Math.abs(y) <= 1 && Math.abs(z) <= 1,
-    }
+    const { ndc: [x, y, z], visible } = toScreen(Vec3.fromInput(point, 'View'), this.#viewProjection())
+    return { x: (x * 0.5 + 0.5) * this.#width, y: (0.5 - y * 0.5) * this.#height, depth: z * 0.5 + 0.5, visible }
   }
 
   /**
@@ -1114,13 +1108,7 @@ function corners(box) {
 function drawnPoints(node, camera) {
   node.updateWorld()
   const points = []
-  /** @param {Node} n */
-  const visit = (n) => {
-    if (!n.visible || (n.showFrom && !n.showFrom(camera))) return
-    points.push(...corners(n.expandBounds(new Box3())))
-    for (const child of n.children) visit(child)
-  }
-  visit(node)
+  node.eachShownTo(camera, (n) => points.push(...corners(n.expandBounds(new Box3()))))
   return points
 }
 

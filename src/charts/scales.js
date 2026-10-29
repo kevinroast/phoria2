@@ -305,3 +305,12 @@ export function scaleColor({ domain, scheme, range, kind }) {
   scale.range = stops.map((c) => c.getStyle())
   return scale
 }
+
+/**
+ * The different values, in order: numbers and dates ascending, anything else as first seen. @internal
+ * @param {any[]} values @returns {any[]}
+ */
+export function distinct(values) {
+  const list = [...new Map(values.map((v) => [v instanceof Date ? v.getTime() : v, v])).values()]
+  return typeof list[0] === 'number' || list[0] instanceof Date ? list.sort((a, b) => +a - +b) : list
+}

@@ -1,7 +1,7 @@
 // Flat outlines for extrude() and lathe(): plain lists of [x, y] points, counter-clockwise, so they
 // can be spread into one another to make a shape - a rod's eyes joined by its sides, a cam's base
 // circle and nose. Angles are radians, anticlockwise from +x.
-import { checkNumber, checkOptions, describe, fail } from '../validate.js'
+import { checkCount, checkLength, checkNumber, describe, fail, resolveOptions } from '../validate.js'
 
 /** @typedef {[number, number]} Point2 */
 
@@ -43,8 +43,8 @@ const HINTS = {
 function circle(options) {
   const owner = 'outline.circle()'
   const o = resolve(owner, options, OUTLINE_OPTIONS.circle, (n) => ({ radius: n }))
-  const radius = positive(owner, 'radius', o.radius, 1)
-  const segments = whole(owner, 'segments', o.segments, 32, 3)
+  const radius = checkLength(owner, 'radius', o.radius, 1)
+  const segments = checkCount(owner, 'segments', o.segments, 32, 3)
   const [cx, cy] = point(owner, 'center', o.center)
   return Array.from({ length: segments }, (_, i) => {
     const a = i / segments * TAU
@@ -71,11 +71,11 @@ function circle(options) {
 function rect(options) {
   const owner = 'outline.rect()'
   const o = resolve(owner, options, OUTLINE_OPTIONS.rect, (n) => ({ size: n }))
-  const all = positive(owner, 'size', o.size, 1)
-  const width = positive(owner, 'width', o.width, all), height = positive(owner, 'height', o.height, all)
+  const all = checkLength(owner, 'size', o.size, 1)
+  const width = checkLength(owner, 'width', o.width, all), height = checkLength(owner, 'height', o.height, all)
   const radius = o.radius === undefined ? 0 : checkNumber(owner, 'radius', o.radius)
   if (radius < 0 || radius > Math.min(width, height) / 2) fail(owner, `'radius' must be from 0 to half the shorter side (${Math.min(width, height) / 2}), got ${radius}`)
-  const segments = whole(owner, 'segments', o.segments, 8, 1)
+  const segments = checkCount(owner, 'segments', o.segments, 8, 1)
   const [cx, cy] = point(owner, 'center', o.center)
   const w = width / 2, h = height / 2
   if (radius === 0) return [[cx - w, cy - h], [cx + w, cy - h], [cx + w, cy + h], [cx - w, cy + h]]
@@ -108,8 +108,8 @@ function rect(options) {
 function polygon(options) {
   const owner = 'outline.polygon()'
   const o = resolve(owner, options, OUTLINE_OPTIONS.polygon, (n) => ({ radius: n }))
-  const radius = positive(owner, 'radius', o.radius, 1)
-  const sides = whole(owner, 'sides', o.sides, 6, 3)
+  const radius = checkLength(owner, 'radius', o.radius, 1)
+  const sides = checkCount(owner, 'sides', o.sides, 6, 3)
   const angle = o.angle === undefined ? 0 : checkNumber(owner, 'angle', o.angle)
   const [cx, cy] = point(owner, 'center', o.center)
   return Array.from({ length: sides }, (_, i) => {
@@ -137,11 +137,11 @@ function polygon(options) {
 function arc(options) {
   const owner = 'outline.arc()'
   const o = resolve(owner, options, OUTLINE_OPTIONS.arc, null)
-  const radius = positive(owner, 'radius', o.radius, 1)
+  const radius = checkLength(owner, 'radius', o.radius, 1)
   const from = o.from === undefined ? 0 : checkNumber(owner, 'from', o.from)
   const to = o.to === undefined ? from + TAU : checkNumber(owner, 'to', o.to)
   if (to === from) fail(owner, "'from' and 'to' are the same angle - there's no arc between them")
-  const segments = whole(owner, 'segments', o.segments, Math.max(1, Math.ceil(Math.abs(to - from) / TAU * 32)), 1)
+  const segments = checkCount(owner, 'segments', o.segments, Math.max(1, Math.ceil(Math.abs(to - from) / TAU * 32)), 1)
   const [cx, cy] = point(owner, 'center', o.center)
   return Array.from({ length: segments + 1 }, (_, i) => {
     const a = from + (to - from) * i / segments
@@ -166,9 +166,9 @@ function arc(options) {
 function gear(options) {
   const owner = 'outline.gear()'
   const o = resolve(owner, options, OUTLINE_OPTIONS.gear, (n) => ({ radius: n }))
-  const radius = positive(owner, 'radius', o.radius, 1)
-  const teeth = whole(owner, 'teeth', o.teeth, 24, 3)
-  const depth = positive(owner, 'depth', o.depth, Math.min(radius / 2, radius * Math.PI / teeth))
+  const radius = checkLength(owner, 'radius', o.radius, 1)
+  const teeth = checkCount(owner, 'teeth', o.teeth, 24, 3)
+  const depth = checkLength(owner, 'depth', o.depth, Math.min(radius / 2, radius * Math.PI / teeth))
   if (depth >= radius) fail(owner, `'depth' must be less than the radius (${radius}), got ${depth}`)
   const [cx, cy] = point(owner, 'center', o.center)
   const root = radius - depth, step = TAU / teeth
@@ -192,31 +192,8 @@ export const outline = { circle, rect, polygon, arc, gear }
 
 // --- checking
 
-/**
- * @param {string} owner @param {unknown} options @param {string[]} keys
- * @param {((n: number) => object) | null} fromNumber
- * @returns {Record<string, any>}
- */
-function resolve(owner, options, keys, fromNumber) {
-  const o = /** @type {object} */ (typeof options === 'number' && fromNumber ? fromNumber(options) : options)
-  checkOptions(owner, o, keys, HINTS)
-  return o ?? {}
-}
-
-/** @param {string} owner @param {string} name @param {unknown} value @param {number} fallback */
-function positive(owner, name, value, fallback) {
-  if (value === undefined) return fallback
-  const v = checkNumber(owner, name, value)
-  if (!(v > 0) || !Number.isFinite(v)) fail(owner, `'${name}' must be more than 0, got ${v}`)
-  return v
-}
-
-/** @param {string} owner @param {string} name @param {unknown} value @param {number} fallback @param {number} min */
-function whole(owner, name, value, fallback, min) {
-  if (value === undefined) return fallback
-  if (!Number.isInteger(value) || /** @type {number} */ (value) < min) fail(owner, `'${name}' must be a whole number ${min} or more, got ${describe(value)}`)
-  return /** @type {number} */ (value)
-}
+/** The shapes' options, with their hints. @param {string} owner @param {unknown} options @param {string[]} keys @param {((n: number) => object) | null} fromNumber */
+const resolve = (owner, options, keys, fromNumber) => resolveOptions(owner, options, keys, fromNumber, HINTS)
 
 /** @param {string} owner @param {string} name @param {unknown} value @returns {Point2} */
 function point(owner, name, value) {

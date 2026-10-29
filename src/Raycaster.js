@@ -135,8 +135,7 @@ export class Raycaster {
 
   /** @param {Node} node @param {Hit[]} hits @param {Cut | null} cut the plane cutting this subtree, from above */
   #visit(node, hits, cut) {
-    if (!node.visible || (this.pickableOnly && !node.pickable)) return
-    if (this.camera && node.showFrom && !node.showFrom(this.camera)) return
+    if (!(this.camera ? node.shownTo(this.camera) : node.visible) || (this.pickableOnly && !node.pickable)) return
     if (node.clip) cut = cutBy(node)
     const n = /** @type {any} */ (node)
     if (n.drawMode === 'triangles' && n.instanceMatrices) {

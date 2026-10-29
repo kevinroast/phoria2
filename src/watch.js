@@ -35,7 +35,7 @@ export class ChangeWatch {
     this.#count = 0
     this.#strings = []
     this.#camera(camera)
-    this.#scene(scene)
+    this.#scene(scene, camera)
 
     let changed = this.#count !== this.#previousCount || this.#strings.length !== this.#previousStrings.length
     for (let i = 0; !changed && i < this.#count; i++) changed = this.#values[i] !== this.#previous[i]
@@ -83,8 +83,8 @@ export class ChangeWatch {
     this.#push(camera.aspect)
   }
 
-  /** @param {any} scene */
-  #scene(scene) {
+  /** @param {any} scene @param {any} camera */
+  #scene(scene, camera) {
     const bg = scene.background
     if (!bg) this.#push(-1)
     else if ('getHex' in bg) this.#pushAll(bg)
@@ -101,15 +101,16 @@ export class ChangeWatch {
       this.#push(fog.near)
       this.#push(fog.far)
     } else this.#push(-1)
-    this.#node(scene)
+    this.#node(scene, camera)
   }
 
-  /** @param {any} node */
-  #node(node) {
+  /** @param {any} node @param {any} camera */
+  #node(node, camera) {
     this.#push(idOf(node))
-    this.#push(node.visible ? 1 : 0)
-    // hidden subtrees aren't drawn, so their insides don't matter until they show again
-    if (!node.visible) return
+    const shown = node.shownTo(camera)
+    this.#push(shown ? 1 : 0)
+    // subtrees this camera doesn't draw don't matter until they show again
+    if (!shown) return
     this.#push(node.overlay ? idOf(node.overlay) : 0)
     // a section plane moving or changing colour
     const clip = node.clip
@@ -131,7 +132,7 @@ export class ChangeWatch {
     if (node.isDrawable) this.#drawable(node)
     else if (node.isLabel) this.#label(node)
     else if (node.lightKind) this.#light(node)
-    for (const child of node.children) this.#node(child)
+    for (const child of node.children) this.#node(child, camera)
   }
 
   /** @param {any} node */

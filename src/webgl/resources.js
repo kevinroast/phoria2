@@ -177,6 +177,26 @@ export class Resources {
     return entry
   }
 
+  /**
+   * Draw a mesh's triangles - instanced or not, indexed or not - with the program in use, as far as
+   * its drawn count goes. Every pass that draws meshes draws them this way.
+   * @param {Geometry} geometry @param {{ instanceMatrices: Float32Array, instanceColors: Float32Array | null, version: number, count: number } | null} instances
+   * @returns {number} triangles drawn
+   */
+  drawTriangles(geometry, instances) {
+    const gl = this.gl
+    const buffers = this.mesh(geometry, instances, true)
+    gl.bindVertexArray(buffers.vao)
+    const elements = geometry.drawnCount - geometry.drawnCount % 3
+    const count = instances ? instances.count : 1
+    if (buffers.indexType) {
+      if (instances) gl.drawElementsInstanced(gl.TRIANGLES, elements, buffers.indexType, 0, count)
+      else gl.drawElements(gl.TRIANGLES, elements, buffers.indexType, 0)
+    } else if (instances) gl.drawArraysInstanced(gl.TRIANGLES, 0, elements, count)
+    else gl.drawArrays(gl.TRIANGLES, 0, elements)
+    return elements / 3 * count
+  }
+
   /** @param {WebGLBuffer | null | undefined} buffer @param {Float32Array} data */
   #refill(buffer, data) {
     const gl = this.gl

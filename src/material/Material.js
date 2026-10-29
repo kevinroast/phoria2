@@ -79,28 +79,28 @@ export class Material {
   /** The options it takes, and hints for names people reach for instead. */
   static OPTIONS = OPTIONS
   static HINTS = HINTS
-  name = ''
-  /** @type {number} */ opacity = 1
-  /** Drop pixels with less alpha than this - hard-edged cut-outs, drawn with the opaque pass. @type {number} */ alphaTest = 0
-  /** @type {number} */ normalScale = 1
-  /** How high a bump map's height of 1 stands, in the mesh's own units. @type {number} */ bumpScale = 1
-  /** @type {number} */ aoMapIntensity = 1
-  /** Maps projected from the mesh's three axes, this many repeats per unit; 0 uses the UVs. @type {number} */ triplanar = 0
-  /** @type {number} */ roughness = 0.5
-  /** @type {number} */ metalness = 0
-  /** @type {number} */ emissiveIntensity = 1
-  unlit = false
-  flatShading = false
-  doubleSided = false
-  vertexColors = false
-  /** Fades into the scene's fog with distance. */
-  fog = true
-  /** @type {'normal' | 'additive'} */ blending = 'normal'
-  depthWrite = true
-  depthTest = true
-  size = 1
-  sizeAttenuation = true
-  width = 1
+  // values from DEFAULTS, in the constructor - one list, which toJSON leaves out
+  /** @type {string} */ name
+  /** @type {number} */ opacity
+  /** Drop pixels with less alpha than this - hard-edged cut-outs, drawn with the opaque pass. @type {number} */ alphaTest
+  /** @type {number} */ normalScale
+  /** How high a bump map's height of 1 stands, in the mesh's own units. @type {number} */ bumpScale
+  /** @type {number} */ aoMapIntensity
+  /** Maps projected from the mesh's three axes, this many repeats per unit; 0 uses the UVs. @type {number} */ triplanar
+  /** @type {number} */ roughness
+  /** @type {number} */ metalness
+  /** @type {number} */ emissiveIntensity
+  /** @type {boolean} */ unlit
+  /** @type {boolean} */ flatShading
+  /** @type {boolean} */ doubleSided
+  /** @type {boolean} */ vertexColors
+  /** Fades into the scene's fog with distance. @type {boolean} */ fog
+  /** @type {'normal' | 'additive'} */ blending
+  /** @type {boolean} */ depthWrite
+  /** @type {boolean} */ depthTest
+  /** @type {number} */ size
+  /** @type {boolean} */ sizeAttenuation
+  /** @type {number} */ width
 
   #color = new Color(0xffffff)
   #emissive = new Color(0x000000)
@@ -113,6 +113,7 @@ export class Material {
   /** @param {MaterialOptions} [options] */
   constructor(options = {}) {
     checkOptions('Material', options, OPTIONS, HINTS)
+    Object.assign(this, DEFAULTS)
     for (const [key, value] of /** @type {[string, any][]} */ (Object.entries(options))) {
       if (value === undefined) continue
       if (key === 'color') this.color = value

@@ -1,11 +1,11 @@
 import * as mat3 from '../math/mat3.js'
+import * as mat4 from '../math/mat4.js'
 import { Geometry } from '../geometry/Geometry.js'
 import { Material } from '../material/Material.js'
 import { CLIP_ONLY_FRAGMENT, MESH_VERTEX } from './shaders.js'
 import { collect } from '../frame.js'
 import { checkNumber, checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '../validate.js'
 import { GLContext } from './context.js'
-import { SHADOW_MAP_SIZE } from '../shadow.js'
 
 /** @import { FrameDescription, DrawItem, FrameLight, FrameCap } from '../frame.js' */
 /** @import { Scene } from '../scene/Scene.js' */
@@ -64,6 +64,8 @@ export function bloomSettings(owner, value) {
 }
 const TONE_MAPPING = { none: 0, aces: 1, neutral: 2 }
 // material maps and the shader feature each one switches on (all but emissive need lighting)
+/** @type {import('./passes.js').ShadowMap[]} */
+const NO_SHADOWS = []
 const MAP_DEFINES = { roughnessMap: 'ROUGHNESS_MAP', metalnessMap: 'METALNESS_MAP', normalMap: 'NORMAL_MAP', bumpMap: 'BUMP_MAP', aoMap: 'AO_MAP' }
 // every map a mesh can sample - triplanar projection is only worth its varyings when there is one
 const MAP_SLOTS = ['map', 'emissiveMap', ...Object.keys(MAP_DEFINES)]
@@ -109,9 +111,7 @@ export class WebGLRenderer {
   /** With a shared context: the canvas's 2D context, which the picture is copied into. @type {CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null} */
   #copy = null
   /** This frame's prefiltered environment, when it is an HDR image. @type {Environment | null} */ #environment = null
-  /** This frame's shadow map, when something casts. @type {{ texture: WebGLTexture, matrix: Float32Array, texel: number, bias: number } | null} */ #shadow = null
-  /** This frame's spot shadow map, when spot lights cast. @type {ReturnType<import('./passes.js').Passes['spotShadowMaps']> | null} */ #spotShadow = null
-  /** This frame's point shadow cube, when a point light casts. @type {ReturnType<import('./passes.js').Passes['pointShadowMap']> | null} */ #pointShadow = null
+  /** This frame's shadows - directional, spot, point - for the meshes that receive them. @type {import('./passes.js').ShadowMap[]} */ #shadows = []
   /** @type {Float32Array} */ #normalMatrix = new Float32Array(9)
   /** @type {Record<string, any>} */ #lights = {}
   /** This frame waits for shaders to compile rather than leaving things out. */
@@ -223,16 +223,12 @@ export class WebGLRenderer {
     // an HDR background is prefiltered here too, before the scene's target is bound: prefiltering
     // draws into targets of its own and leaves the framebuffer and viewport behind it
     if (passes && bg && !('getHex' in bg) && bg.isHDR) passes.environment(bg)
-    // the light's view first, into its own depth texture
-    const shadow = passes ? frame.shadow : null
-    if (shadow && passes) {
-      const map = passes.shadowMap(shadow)
-      this.#shadow = { ...map, texel: 1 / SHADOW_MAP_SIZE, bias: shadow.texelSize * 1.5 }
-    } else {
-      this.#shadow = null
-    }
-    this.#spotShadow = passes && frame.spotShadows.length ? passes.spotShadowMaps(frame.spotShadows) : null
-    this.#pointShadow = passes && frame.pointShadow ? passes.pointShadowMap(frame.pointShadow) : null
+    // the lights' views first, each into its own depth texture
+    this.#shadows = !passes ? [] : [
+      frame.shadow && passes.shadowMap(frame.shadow),
+      frame.spotShadows.length > 0 && passes.spotShadowMaps(frame.spotShadows),
+      frame.pointShadow && passes.pointShadowMap(frame.pointShadow),
+    ].filter((s) => !!s)
     // outlines' mask, drawn before the scene, so the scene's own target need not be left
     const outline = passes && frame.outlines.length ? passes.outlineMask(frame.outlines, frame, width, height, this.pixelRatio) : null
 
@@ -370,7 +366,7 @@ export class WebGLRenderer {
         pos.set(/** @type {ArrayLike<number>} */ (l.position), i * 3)
         addColor(color, i * 3, l)
         range[i] = l.range ?? 0
-        if (this.#pointShadow && l === frame.pointShadow?.light) pointShadowIndex = i
+        if (l === frame.pointShadow?.light) pointShadowIndex = i
         if (l.kind === 'spot') {
           direction.set(/** @type {ArrayLike<number>} */ (l.direction), i * 3)
           shadowTile[i] = l.shadowTile ?? -1
@@ -401,14 +397,11 @@ export class WebGLRenderer {
     const mode = /** @type {any} */ (node).drawMode
     const kind = mode === 'points' ? 'points' : mode === 'lines' ? 'lines' : 'mesh'
     const receives = kind === 'mesh' && node.receiveShadow && !material.unlit
-    const shadowed = receives && !!this.#shadow
+    const shadows = receives ? this.#shadows : NO_SHADOWS
 
     const clip = kind === 'mesh' ? item.clip : null
-    const defines = this.#defines(kind, material, geometry.colors !== null, !!instances, shadowed)
-    const spotShadowed = receives && !!this.#spotShadow
-    if (spotShadowed) defines.push('SPOT_SHADOWS')
-    const pointShadowed = receives && !!this.#pointShadow
-    if (pointShadowed) defines.push('POINT_SHADOW')
+    const defines = this.#defines(kind, material, geometry.colors !== null, !!instances)
+    for (const shadow of shadows) defines.push(shadow.define)
     const fog = material.fog ? frame.fog : null
     if (fog) {
       defines.push('FOG')
@@ -448,23 +441,7 @@ export class WebGLRenderer {
           program.set('uEnvSH', env.sh)
           program.set('uEnvIntensity', frame.environmentIntensity)
         }
-        if (shadowed && this.#shadow) {
-          program.set('uShadowMatrix', this.#shadow.matrix)
-          program.set('uShadowTexel', this.#shadow.texel)
-          program.set('uShadowBias', this.#shadow.bias)
-        }
-        const spot = this.#spotShadow
-        if (spotShadowed && spot) {
-          program.set('uSpotShadowMatrix', spot.matrices)
-          program.set('uSpotShadowTile', spot.tiles)
-          program.set('uSpotShadowBias', spot.bias)
-          program.set('uSpotShadowTexel', spot.texel)
-        }
-        const point = this.#pointShadow
-        if (pointShadowed && point) {
-          program.set('uPointShadowNearFar', point.nearFar)
-          program.set('uPointShadowTexel', point.texel)
-        }
+        for (const shadow of shadows) for (const [name, value] of Object.entries(shadow.uniforms)) program.set(name, value)
       }
     }
     // the frame's own textures are bound every draw, not once a frame: other programs drawn in
@@ -472,9 +449,7 @@ export class WebGLRenderer {
     // ordinary texture makes the draw fail
     if (kind === 'mesh' && !material.unlit) {
       if (this.#environment) program.set('uEnvMap', this.#environment.prefiltered)
-      if (shadowed && this.#shadow) program.set('uShadowMap', this.#shadow.texture)
-      if (spotShadowed && this.#spotShadow) program.set('uSpotShadowMap', this.#spotShadow.texture)
-      if (pointShadowed && this.#pointShadow) program.set('uPointShadowMap', this.#pointShadow.texture)
+      for (const shadow of shadows) program.set(shadow.sampler, shadow.texture)
     }
 
     program.set('uModel', worldMatrix)
@@ -546,26 +521,15 @@ export class WebGLRenderer {
     program.set('uNormalMatrix', this.#normalMatrix)
     // a mirroring transform (negative scale) reverses the winding - which also says which side is
     // the back, for double-sided materials
-    gl.frontFace(determinant3(worldMatrix) < 0 ? gl.CW : gl.CCW)
+    gl.frontFace(mat4.determinant(worldMatrix) < 0 ? gl.CW : gl.CCW)
     if (material.doubleSided) {
       gl.disable(gl.CULL_FACE)
     } else {
       gl.enable(gl.CULL_FACE)
       gl.cullFace(gl.BACK)
     }
-    const buffers = this.#gpu.resources.mesh(geometry, instances, true)
-    gl.bindVertexArray(buffers.vao)
-    const count = instances ? instances.count : 1
-    const elements = geometry.drawnCount - geometry.drawnCount % 3
-    if (buffers.indexType) {
-      if (instances) gl.drawElementsInstanced(gl.TRIANGLES, elements, buffers.indexType, 0, count)
-      else gl.drawElements(gl.TRIANGLES, elements, buffers.indexType, 0)
-    } else {
-      if (instances) gl.drawArraysInstanced(gl.TRIANGLES, 0, elements, count)
-      else gl.drawArrays(gl.TRIANGLES, 0, elements)
-    }
+    this.info.triangles += this.#gpu.resources.drawTriangles(geometry, instances)
     this.info.drawCalls++
-    this.info.triangles += elements / 3 * count
   }
 
   /**
@@ -607,13 +571,8 @@ export class WebGLRenderer {
       program.set('uViewProjection', frame.camera.viewProjection)
       program.set('uModel', item.worldMatrix)
       program.set('uClipPlane', cap.plane)
-      gl.frontFace(determinant3(item.worldMatrix) < 0 ? gl.CW : gl.CCW)
-      const buffers = this.#gpu.resources.mesh(item.geometry, item.instances, true)
-      gl.bindVertexArray(buffers.vao)
-      const elements = item.geometry.drawnCount - item.geometry.drawnCount % 3
-      const count = item.instances ? item.instances.count : 1
-      if (buffers.indexType) gl.drawElementsInstanced(gl.TRIANGLES, elements, buffers.indexType, 0, count)
-      else gl.drawArraysInstanced(gl.TRIANGLES, 0, elements, count)
+      gl.frontFace(mat4.determinant(item.worldMatrix) < 0 ? gl.CW : gl.CCW)
+      this.#gpu.resources.drawTriangles(item.geometry, item.instances)
       this.info.drawCalls++
     }
     gl.colorMask(true, true, true, true)
@@ -646,10 +605,10 @@ export class WebGLRenderer {
 
   /**
    * @param {'mesh' | 'points' | 'lines'} kind @param {Material} material
-   * @param {boolean} hasColors @param {boolean} instanced @param {boolean} shadowed
+   * @param {boolean} hasColors @param {boolean} instanced
    * @returns {string[]}
    */
-  #defines(kind, material, hasColors, instanced, shadowed) {
+  #defines(kind, material, hasColors, instanced) {
     const d = []
     if (material.vertexColors && hasColors) d.push('VERTEX_COLORS')
     if (kind === 'mesh') {
@@ -659,7 +618,6 @@ export class WebGLRenderer {
         d.push(...this.#lightDefines)
         if (this.#environment) d.push('ENV_MAP')
         else if (this.#studio) d.push('STUDIO')
-        if (shadowed) d.push('SHADOW')
       }
       if (material.map) d.push('MAP')
       if (material.emissiveMap) d.push('EMISSIVE_MAP')
@@ -676,7 +634,3 @@ export class WebGLRenderer {
   }
 }
 
-/** @param {ArrayLike<number>} m 4x4 */
-function determinant3(m) {
-  return m[0] * (m[5] * m[10] - m[6] * m[9]) - m[4] * (m[1] * m[10] - m[2] * m[9]) + m[8] * (m[1] * m[6] - m[2] * m[5])
-}

@@ -115,7 +115,7 @@
         { "type": "boolean", "const": false },
         {
           "type": "object", "additionalProperties": false,
-          "properties": { "duration": { "type": "number", "minimum": 0 }, "ease": { "enum": ["linear", "outCubic", "inOutCubic"] } }
+          "properties": { "duration": { "type": "number", "minimum": 0 }, "ease": { "enum": ["linear", "in", "out", "inOut"] } }
         }
       ]
     },

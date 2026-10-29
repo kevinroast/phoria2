@@ -9,9 +9,10 @@ import { chartFrame } from './axes.js'
 import { legend } from './legend.js'
 import { barMark, lineMark, pointMark, stackKey, surfaceMark } from './marks.js'
 import { networkMark } from './network.js'
-import { SCHEMES, scaleBand, scaleColor, scaleLinear, scaleLog, scaleTime, toDate } from './scales.js'
+import { SCHEMES, distinct, scaleBand, scaleColor, scaleLinear, scaleLog, scaleTime, toDate } from './scales.js'
 import { normalise } from './spec.js'
 import { addStyle } from './style.js'
+import { EASES } from '../ease.js'
 
 /** @import { Mark, MarkContext, Target } from './marks.js' */
 /** @import { Scale, ColorScale } from './scales.js' */
@@ -19,11 +20,6 @@ import { addStyle } from './style.js'
 
 // node options a chart passes to its Group; 'tooltip' and 'highlight' are the chart's own
 const NODE_KEYS = NODE_OPTIONS.filter((k) => !['children', 'tooltip', 'highlight'].includes(k))
-const EASES = {
-  linear: (t) => t,
-  outCubic: (t) => 1 - (1 - t) ** 3,
-  inOutCubic: (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2),
-}
 
 /**
  * Build a chart from a spec - mark, data and channels:
@@ -312,7 +308,7 @@ export class Chart extends Group {
     if (!tw) return
     const o = this.#input.transition ?? {}
     const duration = o.duration ?? 0.5
-    const ease = EASES[o.ease ?? 'outCubic']
+    const ease = EASES[o.ease ?? 'out']
     if (!ease) fail('chart()', `transition ease '${o.ease}' - expected ${Object.keys(EASES).map((e) => `'${e}'`).join(', ')}`)
     tw.t = Math.min(1, tw.t + dt / duration)
     const k = ease(tw.t)
@@ -348,12 +344,6 @@ function defaultBox(spec) {
   if (spec.mark === 'network') return spec.options.flat ? [12, 1, 12] : [12, 8, 12]
   if (spec.mark === 'point') return [8, 6, z ? 8 : 1.6]
   return [10, 6, z ? 6 : 1.6]
-}
-
-/** Values in first-seen order (numbers and dates sorted). @param {any[]} values */
-function distinct(values) {
-  const list = [...new Map(values.map((v) => [v instanceof Date ? v.getTime() : v, v])).values()]
-  return typeof list[0] === 'number' || list[0] instanceof Date ? list.sort((a, b) => +a - +b) : list
 }
 
 /** @param {any[]} values @returns {[number, number]} */

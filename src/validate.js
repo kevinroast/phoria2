@@ -138,3 +138,43 @@ export function warnOnce(target, message) {
   seen.add(message)
   console.warn(`phoria2: ${message}`)
 }
+
+/**
+ * A generator's options: an options object, or a number standing for its main size - checked against
+ * the names it takes.
+ * @param {string} owner @param {unknown} options @param {string[]} keys
+ * @param {((n: number) => object) | null} fromNumber @param {Record<string, string>} [hints]
+ * @returns {Record<string, any>}
+ */
+export function resolveOptions(owner, options, keys, fromNumber, hints) {
+  const o = /** @type {object} */ (typeof options === 'number' && fromNumber ? fromNumber(options) : options)
+  checkOptions(owner, o, keys, hints)
+  return o ?? {}
+}
+
+/**
+ * A length: a finite number above 0 (or 0 itself when `zero`), or the default when missing.
+ * @param {string} owner @param {string} name @param {unknown} value @param {number} fallback
+ * @param {boolean} [zero]
+ * @returns {number}
+ */
+export function checkLength(owner, name, value, fallback, zero = false) {
+  if (value === undefined) return fallback
+  const n = checkNumber(owner, name, value)
+  if (!Number.isFinite(n) || n < 0 || (n === 0 && !zero)) fail(owner, `'${name}' must be ${zero ? '0 or more' : 'more than 0'}, got ${n}`)
+  return n
+}
+
+/**
+ * A whole number - segments, sides, points - in [min, max], or the default when missing.
+ * @param {string} owner @param {string} name @param {unknown} value @param {number} fallback
+ * @param {number} [min] @param {number} [max]
+ * @returns {number}
+ */
+export function checkCount(owner, name, value, fallback, min = 1, max = Infinity) {
+  if (value === undefined) return fallback
+  if (!Number.isInteger(value) || /** @type {number} */ (value) < min || /** @type {number} */ (value) > max) {
+    fail(owner, `'${name}' must be a whole number ${max === Infinity ? `${min} or more` : `from ${min} to ${max}`}, got ${describe(value)}`)
+  }
+  return /** @type {number} */ (value)
+}

@@ -211,9 +211,8 @@ export function collect(scene, camera) {
    * @param {FrameOutline | null} outline the outline drawn round this subtree, from above
    */
   const visit = (node, clip, outline) => {
-    if (!node.visible) return
     // per-camera visibility decides what this frame draws, without touching the scene
-    if (node.showFrom && !node.showFrom(camera)) return
+    if (!node.shownTo(camera)) return
     // the nearest clip cuts this subtree
     if (node.clip) clip = { plane: worldPlane(node), cap: node.clip.cap }
     // an outline goes round everything under the node that asks for it
@@ -433,21 +432,31 @@ function instanceLabels(node, viewProjection, view, out) {
 }
 
 /**
- * Where a world position lands on screen, and how far in front of the camera it is - along the view,
- * in world units, for both kinds of camera (an orthographic one's clip w is always 1).
- * @param {Vec3} position @param {Mat4} viewProjection @param {Mat4} view
+ * Where a world position lands in normalised device coordinates (x, y and z, -1 to 1), and whether it
+ * is in view: inside the edges, and between the near and far planes. Labels and view.project() both
+ * place things with it.
+ * @param {ArrayLike<number>} position @param {ArrayLike<number>} viewProjection
+ * @returns {{ ndc: [number, number, number], visible: boolean }}
  */
-function project(position, viewProjection, view) {
+export function toScreen(position, viewProjection) {
   const m = viewProjection
   const x = m[0] * position[0] + m[4] * position[1] + m[8] * position[2] + m[12]
   const y = m[1] * position[0] + m[5] * position[1] + m[9] * position[2] + m[13]
   const z = m[2] * position[0] + m[6] * position[1] + m[10] * position[2] + m[14]
   const w = m[3] * position[0] + m[7] * position[1] + m[11] * position[2] + m[15]
-  const ndc = /** @type {[number, number]} */ ([x / w, y / w])
-  // in front of the near plane and short of the far one, as well as inside the edges
-  const visible = w > 0 && Math.abs(ndc[0]) <= 1 && Math.abs(ndc[1]) <= 1 && z / w >= -1 && z / w <= 1
+  const ndc = /** @type {[number, number, number]} */ ([x / w, y / w, z / w])
+  return { ndc, visible: w > 0 && Math.abs(ndc[0]) <= 1 && Math.abs(ndc[1]) <= 1 && Math.abs(ndc[2]) <= 1 }
+}
+
+/**
+ * A label's place on screen, and how far in front of the camera it is - along the view, in world
+ * units, for both kinds of camera (an orthographic one's clip w is always 1).
+ * @param {Vec3} position @param {Mat4} viewProjection @param {Mat4} view
+ */
+function project(position, viewProjection, view) {
+  const { ndc, visible } = toScreen(position, viewProjection)
   const depth = -(view[2] * position[0] + view[6] * position[1] + view[10] * position[2] + view[14])
-  return { ndc, depth, visible }
+  return { ndc: /** @type {[number, number]} */ ([ndc[0], ndc[1]]), depth, visible }
 }
 
 // The six planes (a, b, c, d with the normal pointing inwards) of a view-projection matrix.

@@ -470,14 +470,25 @@ export class Node {
   boundsFrom(camera) {
     this.updateWorld()
     const box = new Box3()
-    /** @param {Node} n */
-    const visit = (n) => {
-      if (!n.visible || (n.showFrom && !n.showFrom(camera))) return
-      n.expandBounds(box)
-      for (const child of n.#children) visit(child)
-    }
-    visit(this)
+    this.eachShownTo(camera, (n) => n.expandBounds(box))
     return box
+  }
+
+  /**
+   * Does this camera draw this node (leaving its ancestors aside)? Visible, and not turned away by
+   * showFrom. The one rule drawing, picking, framing and redraw-watching all use.
+   * @param {Camera} camera
+   * @returns {boolean}
+   */
+  shownTo(camera) {
+    return this.visible && (!this.showFrom || this.showFrom(camera))
+  }
+
+  /** @internal Visit this node and every descendant the camera draws - a hidden node's subtree is skipped. @param {Camera} camera @param {(node: Node) => void} fn */
+  eachShownTo(camera, fn) {
+    if (!this.shownTo(camera)) return
+    fn(this)
+    for (const child of this.#children) child.eachShownTo(camera, fn)
   }
 
   /** @internal Grow a world space box by this node's own geometry (none for a plain node). @param {Box3} box */

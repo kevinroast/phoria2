@@ -4,7 +4,7 @@ import {
   Box3, Scene, Vec3, box, cameraPreset, collect, grid, mat4, plane, vec4,
 } from '../src/index.js'
 import { explain } from '../src/explain.js'
-import { fitBox, fitPoints, framingScale } from '../src/presets.js'
+import { fitPoints, framingScale } from '../src/presets.js'
 import { alignColumns, layoutLabels, leaderEnd, placeBox, stackColumns } from '../src/labelLayout.js'
 import { OrbitControl } from '../src/OrbitControl.js'
 import { ChangeWatch } from '../src/watch.js'
@@ -226,7 +226,9 @@ describe('framing', () => {
   })
 })
 
-describe('fitBox', () => {
+describe('fitting a box - its corners, by fitPoints', () => {
+  /** @param {Box3} b */
+  const cornersOf = (b) => Array.from({ length: 8 }, (_, i) => [i & 1 ? b.max[0] : b.min[0], i & 2 ? b.max[1] : b.min[1], i & 4 ? b.max[2] : b.min[2]])
   // how far out the box's furthest corner lands, in clip space - 1 is the edge of the view
   const reach = (b, cam) => {
     cam.updateWorld()
@@ -241,8 +243,7 @@ describe('fitBox', () => {
   // a perspective camera placed as frame() places it
   const fitted = (b, from, { fov = 45, aspect = 1.5, padding = 0 } = {}) => {
     const direction = new Vec3(from[0], from[1], from[2]).normalize()
-    const distance = fitBox(b, direction, { fov, aspect, padding })
-    const center = b.getCenter()
+    const { center, size: distance } = fitPoints(cornersOf(b), direction, { fov, aspect, padding })
     return { distance, camera: new PerspectiveCamera({ fov, aspect, position: center.clone().add(direction.multiplyScalar(distance)), target: center }) }
   }
 
@@ -295,9 +296,9 @@ describe('fitBox', () => {
   it('gives an orthographic height that fits the box at the aspect', () => {
     const plan = new Box3([-10, 0, -5], [10, 0, 5])
     // from above, the plan is 20 across and 10 deep: a 2:1 view fits it at height 10, a square one needs 20
-    expect(fitBox(plan, [0, 1, 0], { aspect: 2 })).toBeCloseTo(10)
-    expect(fitBox(plan, [0, 1, 0], { aspect: 1 })).toBeCloseTo(20)
-    expect(fitBox(plan, [0, 1, 0], { aspect: 2, padding: 0.2 })).toBeCloseTo(12)
+    expect(fitPoints(cornersOf(plan), [0, 1, 0], { aspect: 2 }).size).toBeCloseTo(10)
+    expect(fitPoints(cornersOf(plan), [0, 1, 0], { aspect: 1 }).size).toBeCloseTo(20)
+    expect(fitPoints(cornersOf(plan), [0, 1, 0], { aspect: 2, padding: 0.2 }).size).toBeCloseTo(12)
   })
 })
 

@@ -3,7 +3,7 @@
 
 import { Geometry } from './Geometry.js'
 import { area, triangulate } from './triangulate.js'
-import { checkNumber, checkOneOf, checkOptions, describe, fail } from '../validate.js'
+import { checkCount as count, checkLength as size, checkOneOf, describe, fail, resolveOptions as resolve } from '../validate.js'
 
 const TAU = Math.PI * 2
 
@@ -748,48 +748,6 @@ const TURNS = {
  */
 function axisOf(owner, value, fallback) {
   return value === undefined ? fallback : checkOneOf(owner, 'axis', /** @type {Axis} */ (value), ['x', 'y', 'z'])
-}
-
-/**
- * Check an options object, turning a plain number into options first where the shape allows it.
- * @param {string} owner @param {unknown} options @param {string[]} keys
- * @param {((n: number) => object) | null} fromNumber @param {Record<string, string>} [hints]
- * @returns {Record<string, any>}
- */
-function resolve(owner, options, keys, fromNumber, hints) {
-  const o = /** @type {object} */ (typeof options === 'number' && fromNumber ? fromNumber(options) : options)
-  checkOptions(owner, o, keys, hints)
-  return o ?? {}
-}
-
-/**
- * A length: a finite number above 0 (or 0 itself when `zero`), or the default when missing.
- * @param {string} owner @param {string} name @param {unknown} value @param {number} fallback
- * @param {boolean} [zero]
- * @returns {number}
- */
-function size(owner, name, value, fallback, zero = false) {
-  if (value === undefined) return fallback
-  const v = checkNumber(owner, name, value)
-  if (!Number.isFinite(v) || v < 0 || (v === 0 && !zero)) {
-    fail(owner, `'${name}' must be ${zero ? '0 or more' : 'more than 0'}, got ${v}`)
-  }
-  return v
-}
-
-/**
- * A whole number of segments in [min, max], or the default when missing.
- * @param {string} owner @param {string} name @param {unknown} value @param {number} fallback
- * @param {number} [min] @param {number} [max]
- * @returns {number}
- */
-function count(owner, name, value, fallback, min = 1, max = Infinity) {
-  if (value === undefined) return fallback
-  if (!Number.isInteger(value) || /** @type {number} */ (value) < min || /** @type {number} */ (value) > max) {
-    const range = max === Infinity ? `${min} or more` : `from ${min} to ${max}`
-    fail(owner, `'${name}' must be a whole number ${range}, got ${describe(value)}`)
-  }
-  return /** @type {number} */ (value)
 }
 
 /**

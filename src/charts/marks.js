@@ -5,6 +5,7 @@ import { Geometry } from '../geometry/Geometry.js'
 import { box as boxGeometry, icosphere } from '../geometry/generators.js'
 import { InstancedMesh, Lines, Mesh, Points } from '../scene/drawables.js'
 import { fail } from '../validate.js'
+import { distinct } from './scales.js'
 
 /**
  * Where a row stacks: on the others at its x and in its depth series, negatives down from zero on
@@ -297,7 +298,7 @@ export function surfaceMark(ctx) {
     nodes: [mesh],
     layout(rows) {
       const { x, y, z } = ctx.scales, ch = ctx.spec.channels
-      const xs = unique(rows.map((r) => ch.x.get(r))), zs = unique(rows.map((r) => ch.z.get(r)))
+      const xs = distinct(rows.map((r) => ch.x.get(r))), zs = distinct(rows.map((r) => ch.z.get(r)))
       const grid = new Map(rows.map((r) => [`${+ch.x.get(r)}|${+ch.z.get(r)}|${ch.x.get(r)}|${ch.z.get(r)}`, r]))
       const cell = (a, b) => grid.get(`${+a}|${+b}|${a}|${b}`)
       const missing = xs.length * zs.length - grid.size
@@ -336,10 +337,3 @@ export function surfaceMark(ctx) {
   }
 }
 
-/** Distinct values in order: numbers and dates ascending, anything else as first seen. @param {any[]} values */
-function unique(values) {
-  const seen = new Map()
-  for (const v of values) seen.set(v instanceof Date ? v.getTime() : v, v)
-  const list = [...seen.values()]
-  return typeof list[0] === 'number' || list[0] instanceof Date ? list.sort((a, b) => +a - +b) : list
-}

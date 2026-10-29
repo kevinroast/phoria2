@@ -5,7 +5,7 @@
 import { Geometry } from './Geometry.js'
 import { Vec3 } from '../value/Vec3.js'
 import { setAxisAngle } from '../math/quat.js'
-import { checkNumber, checkOneOf, checkOptions, describe, fail } from '../validate.js'
+import { checkCount, checkNumber, checkOneOf, checkOptions, describe, fail } from '../validate.js'
 
 /** @import { Vec3Input } from '../types.js' */
 
@@ -113,7 +113,7 @@ export class Curve {
    * @param {number} count @returns {Vec3[]}
    */
   points(count) {
-    const n = Math.max(2, Math.round(checkNumber('curve.points()', 'count', count)))
+    const n = checkCount('curve.points()', 'count', count ?? null, 2, 2)
     // a closed curve's last point would repeat its first
     const last = this.#closed ? n : n - 1
     return Array.from({ length: n }, (_, i) => this.at(i / last))
@@ -160,7 +160,7 @@ export class Curve {
   tube(options = {}) {
     checkOptions('curve.tube()', options, TUBE_OPTIONS, TUBE_HINTS)
     const radius = options.radius === undefined ? 0.1 : checkNumber('curve.tube()', 'radius', options.radius)
-    const sides = options.sides === undefined ? 8 : Math.max(3, Math.round(checkNumber('curve.tube()', 'sides', options.sides)))
+    const sides = checkCount('curve.tube()', 'sides', options.sides, 8, 3)
     const segments = this.#segments('curve.tube()', options.segments)
     const rings = this.#closed ? segments : segments + 1
     /** @type {number[]} */
@@ -199,7 +199,7 @@ export class Curve {
 
   /** @param {string} owner @param {number | undefined} segments */
   #segments(owner, segments) {
-    if (segments !== undefined) return Math.max(1, Math.round(checkNumber(owner, 'segments', segments)))
+    if (segments !== undefined) return checkCount(owner, 'segments', segments, 1)
     return Math.min(400, Math.max(8, Math.round(this.length * 20)))
   }
 

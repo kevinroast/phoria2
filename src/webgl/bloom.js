@@ -97,7 +97,6 @@ const LEVELS = 6
 
 export class Bloom {
   /** @type {Target | null} */ #target = null
-  /** @type {WebGLVertexArrayObject | null} */ #empty = null
   #float = false
 
   /** @param {WebGL2RenderingContext} gl @param {Programs} programs */
@@ -110,7 +109,6 @@ export class Bloom {
   /** Forget every GL object - after a lost context, when they are already gone. */
   reset() {
     this.#target = null
-    this.#empty = null
     // half floats keep the glow smooth as the levels are added up; 8 bits if they can't be drawn to
     this.#float = !!this.gl.getExtension('EXT_color_buffer_float')
   }
@@ -151,7 +149,6 @@ export class Bloom {
     gl.disable(gl.CULL_FACE)
     gl.disable(gl.BLEND)
     gl.depthMask(false)
-    gl.bindVertexArray(this.#emptyArray())
 
     // down: each level half the one before, the first keeping only what is bright
     const down = this.programs.ready('bloom-down', [], DOWN)
@@ -163,7 +160,7 @@ export class Bloom {
       down.set('uSource', source)
       down.set('uTexel', [1 / sw, 1 / sh])
       down.set('uThreshold', i === 0 ? Math.max(0, settings.threshold) : -1)
-      gl.drawArrays(gl.TRIANGLES, 0, 3)
+      this.programs.drawFullscreen()
       source = level.texture
       sw = level.width
       sh = level.height
@@ -182,7 +179,7 @@ export class Bloom {
       up.set('uSource', from.texture)
       up.set('uTexel', [1 / from.width, 1 / from.height])
       up.set('uWeight', weight)
-      gl.drawArrays(gl.TRIANGLES, 0, 3)
+      this.programs.drawFullscreen()
     }
     gl.disable(gl.BLEND)
 
@@ -194,7 +191,7 @@ export class Bloom {
     composite.set('uScene', target.picture)
     composite.set('uBloom', levels[0].texture)
     composite.set('uStrength', Math.max(0, settings.strength))
-    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    this.programs.drawFullscreen()
 
     gl.depthMask(true)
     gl.enable(gl.DEPTH_TEST)
@@ -262,9 +259,4 @@ export class Bloom {
     }
   }
 
-  // full-screen passes have no attributes, but still want a vertex array of their own
-  #emptyArray() {
-    if (!this.#empty) this.#empty = this.gl.createVertexArray()
-    return this.#empty
-  }
 }

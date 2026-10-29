@@ -176,13 +176,19 @@ const ENV_LEVELS = 6
  * @property {number} version
  */
 
+/**
+ * A shadow ready for the lit shader, the same shape for every kind: the define that turns its code
+ * on, the uniforms it reads once a frame, and the depth texture it samples. A new kind of shadow is
+ * a pass that returns one of these.
+ * @typedef {{ define: string, uniforms: Record<string, unknown>, sampler: string, texture: WebGLTexture }} ShadowMap
+ */
+
 export class Passes {
   /** @type {WeakMap<Texture, Environment>} */ #environments = new WeakMap()
   /** @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #shadow = null
   /** Spot lights' shadows, a tile each. @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #spotShadow = null
   /** A point light's shadow: a depth cube, a framebuffer a face. @type {{ texture: WebGLTexture, framebuffers: WebGLFramebuffer[] } | null} */ #pointShadow = null
   /** Outlines' mask and its widened copy. @type {{ width: number, height: number, mask: { texture: WebGLTexture, framebuffer: WebGLFramebuffer }, wide: { texture: WebGLTexture, framebuffer: WebGLFramebuffer } } | null} */ #outline = null
-  /** @type {WebGLVertexArrayObject | null} */ #empty = null
   /** Rendering to float textures, which environments need. */
   floatTargets = false
 
@@ -201,7 +207,6 @@ export class Passes {
     this.#spotShadow = null
     this.#pointShadow = null
     this.#outline = null
-    this.#empty = null
     this.floatTargets = !!this.gl.getExtension('EXT_color_buffer_float')
   }
 
@@ -245,14 +250,13 @@ export class Passes {
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.BLEND)
     gl.disable(gl.CULL_FACE)
-    gl.bindVertexArray(this.#emptyArray())
     for (let level = 0; level < ENV_LEVELS; level++) {
       const w = ENV_WIDTH >> level
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, prefiltered, level)
       gl.viewport(0, 0, w, w / 2)
       program.set('uRoughness', level / (ENV_LEVELS - 1))
       program.set('uCopyLod', Math.max(0, Math.log2(image.width / w)))
-      gl.drawArrays(gl.TRIANGLES, 0, 3)
+      this.programs.drawFullscreen()
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     gl.deleteFramebuffer(framebuffer)
@@ -295,17 +299,15 @@ export class Passes {
     gl.disable(gl.BLEND)
     gl.disable(gl.CULL_FACE)
     gl.depthMask(false)
-    gl.bindVertexArray(this.#emptyArray())
-    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    this.programs.drawFullscreen()
     gl.depthMask(true)
     gl.enable(gl.DEPTH_TEST)
   }
 
   /**
-   * Draw the shadow casters' depth from the light. Returns the texture and the matrix from world
-   * space to its coordinates.
+   * Draw the shadow casters' depth from the light, for the matrix from world space to its texture.
    * @param {ShadowFrame} shadow
-   * @returns {{ texture: WebGLTexture, matrix: Float32Array }}
+   * @returns {ShadowMap}
    */
   shadowMap(shadow) {
     const gl = this.gl
@@ -317,14 +319,22 @@ export class Passes {
     this.#endDepth()
     // clip space to [0, 1] texture coordinates and depth
     const toTexture = new Float32Array([0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 0.5, 0, 0.5, 0.5, 0.5, 1])
-    return { texture: this.#shadow.texture, matrix: mat4.multiply(new Float32Array(16), toTexture, shadow.viewProjection) }
+    return {
+      define: 'SHADOW', sampler: 'uShadowMap', texture: this.#shadow.texture,
+      uniforms: {
+        uShadowMatrix: mat4.multiply(new Float32Array(16), toTexture, shadow.viewProjection),
+        uShadowTexel: 1 / SHADOW_MAP_SIZE,
+        // pushed out along the normal by a texel and a half
+        uShadowBias: shadow.texelSize * 1.5,
+      },
+    }
   }
 
   /**
    * Draw spot lights' shadow casters' depth, each into its tile of one map. Returns the map, each
    * light's matrix from world space to its tile's coordinates, and each tile's bounds.
    * @param {SpotShadowFrame[]} spots
-   * @returns {{ texture: WebGLTexture, matrices: Float32Array, tiles: Float32Array, bias: Float32Array, texel: number }}
+   * @returns {ShadowMap}
    */
   spotShadowMaps(spots) {
     const gl = this.gl
@@ -345,13 +355,16 @@ export class Passes {
       bias[spot.tile] = spot.texelAngle * 1.5
     }
     this.#endDepth()
-    return { texture: this.#spotShadow.texture, matrices, tiles, bias, texel: 1 / SPOT_ATLAS_SIZE }
+    return {
+      define: 'SPOT_SHADOWS', sampler: 'uSpotShadowMap', texture: this.#spotShadow.texture,
+      uniforms: { uSpotShadowMatrix: matrices, uSpotShadowTile: tiles, uSpotShadowBias: bias, uSpotShadowTexel: 1 / SPOT_ATLAS_SIZE },
+    }
   }
 
   /**
    * Draw a point light's shadow casters' depth into the six faces of a cube round it.
    * @param {PointShadowFrame} point
-   * @returns {{ texture: WebGLTexture, nearFar: number[], texel: number }}
+   * @returns {ShadowMap}
    */
   pointShadowMap(point) {
     const gl = this.gl
@@ -363,7 +376,10 @@ export class Passes {
       this.#drawDepth(face.casters, face.viewProjection)
     })
     this.#endDepth()
-    return { texture: this.#pointShadow.texture, nearFar: [point.near, point.far], texel: point.texelAngle }
+    return {
+      define: 'POINT_SHADOW', sampler: 'uPointShadowMap', texture: this.#pointShadow.texture,
+      uniforms: { uPointShadowNearFar: [point.near, point.far], uPointShadowTexel: point.texelAngle, uPointShadowBias: point.texelAngle * 1.5 },
+    }
   }
 
   #beginDepth() {
@@ -410,12 +426,7 @@ export class Passes {
         if (map) program.set('uMap', this.resources.texture(map))
         if (triplanar) program.set('uTriplanar', material.triplanar)
       }
-      const buffers = this.resources.mesh(item.geometry, instances, true)
-      gl.bindVertexArray(buffers.vao)
-      const elements = item.geometry.drawnCount - item.geometry.drawnCount % 3
-      const count = instances ? instances.count : 1
-      if (buffers.indexType) gl.drawElementsInstanced(gl.TRIANGLES, elements, buffers.indexType, 0, count)
-      else gl.drawArraysInstanced(gl.TRIANGLES, 0, elements, count)
+      this.resources.drawTriangles(item.geometry, instances)
     }
   }
 
@@ -452,12 +463,7 @@ export class Passes {
         program.set('uModel', item.worldMatrix)
         program.set('uMask', [outline.color[0], outline.color[1], outline.color[2], px / OUTLINE_MAX])
         if (item.clip) program.set('uClipPlane', item.clip.plane)
-        const buffers = this.resources.mesh(item.geometry, item.instances, true)
-        gl.bindVertexArray(buffers.vao)
-        const elements = item.geometry.drawnCount - item.geometry.drawnCount % 3
-        const count = item.instances ? item.instances.count : 1
-        if (buffers.indexType) gl.drawElementsInstanced(gl.TRIANGLES, elements, buffers.indexType, 0, count)
-        else gl.drawArraysInstanced(gl.TRIANGLES, 0, elements, count)
+        this.resources.drawTriangles(item.geometry, item.instances)
       }
     }
     // widened sideways
@@ -468,8 +474,7 @@ export class Passes {
     widen.set('uSource', targets.mask.texture)
     widen.set('uStep', [1 / width, 0])
     widen.set('uRadius', radius)
-    gl.bindVertexArray(this.#emptyArray())
-    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    this.programs.drawFullscreen()
     gl.depthMask(true)
     gl.enable(gl.DEPTH_TEST)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
@@ -495,8 +500,7 @@ export class Passes {
     gl.depthMask(false)
     gl.enable(gl.BLEND)
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
-    gl.bindVertexArray(this.#emptyArray())
-    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    this.programs.drawFullscreen()
     gl.depthMask(true)
     gl.enable(gl.DEPTH_TEST)
   }
@@ -596,9 +600,4 @@ export class Passes {
     return texture
   }
 
-  // full-screen passes have no attributes, but still want a vertex array of their own
-  #emptyArray() {
-    if (!this.#empty) this.#empty = this.gl.createVertexArray()
-    return this.#empty
-  }
 }
