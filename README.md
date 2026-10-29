@@ -9,6 +9,10 @@ business apps: charts, labelled scenes, diagrams, dashboards and product viewers
   HDR environments, GPU picking) load only when used.
 - **Idle when nothing changes**: a view draws only when something in it changed, so a dashboard of
   many views only updates when needed.
+- **Any number of views on a page**: browsers allow about 16 WebGL contexts per page, so most
+  libraries need one big canvas and scissoring for a dashboard of tiles. phoria2 gives the first four
+  views their own context and draws the rest with one shared context, each still an ordinary canvas
+  in your layout. The chart lab demo runs over 100 live chart views.
 - **Tells you what to write**: every option is checked, and a mistake throws an error that names
   the fix - pass `colour` and you get `Material: use 'color'`. Written to be easy for coding
   agents too.

@@ -2,8 +2,8 @@
 
 > Small 3D for the web, for business apps: 3D charts from a data spec, labelled diagrams and floor
 > plans, cutaway explainers, animated infographics, dashboards, editors and glTF product viewers.
-> WebGL 2, plain ES modules, no dependencies; picking, tooltips, labels, shadows and idle-when-still
-> rendering built in. `npm install phoria2`.
+> WebGL 2, plain ES modules, no dependencies; picking, tooltips, labels, shadows, idle-when-still
+> rendering and any number of views on one page built in. `npm install phoria2`.
 
 Apps are short - typically a few dozen lines - and every option is checked: unknown or misspelt
 options throw errors that name the fix. `await view.explain()` reports what a view is drawing and

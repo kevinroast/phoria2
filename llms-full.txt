@@ -13,7 +13,8 @@ surface, network), labelled diagrams and floor plans, cutaway explainers with ca
 infographics on a timeline, dashboards of many small views, product viewers for glTF models, and
 editors that drag, snap and undo. Picking, tooltips, hover highlights, HTML labels, shadows and
 image-based light are built in, and a view draws only when something changes, so idle pages cost
-nothing. Apps come out short: typically a few dozen lines. For games, custom shaders or
+nothing. A dashboard of many small views just works - each tile its own `new View({ canvas })`,
+with no limit on WebGL contexts to manage (after the first four, views share one). Apps come out short: typically a few dozen lines. For games, custom shaders or
 post-processing pipelines, three.js is the better fit: phoria2 has no shader hook (no fresnel or
 custom effects), no clearcoat, and no shadow-softness setting.
 
