@@ -1,0 +1,9 @@
+# Caching for the demos site on an Apache-style host (LiteSpeed reads these too).
+# Pages: browsers always ask whether there's a newer one - a quick "not modified" when there isn't -
+# so a deploy shows at once, and a page never points at build files that have gone. The build files
+# themselves are kept a year (assets/.htaccess).
+<IfModule mod_headers.c>
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>

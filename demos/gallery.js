@@ -18,6 +18,10 @@ install.addEventListener('click', async () => {
   setTimeout(() => { note.textContent = 'copy' }, 1500)
 })
 
+// each demo's picture, made by npm run thumbs. Imported, so a build names each file by its content:
+// a new picture gets a new name, and browsers fetch it rather than showing a cached old one
+const THUMBS = /** @type {Record<string, string>} */ (import.meta.glob('./thumbs/*.webp', { eager: true, query: '?url', import: 'default' }))
+
 // one heading and grid of links per section
 const sections = /** @type {HTMLElement} */ (document.getElementById('demo-sections'))
 /** @type {HTMLUListElement | null} */
@@ -33,9 +37,9 @@ for (const { section, name, title, hidden } of DEMOS) {
     sections.append(heading, list)
   }
   const li = document.createElement('li')
-  // the picture is made by npm run thumbs; a card without one just has no picture
-  li.innerHTML = `<a href="demo.html?name=${name}"><img class="thumb" src="thumbs/${name}.webp" alt="" width="480" height="300" loading="lazy"><span class="name">${name}</span><span class="title">${title}</span></a>`
-  li.querySelector('img')?.addEventListener('error', (e) => /** @type {HTMLElement} */ (e.target).remove())
+  // a card without a picture just has none
+  const thumb = THUMBS[`./thumbs/${name}.webp`]
+  li.innerHTML = `<a href="demo.html?name=${name}">${thumb ? `<img class="thumb" src="${thumb}" alt="" width="480" height="300" loading="lazy">` : ''}<span class="name">${name}</span><span class="title">${title}</span></a>`
   list.append(li)
 }
 

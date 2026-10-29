@@ -12,6 +12,17 @@ const demo = DEMOS.find((d) => d.name === name)
 const load = modules[`./${name}.js`]
 
 const info = document.getElementById('info')
+
+// back to the gallery where the visitor left it: when they came from it, step back in history so the
+// browser restores their place; opened directly or in a new tab, the link loads the gallery
+document.querySelector('.back')?.addEventListener('click', (e) => {
+  const from = document.referrer ? new URL(document.referrer) : null
+  const gallery = new URL('./', location.href).pathname
+  if (from?.origin === location.origin && from.pathname.replace(/index\.html$/, '') === gallery && history.length > 1) {
+    e.preventDefault()
+    history.back()
+  }
+})
 if (!demo || !load) {
   info.textContent = `Unknown demo '${name}'`
 } else {

@@ -1,5 +1,5 @@
 // npm run thumbs: open each demo in headless Chrome (the one installed - nothing is downloaded), let
-// it run a few seconds, and save a small picture of it to public/thumbs/<name>.webp for the
+// it run a few seconds, and save a small picture of it to demos/thumbs/<name>.webp for the
 // gallery's cards. The picture is the demo's view.toImage() - the canvas with its labels painted in -
 // except for demos made of several views, which are captured from the page with its panels hidden.
 // Run it after changing how a demo looks; `npm run thumbs -- space galaxy` redoes only those. Set
@@ -76,7 +76,7 @@ if (!chrome) {
 }
 const asked = process.argv.slice(2)
 const names = DEMOS.map((d) => d.name).filter((n) => !asked.length || asked.includes(n))
-const out = join(root, 'public', 'thumbs')
+const out = join(root, 'demos', 'thumbs')
 mkdirSync(out, { recursive: true })
 
 const server = await createServer({ root, configFile: join(root, 'vite.config.js'), logLevel: 'error', server: { port: 0 } })
