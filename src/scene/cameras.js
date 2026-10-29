@@ -4,7 +4,7 @@ import * as quat from '../math/quat.js'
 import { Mat4 } from '../value/Mat4.js'
 import { Vec3 } from '../value/Vec3.js'
 import { checkNumber, fail } from '../validate.js'
-import { NODE_OPTIONS, Node, inParentSpace } from './Node.js'
+import { NODE_OPTIONS, Node, inParentSpace, setPoint } from './Node.js'
 
 /** @import { NodeOptions } from './Node.js' */
 /** @import { Vec3Input } from '../types.js' */
@@ -45,12 +45,7 @@ export class Camera extends Node {
   far = 1000
   /** Width / height - set by the View to match the canvas. */
   aspect = 1
-  /**
-   * When set, the camera turns to face it every frame. In the same space as `position` (world
-   * space for a camera that isn't parented). Orbit controls use it as their pivot.
-   * @type {Vec3 | null}
-   */
-  target = null
+  /** @type {Vec3 | null} */ #target = null
 
   /** @param {CameraOptions & { aspect?: number }} [options] */
   constructor(options = {}) {
@@ -62,6 +57,16 @@ export class Camera extends Node {
     if (!(this.near > 0) || !(this.far > this.near)) fail(owner, `needs 0 < near < far, got near ${this.near} and far ${this.far}`)
     if (options.target !== undefined) this.target = Vec3.fromInput(options.target, owner)
   }
+
+  /**
+   * When set, the camera turns to face it every frame. In the same space as `position` (world
+   * space for a camera that isn't parented). Orbit controls use it as their pivot. Assigning copies
+   * the point in: camera.target = [0, 1, 0]; null lets the camera turn freely.
+   * @returns {Vec3 | null}
+   */
+  get target() { return this.#target }
+  /** @param {import('../types.js').Vec3Input | null} v */
+  set target(v) { this.#target = setPoint(this.#target, v, this.constructor.name) }
 
   updateMatrix() {
     if (this.target) aimAt(this, this.target)

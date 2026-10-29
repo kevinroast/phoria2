@@ -120,7 +120,7 @@ const lightRows = () => ({
   intensity: { value: 2, read: (l) => l.intensity, default: 1, bad: -1, error: 'intensity' },
 })
 const aimRows = () => ({
-  direction: { value: [0, -2, 0], read: (l) => rounded(l.direction), expect: [0, -1, 0], bad: [0, 0, 0], error: "can't be [0, 0, 0]" },
+  direction: { value: [-2, 0, 0], read: (l) => rounded(l.direction), expect: [-1, 0, 0], bad: [0, 0, 0], error: "can't be [0, 0, 0]" },
   target: { value: [1, 2, 3], read: (l) => l.target?.toArray() ?? null, default: null, bad: 'up', error: "'up'" },
 })
 nodeContract(AmbientLight, (o) => new AmbientLight(o), lightRows())

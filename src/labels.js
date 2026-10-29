@@ -16,7 +16,14 @@ import { alignColumns, layoutLabels, leaderEnd, placeBox, stackColumns } from '.
  * @property {number} offscreen behind the camera or outside the view
  */
 
-/** @typedef {{ el: HTMLDivElement, text: string, className: string, width: number, height: number, showing: boolean, leader: SVGGElement | null, color: string, rule: number }} Entry */
+/** @typedef {{ el: HTMLDivElement, text: string, className: string, width: number, height: number, showing: boolean, leader: SVGGElement | null, color: string, rule: number, label: FrameLabel | null, interactive: boolean }} Entry */
+
+/**
+ * What the layer asks of its view: whether a label answers the pointer, and what to do when it does.
+ * @typedef {object} LabelPointer
+ * @property {(label: FrameLabel) => boolean} interactive
+ * @property {(type: 'click' | 'over' | 'out', label: FrameLabel, event: MouseEvent | null) => void} on
+ */
 
 /**
  * A leader line as drawn, in CSS pixels over the canvas - for image export.
@@ -37,10 +44,13 @@ export class LabelLayer {
   leaders = []
   /** The lines from labels' points to callouts, under the labels. @type {SVGSVGElement | null} */ #lines = null
   /** Node overlays mounted in the layer. @type {Set<HTMLElement>} */ #overlays = new Set()
+  /** @type {WeakMap<Element, Entry>} */ #byElement = new WeakMap()
+  /** The label under the pointer, when it answers the pointer. @type {Entry | null} */ #over = null
 
-  /** @param {HTMLCanvasElement} canvas */
-  constructor(canvas) {
+  /** @param {HTMLCanvasElement} canvas @param {LabelPointer} [pointer] */
+  constructor(canvas, pointer) {
     this.canvas = canvas
+    this.pointer = pointer
   }
 
   /** The layer over the canvas: labels, and overlays such as legends. Made on first use. @returns {HTMLDivElement} */
@@ -78,6 +88,7 @@ export class LabelLayer {
     }
     for (const [key, entry] of this.#elements) {
       if (seen.has(key)) continue
+      this.#leave(entry)
       entry.el.remove()
       entry.leader?.remove()
       this.#elements.delete(key)
@@ -115,6 +126,18 @@ export class LabelLayer {
         return
       }
       hidden.delete(entry)
+      // a label of something with click or hover handlers is part of it: it takes the pointer
+      entry.label = label
+      const interactive = !!this.pointer?.interactive(label)
+      if (interactive !== entry.interactive) {
+        entry.interactive = interactive
+        entry.el.style.pointerEvents = interactive ? 'auto' : ''
+        if (interactive) entry.el.dataset.interactive = ''
+        else {
+          delete entry.el.dataset.interactive
+          this.#leave(entry)
+        }
+      }
       if (state === 'dim') stats.dimmed++
       else stats.shown++
       this.shown.push(entry.el)
@@ -139,6 +162,7 @@ export class LabelLayer {
       }
     })
     for (const entry of hidden) {
+      this.#leave(entry)
       entry.el.style.display = 'none'
       if (entry.leader) entry.leader.style.display = 'none'
     }
@@ -216,7 +240,15 @@ export class LabelLayer {
     return svg
   }
 
+  /** The pointer is no longer on this label - it went, or stopped answering. @param {Entry} entry */
+  #leave(entry) {
+    if (this.#over !== entry) return
+    this.#over = null
+    if (entry.label) this.pointer?.on('out', entry.label, null)
+  }
+
   dispose() {
+    this.#over = null
     for (const el of this.#overlays) el.remove()
     this.#overlays.clear()
     this.#root?.remove()
@@ -235,8 +267,9 @@ export class LabelLayer {
       // opacity eases, so dimming and brightening don't flash
       Object.assign(el.style, { position: 'absolute', left: '0', top: '0', willChange: 'transform', transition: 'opacity 0.15s' })
       root.append(el)
-      entry = { el, text: '', className: '', width: -1, height: -1, showing: false, leader: null, color: '', rule: 0 }
+      entry = { el, text: '', className: '', width: -1, height: -1, showing: false, leader: null, color: '', rule: 0, label: null, interactive: false }
       this.#elements.set(label.key, entry)
+      this.#byElement.set(el, entry)
     }
     const className = `phoria-label${label.style.className ? ` ${label.style.className}` : ''}`
     if (entry.text !== label.text || entry.className !== className) {
@@ -255,7 +288,7 @@ export class LabelLayer {
     if (!document.getElementById('phoria-labels-style')) {
       const style = document.createElement('style')
       style.id = 'phoria-labels-style'
-      style.textContent = ':where(.phoria-label) { white-space: nowrap }'
+      style.textContent = ':where(.phoria-label) { white-space: nowrap } :where(.phoria-label[data-interactive]) { cursor: pointer }'
       document.head.prepend(style)
     }
     const root = document.createElement('div')
@@ -266,8 +299,32 @@ export class LabelLayer {
     // even while the view is idle and not redrawing
     this.canvas.after(root)
     this.#root = root
+    this.#listen(root)
     this.#place(root)
     return root
+  }
+
+  /** Pass clicks and hovers on labels that answer the pointer to the view. @param {HTMLDivElement} root */
+  #listen(root) {
+    /** @param {Event} e */
+    const entryOf = (e) => {
+      const entry = this.#byElement.get(/** @type {Element} */ (e.target))
+      return entry?.interactive && entry.label ? entry : null
+    }
+    root.addEventListener('click', (e) => {
+      const entry = entryOf(e)
+      if (entry?.label) this.pointer?.on('click', entry.label, e)
+    })
+    root.addEventListener('pointerover', (e) => {
+      const entry = entryOf(e)
+      if (!entry?.label || entry === this.#over) return
+      this.#over = entry
+      this.pointer?.on('over', entry.label, e)
+    })
+    root.addEventListener('pointerout', (e) => {
+      const entry = entryOf(e)
+      if (entry && entry === this.#over) this.#leave(entry)
+    })
   }
 
   // cover the canvas: same offset parent, so the same offsets; fixed if the canvas is

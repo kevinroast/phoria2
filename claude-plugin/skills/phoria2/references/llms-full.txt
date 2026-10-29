@@ -14,7 +14,8 @@ infographics on a timeline, dashboards of many small views, product viewers for 
 editors that drag, snap and undo. Picking, tooltips, hover highlights, HTML labels, shadows and
 image-based light are built in, and a view draws only when something changes, so idle pages cost
 nothing. Apps come out short: typically a few dozen lines. For games, custom shaders or
-post-processing pipelines, three.js is the better fit.
+post-processing pipelines, three.js is the better fit: phoria2 has no shader hook (no fresnel or
+custom effects), no clearcoat, and no shadow-softness setting.
 
 ## Install
 
@@ -46,6 +47,10 @@ copy of the core):
 The other sub-paths follow the same pattern: `dist/gltf.js`, `dist/motion.js`, `dist/particles.js`,
 `dist/edit.js`. TypeScript types ship with the package.
 
+When this page doesn't settle something, read the source with its comments in
+`node_modules/phoria2/src` (`src/View.js`, `src/scene/`, `src/geometry/`, `src/charts/`...), not the
+minified `dist/` files.
+
 ## Conventions
 
 - **Coordinates**: right-handed, **+Y up**, +Z towards the viewer, units are metres.
@@ -56,6 +61,10 @@ The other sub-paths follow the same pattern: `dist/gltf.js`, `dist/motion.js`, `
 - **Colours**: `'#ff8800'`, `'#f80'`, `0xff8800`, CSS names (`'orange'`), `'rgb(255 136 0)'`, or
   `[r, g, b]` 0-1. Inputs are sRGB.
 - **Time** is seconds. Handlers get what they act on as an argument (arrow functions are fine).
+- **The orbit**: `view.controls.spherical` is `{ yaw, pitch, distance }` about `camera.target` - yaw 0
+  looks from +Z (the front), `Math.PI / 2` from +X (the right); pitch is above the horizon. Setting it
+  moves the camera, within the limits. Move the camera or its target yourself at any time - the orbit
+  turns about wherever they are; `camera.target = [x, y, z]` copies the point in.
 - **One options object per constructor.** Unknown option names throw an error that says what to use
   instead - read it, it usually names the fix.
 
@@ -88,7 +97,7 @@ const view = new View({ canvas: '#c', orbit: true })
 |---|---|---|
 | `canvas` | a new full-window canvas | element or CSS selector |
 | `camera` | `'perspective'`: a three-quarter view from the front right and above, fitted to the scene on the first frame | a preset - `'perspective'`, `'isometric'`, `'top'`, `'front'`, `'side'` (fitted to the scene on the first frame, unless you place or frame the camera first) - camera options (`{ position, target, fov }`), or a camera |
-| `orbit` | `false` | `true`, or options: `{ autoRotate, inertia, minDistance, maxDistance, minPitch, maxPitch, pan, zoom, mode }`. `autoRotate`: `true` (a slow turn) or radians per second; it pauses while the user drags. `mode`: `'orbit'` (the default) or `'map'` - drags pan and the view never turns, for plans. Left-drag orbits, right-drag pans, wheel zooms |
+| `orbit` | `false` | `true`, or options: `{ autoRotate, inertia, minDistance, maxDistance, minPitch, maxPitch, pan, zoom, mode }`. `autoRotate`: `true` (a slow turn) or radians per second; it pauses while the user drags. `mode`: `'orbit'` (the default) or `'map'` - drags pan and the view never turns, for plans. `minDistance`/`maxDistance` limit zooming: the distance to the target, or for an orthographic camera the height of the view. Left-drag orbits, right-drag pans, wheel zooms |
 | `background` | transparent | a colour |
 | `highlight` | none | a colour mixed into whatever is under the pointer |
 | `tooltip` | none | `(hit) => content` - see Interaction |
@@ -107,12 +116,16 @@ Methods:
 
 - `start(fn?)` - `fn(dt, t)` every frame. Time and node update handlers run anyway; you only need
   `start` for your own per-frame code.
-- `frame(node?, { padding })` - move the camera so a node (default: the whole scene) fills the view,
-  keeping the viewing direction - centred across, and a little below the middle so it stands
-  rather than hangs. It fits what the camera draws - not hidden nodes, nor a
+- `frame(node?, { padding, direction, duration })` - move the camera so a node (default: the whole
+  scene) fills the view, keeping the viewing direction - centred across, and a little below the
+  middle so it stands rather than hangs. It fits what the camera draws - not hidden nodes, nor a
   chart's axis labels for the edges it isn't showing - so a chart fills the view. `padding` is the
   margin around it as a fraction of its size: `0` is a tight fit, `0.2` (the default) leaves a
-  fifth, `0.5` half.
+  fifth, `0.5` half. `direction` looks from a preset's direction (`'perspective'`, `'top'`,
+  `'front'`, `'side'`, `'isometric'` - the camera stays the kind it is) or a vector from the
+  target towards the camera; `duration` (seconds) glides there - a press or the wheel stops it.
+  A Reset button is `view.frame(undefined, { direction: 'perspective', duration: 0.6 })`; a guided
+  tour flies from one node to the next with `view.frame(node, { duration: 1 })`.
 - `on('click' | 'hover', (hit, event) => ...)` - see Interaction. Returns an unsubscribe function.
 - `tooltip(fn)` - set the tooltip function later.
 - `pick(x, y)` / `pick(event)` - the hit under a canvas position; `pickAll` for every hit.
@@ -168,7 +181,8 @@ lying on the plane - parts that touch join cleanly, and what is inside them stay
 they show their hollow insides. Caps need closed solids: keep open surfaces (planes, open tubes) out
 of a capped clip. The nearest clip above a mesh is the one that cuts it. Move the cut
 by changing it in place: `engine.clip.offset = 0.5`. Cut-away parts cast no shadow and can't be
-picked; points and lines aren't cut.
+picked; points and lines aren't cut. A clip is one plane: there is no cutting out an octant or a
+wedge - build the cut-open shape itself for that.
 
 ```js
 const block = view.scene.add(new Group({ clip: { normal: [0, 0, 1], offset: 0, cap: '#c0392b' } }))
@@ -216,6 +230,11 @@ a label does when covered), `occlude` (true: counts as covered when geometry is 
 `'right'`: set the label at that edge of the view, level with its point - callouts in a column, with
 `leader: true`; `offset` then moves it in and up or down).
 
+A label answers the pointer when it has handlers: a Label with its own `onClick` or `onHover` is
+clicked and hovered like a mesh (`new Label({ text: 'Mantle', onClick: () => show('mantle') })` - a
+callout that opens its layer), and a label of an instance or point is part of it - clicking it is
+clicking that bar, with the same hit. Other labels let the pointer through to the scene.
+
 **Labels per instance or point**, without a Label node each:
 
 ```js
@@ -231,16 +250,16 @@ Generators return a `Geometry`; each takes one options object (a number is the m
 | `box(size \| { width, height, depth })` | centred on the origin |
 | `sphere({ radius, segments, rings })` | |
 | `plane(size \| { width, depth })` | in the x-z plane, facing up (+Y) |
-| `cylinder({ radius, radiusTop, height, segments })` | along Y, centred; `radiusTop: 0` is a cone |
+| `cylinder({ radius, radiusTop, height, segments })` | along Y, centred; `radiusTop: 0` is a cone, its tip at the + end of the axis (up) |
 | `torus({ radius, tube })`, `icosphere({ radius, detail })` | |
-| `lathe({ points, segments, axis })` | a profile of `[radius, y]` pairs, bottom up, turned about Y - pistons, bottles, bolts |
+| `lathe({ points, segments, axis })` | a profile of `[radius, y]` pairs, bottom up, turned about Y - pistons, bottles, bolts (listed top down, it faces inward) |
 | `extrude({ shape, holes, depth, axis })` | an outline of `[x, y]` pairs (and hole outlines) pushed along Z, centred - plates, brackets, logos |
 | `grid({ size, divisions })` | floor grid, for `Lines` |
 | `edges(geometry)` | wireframe of any geometry, for `Lines` |
 
 `axis: 'x' | 'y' | 'z'` lays `cylinder`, `lathe` and `extrude` along another axis - no rotating the mesh
-to suit. An extruded outline is drawn as seen from the axis's + end (`'y'`: from above, its y away
-from you).
+to suit. An extruded outline is drawn as seen from the axis's + end, centred along the axis: with
+`'y'`, from above - the outline's x is the world's x and its y runs towards -z, away from the front.
 
 **Outlines** for `extrude` and `lathe` - lists of `[x, y]` points, anticlockwise, to spread together or
 cut as holes: `outline.circle(radius | { radius, segments, center })`, `outline.rect({ width, height,
@@ -290,7 +309,8 @@ unless its `colorSpace` was set on purpose - `normalMap: await loadTexture('n.pn
 
 **Models without UVs** (scans, CAD exports) can still take maps: `triplanar: 40` projects them
 from the mesh's three axes instead of using UVs, repeating 40 times per unit of the mesh's own space.
-The maps stay on the mesh as it moves; normal maps follow the surface. 0 (the default) uses the UVs.
+The maps stay on the mesh as it moves; normal maps follow the surface; a map's `repeat` and `offset` apply
+on top, as with UVs (animate `offset` to scroll a pattern). 0 (the default) uses the UVs.
 
 ```js
 { bumpMap: pores, bumpScale: 0.0005, roughnessMap: sheen, triplanar: 45 }   // bone texture on a scanned skull
@@ -323,6 +343,13 @@ scene.add(new PointLight({ position: [0, 0.1, 0], intensity: 0.5, range: 4, cast
 Cameras: `new PerspectiveCamera({ fov, near, far, position, target })`,
 `new OrthographicCamera({ height, near, far, position, target })` (width follows the aspect). Or
 use a View camera preset: `'isometric'` and `'top'` are orthographic.
+
+A plan view and back, for editors and floor plans:
+
+```js
+planButton.onclick = () => { view.camera = 'top'; view.controls.mode = 'map' }      // fitted, drags pan
+threeDButton.onclick = () => { view.camera = 'perspective'; view.controls.mode = 'orbit' }
+```
 
 ## Interaction
 
@@ -385,14 +412,19 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
 (`encoding: { x: { field, type } }`, `data: { values }`) is accepted as-is.
 
 - **Marks**: `'bar'` (x and optional z bands, y value), `'point'` (scatter; x, y, z numbers or
-  categories), `'line'`, `'area'`, `'surface'` (x, z grid with y heights), `'network'`.
+  categories), `'line'`, `'area'` (a filled line; `stack: true` stacks series), `'surface'` (x, z grid
+  with y heights), `'network'`. There are no pie, donut or gauge marks - build those from
+  `extrude` and `outline.arc`.
 - **Channels**: `x`, `y`, `z`, `color`, `size`, `opacity`, `label` (text on each mark), `key` (row
   identity for animated updates; default `id`), `detail`. Each is a field name or
-  `{ field, type, title, format, scale, axis, priority, legend }`; `color` can also be a constant colour.
+  `{ field, type, title, format, scale, axis, priority, legend }`, or a constant: `color: '#4e79a7'`
+  (or `{ value: '#4e79a7' }`), `size: 0.2`.
   `scale`: `{ domain, range, scheme, zero, nice, type: 'linear' | 'log' }`; a colour field's `type` picks a ramp
   (quantitative) or a colour per value (anything else), and a ramp's domain can have more than two stops
   (`[0, 50, 100]` for a diverging scheme); schemes: `'category'`,
-  `'viridis'`, `'blues'`, `'heat'`, `'cool'`, `'redblue'`. `axis: false` or `{ title, format }`.
+  `'viridis'`, `'blues'`, `'heat'`, `'cool'`, `'redblue'`. `axis: false` or `{ title, format, ticks }`:
+  `ticks` lists the values to mark (`[0, 25, 50, 75, 100]` - the axis reaches them) or says about how
+  many (default 5).
 - **Formats** (`format` on a channel, an axis or a tooltip field) are `Intl.NumberFormat` /
   `DateTimeFormat` options, or a function `(value) => string`:
   ``y: { field: 'sales', format: (v) => `£${v}k` }`` for values in thousands;
@@ -405,9 +437,11 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
   it doesn't hide the rest: `z: { field: 'region', scale: { domain: ['West', 'South', 'North'] } }`.
 - **Options**: `box: [x, y, z]` (the chart's size in world units, default about [10, 6, 6]),
   `stack: true` (bars with no `z` stack by `color`; areas stack), `width` (bar width share, 0-1),
-  `legend: false | { position, container }` (`position`: `'top-right'`, `'top-left'`, `'bottom-right'`,
+  `legend: false | { position, container, ticks }` (`position`: `'top-right'`, `'top-left'`, `'bottom-right'`,
   `'bottom-left'` inside the canvas; `container`: an element or selector - the legend's HTML goes
-  in it as a wrapping row, so give it no fixed height),
+  in it as a wrapping row, so give it no fixed height). Categories get swatches that click to hide
+  and show; a number colour gets a key - a ramp, highest at the top, with values marked up its side,
+  `ticks` as on an axis),
   `theme: 'dark' | 'light'`, `title`, `transition: false | { duration, ease }`,
   `overlap: 'dim' | 'hide' | 'show'` (labels), `highlight` (a colour, false, or for networks
   `'neighbours'` - the default, lighting the node's links and linked nodes - or `'node'`, the node alone), and node options (`position`, ...).
@@ -473,8 +507,8 @@ window.addEventListener('keydown', (e) => { if (e.ctrlKey && e.key === 'z') hist
   (rotation is the turn about y) and returns it changed, `null` to refuse the move, or nothing to
   allow it. `handle.dispose()` removes it.
 - **History**: `push({ label, undo, redo })` records something already done; `undo()`, `redo()`
-  (each returns false when there is nothing to do), `canUndo`, `canRedo`, `undoLabel`,
-  `redoLabel`, `clear()`. Options `limit` (default 100) and `onChange(history)`.
+  (each returns false when there is nothing to do), `canUndo`, `canRedo`, `undoCount`, `redoCount`,
+  `undoLabel`, `redoLabel`, `clear()`. Options `limit` (default 100) and `onChange(history)`.
   `history.transform(nodes, label?)` notes where nodes are and returns `done(label?)`: call it after
   moving them, and it records the move if there was one.
 

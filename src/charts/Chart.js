@@ -199,7 +199,7 @@ export class Chart extends Group {
     // no legend outside a browser (tests, servers)
     if (!c?.field || o === false || !this.scales.color || typeof document === 'undefined') return
     const el = legend(this.scales.color, {
-      title: c.title, theme, position: o?.position, format: (v) => formatValue(c, v),
+      title: c.title, theme, position: o?.position, ticks: o?.ticks, format: (v) => formatValue(c, v),
       onToggle: (value, on) => {
         if (on) this.#hidden.delete(String(value))
         else this.#hidden.add(String(value))
@@ -392,7 +392,9 @@ function scalesFor(spec, box) {
   for (const name of ['x', 'y', 'z']) {
     const c = ch[name]
     if (!c?.field) continue
-    const values = rows.map((r) => c.get(r))
+    // the values listed as ticks are always on the axis
+    const listed = c.axis && c.axis.ticks
+    const values = [...rows.map((r) => c.get(r)), ...(Array.isArray(listed) ? listed : [])]
     const o = { range: ranges[name], format: (c.axis && c.axis.format) ?? c.format }
     const banded = c.type === 'nominal' || c.type === 'ordinal' || (spec.mark === 'bar' && name !== 'y')
     if (banded) {
@@ -411,7 +413,9 @@ function scalesFor(spec, box) {
   const color = ch.color
   if (color?.field || spec.mark === 'surface') {
     const c = color?.field ? color : ch.y
-    const values = rows.map((r) => c.get(r))
+    const ticks = spec.options.legend?.ticks
+    // as on an axis, a number key reaches the values listed as its ticks
+    const values = [...rows.map((r) => c.get(r)), ...(c.type === 'quantitative' && Array.isArray(ticks) ? ticks : [])]
     out.color = colorScale(c, values, spec.mark === 'surface' && !color?.field ? 'viridis' : undefined)
   }
   const size = ch.size

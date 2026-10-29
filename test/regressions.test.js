@@ -1,12 +1,12 @@
 // Bugs found by the code review of 2026-10-29 (REVIEW.md), each pinned by the case that showed it.
 import { Buffer } from 'node:buffer'
 import { afterAll, describe, expect, it, vi } from 'vitest'
-import { DirectionalLight, OrthographicCamera, collect, Geometry, Group, InstancedMesh, Label, Lines, Material, Mesh, Node, PerspectiveCamera, Raycaster, Scene, SpotLight, Texture, View, WebGLRenderer, box, extrude, outline, plane, sphere } from '../src/index.js'
+import { DirectionalLight, OrbitControl, OrthographicCamera, collect, Geometry, Group, InstancedMesh, Label, Lines, Material, Mesh, Node, PerspectiveCamera, Raycaster, Scene, SpotLight, Texture, View, WebGLRenderer, box, extrude, outline, plane, sphere } from '../src/index.js'
 import { chart, scaleColor, scaleLinear, scaleTime } from '../src/charts/index.js'
 import { TransformHandle } from '../src/edit/index.js'
 import { Animation, parseGLTF } from '../src/gltf/index.js'
 import { Vec3 } from '../src/value/Vec3.js'
-import { fakeCanvas, fakeGL, fakePage } from './fakes.js'
+import { fakeCanvas, fakeElement, fakeGL, fakePage } from './fakes.js'
 
 const page = fakePage()
 afterAll(async () => {
@@ -672,6 +672,149 @@ describe('handlers and the pointer', () => {
     drag({ x: 10, y: 10 }, 40)
     expect(view.camera.position.toArray()).not.toEqual(camera)
     expect(clicks).toBe(0)
+    view.dispose()
+  })
+})
+
+// ---- from the agent eval's development pass
+
+describe('labels that answer the pointer', () => {
+  let clock = 5000
+  const frame = () => page.frame((clock += 16))
+  const viewOf = () => new View({ canvas: page.canvas(), camera: { position: [0, 0, 10], target: [0, 0, 0] } })
+
+  it('makes a label of something with click or hover handlers part of it', () => {
+    const view = viewOf()
+    /** @type {any[]} */
+    const clicks = [], hovers = []
+    const core = view.scene.add(new Label({ text: 'Core', position: [-2, 2, 0], onClick: (hit) => clicks.push(hit.node) }))
+    view.scene.add(new Label({ text: 'Plain', position: [2, 2, 0] }))
+    const bars = view.scene.add(new InstancedMesh({ geometry: box(0.5), data: [{ n: 'a' }, { n: 'b' }], labels: { text: (r) => r.n },
+      onHover: (hit) => hovers.push(hit?.datum?.n ?? null) }))
+    bars.setInstance(0, { position: [-2, -2, 0] })
+    bars.setInstance(1, { position: [2, -2, 0] })
+    view.render()
+    const root = /** @type {any} */ (view.overlay)
+    const el = (text) => root.children.find((e) => e.textContent === text)
+    expect(el('Core').style.pointerEvents).toBe('auto')
+    expect(el('b').style.pointerEvents).toBe('auto')
+    // a label of something that doesn't answer the pointer leaves it to the scene behind
+    expect(el('Plain').style.pointerEvents).toBeFalsy()
+
+    root.dispatch('click', { target: el('Core') })
+    expect(clicks).toEqual([core])
+    root.dispatch('click', { target: el('Plain') })
+    expect(clicks).toHaveLength(1)
+
+    // hovering an instance's label is hovering that instance, until the pointer leaves it
+    root.dispatch('pointerover', { target: el('b'), clientX: 200, clientY: 120 })
+    frame()
+    expect(hovers.at(-1)).toBe('b')
+    root.dispatch('pointerout', { target: el('b') })
+    frame()
+    expect(hovers.at(-1)).toBe(null)
+    view.dispose()
+  })
+})
+
+describe('orbiting an orthographic camera', () => {
+  it('limits its zoom by the height of the view, and leaves its distance alone', () => {
+    const camera = new OrthographicCamera({ position: [0, 0, 40], target: [0, 0, 0], height: 10, aspect: 1 })
+    const orbit = new OrbitControl(camera, fakeElement('canvas'), { minDistance: 2, maxDistance: 20 })
+    orbit.zoomBy(0.01)
+    expect(camera.height).toBe(2)
+    orbit.zoomBy(100)
+    expect(camera.height).toBe(20)
+    // turning keeps the camera where it was, though that is beyond maxDistance
+    orbit.rotate(0.5, 0)
+    expect(camera.position.len()).toBeCloseTo(40)
+  })
+})
+
+describe('chart ticks', () => {
+  const data = [{ a: 3, b: 12, c: 8 }, { a: 97, b: 40, c: 93 }]
+  const camera = new PerspectiveCamera({ position: [12, 10, 16], target: [0, 2, 0], aspect: 1.5 })
+  const texts = (node) => {
+    node.updateWorldTree()
+    return collect(node, camera).labels.map((l) => l.text)
+  }
+
+  it('marks the values an axis lists - reaching them - or about as many as it asks for', () => {
+    const listed = chart({ mark: 'point', data, x: { field: 'a', axis: { ticks: [0, 25, 50, 75, 100] } }, y: 'b' })
+    expect(texts(listed)).toEqual(expect.arrayContaining(['0', '25', '50', '75', '100']))
+    const few = chart({ mark: 'point', data, x: { field: 'a', axis: { ticks: 2 } }, y: 'b' })
+    expect(texts(few).filter((t) => ['0', '50', '100'].includes(t))).toHaveLength(3)
+    expect(() => chart({ mark: 'point', data, x: 'a', y: { field: 'b', axis: { ticks: 'five' } } })).toThrow('[0, 25, 50, 75, 100]')
+  })
+
+  it('keys a number colour as a ramp with its values marked, listed ones included', () => {
+    const keyed = /** @type {any} */ (chart({ mark: 'point', data, x: 'a', y: 'b', color: 'c', legend: { ticks: [0, 25, 50, 75, 100] } }))
+    const [ramp, marks] = keyed.overlay.children.at(-1).children
+    expect(ramp.style.background).toContain('to top')
+    expect(marks.children.map((m) => m.textContent)).toEqual(['0', '25', '50', '75', '100'])
+    expect(marks.children.at(-1).style.bottom).toBe('100%')
+  })
+})
+
+describe('framing with a direction and a glide', () => {
+  const viewOf = () => new View({ canvas: page.canvas(), camera: { position: [0, 0, 10], target: [0, 0, 0] } })
+
+  it('glides the camera round to look from the direction given, and ends where frame() puts it', () => {
+    const view = viewOf()
+    const cube = view.scene.add(new Mesh({ geometry: box(2), position: [3, 0, 0] }))
+    view.render()
+    const camera = /** @type {any} */ (view.camera)
+    const start = camera.position.toArray(), startTarget = camera.target.toArray()
+    // where it should end: straight there
+    view.frame(cube, { direction: 'top' })
+    const there = [...camera.position.toArray(), ...camera.target.toArray()]
+    camera.position.set(...start)
+    camera.target.set(...startTarget)
+    view.frame(cube, { direction: 'top', duration: 1 })
+    // nothing moves until frames run
+    expect(view.camera.position.toArray()).toEqual(start)
+    view.step(0.5)
+    const midway = camera.position.clone().sub(camera.target).normalize()
+    expect(midway[1]).toBeGreaterThan(0.2)
+    expect(midway[1]).toBeLessThan(0.99)
+    view.step(0.6)
+    const end = camera.position.clone().sub(camera.target).normalize()
+    expect(end[1]).toBeCloseTo(1)
+    ;[...camera.position.toArray(), ...camera.target.toArray()].forEach((v, i) => expect(v).toBeCloseTo(there[i]))
+    // straight there without a duration; a bad direction says what it takes
+    view.frame(cube, { direction: [0, 0, 1] })
+    expect(camera.position.clone().sub(camera.target).normalize()[2]).toBeCloseTo(1)
+    expect(() => view.frame(cube, { direction: [0, 0, 0] })).toThrow('preset name or a vector')
+    expect(() => view.frame(cube, { direction: /** @type {any} */ ('above') })).toThrow("use 'top'")
+    view.dispose()
+  })
+})
+
+describe('points that copy what is assigned', () => {
+  it("keeps a camera's target and a light's aim as the vectors they were, copying what is assigned", () => {
+    const camera = new PerspectiveCamera({ position: [0, 0, 5], target: [0, 0, 0] })
+    const held = camera.target
+    camera.target = [1, 2, 3]
+    expect(camera.target).toBe(held)
+    expect(held?.toArray()).toEqual([1, 2, 3])
+    camera.target = null
+    expect(camera.target).toBe(null)
+    const sun = new DirectionalLight()
+    sun.direction = [0, 0, -4]
+    expect(sun.direction.toArray()).toEqual([0, 0, -1])
+    expect(() => { sun.direction = [0, 0, 0] }).toThrow("can't be [0, 0, 0]")
+  })
+})
+
+describe('the first fit', () => {
+  it('fits the canvas as laid out at the first frame, not as it was when the view was made', () => {
+    const canvas = /** @type {any} */ (page.canvas())
+    const view = new View({ canvas })
+    view.scene.add(new Mesh({ geometry: box(2) }))
+    // a grid of tiles filling up: this one is reshaped before the browser reports a resize
+    canvas.clientWidth = 600
+    view.render()
+    expect(view.camera.aspect).toBe(4)
     view.dispose()
   })
 })

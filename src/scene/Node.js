@@ -618,6 +618,17 @@ export class Node {
 }
 
 /**
+ * A point property's new value: copied into the vector it has, so references to it stay good, or
+ * null to clear it. @internal
+ * @param {Vec3 | null} current @param {import('../types.js').Vec3Input | null | undefined} v @param {string} owner
+ * @returns {Vec3 | null}
+ */
+export function setPoint(current, v, owner) {
+  if (v === null || v === undefined) return null
+  return current ? current.copy(v, owner) : Vec3.fromInput(v, owner)
+}
+
+/**
  * @internal Where a world position or node is in a node's parent's space - the space its position,
  * and a camera's or light's target, are in.
  * @param {Node} node @param {Vec3Input | Node} target

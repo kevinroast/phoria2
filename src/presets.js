@@ -32,15 +32,24 @@ const ALIASES = {
  * @returns {PerspectiveCamera | OrthographicCamera}
  */
 export function cameraPreset(name, { target = [0, 0, 0], distance = 10 } = {}) {
-  if (!(name in DIRECTIONS)) {
-    const alias = ALIASES[String(name).toLowerCase()]
-    fail('View', `camera '${name}' is not a preset - ${alias ? `use '${alias}'` : `expected one of ${CAMERA_PRESETS.map((p) => `'${p}'`).join(', ')}${didYouMean(String(name), CAMERA_PRESETS)}`}`)
-  }
-  const direction = new Vec3(...DIRECTIONS[name]).normalize()
+  const direction = presetDirection(name)
   const position = new Vec3(target[0], target[1], target[2]).add(direction.multiplyScalar(distance))
   return name === 'perspective'
     ? new PerspectiveCamera({ fov: 45, position, target: [target[0], target[1], target[2]] })
     : new OrthographicCamera({ height: distance, position, target: [target[0], target[1], target[2]], far: Math.max(1000, distance * 20) })
+}
+
+/**
+ * The unit direction from the target to a preset's camera.
+ * @param {CameraPreset} name
+ * @returns {Vec3}
+ */
+export function presetDirection(name) {
+  if (!(name in DIRECTIONS)) {
+    const alias = ALIASES[String(name).toLowerCase()]
+    fail('View', `camera '${name}' is not a preset - ${alias ? `use '${alias}'` : `expected one of ${CAMERA_PRESETS.map((p) => `'${p}'`).join(', ')}${didYouMean(String(name), CAMERA_PRESETS)}`}`)
+  }
+  return new Vec3(...DIRECTIONS[name]).normalize()
 }
 
 // where a perspective picture's middle sits, below the view's middle (in half-heights of the view):

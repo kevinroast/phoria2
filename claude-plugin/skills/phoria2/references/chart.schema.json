@@ -100,7 +100,8 @@
           "type": "object", "additionalProperties": false,
           "properties": {
             "position": { "enum": ["top-right", "top-left", "bottom-right", "bottom-left"] },
-            "container": { "type": "string", "description": "A CSS selector to put the legend in, outside the canvas." }
+            "container": { "type": "string", "description": "A CSS selector to put the legend in, outside the canvas." },
+            "ticks": { "$ref": "#/$defs/ticks" }
           }
         }
       ]
@@ -134,6 +135,10 @@
       "description": "Intl.NumberFormat or Intl.DateTimeFormat options, e.g. { \"style\": \"currency\", \"currency\": \"GBP\", \"notation\": \"compact\" }.",
       "type": "object"
     },
+    "ticks": {
+      "description": "The values to mark, e.g. [0, 25, 50, 75, 100] (the scale reaches them), or about how many (default 5).",
+      "oneOf": [{ "type": "array" }, { "type": "integer", "minimum": 1 }]
+    },
     "channel": {
       "oneOf": [
         { "type": "string", "description": "A field name - or, for colours, a constant colour." },
@@ -166,7 +171,7 @@
                 { "type": "boolean", "const": false },
                 {
                   "type": "object", "additionalProperties": false,
-                  "properties": { "title": { "type": "string" }, "format": { "$ref": "#/$defs/format" } }
+                  "properties": { "title": { "type": "string" }, "format": { "$ref": "#/$defs/format" }, "ticks": { "$ref": "#/$defs/ticks" } }
                 }
               ]
             }

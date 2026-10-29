@@ -1,7 +1,7 @@
 import { Color } from '../value/Color.js'
 import { Vec3 } from '../value/Vec3.js'
 import { checkNumber, fail } from '../validate.js'
-import { NODE_OPTIONS, Node, inParentSpace } from './Node.js'
+import { NODE_OPTIONS, Node, inParentSpace, setPoint } from './Node.js'
 
 /** @import { NodeOptions } from './Node.js' */
 /** @import { ColorInput, Vec3Input } from '../types.js' */
@@ -120,10 +120,22 @@ export class HemisphereLight extends Light {
 
 /** Shared by lights that point somewhere. */
 class AimedLight extends Light {
-  /** The way the light travels, in the parent's space; ignored when `target` is set. @type {Vec3} */
-  direction = new Vec3(0, -1, 0)
-  /** A point to shine towards, in the same space as position. @type {Vec3 | null} */
-  target = null
+  #direction = new Vec3(0, -1, 0)
+  /** @type {Vec3 | null} */ #target = null
+
+  /** The way the light travels, in the parent's space; ignored when `target` is set. Assigning copies, normalised. @returns {Vec3} */
+  get direction() { return this.#direction }
+  /** @param {Vec3Input} v */
+  set direction(v) {
+    const owner = this.constructor.name
+    this.#direction.copy(v, owner)
+    if (this.#direction.len() === 0) fail(owner, "'direction' can't be [0, 0, 0]")
+    this.#direction.normalize()
+  }
+  /** A point to shine towards, in the same space as position; assigning copies, null goes back to direction. @returns {Vec3 | null} */
+  get target() { return this.#target }
+  /** @param {Vec3Input | null} v */
+  set target(v) { this.#target = setPoint(this.#target, v, this.constructor.name) }
 
   /** @param {AimedLightOptions} [options] */
   constructor(options = {}) {
@@ -132,12 +144,8 @@ class AimedLight extends Light {
     if (options.direction !== undefined && options.target !== undefined) {
       fail(owner, "give 'direction' or 'target', not both")
     }
-    if (options.direction !== undefined) {
-      this.direction.copy(options.direction, owner)
-      if (this.direction.len() === 0) fail(owner, "'direction' can't be [0, 0, 0]")
-      this.direction.normalize()
-    }
-    if (options.target !== undefined) this.target = Vec3.fromInput(options.target, owner)
+    if (options.direction !== undefined) this.direction = options.direction
+    if (options.target !== undefined) this.target = options.target
   }
 
   /**

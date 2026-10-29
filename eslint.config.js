@@ -3,8 +3,8 @@ import globals from 'globals'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  // eval/runs holds pages written by agents under test - theirs, not ours
-  globalIgnores(['dist', 'dist-demos', 'eval/runs']),
+  // eval/runs and eval/full/results hold pages written by agents under test - theirs, not ours
+  globalIgnores(['dist', 'dist-demos', 'eval/runs', 'eval/full/results']),
   {
     files: ['**/*.js'],
     extends: [js.configs.recommended],

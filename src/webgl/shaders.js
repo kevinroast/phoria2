@@ -65,6 +65,11 @@ in vec3 vObjectPosition;
 in vec3 vObjectNormal;
 in mat3 vObjectToWorld;
 uniform float uTriplanar; // repeats per unit of the mesh's own space
+uniform vec4 uUvTransform; // the map's repeat xy and offset zw, applied to each projection as to UVs
+
+vec2 projected(vec2 p) {
+  return p * uUvTransform.xy + uUvTransform.zw;
+}
 
 // how much each axis's projection counts: mostly the one the surface faces, blended at the turns
 vec3 triplanarWeights(vec3 n) {
@@ -74,7 +79,7 @@ vec3 triplanarWeights(vec3 n) {
 // a map seen from the three axes and blended - for meshes with no UVs, scans and CAD models
 vec4 triplanar(sampler2D s) {
   vec3 p = vObjectPosition * uTriplanar, w = triplanarWeights(normalize(vObjectNormal));
-  return texture(s, p.zy) * w.x + texture(s, p.xz) * w.y + texture(s, p.xy) * w.z;
+  return texture(s, projected(p.zy)) * w.x + texture(s, projected(p.xz)) * w.y + texture(s, projected(p.xy)) * w.z;
 }
 #define SAMPLE(s) triplanar(s)
 #else
@@ -436,9 +441,9 @@ vec3 bumpNormal(vec3 n) {
 // 'whiteout' blend), blended, then turned into the world - no tangents and no UVs needed
 vec3 triplanarNormal(float strength) {
   vec3 n = normalize(vObjectNormal), p = vObjectPosition * uTriplanar, w = triplanarWeights(n);
-  vec3 tx = texture(uNormalMap, p.zy).xyz * 2.0 - 1.0;
-  vec3 ty = texture(uNormalMap, p.xz).xyz * 2.0 - 1.0;
-  vec3 tz = texture(uNormalMap, p.xy).xyz * 2.0 - 1.0;
+  vec3 tx = texture(uNormalMap, projected(p.zy)).xyz * 2.0 - 1.0;
+  vec3 ty = texture(uNormalMap, projected(p.xz)).xyz * 2.0 - 1.0;
+  vec3 tz = texture(uNormalMap, projected(p.xy)).xyz * 2.0 - 1.0;
   tx.xy *= strength; ty.xy *= strength; tz.xy *= strength;
   tx = vec3(tx.xy + n.zy, abs(tx.z) * n.x);
   ty = vec3(ty.xy + n.xz, abs(ty.z) * n.y);

@@ -53,7 +53,8 @@ export const fakeCanvas = (gl) => ({
 
 /**
  * An element that takes whatever a View, its labels or tooltip do to it: style and attributes
- * are kept, methods it doesn't know are no-ops.
+ * are kept, methods it doesn't know are no-ops. It keeps its listeners: el.dispatch(type, event)
+ * calls them.
  * @param {string} tag
  * @returns {any}
  */
@@ -65,6 +66,16 @@ export function fakeElement(tag = 'div') {
     getBoundingClientRect: () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }),
     append(...els) { base.children.push(...els) },
     prepend(...els) { base.children.unshift(...els) },
+    /** @type {Map<string, Set<Function>>} */ listeners: new Map(),
+    addEventListener(type, fn) {
+      if (!base.listeners.has(type)) base.listeners.set(type, new Set())
+      base.listeners.get(type)?.add(fn)
+    },
+    removeEventListener(type, fn) { base.listeners.get(type)?.delete(fn) },
+    /** @param {string} type @param {Record<string, any>} [event] */
+    dispatch(type, event = {}) {
+      for (const fn of base.listeners.get(type) ?? []) fn({ type, clientX: 0, clientY: 0, preventDefault() {}, ...event })
+    },
   }
   return new Proxy(base, { get: (t, key) => (key in t ? t[key] : typeof key === 'string' ? () => fakeElement() : undefined) })
 }

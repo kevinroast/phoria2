@@ -13,6 +13,7 @@ why a page might look wrong. Coordinates are +Y up, in metres; angles in radians
 
 - [Full reference](https://kevs3d.co.uk/phoria2/llms-full.txt): the whole API in one page - View, scene graph, drawables, geometry, materials, lights, interaction and dragging, charts, editing, models, motion, particles, plain-data scenes
 - [README](https://github.com/kevinroast/phoria2#readme): install, CDN use, the entry points
+- Source: the package ships its readable, commented source in `node_modules/phoria2/src` - read that, not the minified `dist/`, for anything the reference doesn't settle
 - [Chart spec JSON Schema](https://cdn.jsdelivr.net/npm/phoria2/schema/chart.schema.json): the spec `chart()` takes, as `phoria2/charts/schema.json` in the package
 
 ## Examples

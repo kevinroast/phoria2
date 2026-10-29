@@ -18,8 +18,10 @@ export const DRAG_START = 4
  * @property {number} [inertia] how much of a fling carries on after release: the fraction of its speed kept
  *   every 1/60 s - 0 stops dead, 0.95 glides a long way (default 0.85)
  * @property {boolean | number} [autoRotate] spin around the target; a number is radians per second (default false)
- * @property {number} [minDistance] (default 0.1)
- * @property {number} [maxDistance] (default Infinity)
+ * @property {number} [minDistance] how close zooming gets to the target; for an orthographic camera, the
+ *   smallest height of the view (default 0.1)
+ * @property {number} [maxDistance] how far zooming goes; for an orthographic camera, the largest height
+ *   of the view (default Infinity)
  * @property {number} [minPitch] radians below the horizon (default just short of straight down)
  * @property {number} [maxPitch] radians above it (default just short of straight up)
  */
@@ -168,7 +170,11 @@ export class OrbitControl {
     return /** @type {Vec3} */ (this.camera.target)
   }
 
-  /** Camera position relative to the target. Setting it moves the camera, within the limits. */
+  /**
+   * Camera position relative to the target: yaw 0 looks from +Z (the front), π/2 from +X (the right);
+   * pitch is above the horizon. Setting it moves the camera, within the limits.
+   * @returns {{ yaw: number, pitch: number, distance: number }}
+   */
   get spherical() {
     const offset = this.camera.position.clone().sub(this.target)
     const distance = offset.len() || this.minDistance
@@ -177,7 +183,8 @@ export class OrbitControl {
 
   set spherical({ yaw, pitch, distance }) {
     pitch = Math.min(this.maxPitch, Math.max(this.minPitch, pitch))
-    distance = Math.min(this.maxDistance, Math.max(this.minDistance, distance))
+    // an orthographic camera's distance doesn't change the picture, so the limits are on its height
+    if (!this.#orthographic) distance = Math.min(this.maxDistance, Math.max(this.minDistance, distance))
     const t = this.target
     this.camera.position.set(
       t[0] + distance * Math.cos(pitch) * Math.sin(yaw),
@@ -194,8 +201,8 @@ export class OrbitControl {
   /** Scale the distance to the target (0.9 moves closer). Orthographic cameras zoom their view height. @param {number} factor */
   zoomBy(factor) {
     const cam = /** @type {any} */ (this.camera)
-    if (cam.constructor.type === 'orthographic-camera') {
-      cam.height = Math.max(1e-4, cam.height * factor)
+    if (this.#orthographic) {
+      cam.height = Math.min(this.maxDistance, Math.max(this.minDistance, 1e-4, cam.height * factor))
       return
     }
     const s = this.spherical
@@ -222,10 +229,14 @@ export class OrbitControl {
     this.target.add(move)
   }
 
+  get #orthographic() {
+    return /** @type {any} */ (this.camera).constructor.type === 'orthographic-camera'
+  }
+
   // half the view's height at the target, in world units
   #halfHeight() {
     const cam = /** @type {any} */ (this.camera)
-    return cam.constructor.type === 'orthographic-camera' ? cam.height / 2 : this.spherical.distance * Math.tan(cam.fov * Math.PI / 360)
+    return this.#orthographic ? cam.height / 2 : this.spherical.distance * Math.tan(cam.fov * Math.PI / 360)
   }
 
   /** Move the camera and target together by screen pixels; the scene follows the pointer. @param {number} dx @param {number} dy */
@@ -236,7 +247,7 @@ export class OrbitControl {
     const up = new Vec3(m[4], m[5], m[6]).normalize()
     const cam = /** @type {any} */ (this.camera)
     const height = this.element.clientHeight || 1
-    const worldPerPixel = cam.constructor.type === 'orthographic-camera'
+    const worldPerPixel = this.#orthographic
       ? cam.height / height
       : 2 * this.spherical.distance * Math.tan((cam.fov * Math.PI / 180) / 2) / height
     const move = right.multiplyScalar(-dx * worldPerPixel).add(up.multiplyScalar(dy * worldPerPixel))

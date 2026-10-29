@@ -50,7 +50,14 @@ export function chartFrame({ box, axes, theme, overlap }) {
   const frame = new Group({ name: 'axes', pickable: false })
   const dir = (camera) => look(frame, camera, h / 2)
   const wallColor = theme === 'light' ? '#c3c8d2' : '#3a3d47'
-  const ticksOf = (a) => (a && a.scale.kind !== 'band' && a.channel?.axis !== false ? a.scale.ticks(5) : [])
+  // the values an axis marks: those it lists, or about as many as it asks for (five unless it says)
+  const tickValues = (a) => {
+    const ticks = a.channel?.axis?.ticks
+    if (!Array.isArray(ticks)) return a.scale.kind === 'band' ? a.scale.ticks() : a.scale.ticks(ticks ?? 5)
+    const [r0, r1] = a.scale.range, lo = Math.min(r0, r1), hi = Math.max(r0, r1)
+    return ticks.filter((t) => a.scale(t) >= lo - 1e-9 && a.scale(t) <= hi + 1e-9)
+  }
+  const ticksOf = (a) => (a && a.scale.kind !== 'band' && a.channel?.axis !== false ? tickValues(a) : [])
   const xt = ticksOf(axes.x), yt = ticksOf(axes.y), zt = ticksOf(axes.z)
 
   // six walls: grid lines at the ticks of the two axes they span, and a border
@@ -90,7 +97,7 @@ export function chartFrame({ box, axes, theme, overlap }) {
     const a = axes[name]
     if (!a || a.channel?.axis === false) return
     const k = 'xyz'.indexOf(name)
-    const values = a.scale.ticks(a.scale.kind === 'band' ? undefined : 5)
+    const values = tickValues(a)
     for (const edge of edges) {
       const set = frame.add(new Group({
         showFrom: (camera) => {

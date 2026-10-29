@@ -123,6 +123,7 @@ export function normalise(input) {
     fail('chart()', `'steps' is how many steps the force layout takes, a whole number of 1 or more, got ${describe(options.steps)}`)
   }
   if (options.seed !== undefined) checkNumber('chart()', 'seed', options.seed)
+  if (options.legend?.ticks !== undefined) checkTicks('legend', options.legend.ticks)
   if (options.spacing !== undefined) checkRange('chart()', 'spacing', options.spacing, 0, Infinity, { above: true })
   if (options.box !== undefined && (!Array.isArray(options.box) || options.box.length !== 3 || !options.box.every((n) => n > 0))) {
     fail('chart()', `'box' is the chart's size in the scene, [x, y, z] above 0, got ${describe(options.box)}`)
@@ -207,6 +208,7 @@ function channel(name, spec, rows, fields) {
     if (name === 'size' && Array.isArray(spec)) fail(owner, "'size' is a channel - the chart's size in the scene is 'box: [x, y, z]'")
     return fail(owner, `${name} must be a field name or { field, ... }, got ${describe(spec)}`)
   }
+  if (o.axis?.ticks !== undefined) checkTicks(`${name}: axis`, o.axis.ticks)
   const field = o.field ?? null
   const type = o.type ?? (field ? inferType(rows, field) : 'nominal')
   if (!['quantitative', 'nominal', 'ordinal', 'temporal'].includes(type)) {
@@ -215,6 +217,12 @@ function channel(name, spec, rows, fields) {
   const get = field === null ? () => o.value : type === 'temporal' ? (r) => toDate(r[field]) : (r) => r[field]
   return { field, value: o.value, type, title: o.title ?? field ?? name, format: o.format, scale: o.scale ?? {}, axis: o.axis ?? {}, get,
     priority: o.priority }
+}
+
+/** Ticks are a list of the values to mark, or about how many. @param {string} what @param {unknown} ticks */
+function checkTicks(what, ticks) {
+  if (Array.isArray(ticks) || (Number.isInteger(ticks) && /** @type {number} */ (ticks) > 0)) return
+  fail('chart()', `${what} ticks are a list of the values to mark, such as [0, 25, 50, 75, 100], or about how many, got ${describe(ticks)}`)
 }
 
 /** @param {string} s */

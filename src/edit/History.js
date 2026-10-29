@@ -89,6 +89,10 @@ export class History {
 
   get canUndo() { return this.#done.length > 0 }
   get canRedo() { return this.#undone.length > 0 }
+  /** How many steps undo() can go back - for a button that says "Undo (3)". */
+  get undoCount() { return this.#done.length }
+  /** How many steps redo() can go forward. */
+  get redoCount() { return this.#undone.length }
   /** What undo() would undo, or null. @returns {string | null} */
   get undoLabel() { return this.#done.at(-1)?.label ?? null }
   /** What redo() would redo, or null. @returns {string | null} */

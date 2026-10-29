@@ -34,6 +34,7 @@
   "type": "module",
   "files": [
     "dist",
+    "src",
     "schema",
     "llms.txt",
     "llms-full.txt"

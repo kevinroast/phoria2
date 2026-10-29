@@ -1,7 +1,8 @@
 import { collect, toScreen } from './frame.js'
 import { LabelLayer } from './labels.js'
 import { DRAG_START, OrbitControl } from './OrbitControl.js'
-import { cameraPreset, fitPoints, framingScale } from './presets.js'
+import { cameraPreset, fitPoints, framingScale, presetDirection } from './presets.js'
+import { EASES } from './ease.js'
 import { Raycaster } from './Raycaster.js'
 import { ChangeWatch } from './watch.js'
 import { Box3 } from './value/Box3.js'
@@ -168,12 +169,15 @@ export class View {
    * @type {{ drag: import('./scene/Node.js').Drag, id: number, x: number, y: number, press: import('./value/Ray.js').Ray, started: boolean } | null}
    */
   #drag = null
-  // a drag just ended: the click the browser sends after it isn't one
   /** The orbit's pointer handlers, once it has handed the pointer to the view. @type {ReturnType<OrbitControl['handOverPointer']> | null} */
   #orbitPointer = null
   /** The press in progress, and whether it has moved far enough to be a drag rather than a click. @type {{ id: number, x: number, y: number, moved: boolean } | null} */
   #press = null
   /** @type {Hit | null} */ #hovered = null
+  /** The camera on its way to where frame() put it: from and to, and how far along. @type {Flight | null} */
+  #flight = null
+  /** A label the pointer is on, as a hit on what it labels - the canvas can't see the pointer there. @type {Hit | null} */
+  #labelHover = null
   // used for scenes without lights; never added to the scene itself
   #autoSky = new HemisphereLight({ sky: '#ffffff', ground: '#444444', intensity: 0.5 })
   #autoSun = new DirectionalLight({ direction: [-0.5, -1, -0.6], intensity: 1.5 })
@@ -241,7 +245,10 @@ export class View {
     }
     if (options.highlight !== undefined) this.#setHighlight(options.highlight)
     if (options.tooltip !== undefined) this.tooltip(options.tooltip)
-    this.#labels = new LabelLayer(this.canvas)
+    this.#labels = new LabelLayer(this.canvas, {
+      interactive: (label) => labelHandlers(label, 'click').length > 0 || labelHandlers(label, 'hover').length > 0,
+      on: (type, label, e) => this.#labelPointer(type, label, e),
+    })
 
     if (options.framing !== undefined) {
       // 'both' is short for { keep: 'both' }
@@ -276,6 +283,7 @@ export class View {
       this.#autoFrame = false
     }
     if (!(camera instanceof Camera)) fail('View', `'camera' must be a camera or a preset name, got ${describe(camera)}`)
+    this.#flight = null
     this.#camera = camera
     if (this.#height) camera.aspect = this.#width / this.#height
     // a new camera is framed for the canvas as it is now
@@ -398,6 +406,7 @@ export class View {
    * @param {number} dt
    */
   #updateControls(dt) {
+    if (this.#flight) return this.#fly(dt)
     if (!this.controls) return
     const waiting = this.#autoFrame && samePlace(cameraPlace(this.camera), this.#autoFrameFrom)
     this.controls.update(dt)
@@ -416,6 +425,9 @@ export class View {
   /** @param {boolean} wait wait for shaders, for a complete frame (step, toImage) */
   #render(wait) {
     if (this.#autoFrame) {
+      // fitted to the canvas as laid out now: a page still being built (a grid of tiles filling up)
+      // can change its shape before the browser reports the resize, which comes after this frame
+      this.resize()
       const bounds = this.scene.bounds
       // the app moved the camera itself: leave it where it put it
       if (!samePlace(cameraPlace(this.camera), this.#autoFrameFrom)) this.#autoFrame = false
@@ -465,18 +477,29 @@ export class View {
   }
 
   /**
-   * Move the camera so a node, a box or (with no argument) the whole scene fills the view,
-   * keeping the viewing direction. The orbit target moves to its centre.
+   * Move the camera so a node, a box or (with no argument) the whole scene fills the view. The orbit
+   * target moves to its centre. It keeps the viewing direction unless given one - a preset's name
+   * ('perspective', 'top', 'front'...) or a vector from the target towards the camera - and with a
+   * duration it glides there, as a tour or a Reset button wants.
+   *
+   *     view.frame(rack, { duration: 0.8 })                           // fly to the rack
+   *     view.frame(undefined, { direction: 'perspective', duration: 0.6 }) // back to the start
    * @param {Node | Box3} [target] (default the scene)
-   * @param {{ padding?: number }} [options] the margin around it, as a fraction of its size: 0 is a tight
-   *   fit, 0.2 (the default) leaves a fifth
+   * @param {{ padding?: number, direction?: CameraPreset | Vec3Input, duration?: number }} [options] padding is
+   *   the margin around it, as a fraction of its size: 0 is a tight fit, 0.2 (the default) leaves a fifth.
+   *   duration is in seconds (default 0: straight there); a press or the wheel stops the glide
    * @returns {this}
    */
-  frame(target = this.scene, { padding = 0.2 } = {}) {
+  frame(target = this.scene, { padding = 0.2, direction: towards, duration = 0 } = {}) {
     if (!(padding >= 0)) fail('View', `frame() padding is the margin around, as a fraction of the size (0.2 = 20%), got ${describe(padding)}`)
     if (padding >= 1) warnOnce(this, `frame() padding ${padding} leaves a margin of ${Math.round(padding * 100)}% - it is a fraction of the size (0.2 = 20%)`)
+    checkRange('View', 'frame() duration', duration, 0)
     const cam = /** @type {any} */ (this.camera)
-    const direction = cam.position.clone().sub(cam.target ?? new Vec3()).normalize()
+    const from = placeOf(cam)
+    this.#flight = null
+    const direction = towards === undefined ? cam.position.clone().sub(cam.target ?? new Vec3()).normalize()
+      : typeof towards === 'string' ? presetDirection(/** @type {CameraPreset} */ (towards)) : Vec3.fromInput(towards, 'View').normalize()
+    if (towards !== undefined && !(direction.len() > 0)) fail('View', `frame() direction is a preset name or a vector from the target towards the camera, got ${describe(towards)}`)
     if (direction.len() === 0) direction.set(0, 0.3, 1).normalize()
     const points = target instanceof Box3 ? corners(target) : this.#drawnPoints(target, direction)
     // an explicit frame replaces the preset camera's fit on the first frame
@@ -500,8 +523,37 @@ export class View {
     // framed for the canvas as it is now
     this.#designed = cam.aspect
     this.#applied = 1
+    if (duration > 0) {
+      // the camera starts where it was and glides there, frame by frame
+      this.#flight = { from, to: placeOf(cam), time: 0, duration }
+      setPlace(cam, from)
+    }
     this.invalidate()
     return this
+  }
+
+  /**
+   * One frame of a glide: round the target as it moves, closing the distance evenly, so the picture
+   * turns and zooms rather than cutting through what is in view.
+   * @param {number} dt
+   */
+  #fly(dt) {
+    const f = /** @type {Flight} */ (this.#flight)
+    f.time = Math.min(f.duration, f.time + dt)
+    const e = EASES.inOut(f.time / f.duration)
+    const cam = /** @type {any} */ (this.camera)
+    const target = f.from.target.clone().lerp(f.to.target, e)
+    const d0 = f.from.position.clone().sub(f.from.target), d1 = f.to.position.clone().sub(f.to.target)
+    const r0 = d0.len() || 1e-6, r1 = d1.len() || 1e-6
+    const way = turnBetween(d0.multiplyScalar(1 / r0), d1.multiplyScalar(1 / r1), e)
+    setTarget(cam, target)
+    cam.position.copy(target).add(way.multiplyScalar(r0 * (r1 / r0) ** e))
+    if (f.to.height !== undefined) cam.height = f.from.height * (f.to.height / f.from.height) ** e
+    if (f.time >= f.duration) {
+      setPlace(cam, f.to)
+      this.#flight = null
+    }
+    this.invalidate()
   }
 
   /**
@@ -846,6 +898,7 @@ export class View {
     this.#pickPending = false
     if (!this.#needsHover()) return
     const p = this.#pointer
+    if (this.#labelHover) return this.#setHovered(this.#labelHover)
     if (!p || this.#dragging) return this.#setHovered(null)
     const frame = this.#gpuFrame()
     if (frame && this.#hoverBusy) {
@@ -860,7 +913,7 @@ export class View {
       this.#hoverBusy = false
       if (this.#disposed) return
       // the pointer may have gone, or moved on (then a newer pick is due)
-      this.#setHovered(found && this.#pointer ? this.#exact(found, frame) : null)
+      this.#setHovered(this.#labelHover ?? (found && this.#pointer ? this.#exact(found, frame) : null))
       this.#schedule()
     })
   }
@@ -886,6 +939,31 @@ export class View {
     for (const fn of was) if (!now.includes(fn)) fn(null)
     for (const fn of now) fn(hit)
     for (const fn of this.#handlers.hover) fn(hit, p?.event ?? null)
+  }
+
+  /**
+   * The pointer on a label that answers it: a click or hover there is one on what the label labels.
+   * @param {'click' | 'over' | 'out'} type @param {import('./frame.js').FrameLabel} label @param {MouseEvent | null} e
+   */
+  #labelPointer(type, label, e) {
+    const node = /** @type {any} */ (label.node), index = label.index
+    const points = index !== null && node.drawMode === 'points'
+    /** @type {Hit} */
+    const hit = { node, point: label.position.clone(), distance: label.position.distanceTo(this.camera.worldPosition), normal: null,
+      face: points ? index : null, instance: index !== null && !points ? index : null, uv: null, datum: node.datumAt?.(index) ?? null }
+    if (type === 'click') {
+      for (const fn of handlersAbove(node, 'click')) fn(hit)
+      for (const fn of this.#handlers.click) fn(hit, e)
+      return
+    }
+    this.#labelHover = type === 'over' ? hit : null
+    if (e) {
+      const rect = this.canvas.getBoundingClientRect()
+      this.#pointer = { x: e.clientX - rect.left, y: e.clientY - rect.top, clientX: e.clientX, clientY: e.clientY, event: /** @type {PointerEvent} */ (e) }
+    }
+    if (type === 'out') this.#pointer = null
+    this.#pickPending = true
+    this.#schedule()
   }
 
   /** Does clicking this hit do anything? @param {Hit} hit */
@@ -969,6 +1047,8 @@ export class View {
     const down = (e) => {
       // a new press replaces a drag whose letting go never arrived (released outside the window, say)
       if (this.#drag?.id === e.pointerId) return
+      // and takes the camera from a glide
+      this.#flight = null
       this.#drag = null
       const pressedAt = at(e)
       this.#press = { id: e.pointerId, x: pressedAt.x, y: pressedAt.y, moved: false }
@@ -1003,7 +1083,10 @@ export class View {
     canvas.addEventListener('pointerup', up)
     canvas.addEventListener('pointercancel', up)
     canvas.addEventListener('click', click)
+    const wheel = () => { this.#flight = null }
+    canvas.addEventListener('wheel', wheel, { passive: true })
     this.#cleanup.push(() => {
+      canvas.removeEventListener('wheel', wheel)
       canvas.removeEventListener('pointerdown', down)
       canvas.removeEventListener('pointermove', move)
       canvas.removeEventListener('pointerleave', leave)
@@ -1126,6 +1209,55 @@ function drawnPoints(node, camera) {
 function nearestAbove(node, key) {
   for (let n = node; n; n = n.parent) if (n[key]) return n
   return null
+}
+
+/** @typedef {{ position: Vec3, target: Vec3, height?: number }} Place */
+/** @typedef {{ from: Place, to: Place, time: number, duration: number }} Flight */
+
+/** Where a camera is, and an orthographic one's view height. @param {any} cam @returns {Place} */
+function placeOf(cam) {
+  return { position: cam.position.clone(), target: (cam.target ?? new Vec3()).clone(), height: cam.height }
+}
+
+/** @param {any} cam @param {Place} place */
+function setPlace(cam, place) {
+  cam.position.copy(place.position)
+  setTarget(cam, place.target)
+  if (place.height !== undefined) cam.height = place.height
+}
+
+/** Move a camera's target, keeping the one it has. @param {any} cam @param {Vec3} target */
+function setTarget(cam, target) {
+  if (cam.target) cam.target.copy(target)
+  else cam.target = target.clone()
+}
+
+/**
+ * Part way from one unit direction to another, along the great circle - by way of a side, when they
+ * are opposite and every way round is as short.
+ * @param {Vec3} a @param {Vec3} b @param {number} t
+ * @returns {Vec3}
+ */
+function turnBetween(a, b, t) {
+  const cos = Math.max(-1, Math.min(1, a.dot(b)))
+  if (cos > 0.9999) return a.clone().lerp(b, t).normalize()
+  if (cos < -0.9999) {
+    const side = Math.abs(a[1]) < 0.9 ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0)
+    const mid = a.clone().cross(side).normalize()
+    return t < 0.5 ? turnBetween(a, mid, t * 2) : turnBetween(mid, b, t * 2 - 1)
+  }
+  const angle = Math.acos(cos), s = Math.sin(angle)
+  return a.clone().multiplyScalar(Math.sin((1 - t) * angle) / s).add(b.clone().multiplyScalar(Math.sin(t * angle) / s))
+}
+
+/**
+ * The handlers a label answers: those of a Label node that has its own, or those of the instance or
+ * point it labels.
+ * @param {import('./frame.js').FrameLabel} label @param {'hover' | 'click'} event @returns {Function[]}
+ */
+function labelHandlers(label, event) {
+  if (label.index === null && !label.node.handlersFor(event).length) return []
+  return handlersAbove(label.node, event)
 }
 
 /**

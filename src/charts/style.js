@@ -23,8 +23,10 @@ const CSS = `
   color: inherit; font: inherit; text-align: left; cursor: pointer; }
 :where(.phoria-legend-item.off) { opacity: 0.35; }
 :where(.phoria-legend-swatch) { width: 10px; height: 10px; border-radius: 2px; flex: none; }
-:where(.phoria-legend-ramp) { width: 120px; height: 8px; border-radius: 2px; }
-:where(.phoria-legend-scale) { display: flex; justify-content: space-between; opacity: 0.7; font-size: 11px; }
+:where(.phoria-legend-key) { display: flex; gap: 6px; margin: 6px 0; }
+:where(.phoria-legend-ramp) { width: 10px; height: 140px; border-radius: 2px; flex: none; }
+:where(.phoria-legend-scale) { position: relative; min-width: 28px; font-size: 11px; font-variant-numeric: tabular-nums; }
+:where(.phoria-legend-scale > span) { position: absolute; left: 0; transform: translateY(50%); white-space: nowrap; opacity: 0.8; }
 `
 
 export function addStyle() {
