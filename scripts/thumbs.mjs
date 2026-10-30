@@ -90,6 +90,10 @@ const PREPARE = {
     view.scene.find('backdrop').visible = false
     const Box3 = view.scene.bounds.constructor
     view.frame(new Box3([-12.5, 0, -7.5], [12.5, 2.6, 8.2]), { direction: [0, 1.3, 1], padding: 0.01 })`,
+  // the three rows centred, with no labels, as advanced materials
+  'stylised-materials': `view.scene.traverse((n) => { if (n.className?.includes('demo-label')) n.visible = false })
+    const Box3 = view.scene.bounds.constructor
+    view.frame(new Box3([-5.6, 0, -5.4], [5.6, 2.2, 6.2]), { direction: [0, 0.8, 1], padding: 0 })`,
   'scene-json': `view.scene.find('turntable').rotation.set(0, 0, 0)
     view.camera.position.set(2.5, 4, 9)
     view.camera.target.set(0, 0.9, 0)

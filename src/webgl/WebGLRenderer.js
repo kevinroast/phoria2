@@ -70,7 +70,7 @@ const NO_SHADOWS = []
 const MAP_DEFINES = { roughnessMap: 'ROUGHNESS_MAP', metalnessMap: 'METALNESS_MAP', normalMap: 'NORMAL_MAP', bumpMap: 'BUMP_MAP', aoMap: 'AO_MAP' }
 // every map a mesh can sample - triplanar projection is only worth its varyings when there is one
 const MAP_SLOTS = ['map', 'emissiveMap', ...Object.keys(MAP_DEFINES)]
-const MAP_UNIFORMS = { map: 'uMap', roughnessMap: 'uRoughnessMap', metalnessMap: 'uMetalnessMap', normalMap: 'uNormalMap', bumpMap: 'uBumpMap', aoMap: 'uAoMap', emissiveMap: 'uEmissiveMap' }
+const MAP_UNIFORMS = { matcap: 'uMatcap', map: 'uMap', roughnessMap: 'uRoughnessMap', metalnessMap: 'uMetalnessMap', normalMap: 'uNormalMap', bumpMap: 'uBumpMap', aoMap: 'uAoMap', emissiveMap: 'uEmissiveMap' }
 // counting a cap's faces into the stencil: the solids' surfaces, colour and depth left alone
 const CLIP_MASK = /** @type {[string, string]} */ ([MESH_VERTEX, CLIP_ONLY_FRAGMENT])
 // a cap: a square on the plane, two units across, facing +Y until it is placed
@@ -503,14 +503,16 @@ export class WebGLRenderer {
       const c = material.translucencyColor, k = material.translucency
       program.set('uTranslucency', [c[0] * k, c[1] * k, c[2] * k, k])
     }
+    if (material.toon > 0) program.set('uToon', Math.max(2, Math.round(material.toon)))
     program.set('uAlphaTest', material.alphaTest)
     /** @type {[string, Texture][]} */
     const maps = kind === 'mesh' ? material.textures : material.map ? [['map', material.map]] : []
     // GL textures first (uploads use a unit of their own), then bind them to the samplers
     const bound = maps.map(([slot, texture]) => [MAP_UNIFORMS[slot], this.#gpu.resources.texture(texture)])
     for (const [name, texture] of bound) program.set(name, texture)
-    // one UV transform for every map: the first map's (glTF models share theirs)
-    const first = maps[0]?.[1]
+    // one UV transform for every map: the first map's (glTF models share theirs) - a matcap takes
+    // no UVs, so isn't one
+    const first = maps.find(([slot]) => slot !== 'matcap')?.[1]
     program.set('uUvTransform', first ? [first.repeat[0], first.repeat[1], first.offset[0], first.offset[1]] : [1, 1, 0, 0])
 
     // render state
@@ -657,6 +659,8 @@ export class WebGLRenderer {
         if (material.sheen > 0) d.push('SHEEN')
         if (material.anisotropy > 0) d.push('ANISOTROPY')
         if (material.translucency > 0) d.push('TRANSLUCENCY')
+        if (material.matcap) d.push('MATCAP')
+        if (material.toon > 0) d.push('TOON')
       }
       if (material.map) d.push('MAP')
       if (material.emissiveMap) d.push('EMISSIVE_MAP')

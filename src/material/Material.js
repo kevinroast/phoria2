@@ -50,6 +50,11 @@ import { Texture } from './Texture.js'
  * @property {number} [translucency] 0-1: light through thin surfaces, lighting them from behind - leaves, paper,
  *   lampshades, curtains (default 0)
  * @property {ColorInput} [translucencyColor] tints the light that comes through (default white)
+ * @property {MapInput | null} [matcap] a picture of a lit sphere that gives the whole look - clay, wax, chrome,
+ *   a painted ball - picked by which way the surface faces the camera. Lights, shadows and the environment are
+ *   ignored; the colour and colour map multiply it
+ * @property {number} [toon] cartoon shading in this many flat tones (2 or more) with a hard-edged highlight;
+ *   0 (the default) is smooth
  * @property {boolean} [unlit] flat colour that ignores lights (default false)
  * @property {boolean} [flatShading] faceted look from face normals (default false)
  * @property {boolean} [doubleSided] draw back faces too (default false)
@@ -64,20 +69,21 @@ import { Texture } from './Texture.js'
  * @property {number} [width] Lines: width in pixels (default 1)
  */
 
-const MAPS = ['map', 'roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap', 'emissiveMap']
+// the matcap last: the first map's repeat and offset are every map's, and a matcap has none
+const MAPS = ['map', 'roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap', 'emissiveMap', 'matcap']
 // data maps hold numbers, not colours
 const LINEAR_MAPS = new Set(['roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap'])
 const FLAGS = ['unlit', 'flatShading', 'doubleSided', 'vertexColors', 'depthWrite', 'depthTest', 'sizeAttenuation', 'transparent', 'fog']
 const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiveIntensity: [0, Infinity], size: [0, Infinity], width: [0, Infinity],
   alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1], triplanar: [0, Infinity], bumpScale: [-Infinity, Infinity],
   transmission: [0, 1], clearcoat: [0, 1], clearcoatRoughness: [0, 1], sheen: [0, 1], sheenRoughness: [0, 1], ior: [1, Infinity],
-  specularIntensity: [0, 1], anisotropy: [0, 1], anisotropyRotation: [-Infinity, Infinity], translucency: [0, 1] }
+  specularIntensity: [0, 1], anisotropy: [0, 1], anisotropyRotation: [-Infinity, Infinity], translucency: [0, 1], toon: [0, 16] }
 // colours, and their defaults
 const COLORS = { color: 0xffffff, emissive: 0x000000, sheenColor: 0xffffff, specularColor: 0xffffff, translucencyColor: 0xffffff }
 const DEFAULTS = {
   name: '', opacity: 1, alphaTest: 0, roughness: 0.5, metalness: 0, normalScale: 1, bumpScale: 1, aoMapIntensity: 1, triplanar: 0, emissiveIntensity: 1,
   transmission: 0, clearcoat: 0, clearcoatRoughness: 0, sheen: 0, sheenRoughness: 0.5, ior: 1.5, specularIntensity: 1, anisotropy: 0,
-  anisotropyRotation: 0, translucency: 0, unlit: false, flatShading: false,
+  anisotropyRotation: 0, translucency: 0, toon: 0, unlit: false, flatShading: false,
   doubleSided: false, vertexColors: false, blending: 'normal', depthWrite: true, depthTest: true, fog: true,
   size: 1, sizeAttenuation: true, width: 1,
 }
@@ -89,6 +95,10 @@ const HINTS = {
   side: "use 'doubleSided: true'",
   wireframe: 'use new Lines({ geometry: edges(geometry) }) for a wireframe',
   shininess: "use 'roughness' (0 = mirror, 1 = matte)",
+  matcapMap: "use 'matcap'",
+  gradientMap: "use 'toon' - the number of flat tones",
+  cel: "use 'toon' - the number of flat tones",
+  celShading: "use 'toon' - the number of flat tones",
   specular: "use 'specularIntensity' and 'specularColor' for a non-metal's reflections, or 'roughness' and 'metalness'",
   reflectivity: "use 'ior' (1.5 by default) or 'specularIntensity'",
   anisotropyStrength: "use 'anisotropy'",
@@ -129,6 +139,7 @@ export class Material {
   /** Brushed metal: 0-1. @type {number} */ anisotropy
   /** Turns the brushing from the UVs' u, in radians. @type {number} */ anisotropyRotation
   /** Light through thin surfaces: 0-1. @type {number} */ translucency
+  /** Cartoon shading in this many flat tones; 0 is smooth. @type {number} */ toon
   /** @type {boolean} */ unlit
   /** @type {boolean} */ flatShading
   /** @type {boolean} */ doubleSided
@@ -230,9 +241,13 @@ export class Material {
   get emissiveMap() { return this.#maps.emissiveMap }
   /** @param {MapInput | null} v */
   set emissiveMap(v) { this.setMap('emissiveMap', v) }
+  /** A picture of a lit sphere that gives the whole look. @returns {Texture | null} */
+  get matcap() { return this.#maps.matcap }
+  /** @param {MapInput | null} v */
+  set matcap(v) { this.setMap('matcap', v) }
 
   /** @internal
-   * @param {string} slot one of map, roughnessMap, metalnessMap, normalMap, aoMap, emissiveMap
+   * @param {string} slot one of map, roughnessMap, metalnessMap, normalMap, bumpMap, aoMap, emissiveMap, matcap
    * @param {MapInput | null} value
    */
   setMap(slot, value) {
@@ -283,6 +298,7 @@ export class Material {
     if (this.sheen > 0) parts.push('sheen')
     if (this.anisotropy > 0) parts.push('brushed')
     if (this.translucency > 0) parts.push('translucent')
+    if (this.toon > 0) parts.push('toon')
     if (this.flatShading) parts.push('flat')
     if (this.vertexColors) parts.push('vcolor')
     return parts.join('+')

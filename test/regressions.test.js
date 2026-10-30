@@ -988,4 +988,18 @@ describe('glass and clearcoat', () => {
     expect(Object.keys(new Material().toJSON())).toEqual([])
     expect(() => new Material({ ior: 0.9 })).toThrow('ior')
   })
+
+  it('matcap and toon compile only when used; an unlit material ignores both', async () => {
+    const has = (sources, define) => sources.some((s) => s.includes(`#define ${define}\n`))
+    const which = (sources) => ['MATCAP', 'TOON'].filter((d) => has(sources, d))
+    const matcap = new Texture({ image: { width: 1, height: 1, data: new Uint8Array(4) } })
+    expect(which(await shadersFor({ color: 'red' }))).toEqual([])
+    expect(which(await shadersFor({ matcap }))).toEqual(['MATCAP'])
+    expect(which(await shadersFor({ toon: 3 }))).toEqual(['TOON'])
+    expect(which(await shadersFor({ matcap, toon: 3, unlit: true }))).toEqual([])
+    // the matcap comes last, so a colour map's repeat stays the one every map uses
+    const map = new Texture({ image: { width: 1, height: 1, data: new Uint8Array(4) } })
+    expect(new Material({ matcap, map }).textures.map(([slot]) => slot)).toEqual(['map', 'matcap'])
+    expect(() => new Material({ toon: 20 })).toThrow('toon')
+  })
 })

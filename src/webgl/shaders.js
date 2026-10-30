@@ -327,6 +327,13 @@ uniform float uClearcoat;
 uniform float uClearcoatRoughness;
 #endif
 uniform vec4 uSpecular;      // a non-metal's reflectance face on (from its ior), and at grazing angles
+#ifdef MATCAP
+uniform sampler2D uMatcap;
+uniform mat4 uView;
+#endif
+#ifdef TOON
+uniform float uToon;         // how many tones, 2 or more
+#endif
 #ifdef SHEEN
 uniform vec3 uSheenColor;    // linear, sheen applied
 uniform float uSheenRoughness;
@@ -433,7 +440,34 @@ float anisotropicDV(vec3 v, vec3 l, vec3 h, float NoV, float NoL, float NoH) {
 // Light intensity 1 on a white surface facing it gives white: the Lambert term isn't divided by
 // PI, so the specular term is multiplied by it to keep the balance. (glTF intensities in lux and
 // candela are divided by PI when loaded.)
+#ifdef TOON
+// the highlight's colour: white on a non-metal, the surface's colour on a metal, fading as it roughens
+vec3 toonHighlight;
+
+// light in flat tones, antialiased where they meet: a step up a little before each tone's middle,
+// so more of a surface is lit than dark
+float toonTone(float x) {
+  float steps = uToon - 1.0;
+  float b = x * steps + 0.6;
+  float w = fwidth(b);
+  return min(floor(b) + smoothstep(1.0 - w, 1.0, fract(b)), steps) / steps;
+}
+
+// a cartoon's shading: flat tones of the colour, and one hard-edged highlight where GGX's is over
+// half its peak
+vec3 toonShade(vec3 n, vec3 v, vec3 l, vec3 radiance, vec3 diffuse, float a) {
+  float lit = toonTone(clamp(dot(n, l), 0.0, 1.0));
+  float s = D_GGX(clamp(dot(n, normalize(l + v)), 0.0, 1.0), a) * PI * a * a;
+  float w = fwidth(s);
+  float spot = smoothstep(0.5 - w, 0.5 + w, s) * step(0.001, lit);
+  return (diffuse * lit + toonHighlight * spot) * radiance;
+}
+#endif
+
 vec3 shade(vec3 n, vec3 v, vec3 l, vec3 radiance, vec3 diffuse, vec3 f0, float f90, float a) {
+#ifdef TOON
+  return toonShade(n, v, l, radiance, diffuse, a);
+#endif
   float NoL = clamp(dot(n, l), 0.0, 1.0);
   if (NoL <= 0.0) return vec3(0.0);
   vec3 h = normalize(l + v);
@@ -629,6 +663,19 @@ float pointShadowAt(vec3 light, vec3 n, float distance) {
 }
 #endif
 
+#ifdef MATCAP
+// A matcap - a picture of a lit sphere - looked up by the normal as the camera sees it, turned to
+// face along the line of sight so it doesn't stretch towards the edges of the view
+vec3 matcapAt(vec3 n, vec3 v) {
+  vec3 nv = normalize(mat3(uView) * n), vv = normalize(mat3(uView) * v);
+  vec3 x = normalize(vec3(vv.z, 0.0, -vv.x));
+  vec3 y = cross(vv, x);
+  vec2 uv = vec2(dot(x, nv), dot(y, nv)) * 0.495 + 0.5;
+  // the picture's top is up
+  return texture(uMatcap, vec2(uv.x, 1.0 - uv.y)).rgb;
+}
+#endif
+
 // light arriving from all round, on a surface facing n: flat, hemisphere and environment light
 vec3 irradianceAt(vec3 n) {
   vec3 e = uAmbient + mix(uHemisphereGround, uHemisphereSky, n.y * 0.5 + 0.5);
@@ -698,6 +745,10 @@ void main() {
   n = bumpNormal(n);
 #endif
   vec3 v = normalize(uCameraPosition - vWorldPosition);
+#ifdef MATCAP
+  // its look from the picture, by the normal: no lights, and its colours kept as they are, as unlit ones are
+  vec3 color = base.rgb * matcapAt(n, v) + emissive;
+#else
   float roughness = uRoughness;
   float metalness = uMetalness;
 #ifdef ROUGHNESS_MAP
@@ -711,6 +762,11 @@ void main() {
   vec3 diffuse = base.rgb * (1.0 - metalness);
   vec3 f0 = mix(uSpecular.rgb, base.rgb, metalness);
   float f90 = mix(uSpecular.a, 1.0, metalness);
+#ifdef TOON
+  // a cartoon's metal is its colour too, with a highlight of that colour
+  diffuse = base.rgb;
+  toonHighlight = mix(vec3(uSpecular.a), base.rgb, metalness) * (1.0 - roughness);
+#endif
 #ifdef TRANSMISSION
   // glass: what passes through isn't scattered back, so less diffuse colour - and the reflections
   // stay whole, however clear it is
@@ -820,8 +876,13 @@ void main() {
 #else
   vec3 r = reflect(-v, n);
 #endif
+#ifdef TOON
+  // a flat fill, so the tones stay flat: the light from all round, averaged over up and down
+  vec3 indirect = diffuse * 0.5 * (irradianceAt(vec3(0.0, 1.0, 0.0)) + irradianceAt(vec3(0.0, -1.0, 0.0)));
+#else
   vec3 ambientSpecular = reflected(r, n, roughness, irradiance) * brdf;
   vec3 indirect = diffuse * irradiance + ambientSpecular;
+#endif
 #ifdef TRANSLUCENCY
   indirect += through * irradianceAt(-n);
 #endif
@@ -846,6 +907,7 @@ void main() {
   coverage *= mix(1.0, clamp(max(brdf.r, max(brdf.g, brdf.b)), 0.0, 1.0), uTransmission);
 #endif
   color = toneMap(color);
+#endif
 #else
   vec3 color = base.rgb + emissive;
 #endif

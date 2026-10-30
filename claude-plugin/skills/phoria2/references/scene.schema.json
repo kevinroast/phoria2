@@ -801,6 +801,17 @@
             }
           ]
         },
+        "matcap": {
+          "description": "A picture of a lit sphere that gives the whole look - clay, wax, chrome - picked by which way the surface faces the camera; lights are ignored.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/texture"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "unlit": {
           "type": "boolean",
           "description": "Ignore lights: draws exactly its colour."
@@ -946,6 +957,12 @@
         },
         "translucencyColor": {
           "$ref": "#/$defs/color"
+        },
+        "toon": {
+          "type": "number",
+          "description": "Cartoon shading in this many flat tones (2 or more), with a hard-edged highlight; 0 is smooth.",
+          "minimum": 0,
+          "maximum": 16
         },
         "blending": {
           "enum": ["normal", "additive", "multiply"]

@@ -302,6 +302,8 @@ One material type, given as a plain object:
 { color: '#1f2d6e', roughness: 0.9, sheen: 1 }       // velvet: cloth's bright rim
 { color: '#ccc', metalness: 1, anisotropy: 0.8 }     // brushed metal
 { color: '#f2e4c4', translucency: 0.8 }              // paper: lit from behind too
+{ matcap: 'clay.png' }                               // the look from a picture of a lit sphere
+{ color: '#e4572e', toon: 3 }                        // cartoon: three flat tones
 { emissive: '#ff0', emissiveIntensity: 3 }           // glows
 { map: 'wood.jpg', normalMap: 'wood_n.png' }         // textures from urls
 ```
@@ -319,7 +321,7 @@ Properties: `color`, `opacity`, `roughness` (0.5), `metalness` (0), `emissive`,
 filter does: cyan over magenta is blue), `alphaTest` (cut-outs: drop pixels with less alpha - leaves, fences),
 `map`, `normalMap`/`normalScale`, `bumpMap`/`bumpScale`, `roughnessMap`, `metalnessMap`, `aoMap`,
 `emissiveMap`, `transmission`, `clearcoat`/`clearcoatRoughness`, `sheen`/`sheenColor`/`sheenRoughness`, `ior`/
-`specularIntensity`/`specularColor`, `anisotropy`/`anisotropyRotation`, `translucency`/`translucencyColor` (below); `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
+`specularIntensity`/`specularColor`, `anisotropy`/`anisotropyRotation`, `translucency`/`translucencyColor`, `matcap`, `toon` (below); `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
 `mesh.material.color.set('#0f0')`, `mesh.material.opacity = 0.5`, or a whole new one: `mesh.material = { color: 'red' }`
 (options become a Material, as in the constructor; `mesh.geometry = box(2)` likewise).
 
@@ -365,7 +367,20 @@ inside, curtains. What passes through is taken from what is scattered back, so a
 only through it. `translucencyColor` (white) tints the light that comes through. It is light
 through a thin sheet, not light scattering inside a solid: a lantern glows, marble stays marble.
 
-glTF models bring all of these from `KHR_materials_transmission`, `KHR_materials_clearcoat`,
+**Matcap**: `matcap` is a picture of a lit sphere - clay, wax, chrome, a painted ball - that gives the
+whole look: each point takes the colour from where a sphere facing the same way would show it. It is
+the clay look of sculpting tools and CAD viewers, good for reading a model's shape, and costs one
+texture lookup - no lights, shadows or environment, which it ignores. Its shine stays put as the camera
+turns, since the light is in the picture, so it looks out of place beside lit things. `color` and
+`map` multiply it, so one grey matcap serves any colour; normal and bump maps and `flatShading`
+still shape it. Any matcap image works, or draw one on a canvas (`new Texture({ image: canvas })`).
+
+**Toon**: `toon: 3` shades in that many flat tones (2 or more; 0, the default, is smooth), with one
+hard-edged highlight - a cartoon. Lights and shadows work as usual; the shaded tone is the scene's
+ambient and hemisphere light, so add some for a lighter shade. Metals keep their colour, with a
+highlight of it. Pair it with `outline` on the nodes for inked edges.
+
+glTF models bring glass, clearcoat, sheen, reflectance, brushed metal and translucency from `KHR_materials_transmission`, `KHR_materials_clearcoat`,
 `KHR_materials_sheen`, `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_anisotropy`
 and `KHR_materials_diffuse_transmission` (by their factors; their textures aren't read).
 
