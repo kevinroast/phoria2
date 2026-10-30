@@ -487,6 +487,22 @@ export class WebGLRenderer {
       program.set('uClearcoat', material.clearcoat)
       program.set('uClearcoatRoughness', material.clearcoatRoughness)
     }
+    // a non-metal's reflectance face on, from its ior and specular settings, and at grazing angles
+    const ior = (material.ior - 1) / (material.ior + 1), sc = material.specularColor, si = material.specularIntensity
+    program.set('uSpecular', [Math.min(ior * ior * sc[0], 1) * si, Math.min(ior * ior * sc[1], 1) * si, Math.min(ior * ior * sc[2], 1) * si, si])
+    if (material.sheen > 0) {
+      const c = material.sheenColor, k = material.sheen
+      program.set('uSheenColor', [c[0] * k, c[1] * k, c[2] * k])
+      program.set('uSheenRoughness', material.sheenRoughness)
+    }
+    if (material.anisotropy > 0) {
+      program.set('uAnisotropy', material.anisotropy)
+      program.set('uAnisotropyDirection', [Math.cos(material.anisotropyRotation), Math.sin(material.anisotropyRotation)])
+    }
+    if (material.translucency > 0) {
+      const c = material.translucencyColor, k = material.translucency
+      program.set('uTranslucency', [c[0] * k, c[1] * k, c[2] * k, k])
+    }
     program.set('uAlphaTest', material.alphaTest)
     /** @type {[string, Texture][]} */
     const maps = kind === 'mesh' ? material.textures : material.map ? [['map', material.map]] : []
@@ -545,7 +561,7 @@ export class WebGLRenderer {
     // drawing's outline - shows whole rather than fighting it pixel by pixel
     gl.enable(gl.POLYGON_OFFSET_FILL)
     gl.polygonOffset(1, 2)
-    this.info.triangles += this.#gpu.resources.drawTriangles(geometry, instances)
+    this.info.triangles += this.#gpu.resources.drawTriangles(geometry, instances, material.anisotropy > 0 && !material.unlit)
     gl.disable(gl.POLYGON_OFFSET_FILL)
     this.info.drawCalls++
   }
@@ -638,6 +654,9 @@ export class WebGLRenderer {
         else if (this.#studio) d.push('STUDIO')
         if (material.transmission > 0) d.push('TRANSMISSION')
         if (material.clearcoat > 0) d.push('CLEARCOAT')
+        if (material.sheen > 0) d.push('SHEEN')
+        if (material.anisotropy > 0) d.push('ANISOTROPY')
+        if (material.translucency > 0) d.push('TRANSLUCENCY')
       }
       if (material.map) d.push('MAP')
       if (material.emissiveMap) d.push('EMISSIVE_MAP')

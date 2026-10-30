@@ -10,6 +10,7 @@ export const ATTRIBUTES = {
   color: 3,
   instanceMatrix: 4, // 4-7, a mat4 takes four slots
   instanceColor: 8,
+  tangent: 9, // brushed metal's direction: along the UVs' u, and which way their v runs
   // lines: per-segment endpoints and colours, and the corner of the quad being drawn
   segmentStart: 0,
   segmentEnd: 1,
@@ -186,6 +187,10 @@ layout(location = 3) in vec3 color;
 layout(location = 4) in mat4 instanceMatrix;
 layout(location = 8) in vec3 instanceColor;
 #endif
+#ifdef ANISOTROPY
+layout(location = 9) in vec4 tangent;
+out vec4 vTangent;
+#endif
 
 uniform mat4 uModel;
 uniform mat3 uNormalMatrix;
@@ -239,6 +244,14 @@ void main() {
   vWorldPosition = world.xyz;
   vNormal = uNormalMatrix * n;
   vUv = uv * uUvTransform.xy + uUvTransform.zw;
+#ifdef ANISOTROPY
+  // a direction along the surface, so it turns as the model does
+#ifdef INSTANCED
+  vTangent = vec4(mat3(uModel) * (m * tangent.xyz), tangent.w);
+#else
+  vTangent = vec4(mat3(uModel) * tangent.xyz, tangent.w);
+#endif
+#endif
 #ifdef TRIPLANAR
   vObjectPosition = position;
   vObjectNormal = normal;
@@ -313,6 +326,19 @@ uniform float uTransmission;
 uniform float uClearcoat;
 uniform float uClearcoatRoughness;
 #endif
+uniform vec4 uSpecular;      // a non-metal's reflectance face on (from its ior), and at grazing angles
+#ifdef SHEEN
+uniform vec3 uSheenColor;    // linear, sheen applied
+uniform float uSheenRoughness;
+#endif
+#ifdef ANISOTROPY
+uniform float uAnisotropy;
+uniform vec2 uAnisotropyDirection; // cos, sin of the brushing's turn from the UVs' u
+in vec4 vTangent;
+#endif
+#ifdef TRANSLUCENCY
+uniform vec4 uTranslucency;  // the light let through: linear colour with the amount applied, and the amount
+#endif
 
 uniform vec3 uAmbient;
 uniform vec3 uHemisphereSky;
@@ -384,24 +410,68 @@ float V_SmithGGXCorrelated(float NoV, float NoL, float a) {
   return 0.5 / max(gv + gl, 1e-5);
 }
 
-vec3 F_Schlick(float VoH, vec3 f0) {
-  return f0 + (1.0 - f0) * pow(1.0 - VoH, 5.0);
+vec3 F_Schlick(float VoH, vec3 f0, float f90) {
+  return f0 + (f90 - f0) * pow(1.0 - VoH, 5.0);
 }
+
+#ifdef ANISOTROPY
+// brushed metal: the brushing's direction, the way across it, and roughness along and across it
+vec3 brushT, brushB;
+float brushAT, brushAB;
+
+// GGX stretched along the brushing (KHR_materials_anisotropy): distribution and visibility together
+float anisotropicDV(vec3 v, vec3 l, vec3 h, float NoV, float NoL, float NoH) {
+  float a2 = brushAT * brushAB;
+  vec3 f = vec3(brushAB * dot(brushT, h), brushAT * dot(brushB, h), a2 * NoH);
+  float w2 = a2 / dot(f, f);
+  float gv = NoL * length(vec3(brushAT * dot(brushT, v), brushAB * dot(brushB, v), NoV));
+  float gl = NoV * length(vec3(brushAT * dot(brushT, l), brushAB * dot(brushB, l), NoL));
+  return a2 * w2 * w2 / PI * 0.5 / max(gv + gl, 1e-5);
+}
+#endif
 
 // Light intensity 1 on a white surface facing it gives white: the Lambert term isn't divided by
 // PI, so the specular term is multiplied by it to keep the balance. (glTF intensities in lux and
 // candela are divided by PI when loaded.)
-vec3 shade(vec3 n, vec3 v, vec3 l, vec3 radiance, vec3 diffuse, vec3 f0, float a) {
+vec3 shade(vec3 n, vec3 v, vec3 l, vec3 radiance, vec3 diffuse, vec3 f0, float f90, float a) {
   float NoL = clamp(dot(n, l), 0.0, 1.0);
   if (NoL <= 0.0) return vec3(0.0);
   vec3 h = normalize(l + v);
   float NoV = clamp(abs(dot(n, v)), 1e-4, 1.0);
   float NoH = clamp(dot(n, h), 0.0, 1.0);
   float VoH = clamp(dot(v, h), 0.0, 1.0);
-  vec3 F = F_Schlick(VoH, f0);
+  vec3 F = F_Schlick(VoH, f0, f90);
+#ifdef ANISOTROPY
+  vec3 specular = anisotropicDV(v, l, h, NoV, NoL, NoH) * F * PI;
+#else
   vec3 specular = D_GGX(NoH, a) * V_SmithGGXCorrelated(NoV, NoL, a) * F * PI;
+#endif
   return (diffuse * (1.0 - F) + specular) * radiance * NoL;
 }
+
+#ifdef SHEEN
+// cloth's sheen: the Charlie distribution (Estevez and Kulla) with Neubelt's visibility
+vec3 sheenShade(vec3 n, vec3 v, vec3 l, vec3 radiance, float a) {
+  float NoL = clamp(dot(n, l), 0.0, 1.0);
+  if (NoL <= 0.0) return vec3(0.0);
+  vec3 h = normalize(l + v);
+  float NoV = clamp(abs(dot(n, v)), 1e-4, 1.0);
+  float NoH = clamp(dot(n, h), 0.0, 1.0);
+  float invA = 1.0 / a;
+  float sin2h = max(1.0 - NoH * NoH, 0.0078125);
+  float D = (2.0 + invA) * pow(sin2h, invA * 0.5) / (2.0 * PI);
+  float V = clamp(1.0 / (4.0 * (NoL + NoV - NoL * NoV)), 0.0, 1.0);
+  return uSheenColor * D * V * PI * radiance * NoL;
+}
+
+// how much of the surroundings' light the sheen sends back: a fit to its integral (from three.js)
+float sheenEnvironment(float NoV, float r) {
+  float r2 = r * r;
+  float a = r < 0.25 ? -339.2 * r2 + 161.4 * r - 25.9 : -8.48 * r2 + 14.3 * r - 9.95;
+  float b = r < 0.25 ? 44.0 * r2 - 23.7 * r + 3.26 : 1.97 * r2 - 3.27 * r + 0.72;
+  return min(exp(a * NoV + b) + (r < 0.25 ? 0.0 : 0.1 * (r - 0.25)), PI);
+}
+#endif
 
 #ifdef CLEARCOAT
 // a clear coat's highlight: a glossy dielectric layer (f0 0.04) on the surface's own normal, so
@@ -413,7 +483,7 @@ vec3 coatShade(vec3 n, vec3 v, vec3 l, vec3 radiance, float a) {
   float NoV = clamp(abs(dot(n, v)), 1e-4, 1.0);
   float NoH = clamp(dot(n, h), 0.0, 1.0);
   float VoH = clamp(dot(v, h), 0.0, 1.0);
-  return D_GGX(NoH, a) * V_SmithGGXCorrelated(NoV, NoL, a) * F_Schlick(VoH, vec3(0.04)) * PI * radiance * NoL;
+  return D_GGX(NoH, a) * V_SmithGGXCorrelated(NoV, NoL, a) * F_Schlick(VoH, vec3(0.04), 1.0) * PI * radiance * NoL;
 }
 #endif
 
@@ -427,13 +497,13 @@ vec3 studio(vec3 d) {
 }
 
 // Karis' analytic approximation of the split-sum environment BRDF.
-vec3 envBRDF(vec3 f0, float roughness, float NoV) {
+vec3 envBRDF(vec3 f0, float f90, float roughness, float NoV) {
   vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
   vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
   vec4 r = roughness * c0 + c1;
   float a004 = min(r.x * r.x, exp2(-9.28 * NoV)) * r.x + r.y;
   vec2 ab = vec2(-1.04, 1.04) * a004 + r.zw;
-  return f0 * ab.x + ab.y;
+  return f0 * ab.x + ab.y * f90;
 }
 
 #ifdef ENV_MAP
@@ -473,6 +543,17 @@ vec3 triplanarNormal(float strength) {
   ty = vec3(ty.xy + n.xz, abs(ty.z) * n.y);
   tz = vec3(tz.xy + n.xy, abs(tz.z) * n.z);
   return normalize(vObjectToWorld * normalize(tx.zyx * w.x + ty.xzy * w.y + tz.xyz * w.z));
+}
+#endif
+
+#ifdef ANISOTROPY
+// The brushing's direction: the vertices' tangents (along the UVs' u), smooth across the mesh,
+// laid onto the shading normal and turned by the rotation
+vec3 brushDirection(vec3 n) {
+  vec3 t = vTangent.xyz - n * dot(n, vTangent.xyz);
+  float len = length(t);
+  t = len > 1e-6 ? t / len : normalize(cross(abs(n.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), n));
+  return t * uAnisotropyDirection.x + cross(n, t) * (vTangent.w < 0.0 ? -1.0 : 1.0) * uAnisotropyDirection.y;
 }
 #endif
 
@@ -548,6 +629,17 @@ float pointShadowAt(vec3 light, vec3 n, float distance) {
 }
 #endif
 
+// light arriving from all round, on a surface facing n: flat, hemisphere and environment light
+vec3 irradianceAt(vec3 n) {
+  vec3 e = uAmbient + mix(uHemisphereGround, uHemisphereSky, n.y * 0.5 + 0.5);
+#ifdef ENV_MAP
+  e += envIrradiance(n) * uEnvIntensity;
+#elif defined(STUDIO)
+  e += studio(n) * 0.35;
+#endif
+  return e;
+}
+
 // what a surface reflects of its surroundings along r - blurrier the rougher it is
 vec3 reflected(vec3 r, vec3 n, float roughness, vec3 irradiance) {
 #ifdef ENV_MAP
@@ -617,7 +709,8 @@ void main() {
   roughness = clamp(roughness, 0.04, 1.0);
   float a = roughness * roughness;
   vec3 diffuse = base.rgb * (1.0 - metalness);
-  vec3 f0 = mix(vec3(0.04), base.rgb, metalness);
+  vec3 f0 = mix(uSpecular.rgb, base.rgb, metalness);
+  float f90 = mix(uSpecular.a, 1.0, metalness);
 #ifdef TRANSMISSION
   // glass: what passes through isn't scattered back, so less diffuse colour - and the reflections
   // stay whole, however clear it is
@@ -628,6 +721,21 @@ void main() {
   float coatA = coatRoughness * coatRoughness;
   vec3 coat = vec3(0.0);
 #endif
+#ifdef SHEEN
+  float sheenRoughness = clamp(uSheenRoughness, 0.07, 1.0);
+  vec3 sheen = vec3(0.0);
+#endif
+#ifdef ANISOTROPY
+  brushT = brushDirection(n);
+  brushB = cross(n, brushT);
+  brushAT = mix(a, 1.0, uAnisotropy * uAnisotropy);
+  brushAB = max(a, 0.001);
+#endif
+#ifdef TRANSLUCENCY
+  // thin surfaces: what isn't scattered back comes through, lit from the far side
+  vec3 through = diffuse * uTranslucency.rgb;
+  diffuse *= 1.0 - uTranslucency.a;
+#endif
 
   vec3 color = vec3(0.0);
 #if NUM_DIRECTIONAL > 0
@@ -637,9 +745,23 @@ void main() {
     // the shadow-casting light always comes first
     if (i == 0) radiance *= shadowAt(surfaceNormal, uDirectionalDirection[0]);
 #endif
-    color += shade(n, v, uDirectionalDirection[i], radiance, diffuse, f0, a);
+    color += shade(n, v, uDirectionalDirection[i], radiance, diffuse, f0, f90, a);
 #ifdef CLEARCOAT
     coat += coatShade(surfaceNormal, v, uDirectionalDirection[i], radiance, coatA);
+#endif
+#ifdef SHEEN
+    sheen += sheenShade(n, v, uDirectionalDirection[i], radiance, sheenRoughness * sheenRoughness);
+#endif
+#ifdef TRANSLUCENCY
+    float behind = clamp(-dot(n, uDirectionalDirection[i]), 0.0, 1.0);
+    if (behind > 0.0) {
+      vec3 light = uDirectionalColor[i];
+#ifdef SHADOW
+      // shadowed as the far side is: what lights it comes through
+      if (i == 0) light *= shadowAt(-surfaceNormal, uDirectionalDirection[0]);
+#endif
+      color += through * light * behind;
+    }
 #endif
   }
 #endif
@@ -662,33 +784,61 @@ void main() {
 #ifdef POINT_SHADOW
     if (float(i) == uPointShadowIndex) radiance *= pointShadowAt(uPunctualPosition[i], surfaceNormal, d);
 #endif
-    color += shade(n, v, l, radiance, diffuse, f0, a);
+    color += shade(n, v, l, radiance, diffuse, f0, f90, a);
 #ifdef CLEARCOAT
     coat += coatShade(surfaceNormal, v, l, radiance, coatA);
+#endif
+#ifdef SHEEN
+    sheen += sheenShade(n, v, l, radiance, sheenRoughness * sheenRoughness);
+#endif
+#ifdef TRANSLUCENCY
+    float behind = clamp(-dot(n, l), 0.0, 1.0);
+    if (behind > 0.0) {
+      vec3 light = uPunctualColor[i] * falloff * cone;
+#ifdef SPOT_SHADOWS
+      if (tile >= 0.0 && cone > 0.0) light *= spotShadowAt(int(tile), -surfaceNormal, d);
+#endif
+#ifdef POINT_SHADOW
+      if (float(i) == uPointShadowIndex) light *= pointShadowAt(uPunctualPosition[i], -surfaceNormal, d);
+#endif
+      color += through * light * behind;
+    }
 #endif
   }
 #endif
 
   // ambient: flat, hemisphere and environment light
-  vec3 irradiance = uAmbient + mix(uHemisphereGround, uHemisphereSky, n.y * 0.5 + 0.5);
+  vec3 irradiance = irradianceAt(n);
   float NoV = clamp(abs(dot(n, v)), 1e-4, 1.0);
-  vec3 brdf = envBRDF(f0, roughness, NoV);
-#ifdef ENV_MAP
-  irradiance += envIrradiance(n) * uEnvIntensity;
-#elif defined(STUDIO)
-  irradiance += studio(n) * 0.35;
+  vec3 brdf = envBRDF(f0, f90, roughness, NoV);
+#ifdef ANISOTROPY
+  // reflections drawn out along the brushing: off a normal bent across it (KHR_materials_anisotropy)
+  vec3 brushNormal = cross(cross(brushB, v), brushB);
+  float bend = 1.0 - uAnisotropy * (1.0 - roughness);
+  bend *= bend;
+  vec3 r = reflect(-v, normalize(mix(brushNormal, n, bend * bend)));
+#else
+  vec3 r = reflect(-v, n);
 #endif
-  vec3 ambientSpecular = reflected(reflect(-v, n), n, roughness, irradiance) * brdf;
+  vec3 ambientSpecular = reflected(r, n, roughness, irradiance) * brdf;
   vec3 indirect = diffuse * irradiance + ambientSpecular;
+#ifdef TRANSLUCENCY
+  indirect += through * irradianceAt(-n);
+#endif
 #ifdef AO_MAP
   indirect *= mix(1.0, SAMPLE(uAoMap).r, uAoMapIntensity);
 #endif
   color += indirect + emissive;
+#ifdef SHEEN
+  // over the base, which loses a little of its light to it
+  sheen += irradiance * uSheenColor * sheenEnvironment(NoV, sheenRoughness);
+  color = color * (1.0 - 0.157 * max(uSheenColor.r, max(uSheenColor.g, uSheenColor.b))) + sheen;
+#endif
 #ifdef CLEARCOAT
   // the coat's reflection, over the base - which loses the light the coat reflects away
   float coatNoV = clamp(abs(dot(surfaceNormal, v)), 1e-4, 1.0);
-  coat += reflected(reflect(-v, surfaceNormal), surfaceNormal, coatRoughness, irradiance) * envBRDF(vec3(0.04), coatRoughness, coatNoV);
-  color = color * (1.0 - uClearcoat * F_Schlick(coatNoV, vec3(0.04)).x) + coat * uClearcoat;
+  coat += reflected(reflect(-v, surfaceNormal), surfaceNormal, coatRoughness, irradiance) * envBRDF(vec3(0.04), 1.0, coatRoughness, coatNoV);
+  color = color * (1.0 - uClearcoat * F_Schlick(coatNoV, vec3(0.04), 1.0).x) + coat * uClearcoat;
 #endif
 #ifdef TRANSMISSION
   // most of what is behind glass shows through face on; towards its edges, where it reflects nearly

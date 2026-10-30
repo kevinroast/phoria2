@@ -37,6 +37,19 @@ import { Texture } from './Texture.js'
  *   towards its edges. Its colour shows in proportion to 1 - transmission
  * @property {number} [clearcoat] 0-1: a clear glossy layer over the surface - car paint, lacquer, varnish (default 0)
  * @property {number} [clearcoatRoughness] 0-1: how glossy the coat is, 0 a mirror (default 0)
+ * @property {number} [sheen] 0-1: the soft bright rim of cloth at grazing angles - velvet, felt, upholstery (default 0)
+ * @property {ColorInput} [sheenColor] the sheen's colour (default white)
+ * @property {number} [sheenRoughness] 0-1: a thin bright rim at 0, a broad soft glow at 1 (default 0.5)
+ * @property {number} [ior] index of refraction, 1 or more: how strongly a non-metal reflects - water 1.33, glass and
+ *   plastic 1.5 (the default), diamond 2.4
+ * @property {number} [specularIntensity] 0-1: scales a non-metal's reflections, 0 for none - chalk, clay (default 1)
+ * @property {ColorInput} [specularColor] tints a non-metal's reflections face on (default white)
+ * @property {number} [anisotropy] 0-1: brushed metal - highlights drawn out along the brushing, which runs along
+ *   the UVs' u (around the mesh where it has no UVs) (default 0)
+ * @property {number} [anisotropyRotation] turns the brushing from the UVs' u, in radians (default 0)
+ * @property {number} [translucency] 0-1: light through thin surfaces, lighting them from behind - leaves, paper,
+ *   lampshades, curtains (default 0)
+ * @property {ColorInput} [translucencyColor] tints the light that comes through (default white)
  * @property {boolean} [unlit] flat colour that ignores lights (default false)
  * @property {boolean} [flatShading] faceted look from face normals (default false)
  * @property {boolean} [doubleSided] draw back faces too (default false)
@@ -57,14 +70,18 @@ const LINEAR_MAPS = new Set(['roughnessMap', 'metalnessMap', 'normalMap', 'bumpM
 const FLAGS = ['unlit', 'flatShading', 'doubleSided', 'vertexColors', 'depthWrite', 'depthTest', 'sizeAttenuation', 'transparent', 'fog']
 const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiveIntensity: [0, Infinity], size: [0, Infinity], width: [0, Infinity],
   alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1], triplanar: [0, Infinity], bumpScale: [-Infinity, Infinity],
-  transmission: [0, 1], clearcoat: [0, 1], clearcoatRoughness: [0, 1] }
+  transmission: [0, 1], clearcoat: [0, 1], clearcoatRoughness: [0, 1], sheen: [0, 1], sheenRoughness: [0, 1], ior: [1, Infinity],
+  specularIntensity: [0, 1], anisotropy: [0, 1], anisotropyRotation: [-Infinity, Infinity], translucency: [0, 1] }
+// colours, and their defaults
+const COLORS = { color: 0xffffff, emissive: 0x000000, sheenColor: 0xffffff, specularColor: 0xffffff, translucencyColor: 0xffffff }
 const DEFAULTS = {
   name: '', opacity: 1, alphaTest: 0, roughness: 0.5, metalness: 0, normalScale: 1, bumpScale: 1, aoMapIntensity: 1, triplanar: 0, emissiveIntensity: 1,
-  transmission: 0, clearcoat: 0, clearcoatRoughness: 0, unlit: false, flatShading: false,
+  transmission: 0, clearcoat: 0, clearcoatRoughness: 0, sheen: 0, sheenRoughness: 0.5, ior: 1.5, specularIntensity: 1, anisotropy: 0,
+  anisotropyRotation: 0, translucency: 0, unlit: false, flatShading: false,
   doubleSided: false, vertexColors: false, blending: 'normal', depthWrite: true, depthTest: true, fog: true,
   size: 1, sizeAttenuation: true, width: 1,
 }
-const OPTIONS = ['name', 'color', 'emissive', ...MAPS, ...FLAGS, ...Object.keys(NUMBERS), 'blending']
+const OPTIONS = ['name', ...Object.keys(COLORS), ...MAPS, ...FLAGS, ...Object.keys(NUMBERS), 'blending']
 
 // what agents (and three.js habits) will reach for
 const HINTS = {
@@ -72,7 +89,11 @@ const HINTS = {
   side: "use 'doubleSided: true'",
   wireframe: 'use new Lines({ geometry: edges(geometry) }) for a wireframe',
   shininess: "use 'roughness' (0 = mirror, 1 = matte)",
-  specular: "use 'roughness' and 'metalness'",
+  specular: "use 'specularIntensity' and 'specularColor' for a non-metal's reflections, or 'roughness' and 'metalness'",
+  reflectivity: "use 'ior' (1.5 by default) or 'specularIntensity'",
+  anisotropyStrength: "use 'anisotropy'",
+  diffuseTransmission: "use 'translucency'",
+  subsurface: "use 'translucency' for light through thin surfaces",
   colour: "use 'color'",
   emissiveColor: "use 'emissive'",
   alpha: "use 'opacity'",
@@ -101,6 +122,13 @@ export class Material {
   /** How much light passes through, as through glass: 0-1. @type {number} */ transmission
   /** A clear glossy layer over the surface: 0-1. @type {number} */ clearcoat
   /** How glossy the coat is, 0 a mirror. @type {number} */ clearcoatRoughness
+  /** The soft bright rim of cloth: 0-1. @type {number} */ sheen
+  /** A thin bright rim at 0, a broad soft glow at 1. @type {number} */ sheenRoughness
+  /** Index of refraction: how strongly a non-metal reflects (1.5). @type {number} */ ior
+  /** Scales a non-metal's reflections, 0-1. @type {number} */ specularIntensity
+  /** Brushed metal: 0-1. @type {number} */ anisotropy
+  /** Turns the brushing from the UVs' u, in radians. @type {number} */ anisotropyRotation
+  /** Light through thin surfaces: 0-1. @type {number} */ translucency
   /** @type {boolean} */ unlit
   /** @type {boolean} */ flatShading
   /** @type {boolean} */ doubleSided
@@ -113,8 +141,8 @@ export class Material {
   /** @type {boolean} */ sizeAttenuation
   /** @type {number} */ width
 
-  #color = new Color(0xffffff)
-  #emissive = new Color(0x000000)
+  /** @type {Record<string, Color>} */
+  #colors = Object.fromEntries(Object.entries(COLORS).map(([key, hex]) => [key, new Color(hex)]))
   #transparent = false
   /** @type {Record<string, Texture | null>} */
   #maps = Object.fromEntries(MAPS.map((m) => [m, null]))
@@ -127,8 +155,7 @@ export class Material {
     Object.assign(this, DEFAULTS)
     for (const [key, value] of /** @type {[string, any][]} */ (Object.entries(options))) {
       if (value === undefined) continue
-      if (key === 'color') this.color = value
-      else if (key === 'emissive') this.emissive = value
+      if (key in COLORS) this.#colors[key].set(value, 'Material')
       else if (MAPS.includes(key)) this.setMap(key, value)
       else if (FLAGS.includes(key)) this[key] = bool(key, value)
       else if (key in NUMBERS) this[key] = range(key, value, NUMBERS[key])
@@ -151,14 +178,29 @@ export class Material {
   }
 
   /** Base colour; assign any colour input. @returns {Color} */
-  get color() { return this.#color }
+  get color() { return this.#colors.color }
   /** @param {ColorInput} v */
-  set color(v) { this.#color.set(v, 'Material') }
+  set color(v) { this.#colors.color.set(v, 'Material') }
 
   /** Glow colour; assign any colour input. @returns {Color} */
-  get emissive() { return this.#emissive }
+  get emissive() { return this.#colors.emissive }
   /** @param {ColorInput} v */
-  set emissive(v) { this.#emissive.set(v, 'Material') }
+  set emissive(v) { this.#colors.emissive.set(v, 'Material') }
+
+  /** The sheen's colour; assign any colour input. @returns {Color} */
+  get sheenColor() { return this.#colors.sheenColor }
+  /** @param {ColorInput} v */
+  set sheenColor(v) { this.#colors.sheenColor.set(v, 'Material') }
+
+  /** Tints a non-metal's reflections face on; assign any colour input. @returns {Color} */
+  get specularColor() { return this.#colors.specularColor }
+  /** @param {ColorInput} v */
+  set specularColor(v) { this.#colors.specularColor.set(v, 'Material') }
+
+  /** Tints the light that comes through a translucent surface; assign any colour input. @returns {Color} */
+  get translucencyColor() { return this.#colors.translucencyColor }
+  /** @param {ColorInput} v */
+  set translucencyColor(v) { this.#colors.translucencyColor.set(v, 'Material') }
 
   /** @returns {Texture | null} */
   get map() { return this.#maps.map }
@@ -238,6 +280,9 @@ export class Material {
     if (this.alphaTest > 0) parts.push('cutout')
     if (this.transmission > 0) parts.push('glass')
     if (this.clearcoat > 0) parts.push('clearcoat')
+    if (this.sheen > 0) parts.push('sheen')
+    if (this.anisotropy > 0) parts.push('brushed')
+    if (this.translucency > 0) parts.push('translucent')
     if (this.flatShading) parts.push('flat')
     if (this.vertexColors) parts.push('vcolor')
     return parts.join('+')
@@ -252,8 +297,7 @@ export class Material {
   clone() {
     const copy = new Material(this.toJSON(true))
     // the colours exactly: a description rounds them to 8-bit sRGB and can't hold values past 1
-    copy.color.set(this.#color)
-    copy.emissive.set(this.#emissive)
+    for (const [key, c] of Object.entries(this.#colors)) copy.#colors[key].set(c)
     return copy
   }
 
@@ -280,8 +324,7 @@ export class Material {
       if (this[key] !== value) json[key] = this[key]
     }
     if (this.#transparent) json.transparent = true
-    if (this.#color.getHex() !== 0xffffff) json.color = this.#color.getStyle()
-    if (this.#emissive.getHex() !== 0) json.emissive = this.#emissive.getStyle()
+    for (const [key, c] of Object.entries(this.#colors)) if (c.getHex() !== COLORS[key]) json[key] = c.getStyle()
     for (const [slot, t] of this.textures) {
       const desc = keepTextures ? t : t.toJSON()
       if (desc) json[slot] = desc

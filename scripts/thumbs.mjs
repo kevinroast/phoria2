@@ -13,7 +13,7 @@ import { DEMOS, slug } from '../demos/registry.js'
 
 const WIDTH = 960, HEIGHT = 600, SCALE = 0.5
 // seconds to let a demo run first - longer for those that load models or build up to something
-const WAIT = { viewer: 7, 'guided-tour': 4, 'point-lights': 7, 'fog-shadows': 5, fireworks: 6, paint: 7, particles: 5, textures: 5, lights: 5, artemis: 4, cpu: 4, volcano: 5, engine: 4.5, skull: 5 }
+const WAIT = { viewer: 7, 'guided-tour': 4, 'point-lights': 7, 'fog-shadows': 5, fireworks: 6, paint: 7, particles: 5, textures: 5, lights: 5, artemis: 4, cpu: 4, volcano: 5, engine: 4.5, skull: 5, 'advanced-materials': 5 }
 // several views on one page: captured from the page, not one view's toImage() - for cells, the
 // whole poster: both cells, their titles and the paper behind them
 const PAGE = ['dashboard', 'chartlab', 'cells', 'colour', 'cad', 'schematic']
@@ -84,6 +84,12 @@ const PREPARE = {
   artemis: `story.pause()
     story.seekStep(15)
     story.seek(story.time + 3.6)`,
+  // every row, centred - the demo's framing leaves room on the right for its controls - with no
+  // labels and no striped wall behind, just the samples on the floor
+  'advanced-materials': `view.scene.traverse((n) => { if (n.className?.includes('demo-label')) n.visible = false })
+    view.scene.find('backdrop').visible = false
+    const Box3 = view.scene.bounds.constructor
+    view.frame(new Box3([-12.5, 0, -7.5], [12.5, 2.6, 8.2]), { direction: [0, 1.3, 1], padding: 0.01 })`,
   'scene-json': `view.scene.find('turntable').rotation.set(0, 0, 0)
     view.camera.position.set(2.5, 4, 9)
     view.camera.target.set(0, 0.9, 0)

@@ -31,9 +31,60 @@ const UPLOAD_UNIT = 15
  * @param {{ instanceMatrices: Float32Array, instanceColors: Float32Array | null } | null} instances
  * @param {boolean} withNormals
  */
-function layoutOf(g, instances, withNormals) {
+function layoutOf(g, instances, withNormals, withTangents) {
   return [g.positions.length, withNormals, g.uvs?.length, g.colors?.length, g.indices?.length,
-    instances?.instanceMatrices.length, instances?.instanceColors?.length].join()
+    instances?.instanceMatrices.length, instances?.instanceColors?.length, withTangents].join()
+}
+
+/**
+ * Per-vertex tangents along the UVs' u, with the way v runs in w (Lengyel's method): smooth where
+ * the normals are. Without UVs, around the mesh's up axis.
+ * @param {Geometry} g
+ * @returns {Float32Array}
+ */
+export function tangentsOf(g) {
+  const p = g.positions, n = g.normals, uv = g.uvs, count = p.length / 3
+  const out = new Float32Array(count * 4)
+  const t = new Float32Array(count * 3), b = new Float32Array(count * 3)
+  if (uv) {
+    const idx = g.indices, triangles = (idx ? idx.length : count) / 3
+    for (let k = 0; k < triangles; k++) {
+      const i0 = idx ? idx[k * 3] : k * 3, i1 = idx ? idx[k * 3 + 1] : k * 3 + 1, i2 = idx ? idx[k * 3 + 2] : k * 3 + 2
+      const e1x = p[i1 * 3] - p[i0 * 3], e1y = p[i1 * 3 + 1] - p[i0 * 3 + 1], e1z = p[i1 * 3 + 2] - p[i0 * 3 + 2]
+      const e2x = p[i2 * 3] - p[i0 * 3], e2y = p[i2 * 3 + 1] - p[i0 * 3 + 1], e2z = p[i2 * 3 + 2] - p[i0 * 3 + 2]
+      const du1 = uv[i1 * 2] - uv[i0 * 2], dv1 = uv[i1 * 2 + 1] - uv[i0 * 2 + 1]
+      const du2 = uv[i2 * 2] - uv[i0 * 2], dv2 = uv[i2 * 2 + 1] - uv[i0 * 2 + 1]
+      const det = du1 * dv2 - du2 * dv1
+      if (Math.abs(det) < 1e-12) continue
+      const r = 1 / det
+      const tx = (e1x * dv2 - e2x * dv1) * r, ty = (e1y * dv2 - e2y * dv1) * r, tz = (e1z * dv2 - e2z * dv1) * r
+      const bx = (e2x * du1 - e1x * du2) * r, by = (e2y * du1 - e1y * du2) * r, bz = (e2z * du1 - e1z * du2) * r
+      for (const i of [i0, i1, i2]) {
+        t[i * 3] += tx; t[i * 3 + 1] += ty; t[i * 3 + 2] += tz
+        b[i * 3] += bx; b[i * 3 + 1] += by; b[i * 3 + 2] += bz
+      }
+    }
+  }
+  for (let i = 0; i < count; i++) {
+    const nx = n[i * 3], ny = n[i * 3 + 1], nz = n[i * 3 + 2]
+    let tx = t[i * 3], ty = t[i * 3 + 1], tz = t[i * 3 + 2]
+    // onto the surface, square to the normal
+    const d = nx * tx + ny * ty + nz * tz
+    tx -= nx * d; ty -= ny * d; tz -= nz * d
+    let len = Math.hypot(tx, ty, tz)
+    if (len < 1e-9) {
+      // no UVs here: around the up axis, or the x axis for a surface facing up or down
+      if (Math.abs(ny) < 0.999) { tx = nz; ty = 0; tz = -nx } else { tx = 1; ty = 0; tz = 0 }
+      const e = nx * tx + ny * ty + nz * tz
+      tx -= nx * e; ty -= ny * e; tz -= nz * e
+      len = Math.hypot(tx, ty, tz) || 1
+    }
+    out[i * 4] = tx / len; out[i * 4 + 1] = ty / len; out[i * 4 + 2] = tz / len
+    // which way v runs against n x t: mirrored UVs turn the other way
+    const cx = ny * tz - nz * ty, cy = nz * tx - nx * tz, cz = nx * ty - ny * tx
+    out[i * 4 + 3] = cx * b[i * 3] + cy * b[i * 3 + 1] + cz * b[i * 3 + 2] < 0 ? -1 : 1
+  }
+  return out
 }
 
 // a quad as a triangle strip of [along, across] corners, shared by every Lines draw
@@ -78,17 +129,20 @@ export class Resources {
    * @param {Geometry} geometry
    * @param {{ instanceMatrices: Float32Array, instanceColors: Float32Array | null, version: number } | null} instances
    * @param {boolean} withNormals
+   * @param {boolean} [withTangents] add tangents, for brushed metal - kept once added
    * @returns {MeshBuffers}
    */
-  mesh(geometry, instances, withNormals) {
+  mesh(geometry, instances, withNormals, withTangents = false) {
     const key = instances ?? geometry
     this.#mark(key)
     const cache = withNormals ? this.#triangles : this.#points
     let entry = cache.get(key)
     // instanced buffers are kept by the node, so check it still has the same geometry
     const same = entry?.geometry === geometry
-    if (entry && same && entry.version === geometry.version && (!instances || entry.instanceVersion === instances.version)) return entry
-    const layout = layoutOf(geometry, instances, withNormals)
+    withTangents = withNormals && (withTangents || (same && !!entry?.attributes?.tangent))
+    if (entry && same && entry.version === geometry.version && (!instances || entry.instanceVersion === instances.version) &&
+      withTangents === !!entry.attributes?.tangent) return entry
+    const layout = layoutOf(geometry, instances, withNormals, withTangents)
     if (entry && same && entry.layout === layout) {
       // the data changed but kept its shape (moving vertices, particles, instances): refill in place
       if (entry.version !== geometry.version) {
@@ -97,6 +151,7 @@ export class Resources {
         if (withNormals) this.#refill(a.normal, geometry.normals)
         if (geometry.uvs) this.#refill(a.uv, geometry.uvs)
         if (geometry.colors) this.#refill(a.color, geometry.colors)
+        if (withTangents) this.#refill(a.tangent, tangentsOf(geometry))
         if (geometry.indices) {
           // the element binding belongs to the vertex array, so bind that first
           this.gl.bindVertexArray(entry.vao)
@@ -144,6 +199,7 @@ export class Resources {
     else gl.vertexAttrib2f(ATTRIBUTES.uv, 0, 0)
     if (geometry.colors) attributes.color = attribute(ATTRIBUTES.color, geometry.colors, 3)
     else gl.vertexAttrib3f(ATTRIBUTES.color, 1, 1, 1)
+    if (withTangents) attributes.tangent = attribute(ATTRIBUTES.tangent, tangentsOf(geometry), 4)
 
     let matrixBuffer = null, colorBuffer = null
     if (instances) {
@@ -181,11 +237,12 @@ export class Resources {
    * Draw a mesh's triangles - instanced or not, indexed or not - with the program in use, as far as
    * its drawn count goes. Every pass that draws meshes draws them this way.
    * @param {Geometry} geometry @param {{ instanceMatrices: Float32Array, instanceColors: Float32Array | null, version: number, count: number } | null} instances
+   * @param {boolean} [withTangents] for brushed metal
    * @returns {number} triangles drawn
    */
-  drawTriangles(geometry, instances) {
+  drawTriangles(geometry, instances, withTangents = false) {
     const gl = this.gl
-    const buffers = this.mesh(geometry, instances, true)
+    const buffers = this.mesh(geometry, instances, true, withTangents)
     gl.bindVertexArray(buffers.vao)
     const elements = geometry.drawnCount - geometry.drawnCount % 3
     const count = instances ? instances.count : 1

@@ -348,4 +348,27 @@ describe('glass and clearcoat from glTF', () => {
     expect(warn.mock.calls.some(([m]) => /KHR_materials_(transmission|clearcoat)/.test(String(m)))).toBe(false)
     warn.mockRestore()
   })
+
+  it('reads sheen, ior, specular, anisotropy and diffuse transmission by their factors', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const json = sampleGLTF()
+    const names = ['KHR_materials_sheen', 'KHR_materials_ior', 'KHR_materials_specular', 'KHR_materials_anisotropy', 'KHR_materials_diffuse_transmission']
+    json.extensionsUsed = [...(json.extensionsUsed ?? []), ...names]
+    json.materials[0].extensions = {
+      ...json.materials[0].extensions,
+      KHR_materials_sheen: { sheenColorFactor: [1, 0, 0], sheenRoughnessFactor: 0.3 },
+      KHR_materials_ior: { ior: 2.4 },
+      KHR_materials_specular: { specularFactor: 0.5, specularColorFactor: [0, 1, 0] },
+      KHR_materials_anisotropy: { anisotropyStrength: 0.7, anisotropyRotation: 1 },
+      KHR_materials_diffuse_transmission: { diffuseTransmissionFactor: 0.4, diffuseTransmissionColorFactor: [0, 0, 1] },
+    }
+    const model = await parseGLTF(json, { baseUrl: 'https://example.com/models/', waitForTextures: false })
+    const { material: m } = /** @type {Mesh} */ (model.find('Triangle'))
+    expect([m.sheen, m.sheenColor.getHex(), m.sheenRoughness]).toEqual([1, 0xff0000, 0.3])
+    expect([m.ior, m.specularIntensity, m.specularColor.getHex()]).toEqual([2.4, 0.5, 0x00ff00])
+    expect([m.anisotropy, m.anisotropyRotation]).toEqual([0.7, 1])
+    expect([m.translucency, m.translucencyColor.getHex()]).toEqual([0.4, 0x0000ff])
+    expect(warn.mock.calls.some(([w]) => names.some((n) => String(w).includes(n)))).toBe(false)
+    warn.mockRestore()
+  })
 })

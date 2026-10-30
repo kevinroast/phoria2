@@ -899,6 +899,54 @@
           "minimum": 0,
           "maximum": 1
         },
+        "sheen": {
+          "type": "number",
+          "description": "The soft bright rim of cloth at grazing angles - velvet, felt, upholstery.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "sheenColor": {
+          "$ref": "#/$defs/color"
+        },
+        "sheenRoughness": {
+          "type": "number",
+          "description": "A thin bright rim at 0, a broad soft glow at 1.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "ior": {
+          "type": "number",
+          "description": "Index of refraction: how strongly a non-metal reflects - water 1.33, glass and plastic 1.5 (the default), diamond 2.4.",
+          "minimum": 1
+        },
+        "specularIntensity": {
+          "type": "number",
+          "description": "Scales a non-metal's reflections, 0 for none.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "specularColor": {
+          "$ref": "#/$defs/color"
+        },
+        "anisotropy": {
+          "type": "number",
+          "description": "Brushed metal: highlights drawn out along the brushing, which runs along the UVs' u.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "anisotropyRotation": {
+          "type": "number",
+          "description": "Turns the brushing from the UVs' u, in radians."
+        },
+        "translucency": {
+          "type": "number",
+          "description": "Light through thin surfaces, lighting them from behind - leaves, paper, lampshades.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "translucencyColor": {
+          "$ref": "#/$defs/color"
+        },
         "blending": {
           "enum": ["normal", "additive", "multiply"]
         }

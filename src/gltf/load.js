@@ -25,7 +25,8 @@ import { Animation } from './Animation.js'
  */
 
 const SUPPORTED = new Set(['KHR_materials_emissive_strength', 'KHR_texture_transform', 'KHR_lights_punctual',
-  'KHR_materials_unlit', 'KHR_mesh_quantization', 'KHR_materials_transmission', 'KHR_materials_clearcoat'])
+  'KHR_materials_unlit', 'KHR_mesh_quantization', 'KHR_materials_transmission', 'KHR_materials_clearcoat', 'KHR_materials_sheen',
+  'KHR_materials_ior', 'KHR_materials_specular', 'KHR_materials_anisotropy', 'KHR_materials_diffuse_transmission'])
 const COMPRESSION = new Set(['KHR_draco_mesh_compression', 'EXT_meshopt_compression', 'KHR_texture_basisu'])
 
 const COMPONENTS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT2: 4, MAT3: 9, MAT4: 16 }
@@ -364,13 +365,42 @@ class Builder {
     }
     material.emissiveIntensity = m.extensions?.KHR_materials_emissive_strength?.emissiveStrength ?? 1
     if (m.extensions?.KHR_materials_unlit) material.unlit = true
-    // glass and clear coat, by their factors - their own textures aren't read
+    // glass, clear coat, cloth, reflectance, brushed metal and translucency, by their factors - their
+    // own textures aren't read
     const clamp = (/** @type {number} */ v) => Math.min(Math.max(v, 0), 1)
-    const transmission = m.extensions?.KHR_materials_transmission, coat = m.extensions?.KHR_materials_clearcoat
+    const x = m.extensions ?? {}
+    const transmission = x.KHR_materials_transmission, coat = x.KHR_materials_clearcoat, sheen = x.KHR_materials_sheen
     if (transmission) material.transmission = clamp(transmission.transmissionFactor ?? 0)
     if (coat) {
       material.clearcoat = clamp(coat.clearcoatFactor ?? 0)
       material.clearcoatRoughness = clamp(coat.clearcoatRoughnessFactor ?? 0)
+    }
+    if (sheen) {
+      const c = sheen.sheenColorFactor ?? [0, 0, 0]
+      // glTF's sheen is its colour alone: black is none
+      if (Math.max(c[0], c[1], c[2]) > 0) {
+        material.sheen = 1
+        material.sheenColor.setLinear(c[0], c[1], c[2])
+      }
+      material.sheenRoughness = clamp(sheen.sheenRoughnessFactor ?? 0)
+    }
+    if (x.KHR_materials_ior?.ior >= 1) material.ior = x.KHR_materials_ior.ior
+    const specular = x.KHR_materials_specular
+    if (specular) {
+      material.specularIntensity = clamp(specular.specularFactor ?? 1)
+      const c = specular.specularColorFactor ?? [1, 1, 1]
+      material.specularColor.setLinear(c[0], c[1], c[2])
+    }
+    const brushed = x.KHR_materials_anisotropy
+    if (brushed) {
+      material.anisotropy = clamp(brushed.anisotropyStrength ?? 0)
+      material.anisotropyRotation = brushed.anisotropyRotation ?? 0
+    }
+    const translucent = x.KHR_materials_diffuse_transmission
+    if (translucent) {
+      material.translucency = clamp(translucent.diffuseTransmissionFactor ?? 0)
+      const c = translucent.diffuseTransmissionColorFactor ?? [1, 1, 1]
+      material.translucencyColor.setLinear(c[0], c[1], c[2])
     }
     if (m.alphaMode === 'BLEND') {
       material.opacity = base[3]

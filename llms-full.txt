@@ -15,8 +15,8 @@ editors that drag, snap and undo. Picking, tooltips, hover highlights, HTML labe
 image-based light are built in, and a view draws only when something changes, so idle pages cost
 nothing. A dashboard of many small views just works - each tile its own `new View({ canvas })`,
 with no limit on WebGL contexts to manage (after the first four, views share one). Apps come out short: typically a few dozen lines. For games, custom shaders or
-post-processing pipelines, three.js is the better fit: phoria2 has no shader hook (no fresnel or
-custom effects), no clearcoat, and no shadow-softness setting.
+post-processing pipelines, three.js is the better fit: phoria2 has no shader hook (no custom
+effects), no refraction, and no shadow-softness setting.
 
 ## Install
 
@@ -299,6 +299,9 @@ One material type, given as a plain object:
 { color: '#8cf', opacity: 0.4 }                      // transparent: fades the whole surface
 { transmission: 1, roughness: 0.05 }                 // clear glass
 { color: '#a3121f', metalness: 0.6, clearcoat: 1 }   // car paint: a glossy coat over it
+{ color: '#1f2d6e', roughness: 0.9, sheen: 1 }       // velvet: cloth's bright rim
+{ color: '#ccc', metalness: 1, anisotropy: 0.8 }     // brushed metal
+{ color: '#f2e4c4', translucency: 0.8 }              // paper: lit from behind too
 { emissive: '#ff0', emissiveIntensity: 3 }           // glows
 { map: 'wood.jpg', normalMap: 'wood_n.png' }         // textures from urls
 ```
@@ -315,7 +318,8 @@ Properties: `color`, `opacity`, `roughness` (0.5), `metalness` (0), `emissive`,
 (`'normal'`, `'additive'` - adds light, for glows and sparks - or `'multiply'` - darkens what is behind, as a colour
 filter does: cyan over magenta is blue), `alphaTest` (cut-outs: drop pixels with less alpha - leaves, fences),
 `map`, `normalMap`/`normalScale`, `bumpMap`/`bumpScale`, `roughnessMap`, `metalnessMap`, `aoMap`,
-`emissiveMap`, `transmission`, `clearcoat`/`clearcoatRoughness` (below); `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
+`emissiveMap`, `transmission`, `clearcoat`/`clearcoatRoughness`, `sheen`/`sheenColor`/`sheenRoughness`, `ior`/
+`specularIntensity`/`specularColor`, `anisotropy`/`anisotropyRotation`, `translucency`/`translucencyColor` (below); `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
 `mesh.material.color.set('#0f0')`, `mesh.material.opacity = 0.5`, or a whole new one: `mesh.material = { color: 'red' }`
 (options become a Material, as in the constructor; `mesh.geometry = box(2)` likewise).
 
@@ -336,8 +340,34 @@ no refraction - what is behind isn't bent. It shines with an `environment` to re
 
 **Clearcoat**: `clearcoat` (0-1) puts a clear glossy layer over the surface - car paint, lacquered
 wood, varnish - with its own sharp reflection over the base's softer one; `clearcoatRoughness` (0,
-a mirror) makes it satin. Normal and bump maps show under a smooth coat. glTF models bring both
-from `KHR_materials_transmission` and `KHR_materials_clearcoat` (by their factors).
+a mirror) makes it satin. Normal and bump maps show under a smooth coat.
+
+**Sheen**: `sheen` (0-1) is the soft bright rim of cloth at grazing angles - velvet, felt,
+upholstery - which plain roughness can't give: without it fabric looks like matte plastic.
+`sheenColor` (white) tints it, often lighter than the cloth or another colour entirely;
+`sheenRoughness` (0.5) runs from a thin bright rim (0) to a broad soft glow (1).
+
+**Reflectance**: `ior` (1.5) sets how strongly a non-metal reflects - water 1.33, glass and plastic
+1.5, diamond 2.4 - and glass with `transmission` reflects more the higher it is.
+`specularIntensity` (1) scales a non-metal's reflections, 0 for none (chalk, clay, unglazed
+pottery); `specularColor` tints them face on. Metals take their reflections from `color`, so
+these leave them alone.
+
+**Brushed metal**: `anisotropy` (0-1) - the material's, not a texture's filtering - draws highlights and reflections out along the brushing -
+brushed aluminium, steel appliances, the bottom of a pan. The brushing runs along the UVs' u (round
+a sphere or cylinder, say; round the up axis on a mesh with no UVs); `anisotropyRotation`
+(radians) turns it - `Math.PI / 2` runs it along v. Use it with `metalness: 1` and a middling
+`roughness` (0.2-0.4).
+
+**Translucency**: `translucency` (0-1) lets light through thin surfaces, so they are lit from
+behind as well as in front - leaves against the sun, paper lanterns and lampshades with a light
+inside, curtains. What passes through is taken from what is scattered back, so at 1 a surface is lit
+only through it. `translucencyColor` (white) tints the light that comes through. It is light
+through a thin sheet, not light scattering inside a solid: a lantern glows, marble stays marble.
+
+glTF models bring all of these from `KHR_materials_transmission`, `KHR_materials_clearcoat`,
+`KHR_materials_sheen`, `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_anisotropy`
+and `KHR_materials_diffuse_transmission` (by their factors; their textures aren't read).
 
 **Models without UVs** (scans, CAD exports) can still take maps: `triplanar: 40` projects them
 from the mesh's three axes instead of using UVs, repeating 40 times per unit of the mesh's own space.

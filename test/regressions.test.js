@@ -968,4 +968,24 @@ describe('glass and clearcoat', () => {
     expect(new Material(glass.toJSON())).toMatchObject({ transmission: 1, clearcoat: 1, clearcoatRoughness: 0.2, opacity: 0.5 })
     expect(() => new Material({ transmission: 1.5 })).toThrow('transmission')
   })
+
+  it('sheen, brushed metal and translucency compile only when used; ior and specular need no variant', async () => {
+    const has = (sources, define) => sources.some((s) => s.includes(`#define ${define}\n`))
+    const DEFINES = ['SHEEN', 'ANISOTROPY', 'TRANSLUCENCY']
+    const which = (sources) => DEFINES.filter((d) => has(sources, d))
+    expect(which(await shadersFor({ color: 'red', ior: 2.4, specularIntensity: 0.5 }))).toEqual([])
+    expect(which(await shadersFor({ sheen: 1, sheenColor: 'pink' }))).toEqual(['SHEEN'])
+    expect(which(await shadersFor({ metalness: 1, anisotropy: 0.8 }))).toEqual(['ANISOTROPY'])
+    expect(which(await shadersFor({ translucency: 0.5 }))).toEqual(['TRANSLUCENCY'])
+    expect(new Material({ ior: 2.4 }).variant).toBe(new Material().variant)
+  })
+
+  it('the new colours round-trip, and are left out at their defaults', () => {
+    const m = new Material({ sheen: 1, sheenColor: '#ff8800', specularColor: '#00ff00', translucency: 1, translucencyColor: '#0000ff', ior: 1.33 })
+    const json = m.toJSON()
+    expect(json).toMatchObject({ sheen: 1, sheenColor: '#ff8800', specularColor: '#00ff00', translucencyColor: '#0000ff', ior: 1.33 })
+    expect(m.clone().sheenColor.getHex()).toBe(0xff8800)
+    expect(Object.keys(new Material().toJSON())).toEqual([])
+    expect(() => new Material({ ior: 0.9 })).toThrow('ior')
+  })
 })

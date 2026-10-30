@@ -817,6 +817,18 @@ body.gallery {
   font-size: 13px;
 }
 
+.demo-label.row-title {
+  font-weight: 600;
+}
+
+/* advanced materials: a sample's name over its setting */
+.demo-label.sample-caption {
+  white-space: pre-line;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
 .demo-tick {
   color: var(--text-dim);
   font-size: 12px;
