@@ -1782,3 +1782,157 @@ button.demo-legend-item {
   background: #7fb6ff;
   color: #05070b;
 }
+
+/* ---- schematic: a workshop poster on grid paper */
+.gun-poster {
+  position: fixed;
+  inset: 0;
+  overflow: auto;
+  /* clear of the demo's title card */
+  padding: 206px 24px 72px;
+  color: #26282c;
+  background-color: #eeefef;
+  background-image:
+    linear-gradient(#d3d6d8 1px, transparent 1px), linear-gradient(90deg, #d3d6d8 1px, transparent 1px),
+    linear-gradient(#e2e4e5 1px, transparent 1px), linear-gradient(90deg, #e2e4e5 1px, transparent 1px);
+  background-size: 80px 80px, 80px 80px, 16px 16px, 16px 16px;
+}
+
+.gun-sheet {
+  height: 100%;
+  min-height: 380px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.gun-view {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gun-view canvas {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+/* a row of their own under the drawing, beside the foot of the parts legend */
+.gun-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+}
+
+.gun-controls button {
+  min-width: 92px;
+  padding: 5px 12px;
+  border: 1.5px solid #26282c;
+  border-radius: 3px;
+  background: #f7f7f6;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.gun-controls button:hover {
+  background: #fff;
+}
+
+.gun-controls label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gun-controls input {
+  width: 140px;
+  accent-color: #26282c;
+}
+
+/* the poster's numbers: bold italic, by their part */
+.gun-num {
+  color: #26282c;
+  font-size: 13px;
+  font-style: italic;
+  font-weight: 800;
+  text-shadow: 0 0 3px #eeefef, 0 0 3px #eeefef;
+  transition: color 0.15s;
+  pointer-events: none;
+}
+
+.gun-num.now {
+  color: #c2711a;
+}
+
+/* one long list, bottom-aligned: in a short window it grows upwards past the sheet's top rather
+   than scrolling */
+.gun-legend {
+  align-self: end;
+  font-size: 12px;
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+}
+
+.gun-legend h2 {
+  margin: 0 0 6px;
+  color: #6c7076;
+  font-family: 'Arial Narrow', 'Roboto Condensed', 'Helvetica Neue', sans-serif;
+  font-size: 30px;
+  font-stretch: condensed;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.gun-legend ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  line-height: 1.38;
+}
+
+.gun-legend li {
+  padding: 1px 4px;
+  border-radius: 3px;
+  break-inside: avoid;
+  cursor: default;
+  transition: background 0.15s, color 0.15s;
+}
+
+.gun-legend li b {
+  display: inline-block;
+  min-width: 2.2em;
+  text-align: right;
+  font-variant: normal;
+}
+
+.gun-legend li.now {
+  background: #eaa23a;
+  color: #1d1e21;
+}
+
+@media (max-width: 900px) {
+  /* the title card wraps to more lines */
+  .gun-poster {
+    padding-top: 240px;
+  }
+
+  .gun-sheet {
+    height: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .gun-view {
+    height: 70vh;
+  }
+}
