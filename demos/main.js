@@ -1,4 +1,4 @@
-import { DEMOS, REPO } from './registry.js'
+import { DEMOS, REPO, slug } from './registry.js'
 import { Panel } from './panel.js'
 
 // Host for a single demo: demo.html?name=hello loads demos/hello.js and calls its default export
@@ -7,8 +7,8 @@ import { Panel } from './panel.js'
 /** @typedef {(ctx: { canvas: HTMLCanvasElement, gui: Panel, info: HTMLElement }) => unknown} DemoRun */
 const modules = /** @type {Record<string, () => Promise<{ default: DemoRun }>>} */ (import.meta.glob(['./*.js', '!./main.js', '!./registry.js', '!./gallery.js', '!./panel.js', '!./kit.js', '!./planets.js', '!./flower.js', '!./hero.js']))
 
-const name = new URLSearchParams(location.search).get('name') ?? DEMOS[0].name
-const demo = DEMOS.find((d) => d.name === name)
+const name = new URLSearchParams(location.search).get('name') ?? slug(DEMOS[0].name)
+const demo = DEMOS.find((d) => slug(d.name) === name)
 const load = modules[`./${name}.js`]
 
 const info = document.getElementById('info')
@@ -34,7 +34,7 @@ if (!demo || !load) {
   if (demo.hint !== undefined) hint.textContent = demo.hint
   hint.hidden = demo.orbit === false || demo.hint === ''
   const source = /** @type {HTMLAnchorElement} */ (document.getElementById('source'))
-  source.href = `${REPO}/blob/main/demos/${demo.name}.js`
+  source.href = `${REPO}/blob/main/demos/${slug(demo.name)}.js`
   source.hidden = false
 
   // the canvas fills the window (CSS); each demo's View sizes its drawing buffer to match

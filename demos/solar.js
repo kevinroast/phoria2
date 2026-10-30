@@ -85,7 +85,7 @@ export default function run({ canvas, gui, info }) {
     canvas.style.cursor = view.pick(e)?.node.name ? 'pointer' : ''
   })
 
-  const settings = { daysPerSecond: 20, labels: true, orbits: true }
+  const settings = { daysPerSecond: 2, labels: true, orbits: true }
   const f = gui.addFolder('Solar system')
   f.add(settings, 'daysPerSecond', 0, 200, 1).name('days per second')
   f.add(settings, 'labels').onChange((v) => labels.forEach((l) => { l.visible = v }))

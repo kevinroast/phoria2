@@ -1470,3 +1470,194 @@ button.demo-legend-item {
   appearance: none;
   cursor: pointer;
 }
+
+/* the CAD drawing: a sheet of paper with a ruled frame, four views in cells, a parts list and a title block */
+.cad-sheet {
+  position: fixed;
+  inset: 0;
+  overflow: auto;
+  padding: 190px 24px 72px;
+  background: #dcd9d2;
+  color: #1d1d22;
+}
+
+.cad-frame {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 14px;
+  border: 2px solid #1d1d22;
+  outline: 1px solid #1d1d22;
+  outline-offset: 5px;
+  background: #fbfaf7;
+  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.18);
+}
+
+.cad-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 12px;
+}
+
+.cad-toolbar button {
+  padding: 6px 14px;
+  border: 1.5px solid #1d1d22;
+  border-radius: 2px;
+  background: #ffffff;
+  color: #1d1d22;
+  font: 600 12px system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.cad-toolbar button[aria-pressed='true'] {
+  background: #1d1d22;
+  color: #ffffff;
+}
+
+.cad-readout {
+  margin-left: auto;
+  color: #c0392b;
+  font: 12px ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.cad-views {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 380px 380px;
+  border: 1.5px solid #1d1d22;
+}
+
+.cad-views section {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.cad-views section:nth-child(odd) { border-right: 1px solid #1d1d22; }
+.cad-views section:nth-child(-n + 2) { border-bottom: 1px solid #1d1d22; }
+
+.cad-views h4 {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  z-index: 1;
+  margin: 0;
+  font: 600 11px system-ui, sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.cad-views canvas {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: block;
+}
+
+.cad-footer {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  border: 1.5px solid #1d1d22;
+  border-top: 0;
+}
+
+.cad-bom {
+  width: 100%;
+  border-collapse: collapse;
+  font: 12px system-ui, sans-serif;
+}
+
+.cad-bom th,
+.cad-bom td {
+  padding: 4px 8px;
+  border-right: 1px solid #1d1d22;
+  border-bottom: 1px solid #1d1d22;
+  text-align: left;
+}
+
+.cad-bom th {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.cad-bom tbody tr { cursor: default; }
+.cad-bom tbody tr:hover { background: #fdecd9; }
+
+.cad-title {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  font: 600 13px system-ui, sans-serif;
+}
+
+.cad-title > div {
+  padding: 4px 8px;
+  border-bottom: 1px solid #1d1d22;
+  border-left: 1px solid #1d1d22;
+}
+
+.cad-title small {
+  display: block;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.cad-title-name {
+  grid-column: span 2;
+  font-size: 16px;
+  text-transform: uppercase;
+}
+
+.cad-title svg {
+  vertical-align: middle;
+}
+
+/* a dimension's value, on its line: the paper shows round it, as on a drawing */
+.cad-dim {
+  padding: 0 3px;
+  background: #fbfaf7;
+  color: #1d1d22;
+  font: 12px ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.cad-section-mark {
+  color: #c0392b;
+  font-weight: 700;
+}
+
+.cad-measure {
+  color: #c0392b;
+  border: 1px solid #c0392b;
+}
+
+.cad-part-name {
+  padding: 1px 6px;
+  border: 1px solid #1d1d22;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #1d1d22;
+  font: 600 11px system-ui, sans-serif;
+}
+
+@media (max-width: 1000px) {
+  .cad-views {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(4, 360px);
+  }
+
+  .cad-views section:nth-child(odd) { border-right: 0; }
+  .cad-views section:not(:last-child) { border-bottom: 1px solid #1d1d22; }
+
+  .cad-footer {
+    grid-template-columns: 1fr;
+  }
+}

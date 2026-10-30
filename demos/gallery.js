@@ -1,7 +1,7 @@
 import { Box3, DirectionalLight, Group, View } from 'phoria2'
 import { daisy } from './flower.js'
 import { hero } from './hero.js'
-import { DEMOS } from './registry.js'
+import { DEMOS, slug } from './registry.js'
 import { version } from '../package.json'
 
 // the header: the version, and an install command that copies itself
@@ -38,8 +38,8 @@ for (const { section, name, title, hidden } of DEMOS) {
   }
   const li = document.createElement('li')
   // a card without a picture just has none
-  const thumb = THUMBS[`./thumbs/${name}.webp`]
-  li.innerHTML = `<a href="demo.html?name=${name}">${thumb ? `<img class="thumb" src="${thumb}" alt="" width="480" height="300" loading="lazy">` : ''}<span class="name">${name}</span><span class="title">${title}</span></a>`
+  const thumb = THUMBS[`./thumbs/${slug(name)}.webp`]
+  li.innerHTML = `<a href="demo.html?name=${slug(name)}">${thumb ? `<img class="thumb" src="${thumb}" alt="" width="480" height="300" loading="lazy">` : ''}<span class="name">${name}</span><span class="title">${title}</span></a>`
   list.append(li)
 }
 
