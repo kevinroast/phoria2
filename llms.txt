@@ -15,6 +15,7 @@ why a page might look wrong. Coordinates are +Y up, in metres; angles in radians
 - [README](https://github.com/kevinroast/phoria2#readme): install, CDN use, the entry points
 - Source: the package ships its readable, commented source in `node_modules/phoria2/src` - read that, not the minified `dist/`, for anything the reference doesn't settle
 - [Chart spec JSON Schema](https://cdn.jsdelivr.net/npm/phoria2/schema/chart.schema.json): the spec `chart()` takes, as `phoria2/charts/schema.json` in the package
+- [Scene description JSON Schema](https://cdn.jsdelivr.net/npm/phoria2/schema/scene.schema.json): what `create()` takes and `node.toJSON()` writes, as `phoria2/schema.json` in the package
 
 ## Examples
 

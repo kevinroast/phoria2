@@ -335,8 +335,14 @@ on top, as with UVs (animate `offset` to scroll a pattern). 0 (the default) uses
 | `PointLight` | `color`, `intensity`, `position`, `range` - inverse-square falloff, so intensity ~ distance squared (30 lights things ~5 m away); `castShadow` |
 | `SpotLight` | point light options plus `direction`, `angle`, `penumbra`, `castShadow` |
 
-Intensity 1 on a directional light lights a white surface facing it to white. Limits: 2
-directional and 4 point/spot lights.
+Intensity 1 on a directional light lights a white surface facing it to white.
+
+**Light limits**: a scene draws at most 2 directional lights and 4 point and spot lights together -
+the first found in scene order; hidden ones don't count. Any more are ignored, with a console warning,
+so a fifth lamp simply doesn't light anything. For a room of lamps, light it broadly with
+`scene.environment` or a `HemisphereLight` (no limit), use real lights for the few that matter most -
+near the camera, or casting shadows - and give the rest emissive materials so they still glow.
+Toggle `visible` to move the real lights to where the action is.
 
 **Shadows**: one directional light, up to four spot lights and one point light with `castShadow: true`;
 meshes opt in with `castShadow` and `receiveShadow`. No shadow camera to set up. A spot light's own
@@ -650,8 +656,14 @@ default material is small additive points. `burst(count, spawnOptions)`, `clear(
 `node.toJSON()` describes a node and its children as plain data, and `create(description)` builds it
 back - to save, load, send or generate scenes. A description is a node's constructor options plus a
 `type`: `'group'`, `'mesh'`, `'instanced-mesh'`, `'points'`, `'lines'`, `'label'`, the lights
-(`'directional-light'`, `'point-light'`, ...), `'chart'`, `'emitter'`. Geometry is described the same
-way. Handlers are behaviour, not data, and are left out.
+(`'directional-light'`, `'point-light'`, ...), the cameras, `'scene'`, and `'chart'` once
+`phoria2/charts` is imported. Geometry is described the same way: a generator and its options, or
+vertex arrays. Handlers are behaviour, not data, and are left out - as are `labels` on instanced meshes
+and points, whose `text` is a function. Particle emitters can't be described yet.
+
+**JSON Schema** for descriptions ships with the package: `phoria2/schema.json` - validate one before
+`create()`, or hand it to a model generating scenes. A chart's own options are in
+`phoria2/charts/schema.json`.
 
 ```js
 import { create } from 'phoria2'

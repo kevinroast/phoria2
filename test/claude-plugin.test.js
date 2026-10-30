@@ -1,4 +1,4 @@
-// The Claude Code plugin carries its own copies of the reference and the chart schema (an installed
+// The Claude Code plugin carries its own copies of the reference and the JSON schemas (an installed
 // plugin can't read outside its folder): they must match the originals. `npm run plugin` copies them.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
@@ -7,9 +7,10 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf
 const skill = 'claude-plugin/skills/phoria2/'
 
 describe('claude plugin', () => {
-  it('has the current reference and chart schema - run `npm run plugin` if not', () => {
+  it('has the current reference and schemas - run `npm run plugin` if not', () => {
     expect(read(`${skill}references/llms-full.txt`) === read('llms-full.txt')).toBe(true)
     expect(read(`${skill}references/chart.schema.json`) === read('schema/chart.schema.json')).toBe(true)
+    expect(read(`${skill}references/scene.schema.json`) === read('schema/scene.schema.json')).toBe(true)
   })
 
   it('names the skill after its folder, with a description short enough for every agent', () => {

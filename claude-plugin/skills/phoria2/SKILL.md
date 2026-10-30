@@ -22,6 +22,8 @@ one page:
 
 For a chart, the spec `chart()` takes is a JSON Schema:
 [references/chart.schema.json](references/chart.schema.json). Check a spec you generate against it.
+For a scene as plain data (`create()`), the description is
+[references/scene.schema.json](references/scene.schema.json).
 
 ## 2. Set up
 

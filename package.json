@@ -66,6 +66,7 @@
       "types": "./dist/types/edit/index.d.ts",
       "import": "./dist/edit.js"
     },
+    "./schema.json": "./schema/scene.schema.json",
     "./charts/schema.json": "./schema/chart.schema.json"
   },
   "scripts": {

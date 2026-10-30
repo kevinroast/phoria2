@@ -162,6 +162,7 @@ A full example, with a chart that follows its data, is in
 | `phoria2/gltf` | `loadGLTF()` - glTF 2.0 models with their materials and animations |
 | `phoria2/motion` | `Timeline` - named steps played in order, `follow()` along a curve, `reveal()` a path as it's travelled - for explainers and guided tours |
 | `phoria2/edit` | `TransformHandle` - a move and turn handle with grid and angle snapping - and `History` for undo, for planners and layout editors |
+| `phoria2/schema.json`, `phoria2/charts/schema.json` | JSON Schemas for scene descriptions (`create()`) and chart specs |
 
 ## Browsers
 

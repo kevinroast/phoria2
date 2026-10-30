@@ -1,0 +1,1149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phoria2/schema.json",
+  "title": "phoria2 scene description",
+  "description": "A node as plain data: what create() builds and node.toJSON() writes - the node's constructor options plus its type. Handlers (onClick, onUpdate, tooltip ...) are behaviour, not data, and aren't part of a description.",
+  "$ref": "#/$defs/node",
+  "$defs": {
+    "node": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["type"],
+          "$ref": "#/$defs/nodeOptions",
+          "properties": {
+            "type": {
+              "const": "node"
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "$ref": "#/$defs/nodeOptions",
+          "properties": {
+            "type": {
+              "const": "group"
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "$ref": "#/$defs/nodeOptions",
+          "properties": {
+            "type": {
+              "const": "scene"
+            },
+            "background": {
+              "description": "A colour, or a panorama as texture options ({ url }).",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/color"
+                },
+                {
+                  "$ref": "#/$defs/textureOptions"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "environment": {
+              "description": "Image-based light: 'studio' (built in), 'none', an .hdr url, or a texture.",
+              "anyOf": [
+                {
+                  "enum": ["studio", "none"]
+                },
+                {
+                  "$ref": "#/$defs/texture"
+                }
+              ]
+            },
+            "environmentIntensity": {
+              "type": "number"
+            },
+            "backgroundBlur": {
+              "type": "number",
+              "description": "0-1, for a panorama background.",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "fog": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/fog"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "$ref": "#/$defs/drawableOptions",
+          "properties": {
+            "type": {
+              "const": "mesh"
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "$ref": "#/$defs/drawableOptions",
+          "properties": {
+            "type": {
+              "const": "points"
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "$ref": "#/$defs/drawableOptions",
+          "properties": {
+            "type": {
+              "const": "lines"
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "$ref": "#/$defs/drawableOptions",
+          "properties": {
+            "type": {
+              "const": "instanced-mesh"
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "instances": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/instance"
+              }
+            },
+            "instanceMatrices": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "16 numbers per instance, column-major, as toJSON() writes them."
+            },
+            "instanceColors": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "Linear rgb per instance, as toJSON() writes them."
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "$ref": "#/$defs/nodeOptions",
+          "properties": {
+            "type": {
+              "const": "label"
+            },
+            "text": {
+              "type": "string"
+            },
+            "place": {
+              "enum": ["center", "above", "below", "left", "right"]
+            },
+            "offset": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "CSS pixels, +y down."
+            },
+            "className": {
+              "type": "string"
+            },
+            "priority": {
+              "type": "number",
+              "description": "When labels overlap, the higher priority stays."
+            },
+            "overlap": {
+              "enum": ["hide", "dim", "show"]
+            },
+            "occlude": {
+              "type": "boolean",
+              "description": "Counts as covered when geometry is in front of its point."
+            },
+            "leader": {
+              "type": "boolean",
+              "description": "A line from the point to the label."
+            },
+            "edge": {
+              "anyOf": [
+                {
+                  "enum": ["left", "right"]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "$ref": "#/$defs/nodeOptions",
+          "properties": {
+            "type": {
+              "const": "perspective-camera"
+            },
+            "near": {
+              "type": "number"
+            },
+            "far": {
+              "type": "number"
+            },
+            "target": {
+              "$ref": "#/$defs/vec3",
+              "description": "The point the camera turns to face; orbit controls turn about it."
+            },
+            "aspect": {
+              "type": "number"
+            },
+            "fov": {
+              "type": "number",
+              "description": "Vertical, in degrees."
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "$ref": "#/$defs/nodeOptions",
+          "properties": {
+            "type": {
+              "const": "orthographic-camera"
+            },
+            "near": {
+              "type": "number"
+            },
+            "far": {
+              "type": "number"
+            },
+            "target": {
+              "$ref": "#/$defs/vec3",
+              "description": "The point the camera turns to face; orbit controls turn about it."
+            },
+            "aspect": {
+              "type": "number"
+            },
+            "height": {
+              "type": "number",
+              "description": "The height of the view in world units."
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "$ref": "#/$defs/nodeOptions",
+          "properties": {
+            "type": {
+              "const": "ambient-light"
+            },
+            "color": {
+              "$ref": "#/$defs/color"
+            },
+            "intensity": {
+              "type": "number"
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "$ref": "#/$defs/nodeOptions",
+          "properties": {
+            "type": {
+              "const": "hemisphere-light"
+            },
+            "sky": {
+              "$ref": "#/$defs/color"
+            },
+            "ground": {
+              "$ref": "#/$defs/color"
+            },
+            "intensity": {
+              "type": "number"
+            },
+            "color": {
+              "$ref": "#/$defs/color",
+              "description": "The sky colour, by its other name."
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "$ref": "#/$defs/nodeOptions",
+          "properties": {
+            "type": {
+              "const": "directional-light"
+            },
+            "color": {
+              "$ref": "#/$defs/color"
+            },
+            "intensity": {
+              "type": "number"
+            },
+            "direction": {
+              "$ref": "#/$defs/vec3",
+              "description": "The way the light travels."
+            },
+            "target": {
+              "$ref": "#/$defs/vec3",
+              "description": "A point it shines towards, instead of direction."
+            },
+            "castShadow": {
+              "type": "boolean"
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "$ref": "#/$defs/nodeOptions",
+          "properties": {
+            "type": {
+              "const": "point-light"
+            },
+            "color": {
+              "$ref": "#/$defs/color"
+            },
+            "intensity": {
+              "type": "number"
+            },
+            "range": {
+              "type": "number",
+              "description": "0 for none."
+            },
+            "castShadow": {
+              "type": "boolean"
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "$ref": "#/$defs/nodeOptions",
+          "properties": {
+            "type": {
+              "const": "spot-light"
+            },
+            "color": {
+              "$ref": "#/$defs/color"
+            },
+            "intensity": {
+              "type": "number"
+            },
+            "direction": {
+              "$ref": "#/$defs/vec3",
+              "description": "The way the light travels."
+            },
+            "target": {
+              "$ref": "#/$defs/vec3",
+              "description": "A point it shines towards, instead of direction."
+            },
+            "range": {
+              "type": "number"
+            },
+            "angle": {
+              "type": "number",
+              "description": "Half the cone, in radians."
+            },
+            "penumbra": {
+              "type": "number",
+              "description": "0-1: how soft the edge is.",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "castShadow": {
+              "type": "boolean"
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "description": "A chart: the chart() spec - see phoria2/charts/schema.json - with type 'chart' and node options. Needs phoria2/charts imported, which registers it.",
+          "properties": {
+            "type": {
+              "const": "chart"
+            }
+          }
+        }
+      ]
+    },
+    "nodeOptions": {
+      "description": "Options every node takes.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3",
+          "description": "Euler angles in radians, XYZ order."
+        },
+        "quaternion": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "[x, y, z, w], instead of rotation."
+        },
+        "scale": {
+          "description": "A number scales all three.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/vec3"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "pickable": {
+          "type": "boolean",
+          "description": "Include in picking (default true)."
+        },
+        "matrixAutoUpdate": {
+          "type": "boolean"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        },
+        "userData": {
+          "type": "object",
+          "description": "Anything of your own."
+        },
+        "highlight": {
+          "description": "Hover tint for this subtree, or null for none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/color"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "highlightWhole": {
+          "type": "boolean",
+          "description": "Hovering any part tints the whole subtree."
+        },
+        "clip": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/clip"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outline": {
+          "description": "A line round this subtree's silhouette: a colour, or { color, width }.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/color"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "color": {
+                  "$ref": "#/$defs/color"
+                },
+                "width": {
+                  "type": "number",
+                  "description": "Pixels."
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "drawableOptions": {
+      "description": "Options for nodes with geometry and a material.",
+      "$ref": "#/$defs/nodeOptions",
+      "properties": {
+        "geometry": {
+          "$ref": "#/$defs/geometry"
+        },
+        "material": {
+          "$ref": "#/$defs/material"
+        },
+        "castShadow": {
+          "type": "boolean"
+        },
+        "receiveShadow": {
+          "type": "boolean"
+        },
+        "renderOrder": {
+          "type": "number",
+          "description": "Within transparent drawing: lower first."
+        },
+        "frustumCulled": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "What this node shows: picking hands it back as hit.datum. An array is one row per instance, point or segment."
+        }
+      }
+    },
+    "vec3": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "color": {
+      "description": "'#ff8800', '#f80', a CSS name, 'rgb(255 136 0)', 0xff8800, or [r, g, b] 0-1.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      ]
+    },
+    "axis": {
+      "enum": ["x", "y", "z"]
+    },
+    "outline": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "minItems": 2,
+        "maxItems": 2
+      },
+      "description": "[x, y] points."
+    },
+    "clip": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A section plane: cuts away this subtree on the normal side.",
+      "properties": {
+        "normal": {
+          "$ref": "#/$defs/vec3"
+        },
+        "offset": {
+          "type": "number"
+        },
+        "cap": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/color"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "fog": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/color"
+        },
+        "density": {
+          "type": "number",
+          "description": "Exponential fog."
+        },
+        "near": {
+          "type": "number",
+          "description": "Linear fog: where it starts."
+        },
+        "far": {
+          "type": "number",
+          "description": "Linear fog: where it is complete."
+        }
+      }
+    },
+    "instance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3"
+        },
+        "quaternion": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "[x, y, z, w], instead of rotation."
+        },
+        "scale": {
+          "description": "A number scales all three.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/vec3"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        }
+      }
+    },
+    "texture": {
+      "description": "An image for a material map: its url, or the url with options.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/textureOptions"
+        }
+      ]
+    },
+    "textureOptions": {
+      "type": "object",
+      "required": ["url"],
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "colorSpace": {
+          "enum": ["srgb", "linear"]
+        },
+        "wrap": {
+          "enum": ["repeat", "clamp", "mirror"]
+        },
+        "repeat": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "offset": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "filter": {
+          "enum": ["linear", "nearest"]
+        },
+        "mipmaps": {
+          "type": "boolean"
+        },
+        "anisotropy": {
+          "type": "number",
+          "minimum": 1
+        },
+        "flipY": {
+          "type": "boolean"
+        }
+      }
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        },
+        "emissive": {
+          "$ref": "#/$defs/color"
+        },
+        "map": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/texture"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "roughnessMap": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/texture"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metalnessMap": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/texture"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "normalMap": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/texture"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bumpMap": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/texture"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "aoMap": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/texture"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "emissiveMap": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/texture"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unlit": {
+          "type": "boolean",
+          "description": "Ignore lights: draws exactly its colour."
+        },
+        "flatShading": {
+          "type": "boolean"
+        },
+        "doubleSided": {
+          "type": "boolean"
+        },
+        "vertexColors": {
+          "type": "boolean"
+        },
+        "depthWrite": {
+          "type": "boolean"
+        },
+        "depthTest": {
+          "type": "boolean"
+        },
+        "sizeAttenuation": {
+          "type": "boolean",
+          "description": "Points: sized in the world."
+        },
+        "transparent": {
+          "type": "boolean"
+        },
+        "fog": {
+          "type": "boolean"
+        },
+        "opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "roughness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "metalness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "emissiveIntensity": {
+          "type": "number",
+          "minimum": 0
+        },
+        "size": {
+          "type": "number",
+          "description": "Points: diameter.",
+          "minimum": 0
+        },
+        "width": {
+          "type": "number",
+          "description": "Lines: width in pixels.",
+          "minimum": 0
+        },
+        "alphaTest": {
+          "type": "number",
+          "description": "Cut-outs: drop pixels with less alpha.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "normalScale": {
+          "type": "number"
+        },
+        "aoMapIntensity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "triplanar": {
+          "type": "number",
+          "description": "Repeats per unit, projecting maps from three axes instead of using UVs; 0 uses the UVs.",
+          "minimum": 0
+        },
+        "bumpScale": {
+          "type": "number"
+        },
+        "blending": {
+          "enum": ["normal", "additive", "multiply"]
+        }
+      }
+    },
+    "geometry": {
+      "description": "A generator and its options ({ type: 'box', size: 2 }), or vertex data as toJSON() writes it.",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "box"
+            },
+            "size": {
+              "type": "number"
+            },
+            "width": {
+              "type": "number"
+            },
+            "height": {
+              "type": "number"
+            },
+            "depth": {
+              "type": "number"
+            },
+            "segments": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "sphere"
+            },
+            "radius": {
+              "type": "number"
+            },
+            "segments": {
+              "type": "integer",
+              "minimum": 3
+            },
+            "rings": {
+              "type": "integer",
+              "minimum": 2
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "plane"
+            },
+            "size": {
+              "type": "number"
+            },
+            "width": {
+              "type": "number"
+            },
+            "depth": {
+              "type": "number"
+            },
+            "segments": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "cylinder"
+            },
+            "radius": {
+              "type": "number"
+            },
+            "radiusTop": {
+              "type": "number",
+              "description": "0 makes a cone."
+            },
+            "height": {
+              "type": "number"
+            },
+            "segments": {
+              "type": "integer",
+              "minimum": 3
+            },
+            "caps": {
+              "type": "boolean"
+            },
+            "axis": {
+              "$ref": "#/$defs/axis"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "torus"
+            },
+            "radius": {
+              "type": "number"
+            },
+            "tube": {
+              "type": "number"
+            },
+            "segments": {
+              "type": "integer",
+              "minimum": 3
+            },
+            "tubeSegments": {
+              "type": "integer",
+              "minimum": 3
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "icosphere"
+            },
+            "radius": {
+              "type": "number"
+            },
+            "detail": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "lathe"
+            },
+            "points": {
+              "$ref": "#/$defs/outline",
+              "description": "[radius, y] pairs, bottom up."
+            },
+            "segments": {
+              "type": "integer",
+              "minimum": 3
+            },
+            "axis": {
+              "$ref": "#/$defs/axis"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "extrude"
+            },
+            "shape": {
+              "$ref": "#/$defs/outline"
+            },
+            "holes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/outline"
+              }
+            },
+            "depth": {
+              "type": "number"
+            },
+            "axis": {
+              "$ref": "#/$defs/axis"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "axes"
+            },
+            "size": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "grid"
+            },
+            "size": {
+              "type": "number"
+            },
+            "divisions": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["positions"],
+          "additionalProperties": false,
+          "properties": {
+            "positions": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            },
+            "normals": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            },
+            "uvs": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            },
+            "colors": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            },
+            "indices": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
