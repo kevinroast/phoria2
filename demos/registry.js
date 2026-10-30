@@ -34,6 +34,7 @@ export const DEMOS = [
   { name: 'point lights', title: "a jack-o'-lantern - candle inside casting shadows, light escaping through the carved face" },
   { name: 'viewer', title: 'a glTF product viewer - full material maps, an HDR studio, shadows, animation' },
   { name: 'models', title: 'hand-made models from raw points and polygons - drawn solid, as edges and as points' },
+  { name: 'guided tour', title: 'a guided tour of a data centre - cards pinned beside each stop, clickable pins, followable inspection robot', hint: 'Next and Back, the arrow keys or a numbered pin · drag to look around' },
   
   { section: 'Showcase', name: 'solar', title: 'a solar system - nested orbits, planets painted in code, click to follow a planet' },
   { name: 'artemis', title: 'an animated infographic of Artemis IV - the Blue Moon lander mission, step by step timeline' },

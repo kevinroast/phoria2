@@ -1661,3 +1661,123 @@ button.demo-legend-item {
     grid-template-columns: 1fr;
   }
 }
+
+/* the data-centre tour: a card pinned beside each stop, a bar to step through them, numbered pins */
+.tour-card {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 4;
+  width: 260px;
+  padding: 12px 14px;
+  border: 1px solid rgba(127, 182, 255, 0.35);
+  border-left: 3px solid #7fb6ff;
+  border-radius: 8px;
+  background: rgba(8, 12, 18, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #dfe7f1;
+  pointer-events: none;
+}
+
+.tour-card h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9cc8ff;
+}
+
+.tour-card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.tour-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--float);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transform: translateX(-50%);
+}
+
+.tour-bar button {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tour-bar button:hover {
+  background: rgba(127, 182, 255, 0.15);
+}
+
+.tour-now {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 190px;
+  gap: 2px;
+}
+
+.tour-count {
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tour-now strong {
+  font-size: 14px;
+}
+
+.tour-dots {
+  display: flex;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.tour-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+}
+
+.tour-dots i.on {
+  background: #7fb6ff;
+}
+
+/* a stop's pin in the hall: a number in a ring that a click takes you to */
+.tour-pin {
+  width: 22px;
+  height: 22px;
+  border: 2px solid #7fb6ff;
+  border-radius: 50%;
+  background: rgba(8, 12, 18, 0.85);
+  color: #dfe7f1;
+  font: 700 11px/18px system-ui, sans-serif;
+  text-align: center;
+  box-shadow: 0 0 12px rgba(127, 182, 255, 0.6);
+}
+
+.tour-pin:hover {
+  background: #7fb6ff;
+  color: #05070b;
+}
