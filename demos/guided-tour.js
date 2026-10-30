@@ -208,10 +208,12 @@ export default function run({ canvas, gui, info }) {
   const wall = hall.add(new Mesh({ geometry: plane({ width: 6.4, depth: 2.4 }), rotation: [Math.PI / 2, 0, 0], position: [0, 2.3, -HALL.d / 2 + 0.15],
     material: { map: ops.texture, unlit: true, doubleSided: true } }))
 
-  // ---- the room: walls, and the floor - glossy and a little see-through, over the mirrored centre
+  // ---- the room: walls, and the floor - glossy and a little see-through, over the mirrored centre.
+  // The walls run on down through the mirrored storey: from outside they close it in (seen from low
+  // down, the mirror showed under them), and from inside they show in the floor's reflection
   const room = scene.add(new Group({ name: 'room', pickable: false }))
   for (const [w, d, x, z] of [[HALL.w, 0.1, 0, -HALL.d / 2], [HALL.w, 0.1, 0, HALL.d / 2], [0.1, HALL.d, -HALL.w / 2, 0], [0.1, HALL.d, HALL.w / 2, 0]]) {
-    room.add(new Mesh({ geometry: box({ width: w, height: HALL.h, depth: d }), position: [x, HALL.h / 2, z], material: { color: '#15191f', roughness: 0.85 }, receiveShadow: true }))
+    room.add(new Mesh({ geometry: box({ width: w, height: HALL.h * 2, depth: d }), position: [x, 0, z], material: { color: '#15191f', roughness: 0.85 }, receiveShadow: true }))
   }
   const plain = tiles(false), perforated = tiles(true)
   plain.repeat = [HALL.w / 0.6, HALL.d / 0.6]
@@ -226,7 +228,10 @@ export default function run({ canvas, gui, info }) {
   mirror.traverse((n) => { /** @type {any} */ (n).castShadow = false })
 
   // ---- the inspection robot, lapping the aisles
-  const route = curve([[-5.2, 0, COLD[0]], [5.2, 0, COLD[0]], [5.8, 0, 0], [5.2, 0, COLD[1]], [-5.2, 0, COLD[1]], [-5.8, 0, 0]], { closed: true })
+  // points all along each aisle's middle, so the curve runs straight down it and only turns past the
+  // rows' ends - through just the two ends of an aisle it bowed a metre off centre, into the racks
+  const aisle = (z, xs) => xs.map((x) => [x, 0, z])
+  const route = curve([...aisle(COLD[0], [-5.2, -2.6, 0, 2.6, 5.2]), [5.8, 0, 0], ...aisle(COLD[1], [5.2, 2.6, 0, -2.6, -5.2]), [-5.8, 0, 0]], { closed: true })
   const robot = scene.add(new Group({ name: 'robot' }))
   robot.add(new Mesh({ geometry: cylinder({ radius: 0.28, height: 0.5, segments: 32 }), position: [0, 0.3, 0], material: { color: '#e9edf2', roughness: 0.35, metalness: 0.2 }, castShadow: true }))
   robot.add(new Mesh({ geometry: cylinder({ radius: 0.1, height: 0.12, segments: 24 }), position: [0, 0.61, 0], material: { color: '#1c2028', roughness: 0.3 } }))

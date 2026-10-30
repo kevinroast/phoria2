@@ -59,6 +59,14 @@ const PREPARE = {
     document.querySelector('.cad-footer').style.display = 'none'
     Object.assign(document.querySelector('.cad-views').style, { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '245px 245px' })
     document.querySelectorAll('.cad-views section').forEach((s, i) => { s.style.borderRight = i % 2 ? '0' : '1px solid #1d1d22'; s.style.borderBottom = i < 2 ? '1px solid #1d1d22' : '0' })`,
+  // the exploded pistol filling the picture: no controls, and no legend, which is too small to read there
+  schematic: `(async () => {
+    Object.assign(document.querySelector('.gun-poster').style, { padding: '14px', scrollbarWidth: 'none' })
+    document.querySelector('.gun-sheet').style.gridTemplateColumns = '1fr'
+    document.querySelectorAll('.gun-legend, .gun-controls').forEach((el) => { el.style.display = 'none' })
+    await new Promise((r) => setTimeout(r, 300))
+    view.frame(parts[0].part.parent, { padding: 0.04 })
+  })()`,
   colour: `Object.assign(document.querySelector('.colour-poster').style, { paddingTop: '12px', scrollbarWidth: 'none' })
     document.querySelectorAll('.colour-poster p').forEach((p) => { p.style.display = 'none' })
     Object.assign(document.querySelector('.colour-grid').style, { gridTemplateColumns: '3fr 2fr', gridTemplateRows: '205px 290px', gridTemplateAreas: "'hsl rgb' 'swatches mix'" })`,
