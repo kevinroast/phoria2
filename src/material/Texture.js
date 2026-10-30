@@ -10,7 +10,8 @@ import { checkNumber, checkOneOf, checkOptions, describe, fail } from '../valida
  * @typedef {object} TextureOptions
  * @property {TextureImage} [image] the pixels; omit and give a url to load them
  * @property {string} [url] image to load (starts loading immediately in a browser); a .hdr file loads as
- *   linear HDR radiance, for scene.environment
+ *   linear HDR radiance, for scene.environment; a video (.mp4, .webm, .ogv, .mov, .m4v) plays muted and on a
+ *   loop, and texture.image is its <video> to pause, seek or unmute
  * @property {'srgb' | 'linear'} [colorSpace] 'srgb' for colour maps (default), 'linear' for data
  *   maps such as normal and roughness maps
  * @property {'repeat' | 'clamp' | 'mirror'} [wrap] (default 'repeat')
@@ -22,7 +23,7 @@ import { checkNumber, checkOneOf, checkOptions, describe, fail } from '../valida
  * @property {0 | 1} [uvSet] which UV set to read: 0 the first, 1 the second (Geometry uvs2) - baked occlusion
  *   and light maps usually come on the second (default 0)
  * @property {'linear' | 'nearest'} [filter] (default 'linear')
- * @property {boolean} [mipmaps] (default true)
+ * @property {boolean} [mipmaps] (default true; false for a video, which would make them every frame)
  * @property {number} [anisotropy] samples along a surface seen at a glancing angle - floors and roads
  *   stay sharp into the distance. Up to what the GPU allows; 1 is off (default 8)
  * @property {boolean} [flipY] flip on upload; false for glTF-style UVs (default false)
@@ -42,13 +43,16 @@ const HINTS = {
   scale: "use 'repeat' - [u, v] times across",
 }
 
-/** An image for a material map. Canvas and video textures: set `needsUpdate()` after drawing. */
+/**
+ * An image for a material map. A video's frames upload by themselves as it plays; after drawing on
+ * a canvas, call `needsUpdate()`.
+ */
 export class Texture {
   /** The options it takes, and hints for names people reach for instead. */
   static OPTIONS = OPTIONS
   static HINTS = HINTS
-  /** @type {TextureImage | null} null until loaded */
-  image = null
+  /** @type {TextureImage | null} */
+  #image = null
   /** @type {string | null} */
   url = null
   /** @type {'srgb' | 'linear'} */
@@ -94,7 +98,8 @@ export class Texture {
     this.center = pair('center', o.center)
     if (o.uvSet !== 0 && o.uvSet !== 1) fail('Texture', `'uvSet' is 0 (the first UV set) or 1 (the second), got ${describe(o.uvSet)}`)
     this.uvSet = o.uvSet
-    this.mipmaps = !!o.mipmaps
+    // a video would make mipmaps every frame: off unless asked for
+    this.mipmaps = options.mipmaps !== undefined ? !!options.mipmaps : !(isVideo(o.image) || (!o.image && VIDEO.test(o.url ?? '')))
     this.anisotropy = checkNumber('Texture', 'anisotropy', o.anisotropy)
     if (!(this.anisotropy >= 1)) fail('Texture', `'anisotropy' is how many samples along a glancing angle - 1 (off) or more, got ${this.anisotropy}`)
     this.flipY = !!o.flipY
@@ -102,7 +107,8 @@ export class Texture {
 
     if (o.image) {
       this.image = o.image
-      this.ready = Promise.resolve(this)
+      this.ready = isVideo(o.image) ? loaded(/** @type {HTMLVideoElement} */ (o.image)).then(() => this) : Promise.resolve(this)
+      this.ready.catch(() => {})
     } else if (this.url) {
       this.ready = this.#load(this.url)
       // a failed load is reported by whoever awaits `ready`; don't also raise an unhandled rejection
@@ -113,6 +119,57 @@ export class Texture {
   }
 
   /** Call after redrawing a canvas or advancing a video. @returns {this} */
+  /**
+   * The pixels: null until loaded. A <video>'s frames upload by themselves while it plays.
+   * @returns {TextureImage | null}
+   */
+  get image() { return this.#image }
+  /** @param {TextureImage | null} v */
+  set image(v) {
+    this.#image = v
+    this.needsUpdate()
+    if (isVideo(v)) this.#follow(/** @type {HTMLVideoElement} */ (v))
+  }
+
+  // Each new frame of a playing video marks the texture changed, so views redraw with it: the
+  // browser's own per-frame callback where there is one, otherwise a check every animation frame
+  // while it plays. Following stops when the image is replaced.
+  /** @param {HTMLVideoElement} video */
+  #follow(video) {
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      const frame = () => {
+        if (this.#image !== video) return
+        this.needsUpdate()
+        video.requestVideoFrameCallback(frame)
+      }
+      video.requestVideoFrameCallback(frame)
+      return
+    }
+    let last = -1, running = false
+    const tick = () => {
+      if (this.#image !== video || video.paused || video.ended) {
+        running = false
+        return
+      }
+      if (video.currentTime !== last) {
+        last = video.currentTime
+        this.needsUpdate()
+      }
+      requestAnimationFrame(tick)
+    }
+    const start = () => {
+      if (running || this.#image !== video) return
+      running = true
+      requestAnimationFrame(tick)
+    }
+    video.addEventListener('play', start)
+    // a seek while paused shows a new frame too
+    video.addEventListener('seeked', () => {
+      if (this.#image === video) this.needsUpdate()
+    })
+    if (!video.paused) start()
+  }
+
   /** 'srgb' for colour (decoded to linear by the GPU), 'linear' for data such as normals and roughness. Call needsUpdate() after changing it. @returns {'srgb' | 'linear'} */
   get colorSpace() { return this.#colorSpace }
   set colorSpace(v) {
@@ -158,12 +215,26 @@ export class Texture {
 
   /** @param {string} url @returns {Promise<Texture>} */
   async #load(url) {
+    if (VIDEO.test(url)) {
+      if (typeof document === 'undefined') throw new Error(`Texture: can't load '${url}' - no video support in this environment`)
+      const video = document.createElement('video')
+      // muted, so browsers let it play by itself; inline, so phones don't take it full screen
+      Object.assign(video, { crossOrigin: 'anonymous', muted: true, loop: true, playsInline: true, autoplay: true, src: url })
+      try {
+        await loaded(video)
+      } catch {
+        throw new Error(`Texture: failed to load '${url}'`)
+      }
+      // a browser that won't autoplay leaves it paused on its first frame: video.play() on a click starts it
+      video.play()?.catch(() => {})
+      this.image = video
+      return this
+    }
     if (/\.hdr($|[?#])/i.test(url)) {
       const [{ parseHDR }, response] = await Promise.all([import('../hdr.js'), fetch(url)])
       if (!response.ok) throw new Error(`Texture: failed to load '${url}' (${response.status})`)
       this.image = parseHDR(await response.arrayBuffer())
       this.colorSpace = 'linear'
-      this.needsUpdate()
       return this
     }
     if (typeof Image === 'undefined') {
@@ -178,9 +249,24 @@ export class Texture {
       throw new Error(`Texture: failed to load '${url}'`)
     }
     this.image = img
-    this.needsUpdate()
     return this
   }
+}
+
+const VIDEO = /\.(mp4|webm|ogv|mov|m4v)($|[?#])/i
+
+/** @internal A <video>, whose frames change as it plays. @param {unknown} image @returns {boolean} */
+export function isVideo(image) {
+  return typeof HTMLVideoElement !== 'undefined' && image instanceof HTMLVideoElement
+}
+
+/** Resolves once a video has a frame to show. @param {HTMLVideoElement} video @returns {Promise<void>} */
+function loaded(video) {
+  if (video.readyState >= 2) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    video.addEventListener('loadeddata', () => resolve(), { once: true })
+    video.addEventListener('error', () => reject(new Error('Texture: the video failed to load')), { once: true })
+  })
 }
 
 /**

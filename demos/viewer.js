@@ -22,7 +22,7 @@ export default function run({ canvas, gui, info }) {
   const sun = scene.add(new DirectionalLight({ direction: [-0.5, -1, -0.35], intensity: 1.2, castShadow: true }))
   const plinth = scene.add(new Mesh({
     geometry: cylinder({ radius: 1.6, height: 0.1, segments: 96 }),
-    material: { color: '#d8d6d2', roughness: 0.6 },
+    material: { color: '#d8d6d2', roughness: 0.6, environmentIntensity: 0.70 },
     position: [0, -0.05, 0],
     receiveShadow: true,
   }))

@@ -1013,6 +1013,33 @@ describe('glass and clearcoat', () => {
     expect(new Geometry({ positions: [0, 0, 0], uvs2: [0.5, 0.5] }).clone().uvs2).toEqual(new Float32Array([0.5, 0.5]))
   })
 
+  it('a video texture marks itself changed with each new frame, until its image is replaced', () => {
+    class FakeVideo {
+      readyState = 4
+      paused = false
+      /** @type {(() => void)[]} */ frames = []
+      requestVideoFrameCallback(fn) { this.frames.push(fn) }
+      addEventListener() {}
+    }
+    vi.stubGlobal('HTMLVideoElement', FakeVideo)
+    try {
+      const video = new FakeVideo()
+      const texture = new Texture({ image: video })
+      // a video would make mipmaps every frame - off unless asked for
+      expect([texture.mipmaps, new Texture({ image: new FakeVideo(), mipmaps: true }).mipmaps]).toEqual([false, true])
+      const before = texture.version
+      video.frames.shift()()
+      video.frames.shift()()
+      expect(texture.version).toBe(before + 2)
+      texture.image = { data: new Uint8Array(4), width: 1, height: 1 }
+      const after = texture.version
+      for (const frame of video.frames.splice(0)) frame()
+      expect(texture.version).toBe(after)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it("a map's UV transform: repeat, then rotation about its centre, then offset - glTF's order", () => {
     const at = (t, u, v) => {
       const m = uvMatrix({ repeat: [1, 1], offset: [0, 0], rotation: 0, center: [0, 0], ...t })

@@ -12,3 +12,5 @@
   tooth, the jaw pivoted at its joint, ambient occlusion baked into its vertex colours.
 - `../hdr/studio_small_09_1k.hdr` - "Studio Small 09" by Sergej Majboroda, Poly Haven. CC0.
   From https://polyhaven.com/a/studio_small_09
+- `../video/mandelbrot.mp4` - a zoom into the Mandelbrot set's Seahorse Valley, rendered for phoria2
+  with ffmpeg's `mandelbrot` source; no third-party material.

@@ -29,7 +29,7 @@ export const DEMOS = [
   { name: 'advanced materials', title: 'glass, clearcoat, cloth sheen, reflectance, brushed metal and paper lanterns' },
   { name: 'stylised materials', title: 'matcaps and toon shading - stylised looks' },
   { name: 'lights', title: 'lights in two moods - sunset and neon - and a swinging lamp that carries its spot light' },
-  { name: 'textures', title: 'photo textures with normal and ARM maps, a live canvas screen, nearest and linear filtering' },
+  { name: 'textures', title: 'photo textures with normal and ARM maps, a live canvas and a video texture, texture filtering' },
   { name: 'colour', title: 'colour - HSL cylinder, RGB cube, light adding and filters multiplying, harmony swatches', hint: '' },
   { name: 'particles', title: 'particle emitters in three set pieces - a fountain, a brazier and falling snow' },
   { name: 'fog shadows', title: 'a harbour on a foggy night - lamps and a lighthouse beam casting shadows through mist' },

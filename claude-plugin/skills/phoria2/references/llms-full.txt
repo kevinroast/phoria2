@@ -333,6 +333,15 @@ into the distance. A cut-out (`alphaTest`) casts the shadow of what is left of i
 data map (`normalMap`, `bumpMap`, `roughnessMap`, `metalnessMap`, `aoMap`) is read as data, not colour,
 unless its `colorSpace` was set on purpose - `normalMap: await loadTexture('n.png')` just works.
 
+**Canvas and video textures**: a texture's `image` can be a canvas - draw on it, then call
+`texture.needsUpdate()` - or a `<video>`, whose frames upload by themselves while it plays, with
+nothing to call. `new Texture({ url: 'promo.mp4' })` (or .webm, .ogv, .mov, .m4v) makes the video
+for you, muted and looping so browsers let it start by itself; `texture.image` is that `<video>` -
+pause, seek or unmute it as any other. A browser that blocks autoplay leaves it on its first frame
+until `texture.image.play()` from a click. Video textures make no mipmaps (they would be remade
+every frame) unless `mipmaps: true`. Put one on an unlit plane for a screen:
+`{ map: new Texture({ url: 'promo.mp4', wrap: 'clamp' }), unlit: true }`.
+
 **Placing a texture**: `repeat` ([u, v] times across), `offset`, and `rotation` (radians, about
 `center`: [0, 0], the corner, by default - [0.5, 0.5] for the middle) - applied in that order, as glTF's
 `KHR_texture_transform` does, and each map keeps its own: a fabric's colour can repeat 7 times while

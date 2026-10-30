@@ -3,8 +3,9 @@ import { DirectionalLight, Material, Mesh, Texture, View, box, cylinder, plane }
 // Textures: a corner of a room in photo textures from Poly Haven (CC0) - a tiled wooden floor, a
 // brick wall, a plank crate and a rusty barrel - each with colour, normal and ARM maps (ambient
 // occlusion, roughness and metalness in red, green and blue: the three slots read those channels,
-// so one texture fills all three). A screen on the wall is a canvas redrawn every half second
-// (texture.needsUpdate()), and a pixel-art poster shows nearest against linear filtering.
+// so one texture fills all three). Two screens on the wall: a canvas redrawn every half second
+// (texture.needsUpdate()) above a video, whose frames upload by themselves as it plays; and a
+// pixel-art poster shows nearest against linear filtering.
 // Toggle the maps to see what each adds.
 
 /**
@@ -61,8 +62,8 @@ export default function run({ canvas, gui, info }) {
   view.scene.add(new Mesh({ geometry: plane({ width: 8, depth: 8 }), material: floor, receiveShadow: true }))
   // plane() faces up; a quarter turn about x stands it up facing the viewer
   view.scene.add(new Mesh({ geometry: plane({ width: 8, depth: 4 }), material: brick, rotation: [Math.PI / 2, 0, 0], position: [0, 2, -4], receiveShadow: true }))
-  const crate = view.scene.add(new Mesh({ geometry: box(1.3), material: planks, position: [-1.2, 0.65, -1.4], rotation: [0, 0.35, 0], castShadow: true, receiveShadow: true }))
-  view.scene.add(new Mesh({ geometry: box(0.8), material: planks, position: [-1.35, 1.7, -1.5], rotation: [0, -0.2, 0], castShadow: true, receiveShadow: true }))
+  const crate = view.scene.add(new Mesh({ geometry: box(1.3), material: planks, position: [-2.3, 0.65, -1.4], rotation: [0, 0.35, 0], castShadow: true, receiveShadow: true }))
+  view.scene.add(new Mesh({ geometry: box(0.8), material: planks, position: [-2.45, 1.7, -1.5], rotation: [0, -0.2, 0], castShadow: true, receiveShadow: true }))
   view.scene.add(new Mesh({ geometry: cylinder({ radius: 0.5, height: 1.4, segments: 48 }), material: rust, position: [1.1, 0.7, -1.9], castShadow: true, receiveShadow: true }))
 
   // a live screen on the wall: a canvas redrawn and re-sent each half second
@@ -91,8 +92,14 @@ export default function run({ canvas, gui, info }) {
     screen.needsUpdate()
   }
   draw(0)
-  view.scene.add(new Mesh({ geometry: box({ width: 2.2, height: 1.3, depth: 0.08 }), material: { color: '#111', roughness: 0.3 }, position: [-1.4, 2.6, -3.95], castShadow: true }))
-  view.scene.add(new Mesh({ geometry: plane({ width: 2.04, depth: 1.15 }), material: { map: screen, unlit: true }, rotation: [Math.PI / 2, 0, 0], position: [-1.4, 2.6, -3.9] }))
+  /** A screen on the wall showing a texture. @param {Texture} map @param {number} y */
+  const tv = (map, y) => {
+    view.scene.add(new Mesh({ geometry: box({ width: 2.2, height: 1.3, depth: 0.08 }), material: { color: '#111', roughness: 0.3 }, position: [-1.4, y, -3.95], castShadow: true }))
+    view.scene.add(new Mesh({ geometry: plane({ width: 2.04, depth: 1.15 }), material: { map, unlit: true }, rotation: [Math.PI / 2, 0, 0], position: [-1.4, y, -3.9] }))
+  }
+  tv(screen, 3.2)
+  // and a video under it: muted and looping, playing by itself
+  tv(new Texture({ url: 'video/mandelbrot.mp4', wrap: 'clamp' }), 1.75)
 
   // a pixel-art poster: nearest keeps the pixels crisp, linear blurs them together
   const poster = pixelArt()

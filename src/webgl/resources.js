@@ -2,6 +2,7 @@
 // CPU objects through their `version` counters. Everything is keyed by object in WeakMaps, so a
 // dropped geometry's entry goes with it; dispose() frees the GL objects straight away.
 import { ATTRIBUTES } from './shaders.js'
+import { isVideo } from '../material/Texture.js'
 
 /** @import { Geometry } from '../geometry/Geometry.js' */
 /** @import { Texture, DataImage } from '../material/Texture.js' */
@@ -350,6 +351,8 @@ export class Resources {
     const gl = this.gl
     let entry = this.#textures.get(texture)
     if (entry && entry.version === texture.version) return entry.texture
+    // a video with no frame yet: what it showed before, or white - and try again next frame
+    if (isVideo(texture.image) && /** @type {HTMLVideoElement} */ (texture.image).readyState < 2) return entry?.texture ?? this.#whiteTexture()
     if (!entry) {
       entry = { texture: /** @type {WebGLTexture} */ (gl.createTexture()), version: -1 }
       this.#textures.set(texture, entry)
