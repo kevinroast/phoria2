@@ -25,7 +25,7 @@ import { Animation } from './Animation.js'
  */
 
 const SUPPORTED = new Set(['KHR_materials_emissive_strength', 'KHR_texture_transform', 'KHR_lights_punctual',
-  'KHR_materials_unlit', 'KHR_mesh_quantization'])
+  'KHR_materials_unlit', 'KHR_mesh_quantization', 'KHR_materials_transmission', 'KHR_materials_clearcoat'])
 const COMPRESSION = new Set(['KHR_draco_mesh_compression', 'EXT_meshopt_compression', 'KHR_texture_basisu'])
 
 const COMPONENTS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT2: 4, MAT3: 9, MAT4: 16 }
@@ -364,6 +364,14 @@ class Builder {
     }
     material.emissiveIntensity = m.extensions?.KHR_materials_emissive_strength?.emissiveStrength ?? 1
     if (m.extensions?.KHR_materials_unlit) material.unlit = true
+    // glass and clear coat, by their factors - their own textures aren't read
+    const clamp = (/** @type {number} */ v) => Math.min(Math.max(v, 0), 1)
+    const transmission = m.extensions?.KHR_materials_transmission, coat = m.extensions?.KHR_materials_clearcoat
+    if (transmission) material.transmission = clamp(transmission.transmissionFactor ?? 0)
+    if (coat) {
+      material.clearcoat = clamp(coat.clearcoatFactor ?? 0)
+      material.clearcoatRoughness = clamp(coat.clearcoatRoughnessFactor ?? 0)
+    }
     if (m.alphaMode === 'BLEND') {
       material.opacity = base[3]
       material.transparent = true

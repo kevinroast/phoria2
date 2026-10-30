@@ -32,6 +32,11 @@ import { Texture } from './Texture.js'
  * @property {MapInput | null} [emissiveMap] multiplies the emissive colour
  * @property {ColorInput} [emissive] glow colour (default black)
  * @property {number} [emissiveIntensity] (default 1)
+ * @property {number} [transmission] 0-1: how much light passes through, as through glass (default 0). Unlike
+ *   opacity, which fades the whole surface, glass keeps its reflections, and shows less of what is behind it
+ *   towards its edges. Its colour shows in proportion to 1 - transmission
+ * @property {number} [clearcoat] 0-1: a clear glossy layer over the surface - car paint, lacquer, varnish (default 0)
+ * @property {number} [clearcoatRoughness] 0-1: how glossy the coat is, 0 a mirror (default 0)
  * @property {boolean} [unlit] flat colour that ignores lights (default false)
  * @property {boolean} [flatShading] faceted look from face normals (default false)
  * @property {boolean} [doubleSided] draw back faces too (default false)
@@ -51,9 +56,11 @@ const MAPS = ['map', 'roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'ao
 const LINEAR_MAPS = new Set(['roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap'])
 const FLAGS = ['unlit', 'flatShading', 'doubleSided', 'vertexColors', 'depthWrite', 'depthTest', 'sizeAttenuation', 'transparent', 'fog']
 const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiveIntensity: [0, Infinity], size: [0, Infinity], width: [0, Infinity],
-  alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1], triplanar: [0, Infinity], bumpScale: [-Infinity, Infinity] }
+  alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1], triplanar: [0, Infinity], bumpScale: [-Infinity, Infinity],
+  transmission: [0, 1], clearcoat: [0, 1], clearcoatRoughness: [0, 1] }
 const DEFAULTS = {
-  name: '', opacity: 1, alphaTest: 0, roughness: 0.5, metalness: 0, normalScale: 1, bumpScale: 1, aoMapIntensity: 1, triplanar: 0, emissiveIntensity: 1, unlit: false, flatShading: false,
+  name: '', opacity: 1, alphaTest: 0, roughness: 0.5, metalness: 0, normalScale: 1, bumpScale: 1, aoMapIntensity: 1, triplanar: 0, emissiveIntensity: 1,
+  transmission: 0, clearcoat: 0, clearcoatRoughness: 0, unlit: false, flatShading: false,
   doubleSided: false, vertexColors: false, blending: 'normal', depthWrite: true, depthTest: true, fog: true,
   size: 1, sizeAttenuation: true, width: 1,
 }
@@ -91,6 +98,9 @@ export class Material {
   /** @type {number} */ roughness
   /** @type {number} */ metalness
   /** @type {number} */ emissiveIntensity
+  /** How much light passes through, as through glass: 0-1. @type {number} */ transmission
+  /** A clear glossy layer over the surface: 0-1. @type {number} */ clearcoat
+  /** How glossy the coat is, 0 a mirror. @type {number} */ clearcoatRoughness
   /** @type {boolean} */ unlit
   /** @type {boolean} */ flatShading
   /** @type {boolean} */ doubleSided
@@ -213,7 +223,7 @@ export class Material {
 
   /** Rendered in the transparent pass: an opacity below 1, additive or multiply blending, or set for maps with soft alpha. @returns {boolean} */
   get transparent() {
-    return this.#transparent || this.opacity < 1 || this.blending !== 'normal'
+    return this.#transparent || this.opacity < 1 || this.transmission > 0 || this.blending !== 'normal'
   }
   /** @param {boolean} v */
   set transparent(v) { this.#transparent = !!v }
@@ -226,6 +236,8 @@ export class Material {
     const parts = [this.unlit ? 'unlit' : 'lit']
     for (const [slot] of this.textures) parts.push(slot)
     if (this.alphaTest > 0) parts.push('cutout')
+    if (this.transmission > 0) parts.push('glass')
+    if (this.clearcoat > 0) parts.push('clearcoat')
     if (this.flatShading) parts.push('flat')
     if (this.vertexColors) parts.push('vcolor')
     return parts.join('+')

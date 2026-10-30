@@ -296,7 +296,9 @@ One material type, given as a plain object:
 { color: 'white' }                                   // lit, physically based
 { color: '#c33', roughness: 0.2, metalness: 1 }      // metal
 { color: 'orange', unlit: true }                     // flat colour, ignores lights
-{ color: '#8cf', opacity: 0.4 }                      // transparent
+{ color: '#8cf', opacity: 0.4 }                      // transparent: fades the whole surface
+{ transmission: 1, roughness: 0.05 }                 // clear glass
+{ color: '#a3121f', metalness: 0.6, clearcoat: 1 }   // car paint: a glossy coat over it
 { emissive: '#ff0', emissiveIntensity: 3 }           // glows
 { map: 'wood.jpg', normalMap: 'wood_n.png' }         // textures from urls
 ```
@@ -313,7 +315,7 @@ Properties: `color`, `opacity`, `roughness` (0.5), `metalness` (0), `emissive`,
 (`'normal'`, `'additive'` - adds light, for glows and sparks - or `'multiply'` - darkens what is behind, as a colour
 filter does: cyan over magenta is blue), `alphaTest` (cut-outs: drop pixels with less alpha - leaves, fences),
 `map`, `normalMap`/`normalScale`, `bumpMap`/`bumpScale`, `roughnessMap`, `metalnessMap`, `aoMap`,
-`emissiveMap`; `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
+`emissiveMap`, `transmission`, `clearcoat`/`clearcoatRoughness` (below); `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
 `mesh.material.color.set('#0f0')`, `mesh.material.opacity = 0.5`, or a whole new one: `mesh.material = { color: 'red' }`
 (options become a Material, as in the constructor; `mesh.geometry = box(2)` likewise).
 
@@ -323,6 +325,19 @@ take `anisotropy` (default 8, up to the GPU's limit, 1 for off), which keeps flo
 into the distance. A cut-out (`alphaTest`) casts the shadow of what is left of it. A Texture given to a
 data map (`normalMap`, `bumpMap`, `roughnessMap`, `metalnessMap`, `aoMap`) is read as data, not colour,
 unless its `colorSpace` was set on purpose - `normalMap: await loadTexture('n.png')` just works.
+
+**Glass**: `transmission` (0-1) lets light through as glass does. Unlike `opacity`, which fades
+everything - reflections too, so faded things look washed out, as dimmed chart bars should - glass
+keeps its reflections whole, and shows less of what is behind it towards its edges, where it
+reflects nearly everything. Its colour shows in proportion to `1 - transmission`: `transmission: 0.6`
+with a colour is tinted glass. Keep `roughness` low for clear glass, higher for frosted. There is
+no refraction - what is behind isn't bent. It shines with an `environment` to reflect
+(`'studio'`, or better an `.hdr`).
+
+**Clearcoat**: `clearcoat` (0-1) puts a clear glossy layer over the surface - car paint, lacquered
+wood, varnish - with its own sharp reflection over the base's softer one; `clearcoatRoughness` (0,
+a mirror) makes it satin. Normal and bump maps show under a smooth coat. glTF models bring both
+from `KHR_materials_transmission` and `KHR_materials_clearcoat` (by their factors).
 
 **Models without UVs** (scans, CAD exports) can still take maps: `triplanar: 40` projects them
 from the mesh's three axes instead of using UVs, repeating 40 times per unit of the mesh's own space.

@@ -26,6 +26,7 @@ export const DEMOS = [
   { section: 'Features', name: 'hello', title: 'a minimal scene, with the whole program' },
   { name: 'scene-json', title: 'a scene as plain JSON - edit it, add to it, rebuild it, export it' },
   { name: 'materials', title: 'roughness and metalness under a movable light and the studio environment' },
+  { name: 'advanced materials', title: 'glass that keeps its reflections, and clearcoat over metallic paint - against plain opacity and bare paint' },
   { name: 'lights', title: 'lights in two moods - sunset and neon - and a swinging lamp that carries its spot light' },
   { name: 'textures', title: 'photo textures with normal and ARM maps, a live canvas screen, nearest and linear filtering' },
   { name: 'colour', title: 'colour - HSL cylinder, RGB cube, light adding and filters multiplying, harmony swatches', hint: '' },

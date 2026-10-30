@@ -936,3 +936,36 @@ describe('before the 1.0 freeze', () => {
     expect([again.constructor.name, again.name, again.children[0].name]).toEqual(['Group', 'chair', 'seat'])
   })
 })
+
+describe('glass and clearcoat', () => {
+  /** The fragment shaders a renderer compiles for a box in this material. @param {object} material */
+  const shadersFor = async (material) => {
+    const { gl } = fakeGL()
+    const sources = []
+    const recording = new Proxy(gl, { get: (t, k) => (k === 'shaderSource' ? (_s, src) => sources.push(src) : t[k]) })
+    const renderer = new WebGLRenderer({ canvas: fakeCanvas(recording) })
+    renderer.setSize(10, 10)
+    const scene = new Scene()
+    scene.add(new Mesh({ geometry: box(), material }))
+    renderer.render(scene, new PerspectiveCamera({ position: [0, 0, 5] }))
+    return sources.filter((s) => s.includes('fragColor'))
+  }
+
+  it('compile only when used: a plain material has neither, glass and coats switch theirs on', async () => {
+    const has = (sources, define) => sources.some((s) => s.includes(`#define ${define}\n`))
+    const plain = await shadersFor({ color: 'red' })
+    expect([has(plain, 'TRANSMISSION'), has(plain, 'CLEARCOAT')]).toEqual([false, false])
+    const glass = await shadersFor({ transmission: 1 })
+    expect([has(glass, 'TRANSMISSION'), has(glass, 'CLEARCOAT')]).toEqual([true, false])
+    const coated = await shadersFor({ clearcoat: 1, clearcoatRoughness: 0.3 })
+    expect([has(coated, 'TRANSMISSION'), has(coated, 'CLEARCOAT')]).toEqual([false, true])
+  })
+
+  it('glass is drawn with the see-through things; opacity still fades it as a whole', () => {
+    expect(new Material({ transmission: 0.5 }).transparent).toBe(true)
+    expect(new Material({ clearcoat: 1 }).transparent).toBe(false)
+    const glass = new Material({ transmission: 1, clearcoat: 1, clearcoatRoughness: 0.2, opacity: 0.5 })
+    expect(new Material(glass.toJSON())).toMatchObject({ transmission: 1, clearcoat: 1, clearcoatRoughness: 0.2, opacity: 0.5 })
+    expect(() => new Material({ transmission: 1.5 })).toThrow('transmission')
+  })
+})

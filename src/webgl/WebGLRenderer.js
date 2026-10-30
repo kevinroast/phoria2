@@ -482,6 +482,11 @@ export class WebGLRenderer {
     if (material.bumpMap) program.set('uBumpScale', material.bumpScale)
     if (material.triplanar > 0) program.set('uTriplanar', material.triplanar)
     program.set('uAoMapIntensity', material.aoMapIntensity)
+    if (material.transmission > 0) program.set('uTransmission', material.transmission)
+    if (material.clearcoat > 0) {
+      program.set('uClearcoat', material.clearcoat)
+      program.set('uClearcoatRoughness', material.clearcoatRoughness)
+    }
     program.set('uAlphaTest', material.alphaTest)
     /** @type {[string, Texture][]} */
     const maps = kind === 'mesh' ? material.textures : material.map ? [['map', material.map]] : []
@@ -631,6 +636,8 @@ export class WebGLRenderer {
         d.push(...this.#lightDefines)
         if (this.#environment) d.push('ENV_MAP')
         else if (this.#studio) d.push('STUDIO')
+        if (material.transmission > 0) d.push('TRANSMISSION')
+        if (material.clearcoat > 0) d.push('CLEARCOAT')
       }
       if (material.map) d.push('MAP')
       if (material.emissiveMap) d.push('EMISSIVE_MAP')

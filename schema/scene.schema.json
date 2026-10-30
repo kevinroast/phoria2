@@ -881,6 +881,24 @@
         "bumpScale": {
           "type": "number"
         },
+        "transmission": {
+          "type": "number",
+          "description": "How much light passes through, as through glass: reflections stay whole, and less of what is behind shows towards the edges. Unlike opacity, which fades the whole surface.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "clearcoat": {
+          "type": "number",
+          "description": "A clear glossy layer over the surface - car paint, lacquer, varnish.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "clearcoatRoughness": {
+          "type": "number",
+          "description": "How glossy the coat is, 0 a mirror.",
+          "minimum": 0,
+          "maximum": 1
+        },
         "blending": {
           "enum": ["normal", "additive", "multiply"]
         }

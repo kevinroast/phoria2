@@ -330,3 +330,22 @@ describe('a loaded model as plain data', () => {
     warn.mockRestore()
   })
 })
+
+describe('glass and clearcoat from glTF', () => {
+  it('reads KHR_materials_transmission and KHR_materials_clearcoat by their factors', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const json = sampleGLTF()
+    json.extensionsUsed = [...(json.extensionsUsed ?? []), 'KHR_materials_transmission', 'KHR_materials_clearcoat']
+    json.materials[0].extensions = {
+      ...json.materials[0].extensions,
+      KHR_materials_transmission: { transmissionFactor: 0.9 },
+      KHR_materials_clearcoat: { clearcoatFactor: 1, clearcoatRoughnessFactor: 0.2 },
+    }
+    const model = await parseGLTF(json, { baseUrl: 'https://example.com/models/', waitForTextures: false })
+    const { material } = /** @type {Mesh} */ (model.find('Triangle'))
+    expect([material.transmission, material.clearcoat, material.clearcoatRoughness, material.transparent]).toEqual([0.9, 1, 0.2, true])
+    // supported now, so not warned about
+    expect(warn.mock.calls.some(([m]) => /KHR_materials_(transmission|clearcoat)/.test(String(m)))).toBe(false)
+    warn.mockRestore()
+  })
+})

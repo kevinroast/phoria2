@@ -306,6 +306,13 @@ uniform float uBumpScale;
 uniform sampler2D uAoMap;
 uniform float uAoMapIntensity;
 #endif
+#ifdef TRANSMISSION
+uniform float uTransmission;
+#endif
+#ifdef CLEARCOAT
+uniform float uClearcoat;
+uniform float uClearcoatRoughness;
+#endif
 
 uniform vec3 uAmbient;
 uniform vec3 uHemisphereSky;
@@ -395,6 +402,20 @@ vec3 shade(vec3 n, vec3 v, vec3 l, vec3 radiance, vec3 diffuse, vec3 f0, float a
   vec3 specular = D_GGX(NoH, a) * V_SmithGGXCorrelated(NoV, NoL, a) * F * PI;
   return (diffuse * (1.0 - F) + specular) * radiance * NoL;
 }
+
+#ifdef CLEARCOAT
+// a clear coat's highlight: a glossy dielectric layer (f0 0.04) on the surface's own normal, so
+// normal and bump maps show beneath it, under a smooth coat
+vec3 coatShade(vec3 n, vec3 v, vec3 l, vec3 radiance, float a) {
+  float NoL = clamp(dot(n, l), 0.0, 1.0);
+  if (NoL <= 0.0) return vec3(0.0);
+  vec3 h = normalize(l + v);
+  float NoV = clamp(abs(dot(n, v)), 1e-4, 1.0);
+  float NoH = clamp(dot(n, h), 0.0, 1.0);
+  float VoH = clamp(dot(v, h), 0.0, 1.0);
+  return D_GGX(NoH, a) * V_SmithGGXCorrelated(NoV, NoL, a) * F_Schlick(VoH, vec3(0.04)) * PI * radiance * NoL;
+}
+#endif
 
 // The built-in 'studio' environment: a soft, bright overhead box over a darker floor, as a
 // function of direction - no texture needed.
@@ -526,6 +547,19 @@ float pointShadowAt(vec3 light, vec3 n, float distance) {
   return lit / 9.0;
 }
 #endif
+
+// what a surface reflects of its surroundings along r - blurrier the rougher it is
+vec3 reflected(vec3 r, vec3 n, float roughness, vec3 irradiance) {
+#ifdef ENV_MAP
+  // a lower mip, convolved for that roughness
+  return textureLod(uEnvMap, equirectUv(r), roughness * uEnvMaxLod).rgb * uEnvIntensity;
+#elif defined(STUDIO)
+  // leaned towards the surface normal
+  return mix(studio(r), studio(n), roughness * roughness);
+#else
+  return irradiance * 0.5;
+#endif
+}
 #endif
 
 void main() {
@@ -538,6 +572,8 @@ void main() {
   if (base.a < uAlphaTest) discard;
   base.a = 1.0;
 #endif
+  // how much of what is behind it this hides: its opacity - less for glass, which lets light through
+  float coverage = base.a;
   vec3 emissive = uEmissive;
 #ifdef EMISSIVE_MAP
   emissive *= SAMPLE(uEmissiveMap).rgb;
@@ -582,6 +618,16 @@ void main() {
   float a = roughness * roughness;
   vec3 diffuse = base.rgb * (1.0 - metalness);
   vec3 f0 = mix(vec3(0.04), base.rgb, metalness);
+#ifdef TRANSMISSION
+  // glass: what passes through isn't scattered back, so less diffuse colour - and the reflections
+  // stay whole, however clear it is
+  diffuse *= 1.0 - uTransmission;
+#endif
+#ifdef CLEARCOAT
+  float coatRoughness = clamp(uClearcoatRoughness, 0.04, 1.0);
+  float coatA = coatRoughness * coatRoughness;
+  vec3 coat = vec3(0.0);
+#endif
 
   vec3 color = vec3(0.0);
 #if NUM_DIRECTIONAL > 0
@@ -592,6 +638,9 @@ void main() {
     if (i == 0) radiance *= shadowAt(surfaceNormal, uDirectionalDirection[0]);
 #endif
     color += shade(n, v, uDirectionalDirection[i], radiance, diffuse, f0, a);
+#ifdef CLEARCOAT
+    coat += coatShade(surfaceNormal, v, uDirectionalDirection[i], radiance, coatA);
+#endif
   }
 #endif
 #if NUM_PUNCTUAL > 0
@@ -614,6 +663,9 @@ void main() {
     if (float(i) == uPointShadowIndex) radiance *= pointShadowAt(uPunctualPosition[i], surfaceNormal, d);
 #endif
     color += shade(n, v, l, radiance, diffuse, f0, a);
+#ifdef CLEARCOAT
+    coat += coatShade(surfaceNormal, v, l, radiance, coatA);
+#endif
   }
 #endif
 
@@ -621,34 +673,40 @@ void main() {
   vec3 irradiance = uAmbient + mix(uHemisphereGround, uHemisphereSky, n.y * 0.5 + 0.5);
   float NoV = clamp(abs(dot(n, v)), 1e-4, 1.0);
   vec3 brdf = envBRDF(f0, roughness, NoV);
-  vec3 ambientSpecular;
 #ifdef ENV_MAP
   irradiance += envIrradiance(n) * uEnvIntensity;
-  vec3 r = reflect(-v, n);
-  // rougher surfaces see a blurrier reflection: a lower mip, convolved for that roughness
-  ambientSpecular = textureLod(uEnvMap, equirectUv(r), roughness * uEnvMaxLod).rgb * uEnvIntensity * brdf;
 #elif defined(STUDIO)
   irradiance += studio(n) * 0.35;
-  vec3 r = reflect(-v, n);
-  // rougher surfaces see a blurrier reflection: lean it towards the surface normal
-  ambientSpecular = mix(studio(r), studio(n), roughness * roughness) * brdf;
-#else
-  ambientSpecular = irradiance * brdf * 0.5;
 #endif
+  vec3 ambientSpecular = reflected(reflect(-v, n), n, roughness, irradiance) * brdf;
   vec3 indirect = diffuse * irradiance + ambientSpecular;
 #ifdef AO_MAP
   indirect *= mix(1.0, SAMPLE(uAoMap).r, uAoMapIntensity);
 #endif
   color += indirect + emissive;
+#ifdef CLEARCOAT
+  // the coat's reflection, over the base - which loses the light the coat reflects away
+  float coatNoV = clamp(abs(dot(surfaceNormal, v)), 1e-4, 1.0);
+  coat += reflected(reflect(-v, surfaceNormal), surfaceNormal, coatRoughness, irradiance) * envBRDF(vec3(0.04), coatRoughness, coatNoV);
+  color = color * (1.0 - uClearcoat * F_Schlick(coatNoV, vec3(0.04)).x) + coat * uClearcoat;
+#endif
+#ifdef TRANSMISSION
+  // most of what is behind glass shows through face on; towards its edges, where it reflects nearly
+  // everything (Fresnel), less and less
+  coverage *= mix(1.0, clamp(max(brdf.r, max(brdf.g, brdf.b)), 0.0, 1.0), uTransmission);
+#endif
   color = toneMap(color);
 #else
   vec3 color = base.rgb + emissive;
 #endif
   color = mix(color, uHighlight.rgb, vHighlight * uHighlight.a);
+  // a highlight shows on glass as on anything else
+  coverage = mix(coverage, base.a, vHighlight * uHighlight.a);
   color = fogged(color);
 
-  // premultiplied alpha, so the canvas composites correctly over the page
-  fragColor = vec4(linearToSrgb(color) * base.a, base.a);
+  // premultiplied alpha, so the canvas composites correctly over the page. The colour is the light
+  // the surface sends back - faded with its opacity; coverage is how much of what is behind it hides
+  fragColor = vec4(linearToSrgb(color) * base.a, coverage);
 }
 `
 
