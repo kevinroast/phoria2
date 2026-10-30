@@ -30,4 +30,4 @@ why a page might look wrong. Coordinates are +Y up, in metres; angles in radians
 
 ## Optional
 
-- [npm package](https://www.npmjs.com/package/phoria2): versions; release candidates are tagged `next`
+- [npm package](https://www.npmjs.com/package/phoria2): versions - semver from 1.0, so code written for any 1.x keeps working; deprecations warn with the replacement before anything is removed

@@ -164,6 +164,25 @@ A full example, with a chart that follows its data, is in
 | `phoria2/edit` | `TransformHandle` - a move and turn handle with grid and angle snapping - and `History` for undo, for planners and layout editors |
 | `phoria2/schema.json`, `phoria2/charts/schema.json` | JSON Schemas for scene descriptions (`create()`) and chart specs |
 
+## Versioning
+
+phoria2 follows [semver](https://semver.org) from 1.0: no 1.x release breaks code written against
+what is documented.
+
+- **Covered:** what the entry points above export, as the [reference](https://kevs3d.co.uk/phoria2/llms-full.txt) and the
+  published types describe it - names, options and their defaults, and what they do. The formats
+  `create()` reads and `toJSON()` writes, and chart specs, as their JSON Schemas describe them. The
+  conventions: +Y up, metres, radians, sRGB colour in, and light intensities - a scene keeps its
+  colours and its brightness from one 1.x release to the next.
+- **Not covered:** exact pixels, since drawing can get better (smoother edges, softer shadows); the
+  wording of errors and warnings (catch `PhoriaError`, not its message); modules imported from
+  `phoria2/src/...` directly, members left out of the types, and the shape of
+  `NullRenderer.lastFrame`; the demos.
+- **Minor releases add:** options, methods, node types, chart marks. A new option's default keeps
+  what happened before.
+- **Nothing is removed or renamed in 1.x.** What 2.0 will drop is deprecated first: a 1.x release
+  keeps it working and warns once in the console, saying exactly what to write instead.
+
 ## Browsers
 
 Any browser with WebGL 2: current Chrome, Edge, Firefox and Safari (desktop and iOS 15+).

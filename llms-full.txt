@@ -50,7 +50,12 @@ The other sub-paths follow the same pattern: `dist/gltf.js`, `dist/motion.js`, `
 
 When this page doesn't settle something, read the source with its comments in
 `node_modules/phoria2/src` (`src/View.js`, `src/scene/`, `src/geometry/`, `src/charts/`...), not the
-minified `dist/` files.
+minified `dist/` files - but import from the entry points, not from `src/`.
+
+**Versions** follow semver from 1.0: everything on this page and in the types keeps working through
+1.x, defaults included. Exact pixels and error wording can change; nothing is removed without a
+release that warns first, naming the replacement. A warning that something is deprecated says what
+to write instead - do that.
 
 ## Conventions
 
