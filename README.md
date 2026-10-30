@@ -56,12 +56,12 @@ own). Pin the version so a new release can't change your page:
 <script type="importmap">
 {
   "imports": {
-    "phoria2": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.8/dist/phoria2.js",
-    "phoria2/charts": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.8/dist/charts.js",
-    "phoria2/particles": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.8/dist/particles.js",
-    "phoria2/gltf": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.8/dist/gltf.js",
-    "phoria2/motion": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.8/dist/motion.js",
-    "phoria2/edit": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0-rc.8/dist/edit.js"
+    "phoria2": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0/dist/phoria2.js",
+    "phoria2/charts": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0/dist/charts.js",
+    "phoria2/particles": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0/dist/particles.js",
+    "phoria2/gltf": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0/dist/gltf.js",
+    "phoria2/motion": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0/dist/motion.js",
+    "phoria2/edit": "https://cdn.jsdelivr.net/npm/phoria2@1.0.0/dist/edit.js"
   }
 }
 </script>
