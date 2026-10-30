@@ -734,7 +734,8 @@ body.gallery {
 }
 
 .about {
-  margin-top: 8px;
+  margin-top: 16px;
+  margin-bottom: 32px;
   color: var(--text-dim);
   line-height: 1.55;
 }
