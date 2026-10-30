@@ -32,6 +32,7 @@ import { GLContext } from './context.js'
  *   this canvas, instead of giving the canvas a context of its own - for pages with many views
  *   (browsers allow about 16 live contexts). The View decides this; see its 'context' option.
  * @property {boolean} [antialias] multisampling (default true; a shared context always has it)
+ * @property {boolean} [outlineAntialias] soft-edged outlines with round corners (default: as antialias)
  * @property {ToneMapping} [toneMapping] how lit colours are mapped to the screen: 'neutral' keeps colours
  *   true (Khronos PBR Neutral, the default), 'aces' is filmic, 'none' clips
  * @property {number} [exposure] (default 1)
@@ -39,7 +40,7 @@ import { GLContext } from './context.js'
  * @property {boolean | BloomOptions} [bloom] glow round bright parts (default off); loads its code the first time
  */
 
-const OPTIONS = ['canvas', 'shared', 'antialias', 'toneMapping', 'exposure', 'pixelRatio', 'bloom']
+const OPTIONS = ['canvas', 'shared', 'antialias', 'outlineAntialias', 'toneMapping', 'exposure', 'pixelRatio', 'bloom']
 const BLOOM = { strength: 1, radius: 0.6, threshold: 0.6 }
 /** What bloom: { ... } takes, and hints for names people reach for instead. */
 export const BLOOM_OPTIONS = Object.keys(BLOOM)
@@ -96,6 +97,8 @@ export class WebGLRenderer {
   /** @type {ToneMapping} */ toneMapping = 'neutral'
   exposure = 1
   pixelRatio = 1
+  /** Outlines with soft edges and round corners, or hard pixel steps; takes effect on the next frame. */
+  outlineAntialias = true
   /** @type {Required<BloomOptions> | null} */ #bloom = null
   /** Counts from the last frame and the GPU caches. */
   info = { drawCalls: 0, triangles: 0, programs: 0, geometries: 0, textures: 0, compiling: 0 }
@@ -129,6 +132,8 @@ export class WebGLRenderer {
     if (options.exposure !== undefined) this.exposure = checkRange('WebGLRenderer', 'exposure', options.exposure, 0)
     if (options.pixelRatio !== undefined) this.pixelRatio = checkRange('WebGLRenderer', 'pixelRatio', options.pixelRatio, 0, Infinity, { above: true })
     this.#bloom = bloomSettings('WebGLRenderer', options.bloom)
+    // outlines follow the picture's antialiasing unless told otherwise (a shared context always has it)
+    this.outlineAntialias = options.outlineAntialias !== undefined ? !!options.outlineAntialias : options.shared || options.antialias !== false
 
     if (options.shared) {
       this.#gpu = GLContext.shared()
@@ -230,7 +235,7 @@ export class WebGLRenderer {
       frame.pointShadow && passes.pointShadowMap(frame.pointShadow),
     ].filter((s) => !!s)
     // outlines' mask, drawn before the scene, so the scene's own target need not be left
-    const outline = passes && frame.outlines.length ? passes.outlineMask(frame.outlines, frame, width, height, this.pixelRatio) : null
+    const outline = passes && frame.outlines.length ? passes.outlineMask(frame.outlines, frame, width, height, this.pixelRatio, this.outlineAntialias) : null
 
     // with bloom, the scene is drawn into a buffer of its own first (drawn plainly while its code loads)
     const bloom = this.#bloom ? gpu.loadBloom() : null
@@ -268,7 +273,7 @@ export class WebGLRenderer {
     gl.enable(gl.BLEND)
     for (const item of frame.transparent) this.#draw(item, frame, true)
     // outlines over everything
-    if (outline && passes) passes.outlineComposite(outline, height)
+    if (outline && passes) passes.outlineComposite(outline)
     gl.depthMask(true)
     gl.disable(gl.BLEND)
     gl.bindVertexArray(null)

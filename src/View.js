@@ -53,6 +53,8 @@ import { checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '
  * @property {(hit: Hit) => TooltipContent} [tooltip] what to show for the thing under the pointer - see tooltip()
  * @property {number} [pixelRatio] default min(devicePixelRatio, 2)
  * @property {boolean} [antialias] (default true)
+ * @property {boolean} [outlineAntialias] soft-edged outlines with round corners (default: as antialias); change it
+ *   any time with view.renderer.outlineAntialias
  * @property {'auto' | 'own' | 'shared'} [context] which WebGL context draws it: 'own' gives the canvas one of
  *   its own; 'shared' draws with the page's one shared context and copies the picture over, so a page can hold
  *   any number of views (browsers allow about 16 live contexts). 'auto' (default): own for the first four
@@ -69,7 +71,7 @@ import { checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '
 /** @typedef {(hit: Hit | null, event: PointerEvent | MouseEvent | null) => void} ViewHandler */
 
 const OPTIONS = ['canvas', 'scene', 'camera', 'orbit', 'background', 'renderMode', 'framing', 'highlight', 'tooltip', 'pixelRatio',
-  'antialias', 'context', 'toneMapping', 'exposure', 'bloom', 'autoLight', 'maxDelta']
+  'antialias', 'outlineAntialias', 'context', 'toneMapping', 'exposure', 'bloom', 'autoLight', 'maxDelta']
 const FRAMING_OPTIONS = ['keep', 'aspect']
 const HINTS = {
   renderer: 'the View makes its renderer - read it from view.renderer',
@@ -213,7 +215,7 @@ export class View {
     // the renderer checks these too; checked here, the error names the View
     if (options.exposure !== undefined) checkRange('View', 'exposure', options.exposure, 0)
     const shared = context === 'shared' || (context === 'auto' && ownContexts >= OWN_CONTEXTS)
-    this.renderer = new WebGLRenderer({ canvas: this.canvas, shared, antialias: options.antialias, toneMapping: options.toneMapping, exposure: options.exposure, bloom: options.bloom })
+    this.renderer = new WebGLRenderer({ canvas: this.canvas, shared, antialias: options.antialias, outlineAntialias: options.outlineAntialias, toneMapping: options.toneMapping, exposure: options.exposure, bloom: options.bloom })
     if (!shared) {
       this.#ownContext = true
       ownContexts++

@@ -76,11 +76,15 @@ describe('outlines', () => {
     }
   })
 
-  it('are drawn once the passes have loaded: a mask, widened, then drawn over the scene', async () => {
-    const { gl } = fakeGL()
-    const sources = []
-    const recording = new Proxy(gl, { get: (t, k) => (k === 'shaderSource' ? (_s, src) => sources.push(src) : t[k]) })
-    const renderer = new WebGLRenderer({ canvas: fakeCanvas(recording) })
+  /** Draw an outlined box twice (the passes load after the first), recording shaders and GL calls. @param {object} [options] */
+  const drawOutlined = async (options = {}) => {
+    const { gl, count } = fakeGL()
+    const sources = [], calls = []
+    const recording = new Proxy(gl, {
+      get: (t, k) => (k === 'shaderSource' ? (_s, src) => sources.push(src)
+        : k === 'blitFramebuffer' || k === 'renderbufferStorageMultisample' ? () => calls.push(k) : t[k]),
+    })
+    const renderer = new WebGLRenderer({ canvas: fakeCanvas(recording), ...options })
     renderer.setSize(10, 10)
     let ready = 0
     renderer.onReady = () => ready++
@@ -89,10 +93,39 @@ describe('outlines', () => {
     renderer.render(scene, camera())
     await vi.waitFor(() => expect(ready).toBeGreaterThan(0))
     renderer.render(scene, camera())
-    // the mask's fragment shader, the widening and the composite
-    expect(sources.some((s) => s.includes('uniform vec4 uMask'))).toBe(true)
+    return { renderer, scene, sources, calls, count }
+  }
+
+  it('are drawn once the passes have loaded: a mask, widened, then drawn over the scene - smooth by default', async () => {
+    const { sources, calls, count } = await drawOutlined()
+    // the mask drawn multisampled with its coverage beside it, both resolved, then measured from its edge
+    expect(sources.some((s) => s.includes('out vec4 fragCoverage'))).toBe(true)
+    expect(sources.some((s) => s.includes('uniform sampler2D uNearest'))).toBe(true)
+    expect(calls.filter((c) => c === 'renderbufferStorageMultisample')).toHaveLength(2)
+    expect(calls.filter((c) => c === 'blitFramebuffer')).toHaveLength(2)
+    expect(count('renderbuffer')).toBe(2)
+  })
+
+  it('outlineAntialias: false draws them in hard pixel steps, as before', async () => {
+    const { sources, calls, count } = await drawOutlined({ outlineAntialias: false })
     expect(sources.some((s) => s.includes('fragColor = widened(vUv)'))).toBe(true)
-    expect(sources.some((s) => s.includes('uniform sampler2D uMask'))).toBe(true)
+    expect(sources.some((s) => s.includes('fragCoverage'))).toBe(false)
+    expect([calls.length, count('renderbuffer')]).toEqual([0, 0])
+  })
+
+  it('outlineAntialias follows antialias unless given, and can change between frames', async () => {
+    const make = (options) => new WebGLRenderer({ canvas: fakeCanvas(fakeGL().gl), ...options }).outlineAntialias
+    expect([make({}), make({ antialias: false }), make({ antialias: false, outlineAntialias: true }), make({ outlineAntialias: false })])
+      .toEqual([true, false, true, false])
+    expect(() => make({ outlineAntiAlias: false })).toThrow("did you mean 'outlineAntialias'")
+    // switching remakes the outline's buffers: the multisampled ones go, and come back
+    const { renderer, scene, count } = await drawOutlined()
+    renderer.outlineAntialias = false
+    renderer.render(scene, camera())
+    expect(count('renderbuffer')).toBe(0)
+    renderer.outlineAntialias = true
+    renderer.render(scene, camera())
+    expect(count('renderbuffer')).toBe(2)
   })
 })
 

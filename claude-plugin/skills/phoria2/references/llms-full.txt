@@ -458,7 +458,10 @@ chair.onDrag = (drag) => {
 ```
 
 - **Outline**: `outline: '#ffcc00'` or `{ color, width }` (pixels, up to 8; default 2) on a node draws
-  a line round its silhouette, over everything - for what is selected. Set it any time; `null` removes it.
+  a line round its silhouette, over everything - for what is selected, or as an inked edge for a
+  drawn look. Set it any time; `null` removes it. Outlines are antialiased - soft edges and round
+  corners - as the canvas is; `outlineAntialias: false` on the View (or `view.renderer.outlineAntialias =
+  false`, any time) draws them in hard pixel steps instead.
 - `view.controls.cancel()` lets go of the orbit gesture in progress, for apps that take over a press.
 
 ## Charts: `phoria2/charts`
