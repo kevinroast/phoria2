@@ -531,7 +531,12 @@ export class WebGLRenderer {
       gl.enable(gl.CULL_FACE)
       gl.cullFace(gl.BACK)
     }
+    // surfaces sit a hair behind their own depth, so a line lying on one - an edge, a seam, a
+    // drawing's outline - shows whole rather than fighting it pixel by pixel
+    gl.enable(gl.POLYGON_OFFSET_FILL)
+    gl.polygonOffset(1, 2)
     this.info.triangles += this.#gpu.resources.drawTriangles(geometry, instances)
+    gl.disable(gl.POLYGON_OFFSET_FILL)
     this.info.drawCalls++
   }
 

@@ -57,7 +57,8 @@ export class Geometry {
     if (options.uvs) this.uvs = toFloat32('uvs', options.uvs, 2, n)
     if (options.colors) this.colors = toFloat32('colors', options.colors, 3, n)
     if (options.indices) {
-      let max = 0
+      // -1: no indices at all refer to no vertex, so an empty geometry can say so
+      let max = -1
       for (let i = 0; i < options.indices.length; i++) {
         const v = options.indices[i]
         if (!Number.isInteger(v) || v < 0) fail('Geometry', `'indices' must be whole numbers 0 or more, found ${describe(v)} at ${i}`)

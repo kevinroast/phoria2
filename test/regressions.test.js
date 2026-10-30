@@ -895,3 +895,20 @@ describe('multiply blending', () => {
     expect(watch.changed(scene, camera)).toBe(true)
   })
 })
+
+describe('edges at an angle', () => {
+  it("leaves out a round surface's facets with a larger angle, keeping its rims", async () => {
+    const { cylinder, edges } = await import('../src/index.js')
+    const round = cylinder({ radius: 1, height: 2, segments: 48 })
+    const count = (g) => (g.indices?.length ?? g.positions.length / 3) / 2
+    // by default every facet down the side is an edge, besides the two rims
+    expect(count(edges(round))).toBe(48 * 3)
+    // at 30 degrees, the rims alone: where the side meets the top and the foot
+    expect(count(edges(round, { angle: 30 }))).toBe(48 * 2)
+    expect(() => edges(round, { angle: 200 })).toThrow("'angle' is in degrees")
+    // a sphere has no edges that sharp: an empty geometry, not an error
+    const { sphere } = await import('../src/index.js')
+    expect(edges(sphere(), { angle: 30 }).vertexCount).toBe(0)
+    expect(() => edges(round, /** @type {any} */ ({ threshold: 30 }))).toThrow('edges()')
+  })
+})

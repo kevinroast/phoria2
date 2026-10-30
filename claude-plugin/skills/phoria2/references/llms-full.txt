@@ -256,7 +256,7 @@ Generators return a `Geometry`; each takes one options object (a number is the m
 | `lathe({ points, segments, axis })` | a profile of `[radius, y]` pairs, bottom up, turned about Y - pistons, bottles, bolts (listed top down, it faces inward) |
 | `extrude({ shape, holes, depth, axis })` | an outline of `[x, y]` pairs (and hole outlines) pushed along Z, centred - plates, brackets, logos |
 | `grid({ size, divisions })` | floor grid, for `Lines` |
-| `edges(geometry)` | wireframe of any geometry, for `Lines` |
+| `edges(geometry, { angle })` | the edges of any geometry, for `Lines`: where faces turn more than `angle` degrees (default 1) - 30 keeps round surfaces clean, outlining a part as a drawing does |
 
 `axis: 'x' | 'y' | 'z'` lays `cylinder`, `lathe` and `extrude` along another axis - no rotating the mesh
 to suit. An extruded outline is drawn as seen from the axis's + end, centred along the axis: with

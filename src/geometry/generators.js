@@ -546,15 +546,22 @@ function pairs(owner, name, value, min) {
 
 /**
  * Line geometry outlining a mesh: one vertex pair per edge, for drawing as Lines. Edges shared by
- * two faces that are flat to each other (within about 1 degree) are left out, so a box gives its
- * 12 outline edges rather than its triangle diagonals. Vertices at exactly the same position are
- * merged first, so meshes with separate vertices per face (box()) still share their edges.
+ * two faces that are flat to each other (within `angle` degrees - 1 unless given) are left out, so a
+ * box gives its 12 outline edges rather than its triangle diagonals. A larger angle leaves out the
+ * facets of round surfaces too - 30 draws a cylinder's rims but not the lines down its side, as a
+ * drawing does. Vertices at exactly the same position are merged first, so meshes with separate
+ * vertices per face (box()) still share their edges.
  * @example new Lines({ geometry: edges(box()) })
+ * @example new Lines({ geometry: edges(cylinder({ segments: 48 }), { angle: 30 }) }) // just the rims
  * @param {Geometry} geometry triangles, indexed or not
+ * @param {{ angle?: number }} [options] how far, in degrees, two faces must turn from each other to make an edge (default 1)
  * @returns {Geometry}
  */
-export function edges(geometry) {
+export function edges(geometry, options = {}) {
   if (!(geometry instanceof Geometry)) fail('edges()', `expected a Geometry, got ${describe(geometry)}`)
+  const { angle = 1 } = resolve('edges()', options, ['angle'], null)
+  if (!(angle >= 0 && angle < 180)) fail('edges()', `'angle' is in degrees, 0 to under 180, got ${describe(angle)}`)
+  const flat = Math.cos((angle * Math.PI) / 180)
   const p = geometry.positions, index = geometry.indices, n = geometry.vertexCount
   // weld: map each vertex to the first vertex at the same position
   /** @type {Map<string, number>} */
@@ -587,7 +594,7 @@ export function edges(geometry) {
       if (!e) found.set(key, { a: lo, b: hi, nx, ny, nz, faces: 1, crease: false })
       else {
         e.faces++
-        if (e.nx * nx + e.ny * ny + e.nz * nz < COPLANAR) e.crease = true
+        if (e.nx * nx + e.ny * ny + e.nz * nz < flat) e.crease = true
       }
     }
   }
@@ -612,8 +619,6 @@ export function edges(geometry) {
   }
   return new Geometry({ positions, indices })
 }
-
-const COPLANAR = Math.cos(Math.PI / 180)
 
 /**
  * Line geometry for the three axes: from the origin along +X (red), +Y (green) and +Z (blue).

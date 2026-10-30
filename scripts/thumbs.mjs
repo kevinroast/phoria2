@@ -16,7 +16,7 @@ const WIDTH = 960, HEIGHT = 600, SCALE = 0.5
 const WAIT = { viewer: 7, pumpkin: 7, harbour: 5, fireworks: 6, paint: 7, particles: 5, textures: 5, lights: 5, artemis: 4, cpu: 4, volcano: 5, engine: 4.5, skull: 5 }
 // several views on one page: captured from the page, not one view's toImage() - for cells, the
 // whole poster: both cells, their titles and the paper behind them
-const PAGE = ['dashboard', 'chartlab', 'cells', 'colour']
+const PAGE = ['dashboard', 'chartlab', 'cells', 'colour', 'cad']
 // set a demo up for its picture first - scene-json aims off-centre to clear its editor panel, which
 // the picture leaves out: its turntable goes back to the start, with the objects side by side, and it
 // is framed in the middle from a little to the right and above; artemis stops on its way home, with
@@ -49,6 +49,11 @@ const PREPARE = {
   cells: `Object.assign(document.querySelector('.cells-poster').style, { paddingTop: '16px', scrollbarWidth: 'none' })`,
   // the colour poster two by two on shorter rows - the picture is narrow enough for its one-column
   // layout - its notes left out, so the picture shows all four views
+  // the drawing sheet's four views two by two, without its parts list and title block
+  cad: `Object.assign(document.querySelector('.cad-sheet').style, { padding: '10px', scrollbarWidth: 'none' })
+    document.querySelector('.cad-footer').style.display = 'none'
+    Object.assign(document.querySelector('.cad-views').style, { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '245px 245px' })
+    document.querySelectorAll('.cad-views section').forEach((s, i) => { s.style.borderRight = i % 2 ? '0' : '1px solid #1d1d22'; s.style.borderBottom = i < 2 ? '1px solid #1d1d22' : '0' })`,
   colour: `Object.assign(document.querySelector('.colour-poster').style, { paddingTop: '12px', scrollbarWidth: 'none' })
     document.querySelectorAll('.colour-poster p').forEach((p) => { p.style.display = 'none' })
     Object.assign(document.querySelector('.colour-grid').style, { gridTemplateColumns: '3fr 2fr', gridTemplateRows: '205px 290px', gridTemplateAreas: "'hsl rgb' 'swatches mix'" })`,
