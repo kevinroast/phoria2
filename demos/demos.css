@@ -1284,3 +1284,189 @@ button.demo-legend-item {
   font-weight: 700;
   color: #b3261e;
 }
+
+/* the colour poster: four views on white paper, two by two */
+.colour-poster {
+  position: fixed;
+  inset: 0;
+  overflow: auto;
+  padding: 190px 24px 72px;
+  background: #f6f4ef;
+  color: #2b2b33;
+}
+
+.colour-poster header {
+  margin: 0 auto 12px;
+  max-width: 820px;
+  text-align: center;
+}
+
+.colour-poster h2 {
+  margin: 0;
+  font-size: clamp(26px, 4vw, 42px);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.colour-poster header p {
+  margin: 4px 0 0;
+  color: #6b6b78;
+  font-size: 14px;
+}
+
+.colour-grid {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  grid-template-rows: 400px 400px;
+  grid-template-areas: 'hsl rgb' 'swatches mix';
+  gap: 16px;
+}
+
+.colour-grid section {
+  display: flex;
+  flex-direction: column;
+  /* the views fill what the grid gives them, never widening a column */
+  min-width: 0;
+  min-height: 0;
+}
+
+.colour-hsl { grid-area: hsl; }
+.colour-rgb { grid-area: rgb; }
+.colour-mix { grid-area: mix; }
+.colour-swatches { grid-area: swatches; }
+
+.colour-grid h3 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.colour-grid section > p {
+  margin: 2px 0 4px;
+  max-width: 560px;
+  color: #6b6b78;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.colour-grid canvas {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: block;
+}
+
+/* one column before the swatches get too narrow for eight to a row */
+@media (max-width: 1000px) {
+  .colour-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: 420px 340px 420px 320px;
+    grid-template-areas: 'hsl' 'rgb' 'swatches' 'mix';
+  }
+}
+
+/* on a phone the swatches go four to a row, so they need the height */
+@media (max-width: 520px) {
+  .colour-grid {
+    grid-template-rows: 420px 340px 560px 320px;
+  }
+}
+
+/* a hex under a swatch or on a marker: small, exact, and a click copies it */
+.colour-hex {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.85);
+  color: #2b2b33;
+  font: 11px ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.colour-row {
+  color: #6b6b78;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* a view's callouts: small capitals over a rule, as on the cells poster */
+.colour-callout {
+  max-width: 150px;
+  white-space: normal;
+  padding: 1px 2px 3px;
+  border-bottom: 1px solid currentColor;
+  color: #4a4a56;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* the poster's settings, beside the swatches: a hue slider painted with the hues it picks from */
+.colour-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 28px;
+  margin: 6px 0 2px;
+  color: #4a4a56;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.colour-controls label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.colour-controls input[type='range'] {
+  width: 220px;
+  height: 10px;
+  margin: 0;
+  border-radius: 5px;
+  background: linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000);
+  appearance: none;
+  cursor: pointer;
+}
+
+.colour-controls input[type='range']::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #2b2b33;
+  border-radius: 50%;
+  background: #ffffff;
+  appearance: none;
+}
+
+.colour-controls input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #2b2b33;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.colour-controls output {
+  min-width: 3em;
+  color: #2b2b33;
+  font: 12px ui-monospace, SFMono-Regular, Consolas, monospace;
+  text-transform: none;
+}
+
+.colour-controls select {
+  padding: 4px 26px 4px 10px;
+  border: 1px solid #c9c5bb;
+  border-radius: 6px;
+  background: #ffffff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%232b2b33' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 9px center;
+  color: #2b2b33;
+  font: 600 12px system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  appearance: none;
+  cursor: pointer;
+}

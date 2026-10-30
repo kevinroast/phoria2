@@ -79,6 +79,7 @@
     "size": "node scripts/size.mjs",
     "perf": "node perf/run.mjs",
     "thumbs": "node scripts/thumbs.mjs",
+    "colours": "node scripts/colours.mjs",
     "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run build",
     "plugin": "node scripts/plugin.mjs"
   },

@@ -29,7 +29,10 @@ if (!demo || !load) {
   document.title = `phoria2 - ${demo.name} - ${demo.title}`
   document.getElementById('name').textContent = demo.name
   document.getElementById('title').textContent = demo.title
-  document.getElementById('hint').hidden = demo.orbit === false
+  const hint = /** @type {HTMLElement} */ (document.getElementById('hint'))
+  // a demo that handles the pointer its own way says how - or, with hint: '', shows no hint at all
+  if (demo.hint !== undefined) hint.textContent = demo.hint
+  hint.hidden = demo.orbit === false || demo.hint === ''
   const source = /** @type {HTMLAnchorElement} */ (document.getElementById('source'))
   source.href = `${REPO}/blob/main/demos/${demo.name}.js`
   source.hidden = false

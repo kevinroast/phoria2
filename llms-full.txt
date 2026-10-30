@@ -293,9 +293,17 @@ One material type, given as a plain object:
 { map: 'wood.jpg', normalMap: 'wood_n.png' }         // textures from urls
 ```
 
+**Exact colour**: an `unlit` material draws exactly the colour it is given - `'#e15759'` is
+`#e15759` on screen and in `toImage()`, whatever the tone mapping - and so do instance colours,
+vertex colours, colour maps, lines and points. Use it for swatches, legends, status colours and
+brand colours. A lit surface doesn't keep its colour: light and tone mapping are meant to change
+it. Vertex colours blend across each face in linear light, so a ramp between two vertices differs
+slightly from a 2D tool's; subdivide for a closer match.
+
 Properties: `color`, `opacity`, `roughness` (0.5), `metalness` (0), `emissive`,
 `emissiveIntensity`, `unlit`, `flatShading`, `doubleSided`, `vertexColors`, `fog` (true), `blending`
-(`'normal'` | `'additive'`), `alphaTest` (cut-outs: drop pixels with less alpha - leaves, fences),
+(`'normal'`, `'additive'` - adds light, for glows and sparks - or `'multiply'` - darkens what is behind, as a colour
+filter does: cyan over magenta is blue), `alphaTest` (cut-outs: drop pixels with less alpha - leaves, fences),
 `map`, `normalMap`/`normalScale`, `bumpMap`/`bumpScale`, `roughnessMap`, `metalnessMap`, `aoMap`,
 `emissiveMap`; `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
 `mesh.material.color.set('#0f0')`, `mesh.material.opacity = 0.5`, or a whole new one: `mesh.material = { color: 'red' }`

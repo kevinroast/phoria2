@@ -37,7 +37,8 @@ import { Texture } from './Texture.js'
  * @property {boolean} [doubleSided] draw back faces too (default false)
  * @property {boolean} [vertexColors] multiply by the geometry's colors (default false)
  * @property {boolean} [fog] fade into the scene's fog with distance (default true) - false for a sky or a far backdrop
- * @property {'normal' | 'additive'} [blending] (default 'normal')
+ * @property {'normal' | 'additive' | 'multiply'} [blending] how it combines with what is behind it: 'additive' adds
+ *   light (glows, sparks), 'multiply' darkens it as a filter does - cyan over magenta is blue (default 'normal')
  * @property {boolean} [depthWrite] (default true)
  * @property {boolean} [depthTest] (default true)
  * @property {number} [size] Points: diameter in world units, or pixels when sizeAttenuation is off (default 1)
@@ -95,7 +96,7 @@ export class Material {
   /** @type {boolean} */ doubleSided
   /** @type {boolean} */ vertexColors
   /** Fades into the scene's fog with distance. @type {boolean} */ fog
-  /** @type {'normal' | 'additive'} */ blending
+  /** @type {'normal' | 'additive' | 'multiply'} */ blending
   /** @type {boolean} */ depthWrite
   /** @type {boolean} */ depthTest
   /** @type {number} */ size
@@ -121,7 +122,7 @@ export class Material {
       else if (MAPS.includes(key)) this.setMap(key, value)
       else if (FLAGS.includes(key)) this[key] = bool(key, value)
       else if (key in NUMBERS) this[key] = range(key, value, NUMBERS[key])
-      else if (key === 'blending') this.blending = checkOneOf('Material', 'blending', value, ['normal', 'additive'])
+      else if (key === 'blending') this.blending = checkOneOf('Material', 'blending', value, ['normal', 'additive', 'multiply'])
       else if (key === 'name') this.name = String(value)
     }
   }
@@ -210,9 +211,9 @@ export class Material {
     return /** @type {[string, Texture][]} */ (Object.entries(this.#maps).filter(([, t]) => t))
   }
 
-  /** Rendered in the transparent pass: an opacity below 1, additive blending, or set for maps with soft alpha. @returns {boolean} */
+  /** Rendered in the transparent pass: an opacity below 1, additive or multiply blending, or set for maps with soft alpha. @returns {boolean} */
   get transparent() {
-    return this.#transparent || this.opacity < 1 || this.blending === 'additive'
+    return this.#transparent || this.opacity < 1 || this.blending !== 'normal'
   }
   /** @param {boolean} v */
   set transparent(v) { this.#transparent = !!v }

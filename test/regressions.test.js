@@ -879,3 +879,19 @@ describe('the camera recipes in llms-full.txt', () => {
     top.dispose()
   })
 })
+
+describe('multiply blending', () => {
+  it('draws in the transparent pass, and a change to it redraws', async () => {
+    const { ChangeWatch } = await import('../src/watch.js')
+    const filter = new Material({ color: 'cyan', blending: 'multiply' })
+    expect(filter.transparent).toBe(true)
+    expect(() => new Material({ blending: /** @type {any} */ ('screen') })).toThrow("'multiply'")
+    const scene = new Scene()
+    const mesh = scene.add(new Mesh({ geometry: box(), material: { blending: 'normal' } }))
+    const camera = new PerspectiveCamera()
+    const watch = new ChangeWatch()
+    watch.changed(scene, camera)
+    mesh.material.blending = 'multiply'
+    expect(watch.changed(scene, camera)).toBe(true)
+  })
+})

@@ -47,6 +47,9 @@ vec3 fogged(vec3 c) {
 #endif
 #ifdef FOG_ADD
   return c * (1.0 - f);
+#elif defined(FOG_MULTIPLY)
+  // a filter in the fog fades to white, which leaves what is behind it as it was
+  return mix(c, vec3(1.0), f);
 #else
   return mix(c, uFogColor, f);
 #endif

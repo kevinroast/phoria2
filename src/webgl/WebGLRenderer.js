@@ -407,6 +407,7 @@ export class WebGLRenderer {
       defines.push('FOG')
       if (fog.linear) defines.push('FOG_LINEAR')
       if (material.blending === 'additive') defines.push('FOG_ADD')
+      else if (material.blending === 'multiply') defines.push('FOG_MULTIPLY')
     }
     if (clip) defines.push('CLIP')
     const programs = this.#gpu.programs
@@ -491,8 +492,10 @@ export class WebGLRenderer {
     if (material.depthTest) gl.enable(gl.DEPTH_TEST)
     else gl.disable(gl.DEPTH_TEST)
     if (transparent) {
-      // output is premultiplied, so 'normal' is ONE / ONE_MINUS_SRC_ALPHA
+      // output is premultiplied, so 'normal' is ONE / ONE_MINUS_SRC_ALPHA; 'multiply' scales what is
+      // behind by the colour, as much as the opacity says: dst * (colour * opacity + 1 - opacity)
       if (material.blending === 'additive') gl.blendFunc(gl.ONE, gl.ONE)
+      else if (material.blending === 'multiply') gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA)
       else gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
     }
 

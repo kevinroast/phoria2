@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>phoria2 colour check</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; padding: 16px; background: #16161a; color: #e6e6ea; font: 14px/1.5 system-ui, sans-serif; }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      p { margin: 0 0 12px; color: #9a9aa6; }
+      #stage { display: flex; flex-wrap: wrap; gap: 8px; }
+      #stage canvas { width: 360px; height: 80px; display: block; }
+      table { border-collapse: collapse; margin-top: 14px; font: 12px/1.4 ui-monospace, Consolas, monospace; }
+      th, td { padding: 2px 10px; border-bottom: 1px solid #2c2c34; text-align: left; }
+      td.bad { color: #ff7b7b; }
+    </style>
+  </head>
+  <body>
+    <h1>phoria2 colour check</h1>
+    <p>Known colours drawn every way the library colours a surface, read back from each view's picture and compared, swatch by swatch. <code>npm run colours</code> runs this headless.</p>
+    <div id="stage"></div>
+    <table id="results"></table>
+    <script type="module" src="/scripts/colours-page.js"></script>
+  </body>
+</html>

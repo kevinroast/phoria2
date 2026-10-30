@@ -1,6 +1,7 @@
 // Every demo, in gallery order. `name` is the module in demos/ and the ?name= of demo.html. A
 // `section` starts a new heading in the gallery. `orbit: false` marks demos without mouse orbiting -
 // they drive the camera, or use the mouse for something else - so the page doesn't advertise it.
+// `hint` replaces the line under the title that says how to use the mouse; '' shows none.
 // where the code lives - the demos link to their own source there
 export const REPO = 'https://github.com/kevinroast/phoria2'
 
@@ -22,6 +23,7 @@ export const DEMOS = [
   { name: 'materials', title: 'roughness and metalness under a movable light and the studio environment' },
   { name: 'lights', title: 'lights in two moods - sunset and neon - and a swinging lamp that carries its spot light' },
   { name: 'textures', title: 'photo textures with normal and ARM maps, a live canvas screen, nearest and linear filtering' },
+  { name: 'colour', title: 'colour, exactly - HSL cylinder, RGB cube, light adding and filters multiplying, harmony swatches', hint: '' },
   { name: 'particles', title: 'particle emitters in three set pieces - a fountain, a brazier and falling snow' },
   { name: 'harbour', title: 'a harbour on a foggy night - lamps and a lighthouse beam casting shadows through mist' },
   { name: 'pumpkin', title: "a jack-o'-lantern - candle inside casting shadows, light escaping through the carved face" },
