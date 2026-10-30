@@ -34,7 +34,7 @@ export const DEMOS = [
   { name: 'particles', title: 'particle emitters in three set pieces - a fountain, a brazier and falling snow' },
   { name: 'fog shadows', title: 'a harbour on a foggy night - lamps and a lighthouse beam casting shadows through mist' },
   { name: 'point lights', title: "a jack-o'-lantern - candle inside casting shadows, light escaping through the carved face" },
-  { name: 'viewer', title: 'a glTF product viewer - full material maps, an HDR studio, shadows, animation' },
+  { name: 'viewer', title: 'a glTF product viewer - full material maps, baked occlusion, an HDR studio, shadows, animation' },
   { name: 'models', title: 'hand-made models from raw points and polygons - drawn solid, as edges and as points' },
   { name: 'guided tour', title: 'a guided tour of a data centre - cards pinned beside each stop, clickable pins, followable inspection robot', hint: 'Next and Back, the arrow keys or a numbered pin · drag to look around' },
   

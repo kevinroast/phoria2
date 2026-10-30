@@ -703,6 +703,23 @@
           "minItems": 2,
           "maxItems": 2
         },
+        "rotation": {
+          "type": "number",
+          "description": "Turns the image on the surface, in radians, about center."
+        },
+        "center": {
+          "type": "array",
+          "description": "The point rotation turns about, in repeated UVs ([0, 0], the corner, by default).",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "uvSet": {
+          "enum": [0, 1],
+          "description": "Which UV set to read: 0 the first, 1 the second (uvs2) - baked occlusion and light maps usually come on the second."
+        },
         "filter": {
           "enum": ["linear", "nearest"]
         },
@@ -801,6 +818,17 @@
             }
           ]
         },
+        "lightMap": {
+          "description": "Light baked into a texture, added as light from all round - usually on the second UV set.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/texture"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "matcap": {
           "description": "A picture of a lit sphere that gives the whole look - clay, wax, chrome - picked by which way the surface faces the camera; lights are ignored.",
           "anyOf": [
@@ -883,6 +911,15 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1
+        },
+        "lightMapIntensity": {
+          "type": "number",
+          "minimum": 0
+        },
+        "environmentIntensity": {
+          "type": "number",
+          "description": "This material's share of the environment's light and reflections (1).",
+          "minimum": 0
         },
         "triplanar": {
           "type": "number",
@@ -1208,6 +1245,13 @@
             },
             "uvs": {
               "type": "array",
+              "items": {
+                "type": "number"
+              }
+            },
+            "uvs2": {
+              "type": "array",
+              "description": "A second UV set, for baked occlusion and light maps.",
               "items": {
                 "type": "number"
               }

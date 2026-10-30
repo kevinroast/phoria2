@@ -285,8 +285,9 @@ extrude({
 })
 ```
 
-Your own: `new Geometry({ positions, normals?, uvs?, colors?, indices? })` - flat arrays, xyz per
-vertex; `colors` are rgb 0-1 per vertex (use `material: { vertexColors: true }`).
+Your own: `new Geometry({ positions, normals?, uvs?, uvs2?, colors?, indices? })` - flat arrays, xyz per
+vertex; `colors` are rgb 0-1 per vertex (use `material: { vertexColors: true }`); `uvs2` is a second UV
+set, for baked occlusion and light maps (below).
 
 ## Materials
 
@@ -320,7 +321,7 @@ Properties: `color`, `opacity`, `roughness` (0.5), `metalness` (0), `emissive`,
 (`'normal'`, `'additive'` - adds light, for glows and sparks - or `'multiply'` - darkens what is behind, as a colour
 filter does: cyan over magenta is blue), `alphaTest` (cut-outs: drop pixels with less alpha - leaves, fences),
 `map`, `normalMap`/`normalScale`, `bumpMap`/`bumpScale`, `roughnessMap`, `metalnessMap`, `aoMap`,
-`emissiveMap`, `transmission`, `clearcoat`/`clearcoatRoughness`, `sheen`/`sheenColor`/`sheenRoughness`, `ior`/
+`emissiveMap`, `lightMap`/`lightMapIntensity`, `environmentIntensity` (1), `transmission`, `clearcoat`/`clearcoatRoughness`, `sheen`/`sheenColor`/`sheenRoughness`, `ior`/
 `specularIntensity`/`specularColor`, `anisotropy`/`anisotropyRotation`, `translucency`/`translucencyColor`, `matcap`, `toon` (below); `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
 `mesh.material.color.set('#0f0')`, `mesh.material.opacity = 0.5`, or a whole new one: `mesh.material = { color: 'red' }`
 (options become a Material, as in the constructor; `mesh.geometry = box(2)` likewise).
@@ -331,6 +332,22 @@ take `anisotropy` (default 8, up to the GPU's limit, 1 for off), which keeps flo
 into the distance. A cut-out (`alphaTest`) casts the shadow of what is left of it. A Texture given to a
 data map (`normalMap`, `bumpMap`, `roughnessMap`, `metalnessMap`, `aoMap`) is read as data, not colour,
 unless its `colorSpace` was set on purpose - `normalMap: await loadTexture('n.png')` just works.
+
+**Placing a texture**: `repeat` ([u, v] times across), `offset`, and `rotation` (radians, about
+`center`: [0, 0], the corner, by default - [0.5, 0.5] for the middle) - applied in that order, as glTF's
+`KHR_texture_transform` does, and each map keeps its own: a fabric's colour can repeat 7 times while
+its normal map repeats twice. Animate them to scroll or spin a pattern.
+
+**Baked occlusion and light maps**: occlusion and lighting baked in Blender, Unreal or Unity need
+every surface on its own patch of texture, so they come on a second UV set while the first tiles
+colour and detail. Give the geometry `uvs2` and the texture `uvSet: 1` - glTF models do both
+for you (`TEXCOORD_1`, `texCoord: 1`). Read through the first set, baked occlusion lands in the
+wrong places as dark smudges. `lightMap` is light baked into a texture, added as light from all
+round (`lightMapIntensity`, 1) - the soft, cheap lighting of architectural scenes.
+
+**Environment strength per material**: `environmentIntensity` (1) scales how much of the
+scene's environment - its light and its reflections - one material takes: lower for a matte floor in
+a shiny showroom, higher to make one product catch the light, without changing the scene's.
 
 **Glass**: `transmission` (0-1) lets light through as glass does. Unlike `opacity`, which fades
 everything - reflections too, so faded things look washed out, as dimmed chart bars should - glass

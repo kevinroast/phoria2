@@ -349,6 +349,26 @@ describe('glass and clearcoat from glTF', () => {
     warn.mockRestore()
   })
 
+  it('reads a second UV set, the textures on it, and rotated texture transforms - without warning', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const json = sampleGLTF()
+    json.extensionsUsed = [...(json.extensionsUsed ?? []), 'KHR_texture_transform']
+    // the first set's accessor again, as the second
+    json.meshes[0].primitives[0].attributes.TEXCOORD_1 = json.meshes[0].primitives[0].attributes.TEXCOORD_0
+    const material = json.materials[0]
+    material.occlusionTexture = { index: 0, texCoord: 1 }
+    material.pbrMetallicRoughness.baseColorTexture = { index: 0, extensions: { KHR_texture_transform: { rotation: 0.5, scale: [3, 3], offset: [0.1, 0.2] } } }
+    const model = await parseGLTF(json, { baseUrl: 'https://example.com/models/', waitForTextures: false })
+    const mesh = /** @type {Mesh} */ (model.find('Triangle'))
+    expect(Array.from(mesh.geometry.uvs2)).toEqual(Array.from(mesh.geometry.uvs))
+    expect(mesh.material.aoMap.uvSet).toBe(1)
+    expect([mesh.material.map.uvSet, mesh.material.map.rotation, mesh.material.map.repeat, mesh.material.map.offset]).toEqual([0, 0.5, [3, 3], [0.1, 0.2]])
+    // one image, two textures: each with its own set and transform
+    expect(mesh.material.map).not.toBe(mesh.material.aoMap)
+    expect(warn.mock.calls.some(([w]) => /UV set|rotat/.test(String(w)))).toBe(false)
+    warn.mockRestore()
+  })
+
   it('reads sheen, ior, specular, anisotropy and diffuse transmission by their factors', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const json = sampleGLTF()

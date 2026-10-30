@@ -6,6 +6,7 @@ import { CLIP_ONLY_FRAGMENT, MESH_VERTEX } from './shaders.js'
 import { collect } from '../frame.js'
 import { checkNumber, checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '../validate.js'
 import { GLContext } from './context.js'
+import { uvMatrix } from './resources.js'
 
 /** @import { FrameDescription, DrawItem, FrameLight, FrameCap } from '../frame.js' */
 /** @import { Scene } from '../scene/Scene.js' */
@@ -67,10 +68,10 @@ const TONE_MAPPING = { none: 0, aces: 1, neutral: 2 }
 // material maps and the shader feature each one switches on (all but emissive need lighting)
 /** @type {import('./passes.js').ShadowMap[]} */
 const NO_SHADOWS = []
-const MAP_DEFINES = { roughnessMap: 'ROUGHNESS_MAP', metalnessMap: 'METALNESS_MAP', normalMap: 'NORMAL_MAP', bumpMap: 'BUMP_MAP', aoMap: 'AO_MAP' }
+const MAP_DEFINES = { roughnessMap: 'ROUGHNESS_MAP', metalnessMap: 'METALNESS_MAP', normalMap: 'NORMAL_MAP', bumpMap: 'BUMP_MAP', aoMap: 'AO_MAP', lightMap: 'LIGHT_MAP' }
 // every map a mesh can sample - triplanar projection is only worth its varyings when there is one
 const MAP_SLOTS = ['map', 'emissiveMap', ...Object.keys(MAP_DEFINES)]
-const MAP_UNIFORMS = { matcap: 'uMatcap', map: 'uMap', roughnessMap: 'uRoughnessMap', metalnessMap: 'uMetalnessMap', normalMap: 'uNormalMap', bumpMap: 'uBumpMap', aoMap: 'uAoMap', emissiveMap: 'uEmissiveMap' }
+const MAP_UNIFORMS = { matcap: 'uMatcap', map: 'uMap', roughnessMap: 'uRoughnessMap', metalnessMap: 'uMetalnessMap', normalMap: 'uNormalMap', bumpMap: 'uBumpMap', aoMap: 'uAoMap', emissiveMap: 'uEmissiveMap', lightMap: 'uLightMap' }
 // counting a cap's faces into the stencil: the solids' surfaces, colour and depth left alone
 const CLIP_MASK = /** @type {[string, string]} */ ([MESH_VERTEX, CLIP_ONLY_FRAGMENT])
 // a cap: a square on the plane, two units across, facing +Y until it is placed
@@ -405,7 +406,7 @@ export class WebGLRenderer {
     const shadows = receives ? this.#shadows : NO_SHADOWS
 
     const clip = kind === 'mesh' ? item.clip : null
-    const defines = this.#defines(kind, material, geometry.colors !== null, !!instances)
+    const defines = this.#defines(kind, material, geometry.colors !== null, !!instances, geometry.uvs2 !== null)
     for (const shadow of shadows) defines.push(shadow.define)
     const fog = material.fog ? frame.fog : null
     if (fog) {
@@ -510,10 +511,10 @@ export class WebGLRenderer {
     // GL textures first (uploads use a unit of their own), then bind them to the samplers
     const bound = maps.map(([slot, texture]) => [MAP_UNIFORMS[slot], this.#gpu.resources.texture(texture)])
     for (const [name, texture] of bound) program.set(name, texture)
-    // one UV transform for every map: the first map's (glTF models share theirs) - a matcap takes
-    // no UVs, so isn't one
-    const first = maps.find(([slot]) => slot !== 'matcap')?.[1]
-    program.set('uUvTransform', first ? [first.repeat[0], first.repeat[1], first.offset[0], first.offset[1]] : [1, 1, 0, 0])
+    // each map's own repeat, rotation and offset (a matcap takes no UVs)
+    for (const [slot, texture] of maps) if (slot !== 'matcap') program.set(`${MAP_UNIFORMS[slot]}Uv`, uvMatrix(texture))
+    if (material.lightMap) program.set('uLightMapIntensity', material.lightMapIntensity)
+    program.set('uEnvStrength', material.environmentIntensity)
 
     // render state
     gl.depthMask(!transparent && material.depthWrite)
@@ -641,10 +642,10 @@ export class WebGLRenderer {
 
   /**
    * @param {'mesh' | 'points' | 'lines'} kind @param {Material} material
-   * @param {boolean} hasColors @param {boolean} instanced
+   * @param {boolean} hasColors @param {boolean} instanced @param {boolean} hasUvs2
    * @returns {string[]}
    */
-  #defines(kind, material, hasColors, instanced) {
+  #defines(kind, material, hasColors, instanced, hasUvs2) {
     const d = []
     if (material.vertexColors && hasColors) d.push('VERTEX_COLORS')
     if (kind === 'mesh') {
@@ -668,6 +669,9 @@ export class WebGLRenderer {
       if (material.flatShading) d.push('FLAT_SHADING')
       if (material.doubleSided) d.push('DOUBLE_SIDED')
       if (material.triplanar > 0 && MAP_SLOTS.some((slot) => material[slot])) d.push('TRIPLANAR')
+      // maps on the second UV set read it - where the geometry has one
+      const second = hasUvs2 ? material.textures.filter(([slot, t]) => t.uvSet === 1 && slot !== 'matcap') : []
+      if (second.length) d.push('UV2', ...second.map(([slot]) => `${MAP_UNIFORMS[slot]}Set vUv2`))
       if (instanced) d.push('INSTANCED')
     } else if (kind === 'points') {
       if (material.map) d.push('MAP')

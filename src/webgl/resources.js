@@ -32,7 +32,7 @@ const UPLOAD_UNIT = 15
  * @param {boolean} withNormals
  */
 function layoutOf(g, instances, withNormals, withTangents) {
-  return [g.positions.length, withNormals, g.uvs?.length, g.colors?.length, g.indices?.length,
+  return [g.positions.length, withNormals, g.uvs?.length, g.uvs2?.length, g.colors?.length, g.indices?.length,
     instances?.instanceMatrices.length, instances?.instanceColors?.length, withTangents].join()
 }
 
@@ -85,6 +85,25 @@ export function tangentsOf(g) {
     out[i * 4 + 3] = cx * b[i * 3] + cy * b[i * 3 + 1] + cz * b[i * 3 + 2] < 0 ? -1 : 1
   }
   return out
+}
+
+const UV_MATRIX = new Float32Array(9)
+
+/**
+ * A map's UV transform as a 3x3 (column-major): repeat, then rotation about its centre, then offset -
+ * glTF's KHR_texture_transform order, turning the way three.js and glTF viewers do. Written into one
+ * shared array, so set it as a uniform straight away.
+ * @param {{ repeat: number[], offset: number[], rotation: number, center: number[] }} t
+ * @returns {Float32Array}
+ */
+export function uvMatrix(t) {
+  const c = Math.cos(t.rotation), s = Math.sin(t.rotation)
+  const [sx, sy] = t.repeat, [cx, cy] = t.center
+  const m = UV_MATRIX
+  m[0] = c * sx; m[1] = -s * sx; m[2] = 0
+  m[3] = s * sy; m[4] = c * sy; m[5] = 0
+  m[6] = cx - c * cx - s * cy + t.offset[0]; m[7] = cy + s * cx - c * cy + t.offset[1]; m[8] = 1
+  return m
 }
 
 // a quad as a triangle strip of [along, across] corners, shared by every Lines draw
@@ -150,6 +169,7 @@ export class Resources {
         this.#refill(a.position, geometry.positions)
         if (withNormals) this.#refill(a.normal, geometry.normals)
         if (geometry.uvs) this.#refill(a.uv, geometry.uvs)
+        if (geometry.uvs2) this.#refill(a.uv2, geometry.uvs2)
         if (geometry.colors) this.#refill(a.color, geometry.colors)
         if (withTangents) this.#refill(a.tangent, tangentsOf(geometry))
         if (geometry.indices) {
@@ -197,6 +217,7 @@ export class Resources {
     if (withNormals) attributes.normal = attribute(ATTRIBUTES.normal, geometry.normals, 3)
     if (geometry.uvs) attributes.uv = attribute(ATTRIBUTES.uv, geometry.uvs, 2)
     else gl.vertexAttrib2f(ATTRIBUTES.uv, 0, 0)
+    if (geometry.uvs2) attributes.uv2 = attribute(ATTRIBUTES.uv2, geometry.uvs2, 2)
     if (geometry.colors) attributes.color = attribute(ATTRIBUTES.color, geometry.colors, 3)
     else gl.vertexAttrib3f(ATTRIBUTES.color, 1, 1, 1)
     if (withTangents) attributes.tangent = attribute(ATTRIBUTES.tangent, tangentsOf(geometry), 4)

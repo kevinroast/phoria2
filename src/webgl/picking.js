@@ -232,7 +232,6 @@ export class Picker {
     program.set('uModel', worldMatrix)
     program.set('uPickId', id)
     program.set('uHighlightIndex', -2)
-    program.set('uUvTransform', [1, 1, 0, 0])
     if (item.clip) program.set('uClipPlane', item.clip.plane)
 
     if (kind === 'lines') {

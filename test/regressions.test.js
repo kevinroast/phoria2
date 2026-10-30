@@ -7,6 +7,7 @@ import { chart, scaleColor, scaleLinear, scaleTime } from '../src/charts/index.j
 import { TransformHandle } from '../src/edit/index.js'
 import { Animation, Model, parseGLTF } from '../src/gltf/index.js'
 import { Vec3 } from '../src/value/Vec3.js'
+import { uvMatrix } from '../src/webgl/resources.js'
 import { fakeCanvas, fakeElement, fakeGL, fakePage } from './fakes.js'
 
 const page = fakePage()
@@ -540,7 +541,7 @@ describe('rendering', () => {
     await ready(renderer)
     renderer.render(scene, camera())
     const depth = sources.filter((s) => s.includes('fragColor = vec4(1.0)') && s.includes('#define ALPHA_TEST'))
-    expect(depth.some((s) => s.includes('#define TRIPLANAR') && s.includes('alpha *= SAMPLE(uMap).a') && s.includes('vec4 triplanar('))).toBe(true)
+    expect(depth.some((s) => s.includes('#define TRIPLANAR') && s.includes('alpha *= uMapTexel.a') && s.includes('#define uMapTexel triplanar(uMap, uMapUv)') && s.includes('vec4 triplanar('))).toBe(true)
   })
 
   it("frees bloom's buffers once no view wants bloom", async () => {
@@ -987,6 +988,43 @@ describe('glass and clearcoat', () => {
     expect(m.clone().sheenColor.getHex()).toBe(0xff8800)
     expect(Object.keys(new Material().toJSON())).toEqual([])
     expect(() => new Material({ ior: 0.9 })).toThrow('ior')
+  })
+
+  it('a map on the second UV set reads it where the geometry has one, and the first where not', async () => {
+    const image = { width: 1, height: 1, data: new Uint8Array(4) }
+    const ao = new Texture({ image, uvSet: 1 })
+    const both = new Geometry({ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], uvs: [0, 0, 1, 0, 0, 1], uvs2: [0, 0, 1, 0, 0, 1] })
+    const one = new Geometry({ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], uvs: [0, 0, 1, 0, 0, 1] })
+    const sourcesFor = (geometry) => {
+      const { gl } = fakeGL()
+      const sources = []
+      const recording = new Proxy(gl, { get: (t, k) => (k === 'shaderSource' ? (_s, src) => sources.push(src) : t[k]) })
+      const renderer = new WebGLRenderer({ canvas: fakeCanvas(recording) })
+      renderer.setSize(10, 10)
+      const scene = new Scene()
+      scene.add(new Mesh({ geometry, material: { aoMap: ao } }))
+      renderer.render(scene, new PerspectiveCamera({ position: [0, 0, 5] }))
+      return sources.filter((s) => s.includes('fragColor')).join('\n')
+    }
+    expect(sourcesFor(both)).toContain('#define uAoMapSet vUv2\n')
+    expect(sourcesFor(one)).not.toContain('#define UV2\n')
+    // WebGL's GLSL has no token pasting: the per-map macros are spelled out
+    expect(sourcesFor(both)).not.toContain('##')
+    expect(new Geometry({ positions: [0, 0, 0], uvs2: [0.5, 0.5] }).clone().uvs2).toEqual(new Float32Array([0.5, 0.5]))
+  })
+
+  it("a map's UV transform: repeat, then rotation about its centre, then offset - glTF's order", () => {
+    const at = (t, u, v) => {
+      const m = uvMatrix({ repeat: [1, 1], offset: [0, 0], rotation: 0, center: [0, 0], ...t })
+      return [m[0] * u + m[3] * v + m[6], m[1] * u + m[4] * v + m[7]].map((x) => Math.round(x * 1e6) / 1e6 + 0)
+    }
+    expect(at({}, 0.25, 0.75)).toEqual([0.25, 0.75])
+    expect(at({ repeat: [2, 3], offset: [0.5, 0.1] }, 1, 1)).toEqual([2.5, 3.1])
+    // a quarter turn: u takes v, v takes -u (as three.js and the glTF sample viewers turn)
+    expect(at({ rotation: Math.PI / 2 }, 1, 0)).toEqual([0, -1])
+    expect(at({ rotation: Math.PI / 2 }, 0, 1)).toEqual([1, 0])
+    // about the middle, the middle stays put
+    expect(at({ rotation: 1.2, center: [0.5, 0.5] }, 0.5, 0.5)).toEqual([0.5, 0.5])
   })
 
   it('matcap and toon compile only when used; an unlit material ignores both', async () => {

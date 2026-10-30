@@ -30,6 +30,11 @@ import { Texture } from './Texture.js'
  * @property {MapInput | null} [aoMap] ambient occlusion in its red channel; darkens environment and ambient light
  * @property {number} [aoMapIntensity] 0-1 (default 1)
  * @property {MapInput | null} [emissiveMap] multiplies the emissive colour
+ * @property {MapInput | null} [lightMap] light baked into a texture, added as light from all round - usually on
+ *   the second UV set (uvSet: 1)
+ * @property {number} [lightMapIntensity] (default 1)
+ * @property {number} [environmentIntensity] this material's share of the environment's light and reflections:
+ *   lower for a matte floor in a shiny showroom, higher to make one thing catch the light (default 1)
  * @property {ColorInput} [emissive] glow colour (default black)
  * @property {number} [emissiveIntensity] (default 1)
  * @property {number} [transmission] 0-1: how much light passes through, as through glass (default 0). Unlike
@@ -70,20 +75,21 @@ import { Texture } from './Texture.js'
  */
 
 // the matcap last: the first map's repeat and offset are every map's, and a matcap has none
-const MAPS = ['map', 'roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap', 'emissiveMap', 'matcap']
+const MAPS = ['map', 'roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap', 'emissiveMap', 'lightMap', 'matcap']
 // data maps hold numbers, not colours
 const LINEAR_MAPS = new Set(['roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap'])
 const FLAGS = ['unlit', 'flatShading', 'doubleSided', 'vertexColors', 'depthWrite', 'depthTest', 'sizeAttenuation', 'transparent', 'fog']
 const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiveIntensity: [0, Infinity], size: [0, Infinity], width: [0, Infinity],
   alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1], triplanar: [0, Infinity], bumpScale: [-Infinity, Infinity],
   transmission: [0, 1], clearcoat: [0, 1], clearcoatRoughness: [0, 1], sheen: [0, 1], sheenRoughness: [0, 1], ior: [1, Infinity],
-  specularIntensity: [0, 1], anisotropy: [0, 1], anisotropyRotation: [-Infinity, Infinity], translucency: [0, 1], toon: [0, 16] }
+  specularIntensity: [0, 1], anisotropy: [0, 1], anisotropyRotation: [-Infinity, Infinity], translucency: [0, 1], toon: [0, 16],
+  lightMapIntensity: [0, Infinity], environmentIntensity: [0, Infinity] }
 // colours, and their defaults
 const COLORS = { color: 0xffffff, emissive: 0x000000, sheenColor: 0xffffff, specularColor: 0xffffff, translucencyColor: 0xffffff }
 const DEFAULTS = {
   name: '', opacity: 1, alphaTest: 0, roughness: 0.5, metalness: 0, normalScale: 1, bumpScale: 1, aoMapIntensity: 1, triplanar: 0, emissiveIntensity: 1,
   transmission: 0, clearcoat: 0, clearcoatRoughness: 0, sheen: 0, sheenRoughness: 0.5, ior: 1.5, specularIntensity: 1, anisotropy: 0,
-  anisotropyRotation: 0, translucency: 0, toon: 0, unlit: false, flatShading: false,
+  anisotropyRotation: 0, translucency: 0, toon: 0, lightMapIntensity: 1, environmentIntensity: 1, unlit: false, flatShading: false,
   doubleSided: false, vertexColors: false, blending: 'normal', depthWrite: true, depthTest: true, fog: true,
   size: 1, sizeAttenuation: true, width: 1,
 }
@@ -95,6 +101,8 @@ const HINTS = {
   side: "use 'doubleSided: true'",
   wireframe: 'use new Lines({ geometry: edges(geometry) }) for a wireframe',
   shininess: "use 'roughness' (0 = mirror, 1 = matte)",
+  envMapIntensity: "use 'environmentIntensity'",
+  reflectivityScale: "use 'environmentIntensity'",
   matcapMap: "use 'matcap'",
   gradientMap: "use 'toon' - the number of flat tones",
   cel: "use 'toon' - the number of flat tones",
@@ -140,6 +148,8 @@ export class Material {
   /** Turns the brushing from the UVs' u, in radians. @type {number} */ anisotropyRotation
   /** Light through thin surfaces: 0-1. @type {number} */ translucency
   /** Cartoon shading in this many flat tones; 0 is smooth. @type {number} */ toon
+  /** @type {number} */ lightMapIntensity
+  /** This material's share of the environment's light and reflections. @type {number} */ environmentIntensity
   /** @type {boolean} */ unlit
   /** @type {boolean} */ flatShading
   /** @type {boolean} */ doubleSided
@@ -241,13 +251,17 @@ export class Material {
   get emissiveMap() { return this.#maps.emissiveMap }
   /** @param {MapInput | null} v */
   set emissiveMap(v) { this.setMap('emissiveMap', v) }
+  /** Light baked into a texture. @returns {Texture | null} */
+  get lightMap() { return this.#maps.lightMap }
+  /** @param {MapInput | null} v */
+  set lightMap(v) { this.setMap('lightMap', v) }
   /** A picture of a lit sphere that gives the whole look. @returns {Texture | null} */
   get matcap() { return this.#maps.matcap }
   /** @param {MapInput | null} v */
   set matcap(v) { this.setMap('matcap', v) }
 
   /** @internal
-   * @param {string} slot one of map, roughnessMap, metalnessMap, normalMap, bumpMap, aoMap, emissiveMap, matcap
+   * @param {string} slot one of map, roughnessMap, metalnessMap, normalMap, bumpMap, aoMap, emissiveMap, lightMap, matcap
    * @param {MapInput | null} value
    */
   setMap(slot, value) {

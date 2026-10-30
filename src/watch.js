@@ -182,6 +182,8 @@ export class ChangeWatch {
     this.#push(m.anisotropyRotation)
     this.#push(m.translucency)
     this.#push(m.toon)
+    this.#push(m.lightMapIntensity)
+    this.#push(m.environmentIntensity)
     this.#pushAll(m.translucencyColor)
     this.#push((m.unlit ? 1 : 0) | (m.flatShading ? 2 : 0) | (m.doubleSided ? 4 : 0) | (m.vertexColors ? 8 : 0) |
       (m.depthWrite ? 16 : 0) | (m.depthTest ? 32 : 0) | (m.sizeAttenuation ? 64 : 0) | (m.blending === 'additive' ? 128 : m.blending === 'multiply' ? 1024 : 0) | (m.transparent ? 256 : 0) | (m.fog ? 512 : 0))
@@ -193,6 +195,9 @@ export class ChangeWatch {
     this.#push(idOf(texture))
     this.#push(texture.version)
     this.#pushAll(texture.repeat)
+    this.#push(texture.rotation)
+    this.#pushAll(texture.center)
+    this.#push(texture.uvSet)
     this.#pushAll(texture.offset)
   }
 

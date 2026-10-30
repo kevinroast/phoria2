@@ -16,6 +16,11 @@ import { checkNumber, checkOneOf, checkOptions, describe, fail } from '../valida
  * @property {'repeat' | 'clamp' | 'mirror'} [wrap] (default 'repeat')
  * @property {number[]} [repeat] [u, v] (default [1, 1])
  * @property {number[]} [offset] [u, v] (default [0, 0])
+ * @property {number} [rotation] turns the image on the surface, in radians, about `center` (default 0)
+ * @property {number[]} [center] [u, v] the point rotation turns about, in repeated UVs (default [0, 0], the
+ *   corner, as glTF has it; [0.5, 0.5] for the middle of an unrepeated image)
+ * @property {0 | 1} [uvSet] which UV set to read: 0 the first, 1 the second (Geometry uvs2) - baked occlusion
+ *   and light maps usually come on the second (default 0)
  * @property {'linear' | 'nearest'} [filter] (default 'linear')
  * @property {boolean} [mipmaps] (default true)
  * @property {number} [anisotropy] samples along a surface seen at a glancing angle - floors and roads
@@ -23,14 +28,18 @@ import { checkNumber, checkOneOf, checkOptions, describe, fail } from '../valida
  * @property {boolean} [flipY] flip on upload; false for glTF-style UVs (default false)
  */
 
-const OPTIONS = ['image', 'url', 'colorSpace', 'wrap', 'repeat', 'offset', 'filter', 'mipmaps', 'anisotropy', 'flipY']
-const DEFAULTS = { colorSpace: 'srgb', wrap: 'repeat', repeat: [1, 1], offset: [0, 0], filter: 'linear', mipmaps: true, anisotropy: 8, flipY: false }
+const OPTIONS = ['image', 'url', 'colorSpace', 'wrap', 'repeat', 'offset', 'rotation', 'center', 'uvSet', 'filter', 'mipmaps', 'anisotropy', 'flipY']
+const DEFAULTS = { colorSpace: 'srgb', wrap: 'repeat', repeat: [1, 1], offset: [0, 0], rotation: 0, center: [0, 0], uvSet: 0, filter: 'linear',
+  mipmaps: true, anisotropy: 8, flipY: false }
 
 const HINTS = {
   src: "use 'url' for the image address",
   encoding: "use colorSpace: 'srgb' | 'linear'",
   wrapS: "use wrap: 'repeat' | 'clamp' | 'mirror' (applies to both directions)",
   maxAnisotropy: "use 'anisotropy' - samples along glancing angles, 1 for off",
+  channel: "use 'uvSet' - 0 for the first UV set, 1 for the second",
+  texCoord: "use 'uvSet' - 0 for the first UV set, 1 for the second",
+  scale: "use 'repeat' - [u, v] times across",
 }
 
 /** An image for a material map. Canvas and video textures: set `needsUpdate()` after drawing. */
@@ -50,6 +59,12 @@ export class Texture {
   wrap = 'repeat'
   repeat = [1, 1]
   offset = [0, 0]
+  /** Turns the image on the surface, in radians, about `center`. */
+  rotation = 0
+  /** [u, v] the point rotation turns about, in repeated UVs. */
+  center = [0, 0]
+  /** Which UV set it reads: 0 the first, 1 the second (Geometry uvs2). @type {0 | 1} */
+  uvSet = 0
   /** @type {'linear' | 'nearest'} */
   filter = 'linear'
   mipmaps = true
@@ -75,6 +90,10 @@ export class Texture {
     this.filter = checkOneOf('Texture', 'filter', o.filter, ['linear', 'nearest'])
     this.repeat = pair('repeat', o.repeat)
     this.offset = pair('offset', o.offset)
+    this.rotation = checkNumber('Texture', 'rotation', o.rotation)
+    this.center = pair('center', o.center)
+    if (o.uvSet !== 0 && o.uvSet !== 1) fail('Texture', `'uvSet' is 0 (the first UV set) or 1 (the second), got ${describe(o.uvSet)}`)
+    this.uvSet = o.uvSet
     this.mipmaps = !!o.mipmaps
     this.anisotropy = checkNumber('Texture', 'anisotropy', o.anisotropy)
     if (!(this.anisotropy >= 1)) fail('Texture', `'anisotropy' is how many samples along a glancing angle - 1 (off) or more, got ${this.anisotropy}`)

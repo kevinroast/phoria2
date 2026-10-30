@@ -267,6 +267,7 @@ class Builder {
     const options = { positions: this.#accessor(a.POSITION) }
     if (a.NORMAL !== undefined) options.normals = this.#accessor(a.NORMAL)
     if (a.TEXCOORD_0 !== undefined) options.uvs = this.#accessor(a.TEXCOORD_0)
+    if (a.TEXCOORD_1 !== undefined) options.uvs2 = this.#accessor(a.TEXCOORD_1)
     if (a.COLOR_0 !== undefined) options.colors = srgbColors(/** @type {Float32Array} */ (this.#accessor(a.COLOR_0)), COMPONENTS[this.json.accessors[a.COLOR_0].type])
     if (p.indices !== undefined) options.indices = this.#accessor(p.indices, true)
     const geometry = new Geometry(options)
@@ -428,10 +429,12 @@ class Builder {
    */
   #texture(info, colorSpace) {
     const transform = info.extensions?.KHR_texture_transform
-    const texCoord = transform?.texCoord ?? info.texCoord ?? 0
-    if (texCoord !== 0) warnOnce(this.model, 'textures on a second UV set (TEXCOORD_1) are drawn with the first')
-    if (transform?.rotation) warnOnce(this.model, "rotated texture transforms (KHR_texture_transform rotation) aren't supported - drawn unrotated")
-    const key = JSON.stringify([info.index, colorSpace, transform?.offset, transform?.scale])
+    let texCoord = transform?.texCoord ?? info.texCoord ?? 0
+    if (texCoord > 1) {
+      warnOnce(this.model, `textures on a third UV set or later (TEXCOORD_${texCoord}) are drawn with the first`)
+      texCoord = 0
+    }
+    const key = JSON.stringify([info.index, colorSpace, transform?.offset, transform?.scale, transform?.rotation, texCoord])
     const cached = this.#textures.get(key)
     if (cached) return cached
 
@@ -458,6 +461,8 @@ class Builder {
       flipY: false,
       repeat: transform?.scale ?? [1, 1],
       offset: transform?.offset ?? [0, 0],
+      rotation: transform?.rotation ?? 0,
+      uvSet: texCoord,
     })
     this.#textures.set(key, texture)
     return texture
@@ -576,5 +581,6 @@ function lineList(g, mode) {
 function withIndices(g, indices, triangles) {
   // only normals the file gave - reading g.normals would work them out from the strip's own indices,
   // taken as a triangle list; the new geometry works them out from its real triangles instead
-  return new Geometry({ positions: g.positions, normals: triangles && g.hasNormals ? g.normals : undefined, uvs: g.uvs ?? undefined, colors: g.colors ?? undefined, indices })
+  return new Geometry({ positions: g.positions, normals: triangles && g.hasNormals ? g.normals : undefined, uvs: g.uvs ?? undefined, uvs2: g.uvs2 ?? undefined,
+    colors: g.colors ?? undefined, indices })
 }

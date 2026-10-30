@@ -6,11 +6,13 @@ import { checkOptions, describe, fail } from '../validate.js'
  * @property {ArrayLike<number>} positions xyz per vertex
  * @property {ArrayLike<number>} [normals] xyz per vertex; computed (smooth) when missing
  * @property {ArrayLike<number>} [uvs] uv per vertex - glTF convention, (0, 0) is the image's top left
+ * @property {ArrayLike<number>} [uvs2] a second uv per vertex, for maps that need every surface on its own
+ *   patch of texture - baked occlusion and light maps (a texture's uvSet: 1 reads it)
  * @property {ArrayLike<number>} [colors] rgb per vertex, sRGB 0-1 like every colour input
  * @property {ArrayLike<number>} [indices] vertex indices; triangles for meshes, pairs for lines
  */
 
-const OPTIONS = ['positions', 'normals', 'uvs', 'colors', 'indices']
+const OPTIONS = ['positions', 'normals', 'uvs', 'uvs2', 'colors', 'indices']
 
 /**
  * Vertex data: flat typed arrays plus an optional index. Generators such as box() and sphere()
@@ -21,6 +23,7 @@ export class Geometry {
   static OPTIONS = OPTIONS
   /** @type {Float32Array} */ positions
   /** @type {Float32Array | null} */ uvs = null
+  /** A second UV set, for baked occlusion and light maps. @type {Float32Array | null} */ uvs2 = null
   /** @type {Float32Array | null} */ colors = null
   /** @type {Uint16Array | Uint32Array | null} */ indices = null
 
@@ -55,6 +58,7 @@ export class Geometry {
     const n = this.vertexCount
     if (options.normals) this.#normals = toFloat32('normals', options.normals, 3, n)
     if (options.uvs) this.uvs = toFloat32('uvs', options.uvs, 2, n)
+    if (options.uvs2) this.uvs2 = toFloat32('uvs2', options.uvs2, 2, n)
     if (options.colors) this.colors = toFloat32('colors', options.colors, 3, n)
     if (options.indices) {
       // -1: no indices at all refer to no vertex, so an empty geometry can say so
@@ -172,6 +176,7 @@ export class Geometry {
       positions: this.positions,
       normals: this.#normals ?? undefined,
       uvs: this.uvs ?? undefined,
+      uvs2: this.uvs2 ?? undefined,
       colors: this.colors ?? undefined,
       indices: this.indices ?? undefined,
     })
@@ -198,6 +203,7 @@ export class Geometry {
     const json = { positions: Array.from(this.positions) }
     if (this.#normals) json.normals = Array.from(this.#normals)
     if (this.uvs) json.uvs = Array.from(this.uvs)
+    if (this.uvs2) json.uvs2 = Array.from(this.uvs2)
     if (this.colors) json.colors = Array.from(this.colors)
     if (this.indices) json.indices = Array.from(this.indices)
     return json
@@ -221,6 +227,7 @@ export class Geometry {
     }
     this.positions = /** @type {Float32Array} */ (expand(this.positions, 3))
     this.uvs = expand(this.uvs, 2)
+    this.uvs2 = expand(this.uvs2, 2)
     this.colors = expand(this.colors, 3)
     this.indices = null
     this.source = null

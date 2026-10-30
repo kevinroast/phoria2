@@ -5,6 +5,7 @@ import * as mat4 from '../math/mat4.js'
 import { irradianceSH } from '../irradiance.js'
 import { POINT_SHADOW_SIZE, SHADOW_MAP_SIZE, SPOT_ATLAS_SIZE } from '../shadow.js'
 import { CLIP, CLIP_ONLY_FRAGMENT, COMMON, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
+import { uvMatrix } from './resources.js'
 
 /** @import { Programs } from './programs.js' */
 /** @import { Resources } from './resources.js' */
@@ -509,6 +510,8 @@ export class Passes {
       // read the map as the drawn surface reads it - projected, for a triplanar one
       const triplanar = cutout && !!material.map && material.triplanar > 0
       if (cutout) defines.push('ALPHA_TEST', ...(material.map ? ['MAP'] : []), ...(triplanar ? ['TRIPLANAR'] : []))
+      // a map on the second UV set reads it here too
+      if (cutout && material.map?.uvSet === 1 && item.geometry.uvs2) defines.push('UV2', 'uMapSet vUv2')
       const program = this.programs.ready('depth', defines, DEPTH)
       gl.useProgram(program.program)
       program.set('uViewProjection', viewProjection)
@@ -518,8 +521,10 @@ export class Passes {
         program.set('uOpacity', material.opacity)
         program.set('uAlphaTest', material.alphaTest)
         const map = material.map
-        program.set('uUvTransform', map ? [map.repeat[0], map.repeat[1], map.offset[0], map.offset[1]] : [1, 1, 0, 0])
-        if (map) program.set('uMap', this.resources.texture(map))
+        if (map) {
+          program.set('uMapUv', uvMatrix(map))
+          program.set('uMap', this.resources.texture(map))
+        }
         if (triplanar) program.set('uTriplanar', material.triplanar)
       }
       this.resources.drawTriangles(item.geometry, instances)

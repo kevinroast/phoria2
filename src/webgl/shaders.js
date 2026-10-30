@@ -11,6 +11,7 @@ export const ATTRIBUTES = {
   instanceMatrix: 4, // 4-7, a mat4 takes four slots
   instanceColor: 8,
   tangent: 9, // brushed metal's direction: along the UVs' u, and which way their v runs
+  uv2: 10, // a second UV set, for baked occlusion and light maps
   // lines: per-segment endpoints and colours, and the corner of the quad being drawn
   segmentStart: 0,
   segmentEnd: 1,
@@ -63,16 +64,30 @@ vec3 fogged(vec3 c) { return c; }
 // depth or stencil only - of what isn't cut away
 // How a map is read: by UV, or projected from the mesh's three axes (triplanar) - the same in every pass
 // that reads one, so a cut-out's shadow has the holes it is drawn with. Needs vUv declared first.
+// the samplers a mesh's maps are read through
+const MAP_SAMPLERS = ['uMap', 'uRoughnessMap', 'uMetalnessMap', 'uNormalMap', 'uBumpMap', 'uAoMap', 'uEmissiveMap', 'uLightMap']
+
 const SAMPLING = /* glsl */ `
+#ifdef UV2
+in vec2 vUv2;
+#endif
+// each map's own transform - repeat, rotation and offset - and the UV set it reads: the first
+// unless the renderer defines its set as vUv2. uMapCoord is where uMap is read and uMapTexel what
+// it holds there - spelled out per map, as WebGL's GLSL has no token pasting
+${MAP_SAMPLERS.map((m) => `uniform mat3 ${m}Uv;
+#ifndef ${m}Set
+#define ${m}Set vUv
+#endif
+#define ${m}Coord (${m}Uv * vec3(${m}Set, 1.0)).xy`).join('\n')}
 #ifdef TRIPLANAR
 in vec3 vObjectPosition;
 in vec3 vObjectNormal;
 in mat3 vObjectToWorld;
 uniform float uTriplanar; // repeats per unit of the mesh's own space
-uniform vec4 uUvTransform; // the map's repeat xy and offset zw, applied to each projection as to UVs
 
-vec2 projected(vec2 p) {
-  return p * uUvTransform.xy + uUvTransform.zw;
+// a projection's coordinates through the map's transform, as UVs would be
+vec2 projected(vec2 p, mat3 t) {
+  return (t * vec3(p, 1.0)).xy;
 }
 
 // how much each axis's projection counts: mostly the one the surface faces, blended at the turns
@@ -81,13 +96,13 @@ vec3 triplanarWeights(vec3 n) {
   return w / (w.x + w.y + w.z);
 }
 // a map seen from the three axes and blended - for meshes with no UVs, scans and CAD models
-vec4 triplanar(sampler2D s) {
+vec4 triplanar(sampler2D s, mat3 t) {
   vec3 p = vObjectPosition * uTriplanar, w = triplanarWeights(normalize(vObjectNormal));
-  return texture(s, projected(p.zy)) * w.x + texture(s, projected(p.xz)) * w.y + texture(s, projected(p.xy)) * w.z;
+  return texture(s, projected(p.zy, t)) * w.x + texture(s, projected(p.xz, t)) * w.y + texture(s, projected(p.xy, t)) * w.z;
 }
-#define SAMPLE(s) triplanar(s)
+${MAP_SAMPLERS.map((m) => `#define ${m}Texel triplanar(${m}, ${m}Uv)`).join('\n')}
 #else
-#define SAMPLE(s) texture(s, vUv)
+${MAP_SAMPLERS.map((m) => `#define ${m}Texel texture(${m}, ${m}Coord)`).join('\n')}
 #endif
 `
 
@@ -111,7 +126,7 @@ void main() {
 #ifdef ALPHA_TEST
   float alpha = uOpacity;
 #ifdef MAP
-  alpha *= SAMPLE(uMap).a;
+  alpha *= uMapTexel.a;
 #endif
   if (alpha < uAlphaTest) discard;
 #endif
@@ -191,11 +206,14 @@ layout(location = 8) in vec3 instanceColor;
 layout(location = 9) in vec4 tangent;
 out vec4 vTangent;
 #endif
+#ifdef UV2
+layout(location = 10) in vec2 uv2;
+out vec2 vUv2;
+#endif
 
 uniform mat4 uModel;
 uniform mat3 uNormalMatrix;
 uniform mat4 uViewProjection;
-uniform vec4 uUvTransform; // repeat xy, offset zw
 uniform int uHighlightIndex; // -2 none, -1 the whole node, otherwise the instance
 #ifdef FOG
 uniform mat4 uView;
@@ -243,7 +261,10 @@ void main() {
   vec4 world = uModel * local;
   vWorldPosition = world.xyz;
   vNormal = uNormalMatrix * n;
-  vUv = uv * uUvTransform.xy + uUvTransform.zw;
+  vUv = uv;
+#ifdef UV2
+  vUv2 = uv2;
+#endif
 #ifdef ANISOTROPY
   // a direction along the surface, so it turns as the model does
 #ifdef INSTANCED
@@ -319,6 +340,11 @@ uniform float uBumpScale;
 uniform sampler2D uAoMap;
 uniform float uAoMapIntensity;
 #endif
+#ifdef LIGHT_MAP
+uniform sampler2D uLightMap;
+uniform float uLightMapIntensity;
+#endif
+uniform float uEnvStrength;  // this material's share of the environment's light and reflections
 #ifdef TRANSMISSION
 uniform float uTransmission;
 #endif
@@ -554,7 +580,7 @@ vec3 envIrradiance(vec3 n) {
 // A height map as bumps: the normal tilted by how the height changes across the pixel, from
 // screen-space derivatives (Mikkelsen) - no tangents, and it works with UVs or triplanar alike
 vec3 bumpNormal(vec3 n) {
-  float h = SAMPLE(uBumpMap).r * uBumpScale;
+  float h = uBumpMapTexel.r * uBumpScale;
   vec2 dh = vec2(dFdx(h), dFdy(h));
   vec3 sx = dFdx(vWorldPosition), sy = dFdy(vWorldPosition);
   vec3 r1 = cross(sy, n), r2 = cross(n, sx);
@@ -569,9 +595,9 @@ vec3 bumpNormal(vec3 n) {
 // 'whiteout' blend), blended, then turned into the world - no tangents and no UVs needed
 vec3 triplanarNormal(float strength) {
   vec3 n = normalize(vObjectNormal), p = vObjectPosition * uTriplanar, w = triplanarWeights(n);
-  vec3 tx = texture(uNormalMap, projected(p.zy)).xyz * 2.0 - 1.0;
-  vec3 ty = texture(uNormalMap, projected(p.xz)).xyz * 2.0 - 1.0;
-  vec3 tz = texture(uNormalMap, projected(p.xy)).xyz * 2.0 - 1.0;
+  vec3 tx = texture(uNormalMap, projected(p.zy, uNormalMapUv)).xyz * 2.0 - 1.0;
+  vec3 ty = texture(uNormalMap, projected(p.xz, uNormalMapUv)).xyz * 2.0 - 1.0;
+  vec3 tz = texture(uNormalMap, projected(p.xy, uNormalMapUv)).xyz * 2.0 - 1.0;
   tx.xy *= strength; ty.xy *= strength; tz.xy *= strength;
   tx = vec3(tx.xy + n.zy, abs(tx.z) * n.x);
   ty = vec3(ty.xy + n.xz, abs(ty.z) * n.y);
@@ -594,9 +620,9 @@ vec3 brushDirection(vec3 n) {
 #ifdef NORMAL_MAP
 // Tangent space from screen-space derivatives (Schüler's cotangent frame), so geometry needs no
 // tangents. UVs run down the image (glTF) while normal maps point +Y up it, hence -b.
-vec3 perturbNormal(vec3 n, vec3 m) {
+vec3 perturbNormal(vec3 n, vec3 m, vec2 uv) {
   vec3 dp1 = dFdx(vWorldPosition), dp2 = dFdy(vWorldPosition);
-  vec2 duv1 = dFdx(vUv), duv2 = dFdy(vUv);
+  vec2 duv1 = dFdx(uv), duv2 = dFdy(uv);
   vec3 dp2perp = cross(dp2, n), dp1perp = cross(n, dp1);
   vec3 t = dp2perp * duv1.x + dp1perp * duv2.x;
   vec3 b = dp2perp * duv1.y + dp1perp * duv2.y;
@@ -680,9 +706,9 @@ vec3 matcapAt(vec3 n, vec3 v) {
 vec3 irradianceAt(vec3 n) {
   vec3 e = uAmbient + mix(uHemisphereGround, uHemisphereSky, n.y * 0.5 + 0.5);
 #ifdef ENV_MAP
-  e += envIrradiance(n) * uEnvIntensity;
+  e += envIrradiance(n) * uEnvIntensity * uEnvStrength;
 #elif defined(STUDIO)
-  e += studio(n) * 0.35;
+  e += studio(n) * 0.35 * uEnvStrength;
 #endif
   return e;
 }
@@ -691,10 +717,10 @@ vec3 irradianceAt(vec3 n) {
 vec3 reflected(vec3 r, vec3 n, float roughness, vec3 irradiance) {
 #ifdef ENV_MAP
   // a lower mip, convolved for that roughness
-  return textureLod(uEnvMap, equirectUv(r), roughness * uEnvMaxLod).rgb * uEnvIntensity;
+  return textureLod(uEnvMap, equirectUv(r), roughness * uEnvMaxLod).rgb * uEnvIntensity * uEnvStrength;
 #elif defined(STUDIO)
   // leaned towards the surface normal
-  return mix(studio(r), studio(n), roughness * roughness);
+  return mix(studio(r), studio(n), roughness * roughness) * uEnvStrength;
 #else
   return irradiance * 0.5;
 #endif
@@ -705,7 +731,7 @@ void main() {
   clipAway(vWorldPosition);
   vec4 base = vec4(uColor * vColor, uOpacity);
 #ifdef MAP
-  base *= SAMPLE(uMap); // sRGB textures are decoded to linear by the hardware
+  base *= uMapTexel; // sRGB textures are decoded to linear by the hardware
 #endif
 #ifdef ALPHA_TEST
   if (base.a < uAlphaTest) discard;
@@ -715,7 +741,7 @@ void main() {
   float coverage = base.a;
   vec3 emissive = uEmissive;
 #ifdef EMISSIVE_MAP
-  emissive *= SAMPLE(uEmissiveMap).rgb;
+  emissive *= uEmissiveMapTexel.rgb;
 #endif
 
 #ifdef LIT
@@ -736,9 +762,11 @@ void main() {
   if (!gl_FrontFacing) n = -n;
 #endif
 #else
-  vec3 m = texture(uNormalMap, vUv).xyz * 2.0 - 1.0;
+  // tangent space from the map's own UVs, so it turns with a rotated map
+  vec2 normalUv = uNormalMapCoord;
+  vec3 m = texture(uNormalMap, normalUv).xyz * 2.0 - 1.0;
   m.xy *= uNormalScale;
-  n = perturbNormal(n, m);
+  n = perturbNormal(n, m, normalUv);
 #endif
 #endif
 #ifdef BUMP_MAP
@@ -752,10 +780,10 @@ void main() {
   float roughness = uRoughness;
   float metalness = uMetalness;
 #ifdef ROUGHNESS_MAP
-  roughness *= SAMPLE(uRoughnessMap).g;
+  roughness *= uRoughnessMapTexel.g;
 #endif
 #ifdef METALNESS_MAP
-  metalness *= SAMPLE(uMetalnessMap).b;
+  metalness *= uMetalnessMapTexel.b;
 #endif
   roughness = clamp(roughness, 0.04, 1.0);
   float a = roughness * roughness;
@@ -886,8 +914,12 @@ void main() {
 #ifdef TRANSLUCENCY
   indirect += through * irradianceAt(-n);
 #endif
+#ifdef LIGHT_MAP
+  // light baked into a texture, as more light from all round
+  indirect += diffuse * uLightMapTexel.rgb * uLightMapIntensity;
+#endif
 #ifdef AO_MAP
-  indirect *= mix(1.0, SAMPLE(uAoMap).r, uAoMapIntensity);
+  indirect *= mix(1.0, uAoMapTexel.r, uAoMapIntensity);
 #endif
   color += indirect + emissive;
 #ifdef SHEEN

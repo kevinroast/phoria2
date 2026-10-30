@@ -2,6 +2,8 @@
 
 - `DamagedHelmet.glb` - "Battle Damaged Sci-fi Helmet - PBR" by theblueturtle_, glTF conversion
   by Khronos. CC BY 4.0. From https://github.com/KhronosGroup/glTF-Sample-Assets
+- `SheenChair.glb` - "Sheen Chair", (c) 2020 Wayfair, LLC, by Eric Chadwick. CC0 1.0. From
+  https://github.com/KhronosGroup/glTF-Sample-Assets
 - `CesiumMilkTruck.glb` - by Cesium (Analytical Graphics, Inc.). CC BY 4.0. From
   https://github.com/KhronosGroup/glTF-Sample-Assets
 - `skull.glb` - the skull's 22 bones and 28 teeth from BodyParts3D, (c) The Database Center for Life
