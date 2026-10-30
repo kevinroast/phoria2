@@ -63,6 +63,15 @@ export class Model extends Group {
     }
     return a.play()
   }
+
+  /**
+   * A plain group of its parts, so create() can build it back without phoria2/gltf - with their
+   * vertex data, but not the animations, or textures embedded in a .glb (they have no url).
+   * @returns {Record<string, any>}
+   */
+  toJSON() {
+    return { ...super.toJSON(), type: 'group' }
+  }
 }
 
 /**

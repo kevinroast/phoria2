@@ -1,7 +1,8 @@
 // What editors build on: rays meeting planes, letting go of an orbit gesture, and outlines round
 // what is selected.
 import { describe, expect, it, vi } from 'vitest'
-import { Group, Mesh, OrbitControl, PerspectiveCamera, Ray, Scene, WebGLRenderer, box, collect } from '../src/index.js'
+import { Group, Mesh, OrbitControl, PerspectiveCamera, Ray, Scene, WebGLRenderer, box } from '../src/index.js'
+import { collect } from '../src/frame.js'
 import { ChangeWatch } from '../src/watch.js'
 import { fakeCanvas, fakeElement, fakeGL } from './fakes.js'
 

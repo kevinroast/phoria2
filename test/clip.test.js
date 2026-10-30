@@ -1,7 +1,8 @@
 // Section planes: a node's clip cuts its subtree away on one side of a plane - in what is drawn,
 // what casts shadows, and what picking and the raycaster can hit.
 import { describe, expect, it } from 'vitest'
-import { Clip, DirectionalLight, Group, Lines, Mesh, PerspectiveCamera, Points, Raycaster, Scene, WebGLRenderer, box, collect, create, edges } from '../src/index.js'
+import { Clip, DirectionalLight, Group, Lines, Mesh, PerspectiveCamera, Points, Raycaster, Scene, WebGLRenderer, box, create, edges } from '../src/index.js'
+import { collect } from '../src/frame.js'
 import { fakeCanvas, fakeGL } from './fakes.js'
 import { worldPlane } from '../src/clip.js'
 import { ChangeWatch } from '../src/watch.js'

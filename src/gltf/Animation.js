@@ -83,7 +83,7 @@ export class Animation {
     this.seek(t)
   }
 
-  /** Pose every animated node for the current time. */
+  /** @internal Pose every animated node for the current time. */
   apply() {
     for (const track of this.tracks) sample(track, this.time)
   }

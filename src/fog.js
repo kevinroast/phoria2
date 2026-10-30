@@ -52,7 +52,7 @@ export class Fog {
     return this.density === 0
   }
 
-  /**
+  /** @internal
    * A Fog from a Fog (returned as is) or options.
    * @param {Fog | FogOptions} input @param {string} [owner]
    * @returns {Fog}

@@ -129,13 +129,13 @@ export class Scene extends Node {
     return Promise.all(waits).then(() => {})
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     return { ...super.cloneOptions(), background: this.#background, environment: this.#environment,
       environmentIntensity: this.environmentIntensity, backgroundBlur: this.backgroundBlur, fog: this.#fog ? this.#fog.toJSON() : null }
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     /** @type {Record<string, unknown>} */
     const json = {}

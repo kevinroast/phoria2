@@ -118,7 +118,7 @@ export class Chart extends Group {
     return `Chart (${s.mark}): ${shown} of ${s.rows.length} rows shown${axes.length ? `; ${axes.join(', ')}` : ''}${s.links.length ? `; ${s.links.length} links` : ''}`
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     return { ...this.#input }
   }

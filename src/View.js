@@ -122,7 +122,7 @@ export class View {
   maxDelta = 0.1
   /** When to draw. @type {RenderMode} */
   renderMode = 'auto'
-  /** The last frame drawn. @type {FrameDescription | null} */
+  /** @internal The last frame drawn. @type {FrameDescription | null} */
   lastFrame = null
 
   /** @type {((dt: number, t: number) => void) | null} */ #onFrame = null
@@ -337,7 +337,7 @@ export class View {
     return this.#hovered
   }
 
-  /**
+  /** @internal
    * A layer over the canvas for HTML of your own - a title, a key, buttons. It tracks the canvas and
    * doesn't take pointer events itself; give children `pointer-events: auto` to make them clickable.
    * @returns {HTMLDivElement}

@@ -10,7 +10,7 @@ import { describe, fail } from '../validate.js'
 export class Quat extends Float32Array {
   static get [Symbol.species]() { return Float32Array }
 
-  /** Called after any change made through the methods below. @type {(() => void) | null} */
+  /** @internal Called after any change made through the methods below. @type {(() => void) | null} */
   onChange = null
 
   /** @param {number} [x] @param {number} [y] @param {number} [z] @param {number} [w] */
@@ -31,7 +31,7 @@ export class Quat extends Float32Array {
   get w() { return this[3] }
   set w(v) { this[3] = v; this.changed() }
 
-  /** Notify the owner after editing by index. @returns {this} */
+  /** @internal Notify the owner after editing by index. @returns {this} */
   changed() {
     this.onChange?.()
     return this

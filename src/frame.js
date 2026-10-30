@@ -505,7 +505,7 @@ export class NullRenderer {
     return this.renderFrame(collect(scene, camera))
   }
 
-  /** @param {FrameDescription} frame @returns {FrameDescription} */
+  /** @internal @param {FrameDescription} frame @returns {FrameDescription} */
   renderFrame(frame) {
     this.lastFrame = frame
     this.frameCount++

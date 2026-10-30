@@ -19,7 +19,7 @@ export class Vec3 extends Float32Array {
     this[2] = z
   }
 
-  /**
+  /** @internal
    * Convert input to a new Vec3: [x, y, z], { x, y, z }, a Vec3, or one number for all three.
    * @param {Vec3Input | number} v
    * @param {string} [owner] for error messages

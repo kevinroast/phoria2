@@ -1,5 +1,6 @@
 {
-  // TypeScript is only a tool here: it type-checks the JSDoc in src/ and emits .d.ts files.
+  // TypeScript is only a tool here: it type-checks the JSDoc in src/ and emits .d.ts files - without
+  // the members tagged @internal, which aren't part of the API.
   "include": ["src"],
   "compilerOptions": {
     "allowJs": true,
@@ -14,6 +15,7 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "strict": false,
     "noImplicitAny": false,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "stripInternal": true
   }
 }

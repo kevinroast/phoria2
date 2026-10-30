@@ -173,6 +173,9 @@ node.remove(child); node.removeFromParent(); node.dispose()
 node.bounds              // world-space Box3: .min, .max, .getCenter(), .getSize()
 node.boundsFrom(camera)  // the same, for only what that camera draws (hidden and showFrom-off parts left out)
 node.worldPosition       // read only
+node.updateWorld()       // world matrices up to date now - ancestors, the node, everything under it -
+                         // to read worldPosition or bounds after moving things, before the next frame
+node.updateWorldTree()   // the same for the node and everything under it, when its parent is already current
 ```
 
 **Cutaways**: `clip: { normal, offset, cap }` on any node cuts away everything in its subtree on the
@@ -412,6 +415,17 @@ view.on('hover', (hit) => show(hit?.datum))                 // fires when the th
 - The **nearest surface** under the pointer is the hit - a link drawn over a site's top wins the
   hover there. To let one kind of thing through, give it `pickable: false`; to choose among
   everything under the pointer, `view.pickAll(event)` lists every hit, nearest first.
+- **Rays of your own** - line of sight, what's below a dropped object, picking in tests: a
+  `Raycaster` finds what any ray hits, on the CPU. Set `raycaster.ray.origin` and `.direction`, or aim
+  it with `setFromCamera([x, y], camera)` (-1 to 1, y up); `intersect(nodeOrNodes)` returns hits,
+  nearest first, as `pickAll` does. `threshold` (default 0.1, world units) is how near a ray must pass
+  a point or line to hit it; `near` and `far` limit the distance.
+
+  ```js
+  const ray = new Raycaster()
+  ray.ray.origin.set(0, 10, 0); ray.ray.direction.set(0, -1, 0)
+  const ground = ray.intersect(view.scene)[0]   // what's straight below, or undefined
+  ```
 - **Tooltip** content: a string (new lines kept), an HTML element, or `{ title, rows }` with rows as
   an object `{ name: value }`. Return null for none. Styled by the `.phoria-tooltip` class.
 - **highlight** tints the hovered node, instance or point. A drag never counts as a click.
@@ -583,7 +597,9 @@ model.play()                                          // its first animation; or
 ```
 
 A model has `animations` (each with `play()`, `pause()`, `stop()`, `loop`, `speed`), `cameras` and
-`meshes`. Product-viewer lighting:
+`meshes`. Its `toJSON()` is a plain group of its parts, with their vertex data - `create()` builds it
+back without `phoria2/gltf`, but the animations, and textures embedded in a `.glb`, aren't kept.
+Product-viewer lighting:
 
 ```js
 view.scene.environment = 'studio.hdr'                // or 'studio' (built in)
@@ -651,6 +667,25 @@ default material is small additive points. `burst(count, spawnOptions)`, `clear(
 `Body` moves any node: `node.onUpdate(new Body({ velocity, gravity, drag }).update)`;
 `body.impulse([x, y, z])` kicks it.
 
+## Testing without a GPU
+
+Scene logic, bounds, picking with a `Raycaster` and descriptions all run in Node, with no canvas. A
+`NullRenderer` stands in for the WebGL one: `render(scene, camera)` brings world matrices up to date
+and counts the frame without drawing. `scene.update(dt, t)` runs the update handlers, as the View's
+loop would.
+
+```js
+import { NullRenderer, PerspectiveCamera, Scene } from 'phoria2'
+
+const renderer = new NullRenderer()
+scene.update(0.016, 0.016)                         // one frame of onUpdate handlers
+renderer.render(scene, new PerspectiveCamera({ position: [0, 2, 8] }))
+renderer.frameCount                                // 1
+```
+
+`renderer.lastFrame` describes what would have been drawn - handy to look at in a debugger, but its
+shape isn't part of the API and may change.
+
 ## Scenes as plain data
 
 `node.toJSON()` describes a node and its children as plain data, and `create(description)` builds it
@@ -664,6 +699,23 @@ and points, whose `text` is a function. Particle emitters can't be described yet
 **JSON Schema** for descriptions ships with the package: `phoria2/schema.json` - validate one before
 `create()`, or hand it to a model generating scenes. A chart's own options are in
 `phoria2/charts/schema.json`.
+
+**Node types of your own**: give the class a static `type` and register it, and `create()` builds its
+descriptions. Options of its own add to its parent's; to write them in descriptions too, add them in
+`toJSON()`.
+
+```js
+import { Group, registerType } from 'phoria2'
+
+class Beacon extends Group {
+  static type = 'beacon'
+  static get OPTIONS() { return [...super.OPTIONS, 'blink'] }
+  constructor({ blink = 1, ...options } = {}) { super(options); this.blink = blink }
+  toJSON() { return { ...super.toJSON(), blink: this.blink } }
+}
+registerType(Beacon)
+create({ type: 'beacon', blink: 2, position: [0, 3, 0] })
+```
 
 ```js
 import { create } from 'phoria2'

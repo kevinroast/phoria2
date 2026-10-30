@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://phoria2/charts/schema.json",
+  "$id": "https://cdn.jsdelivr.net/npm/phoria2@1/schema/chart.schema.json",
   "title": "phoria2 chart spec",
   "description": "The spec for chart() from phoria2/charts: a mark, data, and channels mapping data fields to what is drawn. Channels may also be nested under 'encoding', as Vega-Lite writes them.",
   "type": "object",

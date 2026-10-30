@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  Geometry, Group, Lines, Mesh, OrthographicCamera, PerspectiveCamera, Raycaster, Scene, box, collect, create,
+  Geometry, Group, Lines, Mesh, OrthographicCamera, PerspectiveCamera, Raycaster, Scene, box, create,
 } from '../src/index.js'
+import { collect } from '../src/frame.js'
 import { Chart, chart, scaleBand, scaleColor, scaleLinear, scaleLog, scaleTime, tickStep } from '../src/charts/index.js'
 import { normalise } from '../src/charts/spec.js'
 

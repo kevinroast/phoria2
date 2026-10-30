@@ -1,10 +1,11 @@
 // Bugs found by the code review of 2026-10-29 (REVIEW.md), each pinned by the case that showed it.
 import { Buffer } from 'node:buffer'
 import { afterAll, describe, expect, it, vi } from 'vitest'
-import { DirectionalLight, OrbitControl, OrthographicCamera, collect, Geometry, Group, InstancedMesh, Label, Lines, Material, Mesh, Node, PerspectiveCamera, Raycaster, Scene, SpotLight, Texture, View, WebGLRenderer, box, extrude, outline, plane, sphere } from '../src/index.js'
+import { DirectionalLight, OrbitControl, OrthographicCamera, Geometry, Group, InstancedMesh, Label, Lines, Material, Mesh, Node, PerspectiveCamera, Raycaster, Scene, SpotLight, Texture, View, WebGLRenderer, box, create, extrude, outline, plane, sphere } from '../src/index.js'
+import { collect } from '../src/frame.js'
 import { chart, scaleColor, scaleLinear, scaleTime } from '../src/charts/index.js'
 import { TransformHandle } from '../src/edit/index.js'
-import { Animation, parseGLTF } from '../src/gltf/index.js'
+import { Animation, Model, parseGLTF } from '../src/gltf/index.js'
 import { Vec3 } from '../src/value/Vec3.js'
 import { fakeCanvas, fakeElement, fakeGL, fakePage } from './fakes.js'
 
@@ -910,5 +911,28 @@ describe('edges at an angle', () => {
     const { sphere } = await import('../src/index.js')
     expect(edges(sphere(), { angle: 30 }).vertexCount).toBe(0)
     expect(() => edges(round, /** @type {any} */ ({ threshold: 30 }))).toThrow('edges()')
+  })
+})
+
+describe('before the 1.0 freeze', () => {
+  it('assigning onUpdate fails, where it used to do nothing - onClick is assigned, onUpdate called', () => {
+    const node = new Node()
+    expect(() => { node.onUpdate = () => {} }).toThrow('call onUpdate rather than assigning it')
+    let runs = 0
+    const off = node.onUpdate(() => runs++)
+    node.runHandlers(0.1, 0.1)
+    off()
+    node.runHandlers(0.1, 0.2)
+    expect(runs).toBe(1)
+    expect(() => node.onUpdate('spin')).toThrow('onUpdate expects a function')
+  })
+
+  it('a glTF model describes itself as a group, which create() builds back', () => {
+    const model = new Model({ name: 'chair' })
+    model.add(new Mesh({ name: 'seat', geometry: box(), material: { color: 'red' } }))
+    const json = model.toJSON()
+    expect(json.type).toBe('group')
+    const again = create(json)
+    expect([again.constructor.name, again.name, again.children[0].name]).toEqual(['Group', 'chair', 'seat'])
   })
 })

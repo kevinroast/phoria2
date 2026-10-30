@@ -56,7 +56,7 @@ export class Texture {
   /** Samples along glancing angles, up to the GPU's limit; 1 is off. Call needsUpdate() after changing it. */
   anisotropy = 8
   flipY = false
-  /** Bumped by needsUpdate() so renderers re-upload. */
+  /** @internal Bumped by needsUpdate() so renderers re-upload. */
   version = 0
   /** Resolves when the image is available (immediately when one was given). @type {Promise<Texture>} */
   ready
@@ -114,7 +114,7 @@ export class Texture {
     for (const fn of this.#onDispose) fn()
   }
 
-  /** For renderers. Returns an unsubscribe function. @param {() => void} fn */
+  /** @internal For renderers. Returns an unsubscribe function. @param {() => void} fn */
   onDispose(fn) {
     this.#onDispose.add(fn)
     return () => this.#onDispose.delete(fn)

@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   AmbientLight, DirectionalLight, Group, InstancedMesh, Label, Lines, Material, Mesh, NullRenderer,
   OrthographicCamera, PerspectiveCamera, PointLight, Points, Raycaster, Scene, SpotLight, Texture,
-  box, collect, edges, plane, sphere,
+  box, edges, plane, sphere,
 } from '../src/index.js'
+import { collect } from '../src/frame.js'
 
 const camera = () => new PerspectiveCamera({ position: [0, 0, 10], target: [0, 0, 0], aspect: 1 })
 

@@ -189,7 +189,7 @@ export class WebGLRenderer {
     return this.renderFrame(collect(scene, camera))
   }
 
-  /**
+  /** @internal
    * Draw a frame. Shaders compile in the background where the browser allows, and what is still
    * compiling is left out (info.compiling counts it; onReady fires when it's done) - unless `wait`
    * is set, for a frame that must be complete, such as an image export.
@@ -306,7 +306,7 @@ export class WebGLRenderer {
     return picker.pick(frame, x * r, y * r, this.canvas.width, this.canvas.height, r)
   }
 
-  /**
+  /** @internal
    * pick() without waiting for the GPU: resolves once it has finished. Undefined while the picking
    * code loads; null while an earlier request is still out.
    * @param {FrameDescription} frame

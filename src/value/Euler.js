@@ -12,7 +12,7 @@ export class Euler {
   /** Only XYZ is supported. */
   get order() { return 'XYZ' }
 
-  /** Called after any change. @type {(() => void) | null} */
+  /** @internal Called after any change. @type {(() => void) | null} */
   onChange = null
 
   /** @param {number} [x] @param {number} [y] @param {number} [z] */

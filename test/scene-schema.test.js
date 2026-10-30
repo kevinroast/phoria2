@@ -52,6 +52,13 @@ function errors(s, value, at = '') {
 const validate = (value) => errors(schema, value)
 
 describe('the scene description schema', () => {
+  it('has ids that resolve to the files, for the 1.x line - changing one later breaks $refs to it', () => {
+    for (const name of ['scene', 'chart']) {
+      const { $id } = JSON.parse(readFileSync(new URL(`../schema/${name}.schema.json`, import.meta.url), 'utf8'))
+      expect($id).toBe(`https://cdn.jsdelivr.net/npm/phoria2@1/schema/${name}.schema.json`)
+    }
+  })
+
   it('allows exactly each node type\'s options, less its handlers', () => {
     const classes = [Node, Group, Scene, Mesh, Points, Lines, InstancedMesh, Label, PerspectiveCamera, OrthographicCamera,
       AmbientLight, HemisphereLight, DirectionalLight, PointLight, SpotLight]

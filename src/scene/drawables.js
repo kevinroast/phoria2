@@ -169,7 +169,7 @@ export class Drawable extends Node {
   /** @param {Material | import('../material/Material.js').MaterialOptions} v */
   set material(v) { this.#material = resolveMaterial(v) }
 
-  /**
+  /** @internal
    * The data for a hit: this node's row at `index` when data is an array and the node draws many
    * things (instances, points, line segments), otherwise the data itself.
    * @param {number | null} index
@@ -194,13 +194,13 @@ export class Drawable extends Node {
   /** @internal Subclasses check the geometry suits them. */
   checkGeometry() {}
 
-  /** @param {Box3} box */
+  /** @internal @param {Box3} box */
   expandBounds(box) {
     if (this.geometry.vertexCount) box.union(this.geometry.bounds.clone().applyMatrix4(this.worldMatrix))
     return box
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     return {
       ...super.cloneOptions(),
@@ -214,7 +214,7 @@ export class Drawable extends Node {
     }
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     /** @type {Record<string, unknown>} */
     const json = { geometry: this.geometry.toJSON(), material: this.material.toJSON() }
@@ -239,6 +239,7 @@ export class Drawable extends Node {
 export class Mesh extends Drawable {
   static type = 'mesh'
 
+  /** @internal */
   checkGeometry() {
     const n = this.geometry.elementCount
     if (n % 3 !== 0) {
@@ -276,7 +277,7 @@ export class InstancedMesh extends Mesh {
   instanceMatrices
   /** Linear rgb per instance, or null until a colour is set. @type {Float32Array | null} */
   instanceColors = null
-  /** Bumped when instance data changes, so renderers re-upload. */
+  /** @internal Bumped when instance data changes, so renderers re-upload. */
   version = 0
   /** A label per instance, from its row of data. @type {ReturnType<typeof instanceLabels>} */
   labels = null
@@ -377,7 +378,7 @@ export class InstancedMesh extends Mesh {
     this.instanceColors.set(Color.fromInput(color, 'InstancedMesh'), i * 3)
   }
 
-  /** @param {Box3} box */
+  /** @internal @param {Box3} box */
   expandBounds(box) {
     this.eachInstanceBox((x0, y0, z0, x1, y1, z1) => {
       box.expandByXYZ(x0, y0, z0)
@@ -411,7 +412,7 @@ export class InstancedMesh extends Mesh {
     }
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     return { ...super.cloneOptions(), count: this.count, labels: this.labels }
   }
@@ -423,7 +424,7 @@ export class InstancedMesh extends Mesh {
     return copy
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     return { ...super.jsonOptions(), count: this.count, instanceMatrices: Array.from(this.instanceMatrices),
       ...(this.instanceColors ? { instanceColors: Array.from(this.instanceColors) } : {}) }
@@ -444,7 +445,7 @@ export class Points extends Drawable {
     this.labels = instanceLabels(this.constructor.name, options?.labels)
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     return { ...super.cloneOptions(), labels: this.labels }
   }
@@ -467,6 +468,7 @@ export class Lines extends Drawable {
     return 'lines'
   }
 
+  /** @internal */
   checkGeometry() {
     const n = this.geometry.elementCount
     if (n % 2 !== 0) fail('Lines', `geometry has ${n} ${this.geometry.indices ? 'indices' : 'vertices'} - segments need them in pairs`)
@@ -514,7 +516,7 @@ export class Label extends Node {
     Object.assign(this, placement('Label', options))
   }
 
-  /** Lets renderers spot labels without importing this class. */
+  /** @internal Lets renderers spot labels without importing this class. */
   get isLabel() {
     return true
   }
@@ -524,13 +526,13 @@ export class Label extends Node {
     return box.expandByPoint(this.worldPosition)
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     return { ...super.cloneOptions(), text: this.text, className: this.className, place: this.place,
       offset: [...this.offset], priority: this.priority, overlap: this.overlap, occlude: this.occlude, leader: this.leader, edge: this.edge }
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     /** @type {Record<string, unknown>} */
     const json = { text: this.text }

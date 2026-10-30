@@ -1,6 +1,7 @@
 // Night scenes: distance fog, and shadows from spot and point lights.
 import { describe, expect, it, vi } from 'vitest'
-import { DirectionalLight, Fog, Group, Mesh, PerspectiveCamera, PointLight, Points, Scene, SpotLight, WebGLRenderer, box, collect, cylinder, plane, sphere } from '../src/index.js'
+import { DirectionalLight, Fog, Group, Mesh, PerspectiveCamera, PointLight, Points, Scene, SpotLight, WebGLRenderer, box, cylinder, plane, sphere } from '../src/index.js'
+import { collect } from '../src/frame.js'
 import { fitPointShadow, fitSpotShadow } from '../src/shadow.js'
 import { ChangeWatch } from '../src/watch.js'
 import { Box3 } from '../src/value/Box3.js'

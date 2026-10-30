@@ -24,10 +24,10 @@ const LIGHT_HINTS = {
 export class Light extends Node {
   static OPTIONS = LIGHT_OPTIONS
   static HINTS = LIGHT_HINTS
-  /** What kind of light, for renderers - read without importing every light class. @type {LightKind} */
+  /** @internal What kind of light, for renderers - read without importing every light class. @type {LightKind} */
   static kind = 'ambient'
 
-  /** @returns {LightKind} */
+  /** @internal @returns {LightKind} */
   get lightKind() {
     return /** @type {typeof Light} */ (this.constructor).kind
   }
@@ -51,12 +51,12 @@ export class Light extends Node {
   /** @param {ColorInput} v */
   set color(v) { this.#color.set(v, this.constructor.name) }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     return { ...super.cloneOptions(), color: this.#color.clone(), intensity: this.intensity }
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     /** @type {Record<string, unknown>} */
     const json = {}
@@ -69,14 +69,14 @@ export class Light extends Node {
 /** Light from everywhere equally: lifts the shadows. */
 export class AmbientLight extends Light {
   static type = 'ambient-light'
-  /** @type {LightKind} */
+  /** @internal @type {LightKind} */
   static kind = 'ambient'
 }
 
 /** Cheap outdoor fill: sky colour from above blending to ground colour from below. */
 export class HemisphereLight extends Light {
   static type = 'hemisphere-light'
-  /** @type {LightKind} */
+  /** @internal @type {LightKind} */
   static kind = 'hemisphere'
   // 'color' is accepted too: the constructor passes 'sky' on as the base light colour
   static get OPTIONS() { return [...NODE_OPTIONS, 'sky', 'ground', 'intensity', 'color'] }
@@ -99,13 +99,13 @@ export class HemisphereLight extends Light {
   /** @param {ColorInput} v */
   set ground(v) { this.#ground.set(v, 'HemisphereLight') }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     const { color, ...rest } = super.cloneOptions()
     return { ...rest, sky: color, ground: this.#ground.clone() }
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     const { color, ...rest } = super.jsonOptions()
     return { ...rest, ...(color ? { sky: color } : {}), ...(this.#ground.getHex() !== 0x444444 ? { ground: this.#ground.getStyle() } : {}) }
@@ -173,12 +173,12 @@ class AimedLight extends Light {
     return local.normalize()
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     return { ...super.cloneOptions(), ...(this.target ? { target: this.target.toArray() } : { direction: this.direction.toArray() }) }
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     return { ...super.jsonOptions(), ...(this.target ? { target: this.target.toArray() } : { direction: this.direction.toArray() }) }
   }
@@ -187,7 +187,7 @@ class AimedLight extends Light {
 /** Parallel light from far away, like the sun. Position only matters for its shadow. */
 export class DirectionalLight extends AimedLight {
   static type = 'directional-light'
-  /** @type {LightKind} */
+  /** @internal @type {LightKind} */
   static kind = 'directional'
   static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'castShadow'] }
 
@@ -199,12 +199,12 @@ export class DirectionalLight extends AimedLight {
     if (options.castShadow !== undefined) this.castShadow = !!options.castShadow
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     return { ...super.cloneOptions(), castShadow: this.castShadow }
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     return { ...super.jsonOptions(), ...(this.castShadow ? { castShadow: true } : {}) }
   }
@@ -213,7 +213,7 @@ export class DirectionalLight extends AimedLight {
 /** Light from a point in all directions, falling off with the square of the distance. */
 export class PointLight extends Light {
   static type = 'point-light'
-  /** @type {LightKind} */
+  /** @internal @type {LightKind} */
   static kind = 'point'
   static get OPTIONS() { return [...LIGHT_OPTIONS, 'range', 'castShadow'] }
 
@@ -233,12 +233,12 @@ export class PointLight extends Light {
     if (options.castShadow !== undefined) this.castShadow = !!options.castShadow
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     return { ...super.cloneOptions(), range: this.range, castShadow: this.castShadow }
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     return { ...super.jsonOptions(), ...(this.range ? { range: this.range } : {}), ...(this.castShadow ? { castShadow: true } : {}) }
   }
@@ -247,7 +247,7 @@ export class PointLight extends Light {
 /** A cone of light from a point. */
 export class SpotLight extends AimedLight {
   static type = 'spot-light'
-  /** @type {LightKind} */
+  /** @internal @type {LightKind} */
   static kind = 'spot'
   static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'range', 'angle', 'penumbra', 'castShadow'] }
 
@@ -274,12 +274,12 @@ export class SpotLight extends AimedLight {
     }
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     return { ...super.cloneOptions(), range: this.range, angle: this.angle, penumbra: this.penumbra, castShadow: this.castShadow }
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     /** @type {Record<string, unknown>} */
     const json = super.jsonOptions()

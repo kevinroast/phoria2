@@ -44,7 +44,7 @@ export class Clip {
     if (options.cap != null) this.cap = Color.fromInput(options.cap, 'clip')
   }
 
-  /**
+  /** @internal
    * A Clip from a Clip (returned as is) or options.
    * @param {Clip | ClipOptions} input @param {string} [owner]
    * @returns {Clip}

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   DirectionalLight, Group, InstancedMesh, Label, Lines, Mesh, OrthographicCamera, PerspectiveCamera, Points, Raycaster,
-  Box3, Scene, Vec3, box, cameraPreset, collect, grid, mat4, plane, vec4,
+  Box3, Scene, Vec3, box, cameraPreset, grid, plane,
 } from '../src/index.js'
+import { collect } from '../src/frame.js'
+import { mat4, vec4 } from '../src/math.js'
 import { explain } from '../src/explain.js'
 import { fitPoints, framingScale } from '../src/presets.js'
 import { alignColumns, layoutLabels, leaderEnd, placeBox, stackColumns } from '../src/labelLayout.js'

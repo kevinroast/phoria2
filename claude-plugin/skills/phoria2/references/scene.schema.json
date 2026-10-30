@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://phoria2/schema.json",
+  "$id": "https://cdn.jsdelivr.net/npm/phoria2@1/schema/scene.schema.json",
   "title": "phoria2 scene description",
   "description": "A node as plain data: what create() builds and node.toJSON() writes - the node's constructor options plus its type. Handlers (onClick, onUpdate, tooltip ...) are behaviour, not data, and aren't part of a description.",
   "$ref": "#/$defs/node",

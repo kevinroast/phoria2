@@ -34,13 +34,12 @@ export { Mat4 } from './value/Mat4.js'
 export { Box3 } from './value/Box3.js'
 export { Ray } from './value/Ray.js'
 export { Color } from './value/Color.js'
-export { vec2, vec3, vec4, mat3, mat4, quat, RADIANS, EPSILON } from './math.js'
 
 // descriptions, picking, frames
 export { create } from './describe.js'
 export { registerType } from './registry.js'
 export { Raycaster } from './Raycaster.js'
-export { collect, NullRenderer, LIGHT_LIMITS } from './frame.js'
+export { NullRenderer, LIGHT_LIMITS } from './frame.js'
 export { PhoriaError } from './validate.js'
 
 /** @typedef {import('./View.js').ViewOptions} ViewOptions */

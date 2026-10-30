@@ -128,7 +128,7 @@ export class Node {
   onClick = null
   /** Draw this subtree only for cameras this returns true for - per frame, without changing the scene. @type {((camera: Camera) => boolean) | null} */
   showFrom = null
-  /** An HTML element shown over the canvas while this node is drawn (a chart's legend). @type {HTMLElement | null} */
+  /** @internal An HTML element shown over the canvas while this node is drawn (a chart's legend). @type {HTMLElement | null} */
   overlay = null
   /** @type {Clip | null} */
   #clip = null
@@ -343,8 +343,19 @@ export class Node {
     return found
   }
 
-  /** Per-frame behaviour. Returns a function that removes it. @param {UpdateHandler} fn @returns {() => void} */
-  onUpdate(fn) {
+  /**
+   * Per-frame behaviour: node.onUpdate((node, dt, t) => {}) adds a handler and returns a function
+   * that removes it. A node can have several, so it's called, not assigned like onClick.
+   * @returns {(fn: UpdateHandler) => () => void}
+   */
+  get onUpdate() { return (fn) => this.#addUpdate(fn) }
+  /** @param {unknown} _fn */
+  set onUpdate(_fn) {
+    fail(this.constructor.name, "call onUpdate rather than assigning it - node.onUpdate((node, dt, t) => {}) adds a handler (a node can have several)")
+  }
+
+  /** @param {UpdateHandler} fn @returns {() => void} */
+  #addUpdate(fn) {
     if (typeof fn !== 'function') fail(this.constructor.name, `onUpdate expects a function (node, dt, t) => {}, got ${describe(fn)}`)
     this.#handlers.push(fn)
     return () => {
@@ -477,7 +488,11 @@ export class Node {
     else this.worldMatrix.copy(this.matrix)
   }
 
-  /** @internal Update this node and its descendants from the parent's current world matrix. */
+  /**
+   * Bring the world matrices of this node and everything under it up to date now, from the parent's
+   * current world matrix - before reading worldPosition or bounds after moving things, without
+   * waiting for the next frame.
+   */
   updateWorldTree() {
     this.#updateSelf()
     for (const child of this.#children) child.updateWorldTree()
@@ -521,7 +536,7 @@ export class Node {
     return box
   }
 
-  /**
+  /** @internal
    * Does this camera draw this node (leaving its ancestors aside)? Visible, and not turned away by
    * showFrom. The one rule drawing, picking, framing and redraw-watching all use.
    * @param {Camera} camera

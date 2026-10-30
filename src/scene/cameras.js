@@ -95,12 +95,12 @@ export class Camera extends Node {
     return this.worldMatrix.clone().invert()
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     return { ...super.cloneOptions(), near: this.near, far: this.far, aspect: this.aspect, ...(this.target ? { target: this.target.toArray() } : {}) }
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     /** @type {Record<string, unknown>} */
     const json = {}
@@ -132,12 +132,12 @@ export class PerspectiveCamera extends Camera {
     return mat4.perspective(new Mat4(), this.fov * Math.PI / 180, this.aspect, this.near, this.far)
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     return { ...super.cloneOptions(), fov: this.fov }
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     return { ...super.jsonOptions(), ...(this.fov !== 50 ? { fov: this.fov } : {}) }
   }
@@ -162,12 +162,12 @@ export class OrthographicCamera extends Camera {
     return mat4.ortho(new Mat4(), -w, w, -h, h, this.near, this.far)
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     return { ...super.cloneOptions(), height: this.height }
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     return { ...super.jsonOptions(), ...(this.height !== 10 ? { height: this.height } : {}) }
   }

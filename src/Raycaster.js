@@ -95,7 +95,7 @@ export class Raycaster {
     return hits.filter((h) => h.distance >= this.near && h.distance <= this.far).sort((x, y) => x.distance - y.distance)
   }
 
-  /**
+  /** @internal
    * The surfaces among what a frame drew that the ray meets, nearest first - its triangles, instanced
    * or not, cut as they were drawn. For questions about the picture just drawn, such as whether a
    * label is hidden behind something: what was drawn is the answer, pickable or not.
@@ -119,7 +119,7 @@ export class Raycaster {
     return hits.filter((h) => h.distance >= this.near && h.distance <= this.far).sort((x, y) => x.distance - y.distance)
   }
 
-  /**
+  /** @internal
    * Where the ray meets one instance, point or segment of a drawable - the CPU half of GPU picking,
    * which finds what is under the pointer and leaves the exact point, face and uv to this.
    * @param {Node} node a Mesh, InstancedMesh, Points or Lines

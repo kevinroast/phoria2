@@ -250,7 +250,7 @@ export class Emitter extends Points {
     this.#upload()
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     // an emitter makes its own geometry, so neither form carries it
     const rest = super.cloneOptions()
@@ -259,7 +259,7 @@ export class Emitter extends Points {
       drag: this.drag, follow: this.follow, onParticle: this.onParticle, color: this.color }
   }
 
-  /** @returns {Record<string, unknown>} */
+  /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     const rest = super.jsonOptions()
     delete rest.geometry

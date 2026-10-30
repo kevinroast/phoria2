@@ -1,6 +1,6 @@
 // The examples in llms-full.txt that run without a page: what agents copy has to work.
 import { describe, expect, it } from 'vitest'
-import { Group, Lines, Mesh, curve, create, ellipse } from '../src/index.js'
+import { Group, Lines, Mesh, NullRenderer, PerspectiveCamera, Raycaster, Scene, box, curve, create, ellipse, registerType } from '../src/index.js'
 import { Timeline, follow, reveal, face } from '../src/motion/index.js'
 import { Emitter, Body } from '../src/particles/index.js'
 
@@ -47,5 +47,40 @@ describe('llms-full.txt examples', () => {
     })
     expect(crate.children.map((c) => c.constructor.name)).toEqual(['Mesh', 'Label'])
     expect(create(crate.toJSON()).children[0]).toBeInstanceOf(Mesh)
+  })
+
+  it('testing without a GPU: a NullRenderer counts frames, a Raycaster finds what is below', () => {
+    const scene = new Scene()
+    const floor = scene.add(new Mesh({ geometry: box({ width: 4, height: 0.2, depth: 4 }), material: { color: 'grey' } }))
+    let ticks = 0
+    floor.onUpdate(() => ticks++)
+    const renderer = new NullRenderer()
+    scene.update(0.016, 0.016)
+    renderer.render(scene, new PerspectiveCamera({ position: [0, 2, 8] }))
+    expect([ticks, renderer.frameCount]).toEqual([1, 1])
+    const ray = new Raycaster()
+    ray.ray.origin.set(0, 10, 0); ray.ray.direction.set(0, -1, 0)
+    const ground = ray.intersect(scene)[0]
+    expect(ground.node).toBe(floor)
+    expect(ground.point[1]).toBeCloseTo(0.1)
+    floor.position.set(0, 1, 0)
+    expect(floor.updateWorldTree()).toBeUndefined()
+    expect(floor.worldPosition[1]).toBe(1)
+  })
+
+  it('plain data: a node type of your own round-trips through create()', () => {
+    class Beacon extends Group {
+      static type = 'beacon'
+      static get OPTIONS() { return [...super.OPTIONS, 'blink'] }
+      constructor({ blink = 1, ...options } = {}) { super(options); this.blink = blink }
+      toJSON() { return { ...super.toJSON(), blink: this.blink } }
+    }
+    registerType(Beacon)
+    const beacon = create({ type: 'beacon', blink: 2, position: [0, 3, 0] })
+    expect(beacon).toBeInstanceOf(Beacon)
+    expect([beacon.blink, beacon.position[1]]).toEqual([2, 3])
+    const again = create(JSON.parse(JSON.stringify(beacon.toJSON())))
+    expect([again.constructor, again.blink]).toEqual([Beacon, 2])
+    expect(() => new Beacon({ blnk: 2 })).toThrow("did you mean 'blink'")
   })
 })

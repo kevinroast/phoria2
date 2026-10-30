@@ -127,7 +127,7 @@ export class Material {
     }
   }
 
-  /**
+  /** @internal
    * A Material from a Material (returned as is) or options.
    * @param {Material | MaterialOptions} input
    * @returns {Material}
@@ -179,7 +179,7 @@ export class Material {
   /** @param {MapInput | null} v */
   set emissiveMap(v) { this.setMap('emissiveMap', v) }
 
-  /**
+  /** @internal
    * @param {string} slot one of map, roughnessMap, metalnessMap, normalMap, aoMap, emissiveMap
    * @param {MapInput | null} value
    */
@@ -218,7 +218,7 @@ export class Material {
   /** @param {boolean} v */
   set transparent(v) { this.#transparent = !!v }
 
-  /**
+  /** @internal
    * Which shader features this material needs - renderers compile one program per distinct key.
    * @returns {string}
    */
@@ -250,7 +250,7 @@ export class Material {
     for (const fn of this.#onDispose) fn()
   }
 
-  /** For renderers. Returns an unsubscribe function. @param {() => void} fn */
+  /** @internal For renderers. Returns an unsubscribe function. @param {() => void} fn */
   onDispose(fn) {
     this.#onDispose.add(fn)
     return () => this.#onDispose.delete(fn)

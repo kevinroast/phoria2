@@ -24,7 +24,7 @@ export class Geometry {
   /** @type {Float32Array | null} */ colors = null
   /** @type {Uint16Array | Uint32Array | null} */ indices = null
 
-  /** Bumped by needsUpdate() so renderers know to re-upload. */
+  /** @internal Bumped by needsUpdate() so renderers know to re-upload. */
   version = 0
 
   /**
@@ -185,7 +185,7 @@ export class Geometry {
     for (const fn of this.#onDispose) fn()
   }
 
-  /** For renderers: called when dispose() is. Returns an unsubscribe function. @param {() => void} fn */
+  /** @internal For renderers: called when dispose() is. Returns an unsubscribe function. @param {() => void} fn */
   onDispose(fn) {
     this.#onDispose.add(fn)
     return () => this.#onDispose.delete(fn)

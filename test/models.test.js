@@ -3,8 +3,9 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import {
   Box3, DirectionalLight, Group, InstancedMesh, Mesh, OrthographicCamera, PerspectiveCamera, PointLight, Scene, SpotLight,
-  Texture, box, collect, plane,
+  Texture, box, create, plane,
 } from '../src/index.js'
+import { collect } from '../src/frame.js'
 import { parseHDR } from '../src/hdr.js'
 import { irradianceSH } from '../src/irradiance.js'
 import { fitShadow } from '../src/shadow.js'
@@ -314,5 +315,18 @@ describe('scene lights from models', () => {
     expect([/** @type {PointLight} */ (point).intensity, /** @type {PointLight} */ (point).range]).toEqual([10, 5])
     expect(sun).toBeInstanceOf(DirectionalLight)
     expect(new OrthographicCamera()).toBeTruthy()
+  })
+})
+
+describe('a loaded model as plain data', () => {
+  it('describes itself as a group of its parts, which create() builds back without phoria2/gltf', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const model = await parseGLTF(sampleGLTF(), { baseUrl: 'https://example.com/models/', waitForTextures: false })
+    const again = create(JSON.parse(JSON.stringify(model.toJSON())))
+    expect(again.constructor).toBe(Group)
+    const tri = /** @type {Mesh} */ (again.find('Triangle'))
+    expect(Array.from(tri.geometry.positions)).toEqual([0, 0, 0, 1, 0, 0, 0, 1, 0])
+    expect(tri.position.toArray()).toEqual([5, 0, 0])
+    warn.mockRestore()
   })
 })

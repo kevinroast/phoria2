@@ -25,7 +25,7 @@ export class Color extends Float32Array {
     this.set(input)
   }
 
-  /** @param {ColorInput} input @param {string} [owner] for error messages @returns {Color} */
+  /** @internal @param {ColorInput} input @param {string} [owner] for error messages @returns {Color} */
   static fromInput(input, owner = 'Color') {
     return new Color().set(input, owner)
   }
