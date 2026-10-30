@@ -23,7 +23,7 @@ export const DEMOS = [
   { name: 'materials', title: 'roughness and metalness under a movable light and the studio environment' },
   { name: 'lights', title: 'lights in two moods - sunset and neon - and a swinging lamp that carries its spot light' },
   { name: 'textures', title: 'photo textures with normal and ARM maps, a live canvas screen, nearest and linear filtering' },
-  { name: 'colour', title: 'colour, exactly - HSL cylinder, RGB cube, light adding and filters multiplying, harmony swatches', hint: '' },
+  { name: 'colour', title: 'colour - HSL cylinder, RGB cube, light adding and filters multiplying, harmony swatches', hint: '' },
   { name: 'particles', title: 'particle emitters in three set pieces - a fountain, a brazier and falling snow' },
   { name: 'harbour', title: 'a harbour on a foggy night - lamps and a lighthouse beam casting shadows through mist' },
   { name: 'pumpkin', title: "a jack-o'-lantern - candle inside casting shadows, light escaping through the carved face" },
@@ -40,7 +40,6 @@ export const DEMOS = [
   { name: 'galaxy', title: 'a spiral galaxy - 200,000 additive stars, old and young, round a glowing core' },
   { name: 'fireworks', title: 'fireworks over a city across the water - rockets with physics, four burst shapes, reflections' },
   { name: 'paint', title: 'a paint cannon - click the wall to aim; drops splat and drip into its canvas textures', orbit: false },
-  //{ name: 'space', title: 'Cobra Mk IIIs over a gas giant as a comet flies by - and an Elite mode in green vector lines', orbit: false },
   // tests of the API on bigger tasks go here with hidden: true - reachable by name
   // (demo.html?name=...), not listed in the gallery
 ]

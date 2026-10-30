@@ -2,7 +2,7 @@
 // it run a few seconds, and save a small picture of it to demos/thumbs/<name>.webp for the
 // gallery's cards. The picture is the demo's view.toImage() - the canvas with its labels painted in -
 // except for demos made of several views, which are captured from the page with its panels hidden.
-// Run it after changing how a demo looks; `npm run thumbs -- space galaxy` redoes only those. Set
+// Run it after changing how a demo looks; `npm run thumbs -- galaxy fireworks` redoes only those. Set
 // CHROME to the browser's path if it isn't found.
 import { createServer } from 'vite'
 import { spawn } from 'node:child_process'
@@ -13,7 +13,7 @@ import { DEMOS } from '../demos/registry.js'
 
 const WIDTH = 960, HEIGHT = 600, SCALE = 0.5
 // seconds to let a demo run first - longer for those that load models or build up to something
-const WAIT = { viewer: 7, pumpkin: 7, harbour: 5, fireworks: 6, paint: 7, particles: 5, space: 4.5, textures: 5, lights: 5, artemis: 4, cpu: 4, volcano: 5, engine: 4.5, skull: 5 }
+const WAIT = { viewer: 7, pumpkin: 7, harbour: 5, fireworks: 6, paint: 7, particles: 5, textures: 5, lights: 5, artemis: 4, cpu: 4, volcano: 5, engine: 4.5, skull: 5 }
 // several views on one page: captured from the page, not one view's toImage() - for cells, the
 // whole poster: both cells, their titles and the paper behind them
 const PAGE = ['dashboard', 'chartlab', 'cells', 'colour']
