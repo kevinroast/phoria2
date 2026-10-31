@@ -42,8 +42,18 @@ if (!demo || !load) {
   showFps(/** @type {HTMLElement} */ (document.getElementById('fps')))
 
   const gui = new Panel({ title: 'Controls' })
-  const { default: run } = await load()
-  const view = await run({ canvas, gui, info })
+  // a demo that takes a while to arrive or set up - a big library such as Rapier's WebAssembly, a
+  // model, a video - says it's loading; one that is quick never shows it
+  const loading = Object.assign(document.createElement('div'), { className: 'hud hud-loading', textContent: 'Loading…' })
+  const waiting = setTimeout(() => document.body.append(loading), 500)
+  let view
+  try {
+    const { default: run } = await load()
+    view = await run({ canvas, gui, info })
+  } finally {
+    clearTimeout(waiting)
+    loading.remove()
+  }
   if (import.meta.env.DEV && view) Object.assign(window, { view })
   // demos without controls don't need an empty panel
   if (gui.isEmpty) gui.destroy()

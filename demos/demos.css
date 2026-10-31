@@ -145,6 +145,24 @@ body.demo #canvas {
   display: none;
 }
 
+/* while a slow demo arrives: a pill in the middle of the page, its text breathing */
+.hud-loading {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  animation: hud-loading 1.4s ease-in-out infinite;
+}
+
+@keyframes hud-loading {
+  50% {
+    color: var(--text-dim);
+  }
+}
+
 /* ---- Floating control panel ---- */
 .panel {
   position: fixed;
@@ -2206,7 +2224,7 @@ button.demo-legend-item {
   text-transform: capitalize;
 }
 
-/* physics: a row of controls top right - ball or bomb, sleeping bodies, reset - and the
+/* physics: a row of controls top right - ball or bomb, and reset - and the
    hardest hits called out in red, fading after a moment */
 .phx-bar {
   top: 16px;
@@ -2218,10 +2236,6 @@ button.demo-legend-item {
   gap: 4px;
   padding: 8px;
   max-width: calc(100vw - 32px);
-}
-
-.phx-gap {
-  width: 8px;
 }
 
 .phx-bar button {
