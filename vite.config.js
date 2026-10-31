@@ -55,12 +55,27 @@ function agentDocs(emit) {
   }
 }
 
+/**
+ * The tutorial's steps run for what they do and export nothing - and the package says its modules
+ * have no side effects, so a build would empty them. Keep them whole.
+ * @returns {import('vite').Plugin}
+ */
+function tutorialSteps() {
+  return {
+    name: 'phoria2-tutorial-steps',
+    transform(code, id) {
+      if (/[\\/]demos[\\/]tutorial[\\/]steps[\\/][^?]*\.js$/.test(id)) return { code, map: null, moduleSideEffects: true }
+      return null
+    },
+  }
+}
+
 // Default build is the library. `--mode demos` builds the demo gallery as a static site instead.
 // In dev, demos import 'phoria2' and its sub-paths straight from src/.
 export default defineConfig(({ mode }) => ({
   // relative base so the demo site works from any folder on a static host
   base: mode === 'demos' ? './' : '/',
-  plugins: [minifyGlsl(), agentDocs(mode === 'demos')],
+  plugins: [minifyGlsl(), agentDocs(mode === 'demos'), tutorialSteps()],
   resolve: {
     alias: [
       { find: /^phoria2$/, replacement: resolve(root, ENTRIES.phoria2) },
@@ -78,6 +93,8 @@ export default defineConfig(({ mode }) => ({
           input: {
             index: resolve(root, 'index.html'),
             demo: resolve(root, 'demo.html'),
+            tutorial: resolve(root, 'tutorial.html'),
+            'tutorial-run': resolve(root, 'tutorial-run.html'),
           },
         },
       }

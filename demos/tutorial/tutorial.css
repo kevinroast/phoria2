@@ -1,0 +1,224 @@
+/* The tutorial page: prose with each step's code beside it running */
+.tutorial-main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 24px 48px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.tutorial-main .back {
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.tutorial-main h1 {
+  margin: 12px 0 4px;
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--text);
+}
+
+.tutorial-main h2 {
+  margin: 48px 0 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 24px;
+  color: var(--text);
+}
+
+.tutorial-main h3 {
+  margin: 32px 0 6px;
+  font-size: 17px;
+  color: var(--accent);
+}
+
+.tutorial-main p,
+.tutorial-main li {
+  max-width: 760px;
+  font-size: 15px;
+}
+
+.tutorial-main b,
+.tutorial-main strong {
+  color: var(--text);
+}
+
+.tutorial-main a {
+  color: var(--accent);
+}
+
+.tutorial-main :not(pre) > code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  font: 0.88em ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: var(--text);
+}
+
+.tutorial-lead {
+  font-size: 17px !important;
+  color: var(--text);
+}
+
+.tutorial-contents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tutorial-contents a {
+  display: inline-block;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+/* a step: its code, and beside it the step running */
+.step {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 12px;
+  margin: 14px 0 8px;
+}
+
+.step-code {
+  min-width: 0;
+}
+
+.step-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.step-result iframe {
+  flex: 1;
+  width: 100%;
+  min-height: 340px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #1c1c22;
+}
+
+.step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.step-actions button {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.step-actions button:hover {
+  border-color: var(--accent-dim);
+}
+
+.code-title {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.code-title + .code {
+  margin-bottom: 10px;
+}
+
+.new-key {
+  padding-left: 8px;
+  border-left: 3px solid #e2b04a;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: none;
+}
+
+.code {
+  margin: 0;
+  padding: 12px 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #101013;
+  font: 12.5px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: #d6d6dc;
+}
+
+.code .line {
+  display: block;
+  padding: 0 14px 0 30px;
+  text-indent: -16px;
+  border-left: 3px solid transparent;
+  /* a line too long for the column wraps, indented under itself */
+  white-space: pre-wrap;
+}
+
+.code .line.new {
+  border-left-color: #e2b04a;
+  background: rgba(226, 176, 74, 0.09);
+}
+
+.t-comment { color: #7d8590; font-style: italic; }
+.t-string { color: #a5d6a7; }
+.t-number { color: #f2b880; }
+.t-keyword { color: #8ab4f8; }
+
+.whole-page {
+  margin: 14px 0;
+}
+
+.tutorial-aside {
+  max-width: 760px;
+  margin: 18px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-dim);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+.tutorial-aside p {
+  margin: 6px 0;
+}
+
+.tutorial-aside pre {
+  margin: 8px 0;
+}
+
+@media (max-width: 860px) {
+  .step {
+    grid-template-columns: 1fr;
+  }
+  .step-result iframe {
+    min-height: 300px;
+  }
+}
+
+/* a step whose result needs the room - a dashboard of tiles: code above, the result full width below */
+.step.wide {
+  grid-template-columns: 1fr;
+}
+
+.step.wide .step-result iframe {
+  min-height: 520px;
+}

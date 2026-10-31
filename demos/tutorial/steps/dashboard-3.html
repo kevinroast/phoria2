@@ -1,0 +1,13 @@
+<style>
+  body { margin: 0; background: #111116; color: #ddd; font: 13px system-ui, sans-serif }
+  .tiles { display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr; gap: 8px; height: 100vh; padding: 8px; box-sizing: border-box }
+  .tile { position: relative; border-radius: 10px; overflow: hidden; background: #1c1c22 }
+  .tile:first-child { grid-row: span 2 }
+  .tile h2 { position: absolute; top: 8px; left: 12px; margin: 0; font-size: 13px; font-weight: 600 }
+  .tile canvas { display: block; width: 100%; height: 100% }
+</style>
+<div class="tiles">
+  <div class="tile"><h2>Sales by region</h2><canvas id="bars"></canvas></div>
+  <div class="tile"><h2>Trend</h2><canvas id="trend"></canvas></div>
+  <div class="tile"><h2>Total</h2><canvas id="total"></canvas></div>
+</div>

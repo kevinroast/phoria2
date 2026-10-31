@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Getting started with phoria2</title>
+    <meta name="description" content="Build a first 3D scene and a live 3D chart dashboard with phoria2, step by step, with every step running beside its code." />
+    <link rel="icon" type="image/png" href="flower.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Saira:wght@100..900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/demos/demos.css" />
+    <link rel="stylesheet" href="/demos/tutorial/tutorial.css" />
+  </head>
+  <body class="gallery tutorial">
+    <main class="tutorial-main">
+      <a class="back" href="./">&lsaquo; Phoria demos</a>
+      <header>
+        <h1>Getting started</h1>
+        <p class="tutorial-lead">Two short walk-throughs: a first 3D scene, then a live dashboard of 3D charts.
+          Every step is a complete program, running beside its code - copy any step as one HTML file,
+          or open it in CodePen to change it. About fifteen minutes, start to finish.</p>
+        <nav class="tutorial-contents" aria-label="Contents">
+          <a href="#setup">Setting up</a>
+          <a href="#first-scene">Part 1: a first scene</a>
+          <a href="#dashboard">Part 2: a chart dashboard</a>
+          <a href="#next">Where next</a>
+        </nav>
+      </header>
+
+      <section id="setup">
+        <h2>Setting up</h2>
+        <p>Nothing to install: one HTML file will do. An <i>import map</i> tells the browser where
+          <code>'phoria2'</code> comes from - here a CDN, pinned to version <span class="version"></span> - and
+          your code imports from it as it would from npm. This is the first step below, as the whole file:</p>
+        <figure class="whole-page" data-step="first-scene-1"></figure>
+        <p>Save it as <code>index.html</code> and open it in a browser. Every step's <b>Copy as one page</b>
+          button gives you its file like this, ready to run.</p>
+        <aside class="tutorial-aside">
+          <b>Using npm and a bundler instead?</b> Start a project and add phoria2:
+          <pre class="code"><code>npm create vite@latest my-scene -- --template vanilla
+cd my-scene
+npm install phoria2
+npm run dev</code></pre>
+          Put a <code>&lt;canvas id="scene"&gt;</code> in <code>index.html</code>, and each step's
+          JavaScript in <code>main.js</code> - the imports are the same, and no import map is needed.
+          TypeScript types come with the package.
+        </aside>
+      </section>
+
+      <section id="first-scene">
+        <h2>Part 1: a first scene</h2>
+
+        <h3>1. A box on the page</h3>
+        <p>A <code>View</code> draws into a canvas - give it the element or a CSS selector. What it
+          draws is its <code>scene</code>. A <code>Mesh</code> is a shape (<code>geometry</code>) with a
+          look (<code>material</code>), and a material is a plain object of options.</p>
+        <figure class="step" data-step="first-scene-1"></figure>
+        <p>There's no camera or light in the code, and still a lit box in view: with no camera given, the
+          View looks at the scene from the front, to the right and a little above, and fits it in; with no
+          lights, it lights the scene itself and says so in the console. The View also draws only when
+          something changes - this still picture costs nothing after its first frame.</p>
+
+        <h3>2. Light and motion</h3>
+        <p><code>orbit: true</code> lets you turn the view: drag to orbit, right-drag to pan, scroll to
+          zoom. A <code>DirectionalLight</code> shines like the sun, all one way - <code>direction</code>
+          is the way its light travels, here down and away. <code>scene.add()</code> hands back what it
+          added, so you can keep hold of it.</p>
+        <figure class="step" data-step="first-scene-2"></figure>
+        <p><code>view.start()</code> calls your function every frame, with the seconds since the last
+          (<code>dt</code>). Multiplying by it keeps the speed the same on any screen - here 0.6 radians a
+          second.</p>
+
+        <h3>3. Materials, a floor and shadows</h3>
+        <p>Positions are in metres, with Y up. <code>roughness</code> runs from a mirror (0) to matte
+          (1), and <code>metalness: 1</code> makes a metal, which reflects its surroundings in its own
+          colour - <code>environment: 'studio'</code> gives it a built-in photo studio to reflect (an
+          <code>.hdr</code> file works too). For shadows, the light casts them, the shapes cast them and
+          the floor catches them.</p>
+        <figure class="step" data-step="first-scene-3"></figure>
+
+        <h3>4. Labels</h3>
+        <p>A <code>Label</code> is an HTML element pinned to a point in 3D, so it's sharp at any size,
+          selectable, and styled with CSS - this step brings a little of each, in its HTML. Added to the
+          cube rather than the scene, a label goes wherever the cube goes; its <code>position</code> is
+          measured from the cube's middle.</p>
+        <figure class="step" data-step="first-scene-4"></figure>
+
+        <h3>5. Hover and click</h3>
+        <p><code>highlight</code> tints whatever is under the pointer, and <code>tooltip</code> gets a
+          <i>hit</i> - what's under the pointer - and returns what to show. <code>view.on('click')</code>
+          gets a hit too, or <code>null</code> for empty space. The floor is set
+          <code>pickable: false</code>, so the pointer passes through it.</p>
+        <figure class="step" data-step="first-scene-5"></figure>
+        <aside class="tutorial-aside">
+          <b>Make a mistake on purpose.</b> Change <code>color: 'tomato'</code> to
+          <code>colour: 'tomato'</code> and run it: the error says <code>Material: use 'color'</code>.
+          Every option is checked like this, and the error names the fix - for you, or for a coding agent
+          writing the code.
+        </aside>
+      </section>
+
+      <section id="dashboard">
+        <h2>Part 2: a chart dashboard</h2>
+
+        <h3>1. A bar chart from rows</h3>
+        <p><code>chart()</code>, from <code>phoria2/charts</code>, turns rows of data into a chart:
+          axes, ticks, grid, legend and tooltips included. Name the fields to use - <code>x</code> and
+          <code>z</code> for the rows of bars, <code>y</code> for their height, <code>color</code> for
+          their colour - and <code>tooltip: true</code> shows every field on hover.
+          <code>view.frame()</code> moves the camera to fit the chart.</p>
+        <figure class="step" data-step="dashboard-1"></figure>
+        <p>A chart is an ordinary node in the scene: orbit round it, hover the bars, and click the
+          legend's swatches to hide and show a region.</p>
+
+        <h3>2. Live data</h3>
+        <p><code>chart.update(rows)</code> moves the bars to new figures. A field can be given as an
+          object, with a <code>title</code> and a <code>format</code> for the axis and tooltips - here
+          the sales are thousands of pounds.</p>
+        <figure class="step" data-step="dashboard-2"></figure>
+        <p>The View draws while the bars move, then stops until the next update - a dashboard that's
+          left open costs almost nothing between refreshes.</p>
+
+        <h3>3. A dashboard of views</h3>
+        <p>Each tile is its own <code>View</code> on its own canvas, laid out with ordinary CSS grid. A
+          page can hold any number of them: browsers allow only around 16 WebGL contexts, so phoria2
+          gives the first four their own and draws the rest through one shared context, each still its
+          own canvas. <code>framing: 'both'</code> keeps the whole chart in its tile, whatever shape the
+          tile becomes.</p>
+        <figure class="step wide" data-step="dashboard-3"></figure>
+        <p>The same rows make all three charts - only the <code>mark</code> changes: bars, lines, and
+          areas stacked to a total. A small <code>tile()</code> function keeps the repetition out.</p>
+
+        <h3>4. Linked views</h3>
+        <p>A click on a bar gives a hit whose <code>datum</code> is the row behind that bar.
+          <code>chart.filter()</code> shows only the rows a function keeps, so clicking a bar narrows
+          the other two tiles to its region; clicking empty space passes <code>null</code>, and they
+          show every region again. The filter stays as the data updates.</p>
+        <figure class="step wide" data-step="dashboard-4"></figure>
+      </section>
+
+      <section id="next">
+        <h2>Where next</h2>
+        <ul class="next-links">
+          <li><a href="./"><b>The demos</b></a> - forty of them, from network maps and floor plans to
+            product viewers, each with its source a click away.</li>
+          <li><a href="llms-full.txt"><b>The reference</b></a> - the whole API on one page: every
+            option, with examples. Written for coding agents, and just as useful to read.</li>
+          <li><a href="https://github.com/kevinroast/phoria2"><b>GitHub</b></a> - the code, a React
+            example, and issues for questions and ideas.</li>
+        </ul>
+        <aside class="tutorial-aside">
+          <b>Using a coding agent?</b> Point it at <a href="llms-full.txt">llms-full.txt</a>, or in
+          Claude Code install the phoria2 plugin, and ask for the scene you want.
+        </aside>
+      </section>
+
+      <div class="credits">
+        <p>Copyright &copy; Kevin Roast 2013-2026 &middot; <a href="https://github.com/kevinroast/phoria2">GitHub</a> &middot;
+          <a href="https://www.npmjs.com/package/phoria2">npm</a></p>
+      </div>
+    </main>
+    <script type="module" src="/demos/tutorial/page.js"></script>
+  </body>
+</html>
