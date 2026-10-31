@@ -1,15 +1,16 @@
 import RAPIER from '@dimforge/rapier3d-compat'
-import { Box3, DirectionalLight, Geometry, InstancedMesh, Label, Mesh, Raycaster, Texture, View, icosphere, plane } from 'phoria2'
+import { Box3, DirectionalLight, Geometry, InstancedMesh, Label, Mesh, PointLight, Raycaster, Texture, View, icosphere, plane } from 'phoria2'
 import { random } from './kit.js'
 
 // A tower of 477 bricks, knocked down with Rapier (rapier.rs) - a physics engine written in Rust,
 // compiled to WebAssembly. Rapier owns the motion: the bodies, their collisions and the forces between
 // them. phoria2 owns the picture: every brick is one instance of one InstancedMesh, so the tower is a
 // single draw call. Each frame Rapier steps and the bridge copies its bodies' positions and turns into
-// the instances. Then phoria2's own features go on top: a click fires a ball along the ray under the
-// pointer, the hardest hits get callouts at the point of impact, and hovering a brick says what Rapier
-// knows about it. Rapier sees each brick as a plain box; phoria2 draws it with its frog - the hollow in
-// its top - and a sandy, pitted face painted in code.
+// the instances. Then phoria2's own features go on top: a click fires a ball at what is under the
+// pointer - or drops a bomb on it from above, which bursts where it lands - the hardest hits and the
+// blasts get callouts at the point of impact, and hovering a brick says what Rapier knows about it.
+// Rapier sees each brick as a plain box; phoria2 draws it with its frog - the hollow in its top - and
+// a sandy, pitted face painted in code.
 
 const RINGS = 26, AROUND = 18 // the tower's courses, and bricks in each
 const RADIUS = 2.6
@@ -19,10 +20,12 @@ const [LONG, HIGH, DEEP] = [0.82, 0.26, 0.4]
 const BALL = 0.5 // a ball's radius
 const SPEED = 34 // and how fast it leaves the camera, in m/s
 const MAX_BALLS = 12 // the oldest ball goes when another is fired
+const BOMB = 0.3, MAX_BOMBS = 4 // a bomb's radius, and how many can be in the air
+const DROP = 11 // the height every bomb falls from, in m - well above the tower's top
+const BLAST = { radius: 3.4, kick: 30 } // how far a blast reaches, and the speed it gives a body at its centre, in m/s
 const STEP = 1 / 60 // Rapier's fixed timestep; the frame's time is spent in steps of this
 const HIT = 400 // newtons: hits harder than this get a callout
 const BRICK = ['#a64b36', '#9c4432', '#b0553c', '#94402f', '#a95a42', '#9f4a37', '#8e3d2d']
-const ASLEEP = '#5b7fa6'
 
 /**
  * A brick with its frog: a box whose top is a rim round a hollow, the hollow's sides sloping in to its
@@ -161,17 +164,28 @@ export default async function run({ canvas, info }) {
   // ---- what phoria2 draws: one InstancedMesh of bricks, one of balls
   const bricks = scene.add(new InstancedMesh({ geometry: brickGeometry(), count: layout.length,
     material: { ...brickSurface(), roughness: 0.9 }, castShadow: true, receiveShadow: true }))
+  // each brick's colour, set once - the bridge moves them, and never needs to recolour
+  colours.forEach((colour, i) => bricks.setColor(i, colour))
   const balls = scene.add(new InstancedMesh({ geometry: icosphere({ radius: 1, detail: 3 }), count: MAX_BALLS,
     material: { color: '#3b3f46', metalness: 0.9, roughness: 0.25 }, castShadow: true, pickable: false }))
+  // bombs: smaller, glowing at the seams
+  const bombs = scene.add(new InstancedMesh({ geometry: icosphere({ radius: 1, detail: 3 }), count: MAX_BOMBS,
+    material: { color: '#26221f', emissive: '#c2410c', roughness: 0.4 }, castShadow: true, pickable: false }))
+  /** What each kind of shot is drawn as, and how big. */
+  const KINDS = { ball: { mesh: balls, size: BALL, most: MAX_BALLS }, bomb: { mesh: bombs, size: BOMB, most: MAX_BOMBS } }
 
   // ---- the physics world: rebuilt from the layout on reset
   /** @type {RAPIER.World} */
   let world
   /** @type {RAPIER.RigidBody[]} */
   let bodies = []
-  /** The balls in flight, oldest first, each with the instance it is drawn as. @type {{ body: RAPIER.RigidBody, slot: number, called: boolean }[]} */
+  /**
+   * The shots in flight, oldest first, each with the instance it is drawn as.
+   * @typedef {{ kind: keyof typeof KINDS, body: RAPIER.RigidBody, slot: number, called: boolean, born: number }} Shot
+   * @type {Shot[]}
+   */
   let flying = []
-  /** Ball colliders by handle, for telling which body in a contact is the ball. @type {Map<number, typeof flying[number]>} */
+  /** Shot colliders by handle, for telling which body in a contact is the shot. @type {Map<number, Shot>} */
   let ballOf = new Map()
   const events = new RAPIER.EventQueue(true)
 
@@ -191,69 +205,86 @@ export default async function run({ canvas, info }) {
     flying = []
     ballOf = new Map()
     for (let i = 0; i < MAX_BALLS; i++) balls.setInstance(i, { scale: 0 })
+    for (let i = 0; i < MAX_BOMBS; i++) bombs.setInstance(i, { scale: 0 })
     for (const c of callouts) c.label.visible = false
+    blast.age = Infinity
     sync()
   }
 
   // ---- the bridge: Rapier's bodies into phoria2's instances, once a frame after stepping. Rapier
-  // gives a translation { x, y, z } and a rotation { x, y, z, w }; setInstance takes them as they are.
-  // A brick's colour changes only when it falls asleep or wakes with the tint on, so it's set then
-  /** The colour each brick is showing. @type {string[]} */
-  let showing = []
+  // gives a translation { x, y, z } and a rotation { x, y, z, w }; setInstance takes them as they are
   const sync = () => {
-    for (const [i, body] of bodies.entries()) {
-      bricks.setInstance(i, { position: body.translation(), quaternion: body.rotation() })
-      const colour = showSleeping && body.isSleeping() ? ASLEEP : colours[i]
-      if (showing[i] !== colour) bricks.setColor(i, showing[i] = colour)
-    }
-    for (const ball of [...flying]) {
-      const t = ball.body.translation()
-      // a ball that got away - past the debris, or over the ground's edge - goes
-      if (Math.hypot(t.x, t.z) > 20 || t.y < -2) drop(ball)
-      else balls.setInstance(ball.slot, { position: t, quaternion: ball.body.rotation(), scale: BALL })
+    for (const [i, body] of bodies.entries()) bricks.setInstance(i, { position: body.translation(), quaternion: body.rotation() })
+    for (const shot of [...flying]) {
+      const t = shot.body.translation(), { mesh, size } = KINDS[shot.kind]
+      // a shot that got away - past the debris, or over the ground's edge - goes
+      if (Math.hypot(t.x, t.z) > 20 || t.y < -2) drop(shot)
+      // a bomb swells into being over a fifth of a second, rather than popping in mid-air
+      else mesh.setInstance(shot.slot, { position: t, quaternion: shot.body.rotation(),
+        scale: shot.kind === 'bomb' ? size * Math.min(1, (performance.now() - shot.born) / 200) : size })
     }
   }
-  /** Take a ball out of the world and the picture: scaled to 0, its instance is hidden until reused. @param {typeof flying[number]} ball */
-  const drop = (ball) => {
-    flying.splice(flying.indexOf(ball), 1)
-    for (const [handle, b] of ballOf) if (b === ball) ballOf.delete(handle)
-    world.removeRigidBody(ball.body)
-    balls.setInstance(ball.slot, { scale: 0 })
+  /** Take a shot out of the world and the picture: scaled to 0, its instance is hidden until reused. @param {Shot} shot */
+  const drop = (shot) => {
+    flying.splice(flying.indexOf(shot), 1)
+    for (const [handle, s] of ballOf) if (s === shot) ballOf.delete(handle)
+    world.removeRigidBody(shot.body)
+    KINDS[shot.kind].mesh.setInstance(shot.slot, { scale: 0 })
   }
 
-  // ---- firing: a ball launched from just below the camera - so it rises into view, rather than
-  // filling the screen for a frame - and aimed to land on what is under the pointer: the first brick
+  // ---- firing: a ball launched from just below the camera, so it rises into view rather than
+  // filling the screen for a frame, and aimed to land on what is under the pointer: the first brick
   // along the ray, or else the ground. Its speed sets the time of flight, and the launch allows for
-  // the drop on the way, so it comes down on the spot
+  // the drop on the way, so it comes down on the spot. A bomb drops on the same spot from above
   let fired = 0
+  /** What a click fires. @type {keyof typeof KINDS} */
+  let mode = 'ball'
   const aim = new Raycaster()
-  /** @param {import('phoria2').Ray} ray */
-  const fire = (ray) => {
+  /** @param {import('phoria2').Ray} ray @param {keyof typeof KINDS} [kind] */
+  const fire = (ray, kind = mode) => {
     aim.ray.origin.copy(ray.origin)
     aim.ray.direction.copy(ray.direction)
-    const t = aim.intersect(bricks)[0]?.distance ?? ray.intersectPlane([0, 1, 0], [0, 0, 0]) ?? 40
+    const hit = aim.intersect(bricks)[0]
+    const t = hit?.distance ?? ray.intersectPlane([0, 1, 0], [0, 0, 0]) ?? 40
     const goal = ray.at(Math.min(t, 60))
-    const forward = camera.target.clone().sub(camera.position).normalize()
-    const right = forward.clone().cross([0, 1, 0]).normalize(), up = right.clone().cross(forward)
-    // out of sight below the view for its first frame, and above the ground however low the camera is
-    const from = camera.position.clone().add(forward.multiplyScalar(4)).sub(up.multiplyScalar(2.8))
-    from[1] = Math.max(from[1], BALL + 0.1)
-    const way = goal.clone().sub(from), time = way.len() / SPEED
-    const v = way.multiplyScalar(1 / time).add([0, 4.905 * time, 0])
+    let from, v
+    if (kind === 'bomb') {
+      // a bomb appears high above the spot - at the same height every time - and falls from rest,
+      // gathering speed, straight down. Clicked on the side of something rather than its top, it
+      // hangs just clear of it, back towards the camera, to fall down the outside to its foot
+      if (hit && !(hit.normal && hit.normal[1] > 0.7)) {
+        const back = Math.hypot(ray.direction[0], ray.direction[2]) || 1
+        goal.sub([ray.direction[0] / back * (BOMB + 0.15), 0, ray.direction[2] / back * (BOMB + 0.15)])
+      }
+      from = goal.clone().set(goal[0], DROP, goal[2])
+      v = [0, 0, 0]
+    } else {
+      const forward = camera.target.clone().sub(camera.position).normalize()
+      const right = forward.clone().cross([0, 1, 0]).normalize(), up = right.clone().cross(forward)
+      // out of sight below the view for its first frame, and above the ground however low the camera is
+      from = camera.position.clone().add(forward.multiplyScalar(4)).sub(up.multiplyScalar(2.8))
+      from[1] = Math.max(from[1], BALL + 0.1)
+      const way = goal.clone().sub(from), time = way.len() / SPEED
+      v = way.multiplyScalar(1 / time).add([0, 4.905 * time, 0])
+    }
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(from[0], from[1], from[2])
       .setLinvel(v[0], v[1], v[2]).setCcdEnabled(true))
-    // iron, twice a brick's density - so it knocks out what it hits rather than shoving the whole
-    // tower - and it reports the forces of its contacts
-    const collider = world.createCollider(RAPIER.ColliderDesc.ball(BALL).setDensity(8).setFriction(0.5).setRestitution(0.2)
-      .setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS).setContactForceEventThreshold(HIT), body)
-    if (flying.length === MAX_BALLS) drop(flying[0])
-    // the slot the oldest ball in play isn't using
-    const used = new Set(flying.map((b) => b.slot))
-    let slot = fired++ % MAX_BALLS
-    while (used.has(slot)) slot = (slot + 1) % MAX_BALLS
-    const ball = { body, slot, called: false }
-    flying.push(ball)
-    ballOf.set(collider.handle, ball)
+    // a ball is iron, twice a brick's density - so it knocks out what it hits rather than shoving the
+    // whole tower - and it reports the forces of its contacts; a bomb reports any touch at all, and
+    // goes off at the first
+    const collider = world.createCollider(kind === 'ball'
+      ? RAPIER.ColliderDesc.ball(BALL).setDensity(8).setFriction(0.5).setRestitution(0.2).setContactForceEventThreshold(HIT)
+      : RAPIER.ColliderDesc.ball(BOMB).setDensity(3).setContactForceEventThreshold(0), body)
+    collider.setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS)
+    const { most } = KINDS[kind], same = flying.filter((s) => s.kind === kind)
+    if (same.length === most) drop(same[0])
+    // the slot the oldest shot of its kind isn't using
+    const used = new Set(flying.filter((s) => s.kind === kind).map((s) => s.slot))
+    let slot = fired++ % most
+    while (used.has(slot)) slot = (slot + 1) % most
+    const shot = { kind, body, slot, called: false, born: performance.now() }
+    flying.push(shot)
+    ballOf.set(collider.handle, shot)
   }
   view.on('click', (_hit, event) => { if (event) fire(view.rayAt(/** @type {MouseEvent} */ (event))) })
 
@@ -264,34 +295,89 @@ export default async function run({ canvas, info }) {
     age: 0,
   }))
   let nextCallout = 0
-  /** @param {number} newtons @param {[number, number, number]} at */
-  const callout = (newtons, at) => {
+  /** @param {string} text @param {[number, number, number]} at */
+  const callout = (text, at) => {
     const c = callouts[nextCallout++ % callouts.length]
-    c.label.text = newtons >= 1000 ? `${(newtons / 1000).toFixed(1)} kN` : `${Math.round(newtons)} N`
+    c.label.text = text
     c.label.position.set(...at)
     c.label.className = 'phx-hit'
     c.label.visible = true
     c.age = 0
   }
   const hits = () => {
+    /** Bombs that touched something this step - they go off once the events are read. @type {Shot[]} */
+    const bursting = []
     events.drainContactForceEvents((e) => {
-      const ball = ballOf.get(e.collider1()) ?? ballOf.get(e.collider2())
-      if (!ball || ball.called) return
-      ball.called = true
+      const shot = ballOf.get(e.collider1()) ?? ballOf.get(e.collider2())
+      if (!shot || shot.called) return
+      shot.called = true
+      if (shot.kind === 'bomb') {
+        bursting.push(shot)
+        return
+      }
       // Rapier has no rolling resistance, so once it has hit something the ball is slowed, to come to
       // rest among the debris rather than roll away for ever
-      ball.body.setLinearDamping(1.2)
-      ball.body.setAngularDamping(1.2)
+      shot.body.setLinearDamping(1.2)
+      shot.body.setAngularDamping(1.2)
       // the point of contact, from the pair's contact manifold - or the ball, when Rapier has none
-      const t = ball.body.translation()
+      const t = shot.body.translation()
       /** @type {[number, number, number]} */
       let at = [t.x, t.y, t.z]
       world.contactPair(world.getCollider(e.collider1()), world.getCollider(e.collider2()), (manifold) => {
         const p = manifold.numSolverContacts() ? manifold.solverContactPoint(0) : null
         if (p) at = [p.x, p.y, p.z]
       })
-      callout(e.maxForceMagnitude(), at)
+      const newtons = e.maxForceMagnitude()
+      callout(newtons >= 1000 ? `${(newtons / 1000).toFixed(1)} kN` : `${Math.round(newtons)} N`, at)
     })
+    for (const bomb of bursting) {
+      const t = bomb.body.translation()
+      drop(bomb)
+      explode([t.x, t.y, t.z])
+    }
+  }
+
+  // ---- a blast. Rapier has no explosions of its own; they're made from what it does have: every
+  // body near enough gets an impulse straight away from the centre - strongest close in, falling to
+  // nothing at the edge, with a little lift - applied a touch off its centre of mass, so it spins as
+  // it flies. phoria2 draws the fireball, lights the bricks round it for a moment, and names the damage
+  const blast = {
+    ball: scene.add(new Mesh({ geometry: icosphere({ radius: 1, detail: 3 }), visible: false, pickable: false,
+      material: { color: '#ffb547', unlit: true, opacity: 0.9 } })),
+    light: scene.add(new PointLight({ color: '#ff9a3c', intensity: 0, range: 12 })),
+    age: Infinity,
+  }
+  /** @param {[number, number, number]} at */
+  const explode = (at) => {
+    /** Push a body away, if it's in reach; says whether it was. @param {RAPIER.RigidBody} body */
+    const push = (body) => {
+      const t = body.translation(), d = [t.x - at[0], t.y - at[1], t.z - at[2]], r = Math.hypot(d[0], d[1], d[2])
+      if (r > BLAST.radius) return false
+      // the change in speed this body gets, along the way out from the centre
+      const kick = BLAST.kick * (1 - r / BLAST.radius) * body.mass(), out = 1 / Math.max(r, 0.05)
+      const off = () => (rand() - 0.5) * 0.2
+      body.applyImpulseAtPoint({ x: d[0] * out * kick, y: (d[1] * out + 0.4) * kick, z: d[2] * out * kick },
+        { x: t.x + off(), y: t.y + off(), z: t.z + off() }, true)
+      return true
+    }
+    let moved = 0
+    for (const body of bodies) if (push(body)) moved++
+    for (const shot of flying) push(shot.body)
+    blast.ball.position.set(...at)
+    blast.light.position.set(...at)
+    blast.age = 0
+    callout(`Blast · ${moved} brick${moved === 1 ? '' : 's'}`, at)
+  }
+  /** The fireball swelling and fading, and its light dying away. @param {number} dt */
+  const burn = (dt) => {
+    if (blast.age === Infinity) return
+    blast.age += dt
+    const t = Math.min(1, blast.age / 0.45)
+    blast.ball.visible = t < 1
+    blast.ball.scale.setScalar(0.3 + BLAST.radius * 0.9 * Math.sqrt(t))
+    blast.ball.material.opacity = 0.9 * (1 - t)
+    blast.light.intensity = 160 * Math.max(0, 1 - blast.age / 0.35) ** 2
+    if (t >= 1 && blast.light.intensity === 0) blast.age = Infinity
   }
 
   // ---- the tooltip: what Rapier knows about a brick
@@ -308,15 +394,15 @@ export default async function run({ canvas, info }) {
   }
 
   // ---- the controls
-  let showSleeping = false
   const bar = document.createElement('div')
   bar.className = 'hud phx-bar'
   bar.innerHTML = `
-    <button type="button" data-toggle="sleeping" title="Tint the bodies Rapier has put to sleep - at rest, so it skips them">Show sleeping</button>
+    <button type="button" data-mode="ball" title="Click to fire an iron ball">Ball</button>
+    <button type="button" data-mode="bomb" title="Click to drop a bomb from above the spot - it bursts where it lands">Bomb</button>
     <button type="button" class="phx-reset" data-reset title="Build the tower again">⟲</button>`
   document.body.append(bar)
   const showBar = () => {
-    bar.querySelector('[data-toggle="sleeping"]')?.classList.toggle('now', showSleeping)
+    for (const b of bar.querySelectorAll('[data-mode]')) b.classList.toggle('now', /** @type {HTMLElement} */ (b).dataset.mode === mode)
   }
   const reset = (duration = 0.8) => {
     build()
@@ -325,7 +411,7 @@ export default async function run({ canvas, info }) {
   bar.addEventListener('click', (event) => {
     const button = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (event.target).closest('button'))
     if (!button) return
-    if (button.dataset.toggle === 'sleeping') showSleeping = !showSleeping
+    if (button.dataset.mode) mode = /** @type {keyof typeof KINDS} */ (button.dataset.mode)
     else if ('reset' in button.dataset) reset()
     showBar()
   })
@@ -347,6 +433,7 @@ export default async function run({ canvas, info }) {
     }
     spent += performance.now() - t0
     sync()
+    burn(dt)
     for (const c of callouts) {
       if (!c.label.visible) continue
       c.age += dt

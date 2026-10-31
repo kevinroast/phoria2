@@ -2206,7 +2206,7 @@ button.demo-legend-item {
   text-transform: capitalize;
 }
 
-/* physics: a row of controls top right - sleeping bodies, reset - and the
+/* physics: a row of controls top right - ball or bomb, sleeping bodies, reset - and the
    hardest hits called out in red, fading after a moment */
 .phx-bar {
   top: 16px;
@@ -2218,6 +2218,10 @@ button.demo-legend-item {
   gap: 4px;
   padding: 8px;
   max-width: calc(100vw - 32px);
+}
+
+.phx-gap {
+  width: 8px;
 }
 
 .phx-bar button {
