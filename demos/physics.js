@@ -1,5 +1,5 @@
 import RAPIER from '@dimforge/rapier3d-compat'
-import { Box3, DirectionalLight, Geometry, InstancedMesh, Label, Mesh, Texture, View, icosphere, plane } from 'phoria2'
+import { Box3, DirectionalLight, Geometry, InstancedMesh, Label, Mesh, Raycaster, Texture, View, icosphere, plane } from 'phoria2'
 import { random } from './kit.js'
 
 // A tower of 477 bricks, knocked down with Rapier (rapier.rs) - a physics engine written in Rust,
@@ -134,7 +134,7 @@ export default async function run({ canvas, info }) {
 
   const view = new View({ canvas, orbit: true, background: '#e8e4dc', highlight: '#ffffff',
     tooltip: (hit) => (hit.node === bricks && hit.instance !== null ? aboutBrick(hit.instance) : null) })
-  const { scene } = view
+  const { scene, camera } = view
   scene.environment = 'studio'
   scene.environmentIntensity = 0.5
   // shadows over the ground round the tower, where the debris lands - kept sharp however far a brick flies
@@ -221,14 +221,27 @@ export default async function run({ canvas, info }) {
     balls.setInstance(ball.slot, { scale: 0 })
   }
 
-  // ---- firing: a ball from the camera, along the ray through the pointer
+  // ---- firing: a ball launched from just below the camera - so it rises into view, rather than
+  // filling the screen for a frame - and aimed to land on what is under the pointer: the first brick
+  // along the ray, or else the ground. Its speed sets the time of flight, and the launch allows for
+  // the drop on the way, so it comes down on the spot
   let fired = 0
+  const aim = new Raycaster()
   /** @param {import('phoria2').Ray} ray */
   const fire = (ray) => {
-    const [ox, oy, oz] = ray.at(1)
-    const [dx, dy, dz] = ray.direction
-    const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(ox, oy, oz)
-      .setLinvel(dx * SPEED, dy * SPEED, dz * SPEED).setCcdEnabled(true))
+    aim.ray.origin.copy(ray.origin)
+    aim.ray.direction.copy(ray.direction)
+    const t = aim.intersect(bricks)[0]?.distance ?? ray.intersectPlane([0, 1, 0], [0, 0, 0]) ?? 40
+    const goal = ray.at(Math.min(t, 60))
+    const forward = camera.target.clone().sub(camera.position).normalize()
+    const right = forward.clone().cross([0, 1, 0]).normalize(), up = right.clone().cross(forward)
+    // out of sight below the view for its first frame, and above the ground however low the camera is
+    const from = camera.position.clone().add(forward.multiplyScalar(4)).sub(up.multiplyScalar(2.8))
+    from[1] = Math.max(from[1], BALL + 0.1)
+    const way = goal.clone().sub(from), time = way.len() / SPEED
+    const v = way.multiplyScalar(1 / time).add([0, 4.905 * time, 0])
+    const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(from[0], from[1], from[2])
+      .setLinvel(v[0], v[1], v[2]).setCcdEnabled(true))
     // iron, twice a brick's density - so it knocks out what it hits rather than shoving the whole
     // tower - and it reports the forces of its contacts
     const collider = world.createCollider(RAPIER.ColliderDesc.ball(BALL).setDensity(8).setFriction(0.5).setRestitution(0.2)
@@ -307,7 +320,7 @@ export default async function run({ canvas, info }) {
   }
   const reset = (duration = 0.8) => {
     build()
-    view.frame(new Box3([-RADIUS, 0, -RADIUS], [RADIUS, (RINGS + 1) * HIGH, RADIUS]), { direction: [1.3, 0.75, 1.6], padding: 0.3, duration })
+    view.frame(new Box3([-RADIUS, 0, -RADIUS], [RADIUS, (RINGS + 1) * HIGH, RADIUS]), { direction: [1.3, 0.75, 1.6], padding: 0.17, duration })
   }
   bar.addEventListener('click', (event) => {
     const button = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (event.target).closest('button'))
