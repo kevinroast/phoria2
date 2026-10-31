@@ -38,7 +38,9 @@ const MATCAPS = {
   // chrome: a bright sky over a dark ground, meeting at a hard horizon, darker towards the rim
   chrome: matcap((g, s) => {
     const sky = g.createLinearGradient(0, 0, 0, s)
-    for (const [at, colour] of [[0, '#f4f8ff'], [0.46, '#9db6d6'], [0.5, '#3a3029'], [0.66, '#75624f'], [1, '#18130f']]) sky.addColorStop(at, colour)
+    /** @type {[number, string][]} */
+    const stops = [[0, '#f4f8ff'], [0.46, '#9db6d6'], [0.5, '#3a3029'], [0.66, '#75624f'], [1, '#18130f']]
+    for (const [at, colour] of stops) sky.addColorStop(at, colour)
     g.fillStyle = sky
     g.fillRect(0, 0, s, s)
     const rim = g.createRadialGradient(s / 2, s / 2, s * 0.3, s / 2, s / 2, s * 0.5)
@@ -82,7 +84,7 @@ export default function run({ canvas, gui }) {
     { geometry: icosphere({ radius: 1, detail: 1 }), y: 1, flat: true },
   ]
 
-  /** A row of the four shapes, titled and captioned. @param {keyof ROWS} row @param {[object, string][]} samples */
+  /** A row of the four shapes, titled and captioned. @param {keyof typeof ROWS} row @param {[object, string][]} samples */
   const row = (row, samples) => {
     const { title, z } = ROWS[row]
     scene.add(new Label({ text: title, position: [0, 2.4, z], place: 'above', className: 'demo-label row-title', overlap: 'show' }))

@@ -54,7 +54,7 @@ const ROWS = {
 // all of them, and one up close
 // wider to the right, clear of the controls
 const ALL = { box: [[-12.5, 0, -7.5], [17, 2.6, 8.2]], direction: [0, 1.3, 1], padding: 0.02 }
-/** @param {keyof ROWS} key */
+/** @param {keyof typeof ROWS} key */
 const closeUp = (key) => {
   const { x, z } = ROWS[key]
   return { box: [[x - 6, 0, z - 1.2], [x + 9, 2.6, z + 1.8]], direction: [0, 0.75, 1], padding: 0.04 }
@@ -81,7 +81,7 @@ export default function run({ canvas, gui }) {
   scene.add(new Mesh({ name: 'backdrop', geometry: plane({ width: 40, depth: 6 }), rotation: [Math.PI / 2, 0, 0], position: [0, 3, -10.5], material: { map: backdrop, unlit: true } }))
 
   const ball = sphere({ radius: 1, segments: 48, rings: 32 })
-  /** A row's sample spheres, titled over them and captioned in front. @param {keyof ROWS} row @param {[object, string][]} samples */
+  /** A row's sample spheres, titled over them and captioned in front. @param {keyof typeof ROWS} row @param {[object, string][]} samples */
   const row = (row, samples) => {
     const { title, x, z } = ROWS[row]
     scene.add(new Label({ text: title, position: [x, 2.1, z], place: 'above', className: 'demo-label row-title', overlap: 'show' }))
