@@ -202,6 +202,11 @@
                   "type": "null"
                 }
               ]
+            },
+            "minScale": {
+              "type": "number",
+              "description": "Show the label only when zoomed in this far: CSS pixels to one world unit at its point (0, always).",
+              "minimum": 0
             }
           },
           "unevaluatedProperties": false

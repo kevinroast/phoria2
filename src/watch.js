@@ -208,6 +208,7 @@ export class ChangeWatch {
     this.#push(label.priority)
     this.#push(label.occlude ? 1 : 0)
     this.#push(label.leader ? 1 : 0)
+    this.#push(label.minScale)
   }
 
   /** @param {any} light */

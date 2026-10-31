@@ -24,6 +24,28 @@ describe('Raycaster', () => {
     expect(hit.uv[1]).toBeCloseTo(0.5)
   })
 
+  it('says whether anything solid is nearer than a distance, placing each instance once for many rays', () => {
+    const scene = new Scene()
+    const wall = scene.add(new Mesh({ geometry: box(2), position: [0, 0, 2] }))
+    const crates = scene.add(new InstancedMesh({ geometry: box(1), count: 2 }))
+    crates.setInstance(0, { position: [3, 0, 0] })
+    crates.setInstance(1, { position: [-3, 0, 0] })
+    scene.add(new Lines({ geometry: edges(box(4)), position: [0, 3, 0] }))
+    scene.updateWorldTree()
+    const frame = collect(scene, camera())
+    const solids = Raycaster.solids([...frame.opaque, ...frame.transparent])
+    // the wall and both crates - lines hide nothing
+    expect(solids.map((s) => [s.node === wall ? 'wall' : 'crate', s.instance])).toEqual([['wall', null], ['crate', 0], ['crate', 1]])
+    const rc = new Raycaster().setFromCamera([0, 0], camera())
+    expect(rc.blocked(solids, 9)).toBe(true) // the wall's face is 7 away
+    expect(rc.blocked(solids, 6)).toBe(false) // nothing that near
+    expect(rc.blocked(solids, 9, wall)).toBe(false) // the wall is what is labelled
+    rc.ray.origin.set(3, 0, 10)
+    expect(rc.blocked(solids, 12)).toBe(true) // crate 0, in line
+    expect(rc.blocked(solids, 12, crates, 0)).toBe(false) // left out: crate 1 isn't in line
+    expect(rc.blocked(solids, 12, crates, 1)).toBe(true)
+  })
+
   it('respects scale, rotation and parents', () => {
     const g = new Group({ position: [3, 0, 0], rotation: [0, Math.PI / 4, 0] })
     const m = g.add(new Mesh({ geometry: box(1), scale: [4, 1, 1] }))

@@ -1003,17 +1003,19 @@ export class View {
   /** @param {FrameDescription} frame */
   #occlude(frame) {
     const labels = /** @type {(import('./frame.js').FrameLabel & { occluded?: boolean })[]} */ (frame.labels)
-    if (!labels.some((l) => l.style.occlude && l.visible)) return
-    // what this frame drew hides what is behind it - the same surfaces the picture shows
+    // a label waiting to be zoomed in to won't show either way, so it needs no ray
+    const halfHeight = this.height / 2
+    const testing = labels.filter((l) => l.style.occlude && l.visible && !(l.style.minScale && l.scale * halfHeight < l.style.minScale))
+    if (!testing.length) return
+    // what this frame drew hides what is behind it - the same surfaces the picture shows, each placed
+    // once for all the rays, which ask only whether anything is nearer than their label
+    const solids = Raycaster.solids([...frame.opaque, ...frame.transparent])
     const raycaster = new Raycaster()
-    const drawn = [...frame.opaque, ...frame.transparent]
-    for (const label of labels) {
-      if (!label.style.occlude || !label.visible) continue
+    for (const label of testing) {
       raycaster.setFromCamera(label.ndc, this.camera)
       const distance = label.position.distanceTo(raycaster.ray.origin)
       // only solid surfaces hide labels, and not the instance or point being labelled
-      const blocker = raycaster.intersectDrawn(drawn).find((h) => !(h.node === label.node && (label.index === null || h.instance === label.index)))
-      label.occluded = !!blocker && blocker.distance < distance * 0.995
+      label.occluded = raycaster.blocked(solids, distance * 0.995, label.node, label.index)
     }
   }
 

@@ -10,6 +10,7 @@ import { BVH_MIN_TRIANGLES, bvhOf, walk } from './geometry/bvh.js'
 /** @import { InstancedMesh, Lines, Mesh, Points } from './scene/drawables.js' */
 
 /** The section plane cutting what is being tested: world plane, and whether its cut faces are filled. @typedef {{ plane: Float32Array, cap: boolean }} Cut */
+/** @internal A surface ready for many rays: a mesh or one instance, with its world matrix and bounding sphere. @typedef {{ node: any, world: Float32Array, instance: number | null, cut: Cut | null, x: number, y: number, z: number, radius: number }} Solid */
 
 // Nodes are told apart by markers (drawMode, instanceMatrices) rather than instanceof, so picking
 // doesn't pull every node class into an app's bundle.
@@ -117,6 +118,63 @@ export class Raycaster {
       } else this.#mesh(n, item.worldMatrix, null, hits, cut)
     }
     return hits.filter((h) => h.distance >= this.near && h.distance <= this.far).sort((x, y) => x.distance - y.distance)
+  }
+
+  /** @internal
+   * The solid surfaces of a frame's draw list, ready for many rays: each mesh and each instance with its
+   * world matrix and bounding sphere worked out once, rather than once per ray - for label occlusion,
+   * which casts a ray per label.
+   * @param {{ node: Node, worldMatrix: Float32Array, instances: { count: number, instanceMatrices: Float32Array } | null, clip: { plane: Float32Array, cap: unknown } | null }[]} items
+   * @returns {Solid[]}
+   */
+  static solids(items) {
+    /** @type {Solid[]} */
+    const out = []
+    for (const item of items) {
+      const n = /** @type {any} */ (item.node)
+      if (n.drawMode !== 'triangles' || !n.geometry.vertexCount) continue
+      const box = n.geometry.bounds, center = box.getCenter(), radius = box.getRadius()
+      const cut = item.clip ? { plane: item.clip.plane, cap: !!item.clip.cap } : null
+      /** @param {Float32Array} world @param {number | null} instance */
+      const add = (world, instance) => {
+        const c = center.clone().applyMatrix4(world)
+        const scale = Math.max(Math.hypot(world[0], world[1], world[2]), Math.hypot(world[4], world[5], world[6]), Math.hypot(world[8], world[9], world[10]))
+        out.push({ node: n, world, instance, cut, x: c[0], y: c[1], z: c[2], radius: radius * scale })
+      }
+      if (item.instances) {
+        for (let i = 0; i < item.instances.count; i++) {
+          add(mat4.multiply(new Float32Array(16), item.worldMatrix, item.instances.instanceMatrices.subarray(i * 16, i * 16 + 16)), i)
+        }
+      } else add(Float32Array.from(item.worldMatrix), null)
+    }
+    return out
+  }
+
+  /** @internal
+   * Whether the ray meets any of these solids nearer than `distance` - the first one found settles it,
+   * so nothing is sorted. One node, or one instance of it, can be left out: what a label is on.
+   * @param {Solid[]} solids from Raycaster.solids() @param {number} distance
+   * @param {Node | null} [skip] @param {number | null} [skipInstance] null for the whole node
+   * @returns {boolean}
+   */
+  blocked(solids, distance, skip = null, skipInstance = null) {
+    const o = this.ray.origin, d = this.ray.direction
+    /** @type {Hit[]} */
+    const hits = []
+    for (const s of solids) {
+      if (s.node === skip && (skipInstance === null || s.instance === skipInstance)) continue
+      // its bounding sphere first: missed, or wholly beyond the distance or behind the ray, it can't block
+      const ox = s.x - o[0], oy = s.y - o[1], oz = s.z - o[2]
+      const along = ox * d[0] + oy * d[1] + oz * d[2]
+      const off = ox * ox + oy * oy + oz * oz - along * along, r2 = s.radius * s.radius
+      if (off > r2) continue
+      const half = Math.sqrt(r2 - off)
+      if (along - half > distance || along + half < 0) continue
+      hits.length = 0
+      this.#mesh(s.node, s.world, s.instance, hits, s.cut)
+      if (hits.length && hits[0].distance < distance) return true
+    }
+    return false
   }
 
   /** @internal

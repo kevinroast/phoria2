@@ -45,11 +45,14 @@ import { NODE_OPTIONS, Node } from './Node.js'
  * @property {'left' | 'right' | null} [edge] set the label at the view's left or right edge, level with its
  *   point - callouts in a column down the side of a diagram, with leader: true. offset then moves it in from
  *   the edge and up or down (default null: by its point)
+ * @property {number} [minScale] show the label only when zoomed in this far: at least this many CSS pixels to
+ *   one world unit, at the label's point - details that appear as you come closer (default 0: always)
  */
 /** @typedef {'center' | 'above' | 'below' | 'left' | 'right'} LabelPlace */
 
 /**
- * One label per instance or point, from its row of data.
+ * One label per instance or point, from its row of data - or a list of these, for several each (a symbol
+ * always, its details when zoomed in).
  * @typedef {Omit<LabelPlacement, 'priority'> & {
  *   text: (datum: any, index: number) => string | number | null | undefined,
  *   priority?: number | ((datum: any, index: number) => number),
@@ -61,7 +64,7 @@ import { NODE_OPTIONS, Node } from './Node.js'
  */
 
 export const LABEL_PLACES = /** @type {LabelPlace[]} */ (['center', 'above', 'below', 'left', 'right'])
-const PLACEMENT_OPTIONS = ['place', 'offset', 'className', 'priority', 'overlap', 'occlude', 'leader', 'edge']
+const PLACEMENT_OPTIONS = ['place', 'offset', 'className', 'priority', 'overlap', 'occlude', 'leader', 'edge', 'minScale']
 const LABEL_HINTS = {
   line: 'use leader: true - a line from the point to the label',
   callout: "use leader: true, with edge: 'left' | 'right' to line the labels up down the side",
@@ -70,6 +73,8 @@ const LABEL_HINTS = {
   pointer: 'use leader: true - a line from the point to the label',
   anchor: "use place: 'center' | 'above' | 'below' | 'left' | 'right' (where the label goes)",
   zIndex: "use 'priority': higher stays when labels overlap",
+  minZoom: "use 'minScale': CSS pixels to one world unit at the label's point",
+  lod: "use 'minScale': the label shows when zoomed in at least this far (CSS pixels to one world unit)",
   collision: "use overlap: 'hide' | 'dim' | 'show'",
 }
 // labels per instance or point take one more: they can't be moved anywhere but by offset
@@ -94,12 +99,26 @@ function placement(owner, o) {
     occlude: !!o.occlude,
     leader: !!o.leader,
     edge: o.edge == null ? null : /** @type {'left' | 'right'} */ (checkOneOf(owner, 'edge', o.edge, ['left', 'right'])),
+    minScale: o.minScale === undefined ? 0 : minScale(owner, o.minScale),
   }
 }
 
-/** @param {string} owner @param {unknown} v @returns {(InstanceLabels & Required<Omit<LabelPlacement, 'priority'>> & { priority: number | ((datum: any, index: number) => number) }) | null} */
+/** @param {string} owner @param {unknown} v @returns {number} */
+function minScale(owner, v) {
+  const n = checkNumber(owner, 'minScale', v)
+  if (!(n >= 0)) fail(owner, `'minScale' is CSS pixels to one world unit, 0 or more, got ${n}`)
+  return n
+}
+
+/** @typedef {InstanceLabels & Required<Omit<LabelPlacement, 'priority'>> & { priority: number | ((datum: any, index: number) => number) }} CheckedLabels */
+
+/** @param {string} owner @param {unknown} v @returns {CheckedLabels | CheckedLabels[] | null} */
 function instanceLabels(owner, v) {
   if (v == null) return null
+  if (Array.isArray(v)) {
+    if (!v.length) fail(owner, "'labels' as a list needs at least one { text: (datum, index) => string, ... }")
+    return v.map((one) => /** @type {CheckedLabels} */ (instanceLabels(owner, one)))
+  }
   if (typeof v !== 'object' || typeof (/** @type {any} */ (v)).text !== 'function') {
     fail(owner, `'labels' must be { text: (datum, index) => string, ... }, got ${describe(v)}`)
   }
@@ -279,12 +298,12 @@ export class InstancedMesh extends Mesh {
   instanceColors = null
   /** @internal Bumped when instance data changes, so renderers re-upload. */
   version = 0
-  /** A label per instance, from its row of data. @type {ReturnType<typeof instanceLabels>} */
+  /** A label per instance from its row of data - or a list of them, several per instance. @type {ReturnType<typeof instanceLabels>} */
   labels = null
 
   /**
    * @param {DrawableOptions & { count?: number, instances?: InstanceOptions[], instanceMatrices?: ArrayLike<number>,
-   *   instanceColors?: ArrayLike<number>, labels?: InstanceLabels | null }} options count defaults to the number
+   *   instanceColors?: ArrayLike<number>, labels?: InstanceLabels | InstanceLabels[] | null }} options count defaults to the number
    *   of instances or rows of data; instanceMatrices/instanceColors are raw data, as toJSON() writes
    */
   constructor(options) {
@@ -436,10 +455,10 @@ export class Points extends Drawable {
   static type = 'points'
   static get OPTIONS() { return [...DRAWABLE_OPTIONS, 'labels'] }
 
-  /** A label per point, from its row of data. @type {ReturnType<typeof instanceLabels>} */
+  /** A label per point from its row of data - or a list of them, several per point. @type {ReturnType<typeof instanceLabels>} */
   labels = null
 
-  /** @param {DrawableOptions & { labels?: InstanceLabels | null }} options */
+  /** @param {DrawableOptions & { labels?: InstanceLabels | InstanceLabels[] | null }} options */
   constructor(options) {
     super(options)
     this.labels = instanceLabels(this.constructor.name, options?.labels)
@@ -505,6 +524,8 @@ export class Label extends Node {
   leader = false
   /** Set at the view's left or right edge, level with its point, or null for by its point. @type {'left' | 'right' | null} */
   edge = null
+  /** Shown only when zoomed in this far: CSS pixels to one world unit at its point; 0 for always. */
+  minScale = 0
 
   /** @param {LabelOptions} options */
   constructor(options) {
@@ -529,7 +550,8 @@ export class Label extends Node {
   /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     return { ...super.cloneOptions(), text: this.text, className: this.className, place: this.place,
-      offset: [...this.offset], priority: this.priority, overlap: this.overlap, occlude: this.occlude, leader: this.leader, edge: this.edge }
+      offset: [...this.offset], priority: this.priority, overlap: this.overlap, occlude: this.occlude, leader: this.leader, edge: this.edge,
+      minScale: this.minScale }
   }
 
   /** @internal @returns {Record<string, unknown>} */
@@ -544,6 +566,7 @@ export class Label extends Node {
     if (this.occlude) json.occlude = true
     if (this.leader) json.leader = true
     if (this.edge) json.edge = this.edge
+    if (this.minScale) json.minScale = this.minScale
     return json
   }
 }

@@ -89,6 +89,8 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  * @property {[number, number]} ndc [x, y] in -1..1
  * @property {number} depth
  * @property {boolean} visible in front of the camera and inside the view
+ * @property {number} scale how far zoomed in at the point: half the view's height, in world units, is 1 / scale -
+ *   the layer turns it into pixels to one world unit, for minScale
  */
 
 /**
@@ -239,13 +241,13 @@ export function collect(scene, camera) {
           else capped.set(item.clip, [item])
         }
         frame.stats.drawn++
-        if (node.labels) instanceLabels(node, viewProjection, view, frame.labels)
+        if (node.labels) instanceLabels(node, viewProjection, view, projection[5], frame.labels)
       } else {
         frame.stats.culled++
       }
     } else if (node.isLabel) {
       const position = node.worldPosition
-      frame.labels.push({ key: node, node, index: null, text: node.text, style: node, position, ...project(position, viewProjection, view) })
+      frame.labels.push({ key: node, node, index: null, text: node.text, style: node, position, ...project(position, viewProjection, view, projection[5]) })
     } else if (node.lightKind) {
       addLight(/** @type {Light} */ (node))
     }
@@ -392,10 +394,22 @@ let nextId = 1
 
 /**
  * Labels for every instance or point that has text, from the node's `labels` option.
- * @param {any} node InstancedMesh or Points @param {Mat4} viewProjection @param {Mat4} view @param {FrameLabel[]} out
+ * @param {any} node InstancedMesh or Points @param {Mat4} viewProjection @param {Mat4} view
+ * @param {number} yScale the projection's vertical scale @param {FrameLabel[]} out
  */
-function instanceLabels(node, viewProjection, view, out) {
-  const { labels, worldMatrix: w } = node
+function instanceLabels(node, viewProjection, view, yScale, out) {
+  // several labels per instance: the first keeps the plain key, so a single set's labels don't change identity
+  if (Array.isArray(node.labels)) {
+    node.labels.forEach((labels, layer) => instanceLabelSet(node, labels, layer, viewProjection, view, yScale, out))
+  } else instanceLabelSet(node, node.labels, 0, viewProjection, view, yScale, out)
+}
+
+/**
+ * @param {any} node @param {any} labels one set of instance labels @param {number} layer its place in the list
+ * @param {Mat4} viewProjection @param {Mat4} view @param {number} yScale @param {FrameLabel[]} out
+ */
+function instanceLabelSet(node, labels, layer, viewProjection, view, yScale, out) {
+  const { worldMatrix: w } = node
   let id = ids.get(node)
   if (id === undefined) ids.set(node, id = nextId++)
   const instanced = 'instanceMatrices' in node
@@ -427,7 +441,7 @@ function instanceLabels(node, viewProjection, view, out) {
       w[1] * x + w[5] * y + w[9] * z + w[13],
       w[2] * x + w[6] * y + w[10] * z + w[14])
     const style = byRow ? { ...labels, priority: labels.priority(row, i) } : labels
-    out.push({ key: `${id}:${i}`, node, index: i, text: String(text), style, position, ...project(position, viewProjection, view) })
+    out.push({ key: layer ? `${id}:${i}:${layer}` : `${id}:${i}`, node, index: i, text: String(text), style, position, ...project(position, viewProjection, view, yScale) })
   }
 }
 
@@ -453,10 +467,13 @@ export function toScreen(position, viewProjection) {
  * units, for both kinds of camera (an orthographic one's clip w is always 1).
  * @param {Vec3} position @param {Mat4} viewProjection @param {Mat4} view
  */
-function project(position, viewProjection, view) {
+function project(position, viewProjection, view, yScale) {
   const { ndc, visible } = toScreen(position, viewProjection)
   const depth = -(view[2] * position[0] + view[6] * position[1] + view[10] * position[2] + view[14])
-  return { ndc: /** @type {[number, number]} */ ([ndc[0], ndc[1]]), depth, visible }
+  // clip w at the point: its depth for a perspective camera, 1 for an orthographic one
+  const m = viewProjection
+  const w = m[3] * position[0] + m[7] * position[1] + m[11] * position[2] + m[15]
+  return { ndc: /** @type {[number, number]} */ ([ndc[0], ndc[1]]), depth, visible, scale: w > 0 ? yScale / w : 0 }
 }
 
 // The six planes (a, b, c, d with the normal pointing inwards) of a view-projection matrix.

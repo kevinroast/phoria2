@@ -680,6 +680,25 @@ describe('handlers and the pointer', () => {
 
 // ---- from the agent eval's development pass
 
+describe('labels by zoom level', () => {
+  it('shows a label only when zoomed in to its minScale, and leaves room for the others until then', async () => {
+    const view = new View({ canvas: page.canvas(), camera: { position: [0, 0, 10], target: [0, 0, 0] } })
+    view.scene.add(new Label({ text: 'always', position: [0, 0, 0] }))
+    // the same point, so it would knock 'always' out if it took part
+    view.scene.add(new Label({ text: 'detail', position: [0, 0, 0], minScale: 100, priority: 5 }))
+    const root = /** @type {any} */ (view.overlay)
+    const shown = () => root.children.filter((e) => e.style.display !== 'none').map((e) => e.textContent).sort()
+    view.render()
+    expect(shown()).toEqual(['always'])
+    expect(await view.explain()).toContain('1 waiting to be zoomed in to (minScale)')
+    // closer in: a world unit spans more pixels, and the detail shows (and, higher priority, wins the spot)
+    view.camera.position.set(0, 0, 0.5)
+    view.render()
+    expect(shown()).toEqual(['detail'])
+    view.dispose()
+  })
+})
+
 describe('labels that answer the pointer', () => {
   let clock = 5000
   const frame = () => page.frame((clock += 16))

@@ -91,6 +91,7 @@ nodeContract(Label, (o) => new Label({ text: 'label', ...o }), {
   occlude: { value: true, read: (l) => l.occlude, default: false },
   leader: { value: true, read: (l) => l.leader, default: false },
   edge: { value: 'left', read: (l) => l.edge, default: null, bad: 'top', error: 'edge' },
+  minScale: { value: 40, read: (l) => l.minScale, default: 0, bad: -1, error: 'minScale' },
 })
 
 it('points labels per instance away from position, where a Label takes it', () => {

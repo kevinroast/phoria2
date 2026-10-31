@@ -155,6 +155,26 @@ describe('labels', () => {
     expect(labels[0].key).not.toBe(labels[1].key)
   })
 
+  it('makes several labels per instance from a list, each its own label, with how far zoomed in it is', () => {
+    const scene = new Scene()
+    scene.add(new InstancedMesh({
+      geometry: box(1), data: [{ s: 'H', n: 'Hydrogen' }, { s: 'He', n: 'Helium' }],
+      labels: [{ text: (e) => e.s }, { text: (e) => e.n, minScale: 40, className: 'detail' }],
+      instances: [{ position: [0, 0, 0] }, { position: [2, 0, 0] }],
+    }))
+    scene.updateWorldTree()
+    const cam = camera()
+    const labels = collect(scene, cam).labels
+    expect(labels.map((l) => l.text)).toEqual(['H', 'He', 'Hydrogen', 'Helium'])
+    expect(new Set(labels.map((l) => l.key)).size).toBe(4)
+    expect(labels[2].style).toMatchObject({ minScale: 40, className: 'detail' })
+    // half the view's height in world units at the point is 1 / scale: the projection's scale over its depth
+    // the label sits on the box's top face, in the plane z = 0: 10 from the camera
+    expect(labels[0].scale).toBeCloseTo(cam.projectionMatrix[5] / 10, 6)
+    expect(() => new InstancedMesh({ geometry: box(1), count: 1, labels: [] })).toThrow('at least one')
+    expect(() => new Label({ text: 'x', minScale: -2 })).toThrow("'minScale'")
+  })
+
   it('checks label options', () => {
     expect(() => new Label({ text: 'x', place: 'top' })).toThrow("'place' 'top' is not valid")
     expect(() => new Label({ text: 'x', anchor: 'top' })).toThrow("use place:")

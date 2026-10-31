@@ -14,6 +14,7 @@ import { alignColumns, layoutLabels, leaderEnd, placeBox, stackColumns } from '.
  * @property {number} dimmed drawn faint because a higher-priority label or geometry was in front (overlap: 'dim')
  * @property {number} occluded hidden because geometry was in front (overlap: 'hide')
  * @property {number} offscreen behind the camera or outside the view
+ * @property {number} zoomedOut hidden because the view isn't zoomed in to their minScale
  */
 
 /** @typedef {{ el: HTMLDivElement, text: string, className: string, width: number, height: number, showing: boolean, leader: SVGGElement | null, color: string, rule: number, label: FrameLabel | null, interactive: boolean }} Entry */
@@ -67,7 +68,7 @@ export class LabelLayer {
    */
   update(labels, overlays = []) {
     /** @type {LabelStats} */
-    const stats = { total: labels.length, shown: 0, overlapped: 0, dimmed: 0, occluded: 0, offscreen: 0 }
+    const stats = { total: labels.length, shown: 0, overlapped: 0, dimmed: 0, occluded: 0, offscreen: 0, zoomedOut: 0 }
     this.shown = []
     this.leaders = []
     if (!labels.length && !this.#elements.size && !overlays.length && !this.#overlays.size && !this.#root) return stats
@@ -83,6 +84,8 @@ export class LabelLayer {
     for (const label of labels) {
       seen.add(label.key)
       if (!label.visible) stats.offscreen++
+      // details for closer up: until then they take no part, so they can't push other labels out
+      else if (label.style.minScale && label.scale * rect.height / 2 < label.style.minScale) stats.zoomedOut++
       else if (label.occluded && label.style.overlap === 'hide') stats.occluded++
       else active.push({ label, entry: this.#entry(label, root) })
     }

@@ -237,7 +237,8 @@ pixels), `priority` (higher wins when labels overlap), `overlap` (`'hide'` | `'d
 a label does when covered), `occlude` (true: counts as covered when geometry is in front), `leader`
 (true: a line from the point to the label, with a dot on the point - for callouts), `edge` (`'left'` |
 `'right'`: set the label at that edge of the view, level with its point - callouts in a column, with
-`leader: true`; `offset` then moves it in and up or down).
+`leader: true`; `offset` then moves it in and up or down), `minScale` (show it only when zoomed in this
+far - below).
 
 A label answers the pointer when it has handlers: a Label with its own `onClick` or `onHover` is
 clicked and hovered like a mesh (`new Label({ text: 'Mantle', onClick: () => show('mantle') })` - a
@@ -249,6 +250,21 @@ clicking that bar, with the same hit. Other labels let the pointer through to th
 ```js
 new InstancedMesh({ geometry: box(1), data: rows, labels: { text: (row) => row.name, place: 'above', priority: (row) => row.alert ? 2 : 0 } })
 ```
+
+**Labels by zoom level**: `minScale` on any label shows it only when the view is zoomed in at least that
+far - that many CSS pixels to one world unit, at the label's point (perspective or orthographic alike).
+Until then it takes no part in the layout, so it can't push other labels out. `labels` can also be a
+list, several labels per instance - the short one always, the details as you come closer:
+
+```js
+new InstancedMesh({ geometry: box(1), data: elements, labels: [
+  { text: (e) => e.symbol, place: 'center', className: 'symbol' },
+  { text: (e) => e.name, place: 'below', className: 'name', minScale: 45 },
+] })
+```
+
+Pick `minScale` by looking: at the zoom where the details should appear, a world unit spans that many
+pixels (a 1-unit tile drawn 60 px wide is 60). `view.explain()` counts the labels still waiting.
 
 ## Geometry
 

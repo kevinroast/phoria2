@@ -115,7 +115,7 @@ export function explain(info) {
 
   if (info.labels && info.labels.total) {
     const s = info.labels
-    lines.push(`Labels: ${s.shown} shown, ${s.dimmed ? `${s.dimmed} dimmed (covered by labels or geometry), ` : ''}${s.overlapped} hidden by overlap, ${s.occluded} hidden behind geometry, ${s.offscreen} off screen`)
+    lines.push(`Labels: ${s.shown} shown, ${s.dimmed ? `${s.dimmed} dimmed (covered by labels or geometry), ` : ''}${s.overlapped} hidden by overlap, ${s.occluded} hidden behind geometry, ${s.offscreen} off screen${s.zoomedOut ? `, ${s.zoomedOut} waiting to be zoomed in to (minScale)` : ''}`)
     if (s.overlapped > s.shown * 3) warnings.push(`${s.overlapped} labels are hidden by overlap - give the important ones a higher priority, label fewer things, or use overlap: 'dim' or 'show'`)
     if (s.offscreen === s.total) warnings.push('every label is off screen - check their positions, or call view.frame()')
   }

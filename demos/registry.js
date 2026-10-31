@@ -51,6 +51,7 @@ export const DEMOS = [
   { name: 'fireworks', title: 'fireworks over a city across the water - rockets with physics, four burst shapes, reflections' },
   { name: 'paint', title: 'a paint cannon - click the wall to aim; drops splat and drip into its canvas textures', orbit: false },
   { name: 'schematic', title: 'a pistol as an exploded parts poster - numbered parts and legend, explode and assemble', hint: 'Explode or Assemble · hover a part or the legend' },
+  { name: 'periodic table', title: 'the 118 elements - bars by category and atom animation on click', hint: 'Hover an element · click for its atom · zoom in for names' },
 
   // tests of the API on bigger tasks go here with hidden: true - reachable by name
   // (demo.html?name=...), not listed in the gallery
