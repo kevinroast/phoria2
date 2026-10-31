@@ -9,6 +9,12 @@
 
 /** A vector as accepted on input: [x, y, z], { x, y, z } or a Vec3. @typedef {Vec3Like | XYZ} Vec3Input */
 
+/** A quaternion as an object literal - as physics engines such as Rapier return them. @typedef {{ x: number, y: number, z: number, w: number }} XYZW */
+
+/** A rotation quaternion as accepted on input: [x, y, z, w], { x, y, z, w } or a Quat. @typedef {ArrayLike<number> | XYZW} QuatInput */
+
+/** A box as accepted on input: a Box3, or its lowest and highest corners. @typedef {import('./value/Box3.js').Box3 | { min: Vec3Input, max: Vec3Input }} Box3Input */
+
 /**
  * A colour as accepted on input, in sRGB: '#ff8800', '#f80', 0xff8800, 'rgb(255 136 0)',
  * 'hsl(32 100% 50%)', a CSS colour name, or [r, g, b] with components 0-1.

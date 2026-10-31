@@ -6,6 +6,7 @@ import { Box3 } from './value/Box3.js'
 import { warnOnce } from './validate.js'
 import { fitPointShadow, fitShadow, fitSpotShadow, SPOT_TILES } from './shadow.js'
 import { worldPlane } from './clip.js'
+import { hiddenInstance } from './scene/drawables.js'
 
 /** @import { Scene } from './scene/Scene.js' */
 /** @import { Camera } from './scene/cameras.js' */
@@ -325,7 +326,7 @@ export function collect(scene, camera) {
   if (items.length && sun >= 0) {
     const light = frame.lights[sun]
     const bounds = (/** @type {any} */ n) => n.expandBounds(new Box3())
-    const fit = fitShadow(/** @type {Vec3} */ (light.direction), items.map((c) => bounds(c.node)), receivers.map(bounds))
+    const fit = fitShadow(/** @type {Vec3} */ (light.direction), items.map((c) => bounds(c.node)), receivers.map(bounds), undefined, /** @type {any} */ (light.node).shadowBounds)
     if (fit) {
       frame.lights.splice(sun, 1)
       frame.lights.unshift(light)
@@ -423,6 +424,8 @@ function instanceLabelSet(node, labels, layer, viewProjection, view, yScale, out
   const data = Array.isArray(node.data) ? node.data : null
   const byRow = typeof labels.priority === 'function'
   for (let i = 0; i < n; i++) {
+    // an instance scaled to nothing is hidden, and so is its label
+    if (instanced && hiddenInstance(node.instanceMatrices, i)) continue
     const row = data ? data[i] : null
     const text = labels.text(row, i)
     if (text === null || text === undefined || text === '') continue

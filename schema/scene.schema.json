@@ -332,6 +332,16 @@
             },
             "castShadow": {
               "type": "boolean"
+            },
+            "shadowBounds": {
+              "type": ["object", "null"],
+              "description": "The part of the world, in world units, that has shadows; null (the default) follows what casts.",
+              "required": ["min", "max"],
+              "properties": {
+                "min": { "$ref": "#/$defs/vec3" },
+                "max": { "$ref": "#/$defs/vec3" }
+              },
+              "additionalProperties": false
             }
           },
           "unevaluatedProperties": false

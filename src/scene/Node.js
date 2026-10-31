@@ -10,7 +10,7 @@ import { Vec3 } from '../value/Vec3.js'
 import { checkOptions, describe, fail } from '../validate.js'
 import { Clip } from '../clip.js'
 
-/** @import { ColorInput, Vec3Input } from '../types.js' */
+/** @import { ColorInput, QuatInput, Vec3Input } from '../types.js' */
 /** @import { Hit } from '../Raycaster.js' */
 /** @import { Camera } from './cameras.js' */
 /** @import { ClipOptions } from '../clip.js' */
@@ -44,7 +44,7 @@ import { Clip } from '../clip.js'
  * @property {string} [name]
  * @property {Vec3Input} [position]
  * @property {Vec3Input | Euler} [rotation] Euler angles in radians, XYZ order
- * @property {ArrayLike<number>} [quaternion] [x, y, z, w] - instead of rotation
+ * @property {QuatInput} [quaternion] [x, y, z, w] or { x, y, z, w } - instead of rotation
  * @property {Vec3Input | number} [scale] a number scales uniformly
  * @property {boolean} [visible]
  * @property {boolean} [pickable] include in view.pick() (default true)
@@ -164,7 +164,7 @@ export class Node {
   set rotation(v) { this.#rotation.copy(/** @type {any} */ (v), this.constructor.name) }
   /** Kept in sync with rotation. Assigning copies, normalised. @returns {Quat} */
   get quaternion() { return this.#quaternion }
-  /** @param {ArrayLike<number>} v */
+  /** @param {QuatInput} v */
   set quaternion(v) { this.#quaternion.copy(v, this.constructor.name).normalize() }
 
   /** @param {NodeOptions} [options] */

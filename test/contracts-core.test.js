@@ -133,6 +133,8 @@ nodeContract(HemisphereLight, (o) => new HemisphereLight(o), {
 nodeContract(DirectionalLight, (o) => new DirectionalLight(o), {
   ...lightRows(), ...aimRows(),
   castShadow: { value: true, read: (l) => l.castShadow, default: false },
+  shadowBounds: { value: { min: [-5, 0, -5], max: [5, 3, 5] }, read: (l) => l.shadowBounds && [Array.from(l.shadowBounds.min), Array.from(l.shadowBounds.max)],
+    expect: [[-5, 0, -5], [5, 3, 5]], default: null, bad: { min: [1, 0, 0], max: [0, 1, 1] }, error: 'shadowBounds' },
 })
 nodeContract(PointLight, (o) => new PointLight(o), {
   ...lightRows(),

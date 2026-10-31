@@ -497,35 +497,17 @@ export class View {
    * @returns {this}
    */
   frame(target = this.scene, { padding = 0.2, direction: towards, duration = 0 } = {}) {
-    if (!(padding >= 0)) fail('View', `frame() padding is the margin around, as a fraction of the size (0.2 = 20%), got ${describe(padding)}`)
-    if (padding >= 1) warnOnce(this, `frame() padding ${padding} leaves a margin of ${Math.round(padding * 100)}% - it is a fraction of the size (0.2 = 20%)`)
     checkRange('View', 'frame() duration', duration, 0)
     const cam = /** @type {any} */ (this.camera)
     const from = placeOf(cam)
     this.#flight = null
-    const direction = towards === undefined ? cam.position.clone().sub(cam.target ?? new Vec3()).normalize()
-      : typeof towards === 'string' ? presetDirection(/** @type {CameraPreset} */ (towards)) : Vec3.fromInput(towards, 'View').normalize()
-    if (towards !== undefined && !(direction.len() > 0)) fail('View', `frame() direction is a preset name or a vector from the target towards the camera, got ${describe(towards)}`)
-    if (direction.len() === 0) direction.set(0, 0.3, 1).normalize()
-    const points = target instanceof Box3 ? corners(target) : this.#drawnPoints(target, direction)
+    const fit = this.#fit('frame', target, padding, towards)
     // an explicit frame replaces the preset camera's fit on the first frame
     this.#autoFrame = false
-    if (!points.length) return this
-    const ortho = cam.constructor.type === 'orthographic-camera'
-    const { center, size } = fitPoints(points, direction, { aspect: cam.aspect, fov: ortho ? undefined : cam.fov, padding })
-    const radius = Math.max(1e-3, ...points.map((p) => Math.hypot(p[0] - center[0], p[1] - center[1], p[2] - center[2])))
-    if (ortho) {
-      cam.height = size
-      cam.position.copy(center).add(direction.clone().multiplyScalar(radius * 4))
-      cam.far = Math.max(cam.far, radius * 10)
-    } else {
-      const distance = size
-      cam.position.copy(center).add(direction.clone().multiplyScalar(distance))
-      // keep the near/far range sensible for the model's size
-      cam.near = Math.max(1e-3, distance / 1000)
-      cam.far = Math.max(cam.far, distance * 10)
-    }
-    cam.target = center
+    if (!fit) return this
+    setPlace(cam, fit.place)
+    cam.near = fit.near ?? cam.near
+    cam.far = Math.max(cam.far, fit.far)
     // framed for the canvas as it is now
     this.#designed = cam.aspect
     this.#applied = 1
@@ -536,6 +518,56 @@ export class View {
     }
     this.invalidate()
     return this
+  }
+
+  /**
+   * Where frame() would put the camera, without moving it: its position, target and - for an
+   * orthographic camera - height, or null when there is nothing to frame. For a camera of your own
+   * that eases after something moving rather than jumping each frame:
+   *
+   *     const aim = view.framing(debris)
+   *     if (aim) {
+   *       view.camera.position.lerp(aim.position, 0.1)
+   *       view.camera.target.lerp(aim.target, 0.1)
+   *     }
+   * @param {Node | Box3} [target] (default the scene)
+   * @param {{ padding?: number, direction?: CameraPreset | Vec3Input }} [options] as frame()
+   * @returns {{ position: Vec3, target: Vec3, height?: number } | null}
+   */
+  framing(target = this.scene, { padding = 0.2, direction } = {}) {
+    const fit = this.#fit('framing', target, padding, direction)
+    if (!fit) return null
+    const { position, target: at, height } = fit.place
+    return height === undefined ? { position, target: at } : { position, target: at, height }
+  }
+
+  /**
+   * The camera's place to frame something, worked out without moving it - for frame() and framing().
+   * @param {string} method its caller, for errors @param {Node | Box3} target @param {number} padding
+   * @param {CameraPreset | Vec3Input | undefined} towards
+   * @returns {{ place: Place, near: number | undefined, far: number } | null}
+   */
+  #fit(method, target, padding, towards) {
+    if (!(padding >= 0)) fail('View', `${method}() padding is the margin around, as a fraction of the size (0.2 = 20%), got ${describe(padding)}`)
+    if (padding >= 1) warnOnce(this, `${method}() padding ${padding} leaves a margin of ${Math.round(padding * 100)}% - it is a fraction of the size (0.2 = 20%)`)
+    const cam = /** @type {any} */ (this.camera)
+    const direction = towards === undefined ? cam.position.clone().sub(cam.target ?? new Vec3()).normalize()
+      : typeof towards === 'string' ? presetDirection(/** @type {CameraPreset} */ (towards)) : Vec3.fromInput(towards, 'View').normalize()
+    if (towards !== undefined && !(direction.len() > 0)) fail('View', `${method}() direction is a preset name or a vector from the target towards the camera, got ${describe(towards)}`)
+    if (direction.len() === 0) direction.set(0, 0.3, 1).normalize()
+    const points = target instanceof Box3 ? corners(target) : this.#drawnPoints(target, direction)
+    if (!points.length) return null
+    const ortho = cam.constructor.type === 'orthographic-camera'
+    const { center, size } = fitPoints(points, direction, { aspect: cam.aspect, fov: ortho ? undefined : cam.fov, padding })
+    const radius = Math.max(1e-3, ...points.map((p) => Math.hypot(p[0] - center[0], p[1] - center[1], p[2] - center[2])))
+    if (ortho) {
+      return { place: { position: center.clone().add(direction.clone().multiplyScalar(radius * 4)), target: center, height: size },
+        near: undefined, far: radius * 10 }
+    }
+    // keep the near/far range sensible for the model's size
+    const distance = size
+    return { place: { position: center.clone().add(direction.clone().multiplyScalar(distance)), target: center },
+      near: Math.max(1e-3, distance / 1000), far: distance * 10 }
   }
 
   /**

@@ -164,7 +164,7 @@ something changes):
 ## Scene graph
 
 Everything in a scene is a node. Node options (all optional): `name`, `position`, `rotation`
-(Euler XYZ radians, `[x, y, z]`), `quaternion`, `scale` (number or `[x, y, z]`), `visible`,
+(Euler XYZ radians, `[x, y, z]`), `quaternion` (`[x, y, z, w]` or `{ x, y, z, w }`), `scale` (number or `[x, y, z]`), `visible`,
 `pickable` (default true), `userData`, `children`, `onUpdate`, `clip` (a section plane - see
 Cutaways), plus the interaction options below.
 
@@ -229,7 +229,11 @@ bars.setColor(3, 'red')
 `setInstance(i, { position, rotation, quaternion, scale, color })`. An instance's `color` multiplies the
 material's colour, which is white unless you set one - so the instance colour shows as given. `count` defaults to the number
 of rows in `data`. For very large data, write `bars.instanceMatrices` (16 numbers per instance,
-column-major) directly and call `bars.needsUpdate()`.
+column-major) directly and call `bars.needsUpdate()`. An instance scaled to 0 is hidden: it draws
+nothing, and bounds, framing, shadows and labels leave it out - so a pool can keep spare instances.
+Positions and quaternions also take `{ x, y, z }` and `{ x, y, z, w }`, as physics engines return
+them, so a physics bridge is one line a body:
+`bricks.setInstance(i, { position: body.translation(), quaternion: body.rotation() })`.
 
 **Labels** are HTML elements pinned to 3D points (style them with CSS). Options: `text`, `position`,
 `className`, `place` (`'center'` | `'above'` | `'below'` | `'left'` | `'right'`), `offset` ([x, y]
@@ -441,7 +445,7 @@ on top, as with UVs (animate `offset` to scroll a pattern). 0 (the default) uses
 |---|---|
 | `AmbientLight` | `color`, `intensity` |
 | `HemisphereLight` | `sky`, `ground`, `intensity` |
-| `DirectionalLight` | `color`, `intensity`, `direction` (the way it travels, e.g. `[-1, -2, -1]`), `castShadow` |
+| `DirectionalLight` | `color`, `intensity`, `direction` (the way it travels, e.g. `[-1, -2, -1]`), `castShadow`, `shadowBounds` |
 | `PointLight` | `color`, `intensity`, `position`, `range` - inverse-square falloff, so intensity ~ distance squared (30 lights things ~5 m away); `castShadow` |
 | `SpotLight` | point light options plus `direction`, `angle`, `penumbra`, `castShadow` |
 
@@ -459,7 +463,9 @@ meshes opt in with `castShadow` and `receiveShadow`. No shadow camera to set up.
 lamp - anything whose bounds hold the light - doesn't block it, so a lamp's shade can cast shadows of
 its own. A point light casts all round, and everything that casts blocks it, around it too: a candle in
 a lantern or a carved pumpkin lights the room only through the openings. Give a bulb or flame mesh
-drawn at the light `castShadow: false`.
+drawn at the light `castShadow: false`. The directional shadow is fitted to whatever casts, every
+frame; when things fly far off, give the light `shadowBounds: { min: [x, y, z], max: [x, y, z] }` -
+the world area that gets shadows - so the map stays sharp there.
 
 ```js
 scene.add(new PointLight({ position: [0, 0.1, 0], intensity: 0.5, range: 4, castShadow: true }))  // a candle in a jack-o'-lantern
@@ -485,6 +491,9 @@ and `target` yourself; the orbit always turns about wherever the target is.
   press or the wheel takes over.
 - **Back to the start**: `view.frame(undefined, { direction: 'perspective', duration: 0.6 })`
   (or the preset the view started with).
+- **Where framing would go**: `view.framing(target, { padding, direction })` returns
+  `{ position, target, height? }` without moving the camera - for a camera that eases after
+  something that keeps changing size (`camera.position.lerp(aim.position, 0.1)`, the same for target).
 - **Follow something that moves** - move the camera and its target by as much as it moved, so the
   view keeps its angle and the user can still orbit round it:
 

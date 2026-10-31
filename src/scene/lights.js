@@ -1,10 +1,11 @@
 import { Color } from '../value/Color.js'
 import { Vec3 } from '../value/Vec3.js'
-import { checkNumber, fail } from '../validate.js'
+import { Box3 } from '../value/Box3.js'
+import { checkNumber, describe, fail } from '../validate.js'
 import { NODE_OPTIONS, Node, inParentSpace, setPoint } from './Node.js'
 
 /** @import { NodeOptions } from './Node.js' */
-/** @import { ColorInput, Vec3Input } from '../types.js' */
+/** @import { Box3Input, ColorInput, Vec3Input } from '../types.js' */
 
 /** @typedef {NodeOptions & { color?: ColorInput, intensity?: number }} LightOptions */
 /** @typedef {'ambient' | 'hemisphere' | 'directional' | 'point' | 'spot'} LightKind */
@@ -189,24 +190,57 @@ export class DirectionalLight extends AimedLight {
   static type = 'directional-light'
   /** @internal @type {LightKind} */
   static kind = 'directional'
-  static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'castShadow'] }
+  static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'castShadow', 'shadowBounds'] }
 
   castShadow = false
+  /** @type {Box3 | null} */
+  #shadowBounds = null
 
-  /** @param {AimedLightOptions & { castShadow?: boolean }} [options] */
+  /** @param {AimedLightOptions & { castShadow?: boolean, shadowBounds?: Box3Input | null }} [options] */
   constructor(options = {}) {
     super(options)
     if (options.castShadow !== undefined) this.castShadow = !!options.castShadow
+    if (options.shadowBounds !== undefined) this.#setShadowBounds(options.shadowBounds)
+  }
+
+  /**
+   * The part of the world, in world units, that has shadows - or null (the default) to follow
+   * whatever casts them. The shadow map is fitted to what casts every frame, so one caster flung far
+   * off spreads its texels over everything and every shadow blurs; set the area where things happen
+   * and its shadows stay sharp. Casters outside it still shadow it, from wherever they stand.
+   * Assigning copies.
+   * @returns {Box3 | null}
+   */
+  get shadowBounds() { return this.#shadowBounds }
+
+  /** @param {Box3Input | null} v */
+  set shadowBounds(v) { this.#setShadowBounds(v) }
+
+  /** @param {Box3Input | null} v */
+  #setShadowBounds(v) {
+    if (v === null) {
+      this.#shadowBounds = null
+      return
+    }
+    const b = /** @type {any} */ (v)
+    if (!b || typeof b !== 'object' || !b.min || !b.max) {
+      fail(this.constructor.name, `'shadowBounds' is a box - { min: [x, y, z], max: [x, y, z] } or a Box3 - or null, got ${describe(v)}`)
+    }
+    const box = new Box3(Vec3.fromInput(b.min, this.constructor.name), Vec3.fromInput(b.max, this.constructor.name))
+    if (box.isEmpty()) fail(this.constructor.name, `'shadowBounds' min must not be above max on any axis, got ${describe(v)}`)
+    this.#shadowBounds = box
   }
 
   /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
-    return { ...super.cloneOptions(), castShadow: this.castShadow }
+    return { ...super.cloneOptions(), castShadow: this.castShadow, shadowBounds: this.#shadowBounds }
   }
 
   /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
-    return { ...super.jsonOptions(), ...(this.castShadow ? { castShadow: true } : {}) }
+    const b = this.#shadowBounds
+    return { ...super.jsonOptions(), ...(this.castShadow ? { castShadow: true } : {}),
+      ...(b ? { shadowBounds: { min: Array.from(b.min), max: Array.from(b.max) } } : {}) }
   }
 }
 

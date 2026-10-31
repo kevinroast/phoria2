@@ -1087,3 +1087,65 @@ describe('glass and clearcoat', () => {
     expect(() => new Material({ toon: 20 })).toThrow('toon')
   })
 })
+
+describe('what the Rapier integration asked for', () => {
+  it('leaves an instance scaled to nothing out of the bounds and its label off the screen', () => {
+    const balls = new InstancedMesh({ geometry: box(1), data: [{ n: 'a' }, { n: 'spare' }], labels: { text: (r) => r.n } })
+    balls.setInstance(0, { position: [2, 0, 0] })
+    // a spare, parked far off at scale 0 - a pool's way to keep instances it isn't using
+    balls.setInstance(1, { position: [50, 0, 0], scale: 0 })
+    const scene = new Scene({ children: [balls] })
+    scene.updateWorldTree()
+    expect(scene.bounds.max[0]).toBeCloseTo(2.5)
+    expect(collect(scene, new PerspectiveCamera({ position: [0, 0, 20], target: [0, 0, 0] })).labels.map((l) => l.text)).toEqual(['a'])
+    // all of them spare: nothing to bound, and nothing breaks
+    balls.setInstance(0, { scale: 0 })
+    scene.updateWorldTree()
+    expect(new Scene({ children: [balls.clone()] }).bounds.isEmpty()).toBe(true)
+  })
+
+  it('takes quaternions as { x, y, z, w }, as physics engines give them', () => {
+    const turn = { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 }
+    const bricks = new InstancedMesh({ geometry: box(1), count: 1 })
+    bricks.setInstance(0, { position: { x: 1, y: 2, z: 3 }, quaternion: turn })
+    const m = bricks.instanceMatrices
+    // a quarter turn about y: x goes to -z
+    expect([m[0], m[2], m[12], m[13], m[14]].map((v) => +v.toFixed(5))).toEqual([0, -1, 1, 2, 3])
+    const node = new Mesh({ geometry: box(1), quaternion: turn })
+    expect(node.rotation.y).toBeCloseTo(Math.PI / 2)
+    node.quaternion = { x: 0, y: 0, z: 0, w: 1 }
+    expect(node.rotation.y).toBeCloseTo(0)
+    expect(() => new Mesh({ geometry: box(1), quaternion: { x: 0, y: 0, z: 0 } })).toThrow('{ x, y, z, w }')
+  })
+
+  it('keeps a directional shadow to its shadowBounds, however far a caster flies', () => {
+    const scene = new Scene()
+    const sun = scene.add(new DirectionalLight({ direction: [0, -1, 0], castShadow: true, shadowBounds: { min: [-5, 0, -5], max: [5, 3, 5] } }))
+    scene.add(new Mesh({ geometry: box(1), castShadow: true }))
+    scene.add(new Mesh({ geometry: box(1), position: [400, 0, 0], castShadow: true }))
+    scene.update(0, 0)
+    const camera = new PerspectiveCamera({ position: [0, 5, 10], target: [0, 0, 0] })
+    const pinned = /** @type {any} */ (collect(scene, camera).shadow)
+    // ten units across (plus a little), not four hundred
+    expect(pinned.texelSize * 2048).toBeLessThan(12)
+    // without it, the map stretches to the far caster
+    sun.shadowBounds = null
+    expect(/** @type {any} */ (collect(scene, camera).shadow).texelSize * 2048).toBeGreaterThan(400)
+  })
+
+  it('says where frame() would put the camera without moving it', () => {
+    const view = new View({ canvas: page.canvas(), camera: { position: [0, 0, 10], target: [0, 0, 0] } })
+    const crate = view.scene.add(new Mesh({ geometry: box(2), position: [5, 0, 0] }))
+    view.scene.updateWorldTree()
+    const aim = /** @type {NonNullable<ReturnType<View['framing']>>} */ (view.framing(crate, { padding: 0.1 }))
+    expect(view.camera.position.toArray()).toEqual([0, 0, 10])
+    // centred on the crate - as the perspective view sees it, so not quite at its middle
+    expect(aim.target[0]).toBeCloseTo(5, 2)
+    expect(Math.abs(aim.target[1])).toBeLessThan(0.3)
+    expect(aim.height).toBeUndefined()
+    view.frame(crate, { padding: 0.1 })
+    expect(view.camera.position.distanceTo(aim.position)).toBeLessThan(1e-4)
+    expect(view.framing(new Group())).toBeNull()
+    view.dispose()
+  })
+})

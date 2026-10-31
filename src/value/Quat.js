@@ -1,6 +1,8 @@
 import * as quat from '../math/quat.js'
 import { describe, fail } from '../validate.js'
 
+/** @import { QuatInput } from '../types.js' */
+
 /**
  * A rotation quaternion [x, y, z, w]: a Float32Array(4) with accessors and chainable methods.
  * A node's quaternion and its Euler `rotation` keep each other in sync through these setters;
@@ -61,13 +63,20 @@ export class Quat extends Float32Array {
     return this.changed()
   }
 
-  /** @param {ArrayLike<number>} q [x, y, z, w] @param {string} [owner] @returns {this} */
+  /** @param {QuatInput} q [x, y, z, w], or { x, y, z, w } as physics engines give them @param {string} [owner] @returns {this} */
   copy(q, owner = 'Quat') {
-    if (!q || typeof q !== 'object' || !(q.length >= 4)) fail(owner, `expected a quaternion [x, y, z, w], got ${describe(q)}`)
-    this[0] = q[0]
-    this[1] = q[1]
-    this[2] = q[2]
-    this[3] = q[3]
+    const o = /** @type {any} */ (q)
+    if (o && typeof o === 'object' && o.length >= 4) {
+      this[0] = o[0]
+      this[1] = o[1]
+      this[2] = o[2]
+      this[3] = o[3]
+    } else if (o && typeof o === 'object' && 'x' in o && 'y' in o && 'z' in o && 'w' in o) {
+      this[0] = o.x
+      this[1] = o.y
+      this[2] = o.z
+      this[3] = o.w
+    } else fail(owner, `expected a quaternion [x, y, z, w] or { x, y, z, w }, got ${describe(q)}`)
     return this.changed()
   }
 

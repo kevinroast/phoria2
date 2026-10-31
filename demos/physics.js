@@ -137,7 +137,9 @@ export default async function run({ canvas, info }) {
   const { scene } = view
   scene.environment = 'studio'
   scene.environmentIntensity = 0.5
-  scene.add(new DirectionalLight({ direction: [-0.5, -1, -0.35], intensity: 1.6, castShadow: true }))
+  // shadows over the ground round the tower, where the debris lands - kept sharp however far a brick flies
+  scene.add(new DirectionalLight({ direction: [-0.5, -1, -0.35], intensity: 1.6, castShadow: true,
+    shadowBounds: { min: [-10, 0, -10], max: [10, 7.5, 10] } }))
   scene.add(new Mesh({ geometry: plane(400), material: { color: '#d9d3c7', roughness: 0.95 }, receiveShadow: true, pickable: false }))
 
   // ---- the tower as Rapier sees it: where each brick starts, and how it is turned. A course's bricks
@@ -194,21 +196,24 @@ export default async function run({ canvas, info }) {
   }
 
   // ---- the bridge: Rapier's bodies into phoria2's instances, once a frame after stepping. Rapier
-  // gives a translation and a rotation quaternion; setInstance takes them as they are
+  // gives a translation { x, y, z } and a rotation { x, y, z, w }; setInstance takes them as they are.
+  // A brick's colour changes only when it falls asleep or wakes with the tint on, so it's set then
+  /** The colour each brick is showing. @type {string[]} */
+  let showing = []
   const sync = () => {
     for (const [i, body] of bodies.entries()) {
-      const t = body.translation(), q = body.rotation()
-      bricks.setInstance(i, { position: [t.x, t.y, t.z], quaternion: [q.x, q.y, q.z, q.w], color: showSleeping && body.isSleeping() ? ASLEEP : colours[i] })
+      bricks.setInstance(i, { position: body.translation(), quaternion: body.rotation() })
+      const colour = showSleeping && body.isSleeping() ? ASLEEP : colours[i]
+      if (showing[i] !== colour) bricks.setColor(i, showing[i] = colour)
     }
     for (const ball of [...flying]) {
-      const t = ball.body.translation(), q = ball.body.rotation()
-      // a ball that got away - past the debris, or over the ground's edge - goes, before it stretches
-      // the shadows over the whole plain
+      const t = ball.body.translation()
+      // a ball that got away - past the debris, or over the ground's edge - goes
       if (Math.hypot(t.x, t.z) > 20 || t.y < -2) drop(ball)
-      else balls.setInstance(ball.slot, { position: [t.x, t.y, t.z], quaternion: [q.x, q.y, q.z, q.w], scale: BALL })
+      else balls.setInstance(ball.slot, { position: t, quaternion: ball.body.rotation(), scale: BALL })
     }
   }
-  /** Take a ball out of the world and the picture. @param {typeof flying[number]} ball */
+  /** Take a ball out of the world and the picture: scaled to 0, its instance is hidden until reused. @param {typeof flying[number]} ball */
   const drop = (ball) => {
     flying.splice(flying.indexOf(ball), 1)
     for (const [handle, b] of ballOf) if (b === ball) ballOf.delete(handle)

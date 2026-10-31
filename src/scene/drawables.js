@@ -12,7 +12,7 @@ import { NODE_OPTIONS, Node } from './Node.js'
 /** @import { Material, MaterialOptions } from '../material/Material.js' */
 /** @import { GeometryOptions } from '../geometry/Geometry.js' */
 /** @import { NodeOptions } from './Node.js' */
-/** @import { ColorInput, Vec3Input } from '../types.js' */
+/** @import { ColorInput, QuatInput, Vec3Input } from '../types.js' */
 
 /**
  * @typedef {NodeOptions & {
@@ -272,7 +272,7 @@ export class Mesh extends Drawable {
  * @typedef {object} InstanceOptions
  * @property {Vec3Input} [position]
  * @property {Vec3Input | Euler} [rotation] Euler angles in radians, XYZ order
- * @property {ArrayLike<number>} [quaternion]
+ * @property {QuatInput} [quaternion] [x, y, z, w] or { x, y, z, w } - as physics engines give them
  * @property {Vec3Input | number} [scale]
  * @property {ColorInput} [color] multiplies the material colour
  */
@@ -283,8 +283,19 @@ const scratch = { position: new Vec3(), scale: new Vec3(), quaternion: new Quat(
 const scratchMatrix = new Float32Array(16)
 
 /**
+ * True when an instance is scaled to nothing - hidden: it draws nothing, takes no room in its mesh's
+ * bounds and shows no label.
+ * @internal @param {ArrayLike<number>} m instance matrices @param {number} i
+ */
+export function hiddenInstance(m, i) {
+  const o = i * 16
+  return !m[o] && !m[o + 1] && !m[o + 2] && !m[o + 4] && !m[o + 5] && !m[o + 6] && !m[o + 8] && !m[o + 9] && !m[o + 10]
+}
+
+/**
  * Many copies of one geometry and material, drawn together. Set each copy with setInstance().
- * Picking reports which instance was hit.
+ * Picking reports which instance was hit. An instance scaled to 0 is hidden - it draws nothing, and
+ * framing, culling, shadows and labels leave it out - so a pool of instances can keep spares.
  */
 export class InstancedMesh extends Mesh {
   static type = 'instanced-mesh'
@@ -420,6 +431,7 @@ export class InstancedMesh extends Mesh {
     const ex = (local.max[0] - local.min[0]) / 2, ey = (local.max[1] - local.min[1]) / 2, ez = (local.max[2] - local.min[2]) / 2
     const w = this.worldMatrix, im = this.instanceMatrices, m = scratchMatrix
     for (let i = 0; i < this.count; i++) {
+      if (hiddenInstance(im, i)) continue
       mat4.multiply(m, w, im.subarray(i * 16, i * 16 + 16))
       const x = m[0] * cx + m[4] * cy + m[8] * cz + m[12]
       const y = m[1] * cx + m[5] * cy + m[9] * cz + m[13]

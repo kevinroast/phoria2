@@ -285,14 +285,9 @@ export default function run({ canvas, gui, info }) {
   const target = /** @type {import('phoria2').Vec3} */ (camera.target)
   /** @type {{ position: import('phoria2').Vec3, target: import('phoria2').Vec3, height: number } | null} */
   let aim = null
-  /** Where the camera would go to frame the pistol now - worked out by framing, then put back. @param {number} padding */
+  /** Where the camera would go to frame the pistol now - framing() says, without moving it. @param {number} padding */
   const aimAt = (padding) => {
-    const was = { position: camera.position.clone(), target: target.clone(), height: camera.height }
-    view.frame(pistol, { padding })
-    aim = { position: camera.position.clone(), target: target.clone(), height: camera.height }
-    camera.position.copy(was.position)
-    target.copy(was.target)
-    camera.height = was.height
+    aim = /** @type {typeof aim} */ (view.framing(pistol, { padding }))
   }
   /** The camera a step nearer its aim; at it, the aim is done with. @param {number} dt seconds, or Infinity to go straight there */
   const follow = (dt) => {

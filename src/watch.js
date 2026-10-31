@@ -219,6 +219,10 @@ export class ChangeWatch {
     if (light.direction) this.#pushAll(light.direction)
     if (light.target) this.#pushAll(light.target)
     if (light.castShadow) this.#push(1)
+    if (light.shadowBounds) {
+      this.#pushAll(light.shadowBounds.min)
+      this.#pushAll(light.shadowBounds.max)
+    }
     if ('range' in light) this.#push(light.range)
     if ('angle' in light) {
       this.#push(light.angle)

@@ -23,9 +23,10 @@ export const SHADOW_MAP_SIZE = 2048
  * @param {Box3[]} casters world bounds
  * @param {Box3[]} receivers world bounds
  * @param {number} [size] map size in texels
+ * @param {Box3 | null} [area] the light's shadowBounds: the map covers this across, whatever casts
  * @returns {ShadowFit | null}
  */
-export function fitShadow(direction, casters, receivers, size = SHADOW_MAP_SIZE) {
+export function fitShadow(direction, casters, receivers, size = SHADOW_MAP_SIZE, area = null) {
   const boxes = casters.filter((b) => !b.isEmpty())
   if (!boxes.length) return null
   const d = normalized(direction)
@@ -50,7 +51,10 @@ export function fitShadow(direction, casters, receivers, size = SHADOW_MAP_SIZE)
       if (z > z1) z1 = z
     }
   }
-  for (const b of boxes) corners(b, true)
+  // across the light's view: the area it was given, or else the casters; in depth, everything that
+  // casts - so a caster outside the area, between it and the light, still shadows it
+  if (area) corners(area, true)
+  for (const b of boxes) corners(b, !area)
   // receivers only stretch the depth (view z is negative in front, so the far end is the minimum)
   for (const b of receivers) if (!b.isEmpty()) corners(b, false)
 
