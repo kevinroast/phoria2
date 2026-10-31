@@ -18,6 +18,11 @@ business apps: charts, labelled scenes, diagrams, dashboards and product viewers
   agents too.
 - **No runtime dependencies.** ES modules, with TypeScript types.
 
+**New to phoria2?** The [getting started tutorial](https://kevs3d.co.uk/phoria2/tutorial.html)
+builds a first 3D scene and then a live dashboard of 3D charts, step by step - each step running
+beside its code, ready to copy as one HTML file. The [demo gallery](https://kevs3d.co.uk/phoria2/)
+shows the rest.
+
 **Using a coding agent?** Point it at [llms-full.txt](https://kevs3d.co.uk/phoria2/llms-full.txt) - the whole API
 in one page ([llms.txt](https://kevs3d.co.uk/phoria2/llms.txt) is the short index). Both ship in the
 package too, at `node_modules/phoria2/llms-full.txt`.
@@ -88,7 +93,9 @@ view.start((dt) => cube.rotateY(0.6 * dt))
 ```
 
 The canvas takes its size from CSS; the view matches its drawing buffer to it and follows resizes.
-The camera starts fitted to the scene, and `orbit: true` lets the user turn, pan and zoom it.
+The camera starts fitted to the scene, and `orbit: true` lets the user turn, pan and zoom it. The
+[tutorial](https://kevs3d.co.uk/phoria2/tutorial.html) takes it on from here: materials, shadows,
+labels, hover and click.
 
 ## Charts
 
@@ -189,8 +196,10 @@ Any browser with WebGL 2: current Chrome, Edge, Firefox and Safari (desktop and 
 
 ## Examples
 
-The [demo gallery](https://kevs3d.co.uk/phoria2/) shows each feature and a few showcase scenes;
-its source is in [`demos/`](https://github.com/kevinroast/phoria2/tree/main/demos).
+The [getting started tutorial](https://kevs3d.co.uk/phoria2/tutorial.html) walks through a first
+scene and a chart dashboard. The [demo gallery](https://kevs3d.co.uk/phoria2/) shows each feature
+and a few showcase scenes; its source, and the tutorial's, is in
+[`demos/`](https://github.com/kevinroast/phoria2/tree/main/demos).
 
 ## Licence
 
