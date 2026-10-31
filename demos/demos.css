@@ -2205,3 +2205,77 @@ button.demo-legend-item {
   font-weight: 500;
   text-transform: capitalize;
 }
+
+/* physics: a row of controls top right - sleeping bodies, reset - and the
+   hardest hits called out in red, fading after a moment */
+.phx-bar {
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 8px;
+  max-width: calc(100vw - 32px);
+}
+
+.phx-bar button {
+  padding: 7px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.phx-bar button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.phx-bar button.now {
+  color: #16161a;
+  background: var(--accent);
+}
+
+.phx-bar .phx-reset {
+  padding: 7px 10px;
+  margin-left: 4px;
+  border-color: var(--border);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.phx-hit {
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: #c8372d;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: opacity 0.6s;
+}
+
+.phoria-leader.phx-hit {
+  stroke: #c8372d;
+  fill: #c8372d;
+}
+
+.phx-hit.fading {
+  opacity: 0;
+}
+
+/* too narrow to sit beside the title: the controls go to the bottom, above the readout */
+@media (max-width: 860px) {
+  .phx-bar {
+    top: auto;
+    left: 16px;
+    bottom: 92px;
+    justify-content: center;
+  }
+}

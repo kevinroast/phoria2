@@ -94,6 +94,17 @@ const PREPARE = {
   'stylised-materials': `view.scene.traverse((n) => { if (n.className?.includes('demo-label')) n.visible = false })
     const Box3 = view.scene.bounds.constructor
     view.frame(new Box3([-5.6, 0, -5.4], [5.6, 2.2, 6.2]), { direction: [0, 0.8, 1], padding: 0 })`,
+  // the tower filling the picture, two balls through it, caught as it breaks apart
+  physics: `(async () => {
+    const Box3 = view.scene.bounds.constructor
+    view.frame(new Box3([-2.6, 0, -2.6], [2.6, 7, 2.6]), { direction: [1.3, 0.75, 1.6], padding: 0.06 })
+    await new Promise((r) => setTimeout(r, 100))
+    fire(view.rayAt(480, 330))
+    await new Promise((r) => setTimeout(r, 1600))
+    // a second, higher, so its callout is fresh as the first breach falls in
+    fire(view.rayAt(450, 190))
+    await new Promise((r) => setTimeout(r, 500))
+  })()`,
   'scene-json': `view.scene.find('turntable').rotation.set(0, 0, 0)
     view.camera.position.set(2.5, 4, 9)
     view.camera.target.set(0, 0.9, 0)

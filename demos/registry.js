@@ -53,6 +53,8 @@ export const DEMOS = [
   { name: 'schematic', title: 'a pistol as an exploded parts poster - numbered parts and legend, explode and assemble', hint: 'Explode or Assemble · hover a part or the legend' },
   { name: 'periodic table', title: 'the 118 elements - bars by category and atom animation on click', hint: 'Hover an element · click for its atom · zoom in for names' },
 
+  { section: 'Integrations', name: 'physics', title: 'a brick tower - integrated with Rapier a WebAssembly physics engine - impact callouts', hint: 'Click to fire a ball · drag to look around · hover a brick' },
+
   // tests of the API on bigger tasks go here with hidden: true - reachable by name
   // (demo.html?name=...), not listed in the gallery
 ]

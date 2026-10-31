@@ -106,6 +106,25 @@ describe('shadows', () => {
     expect(fitShadow([0, -1, 0], [], [])).toBeNull()
   })
 
+  it('stay on the texel grid as the casters move, so still shadows do not shimmer', () => {
+    const receivers = [new Box3([-10, -1, -10], [10, 0, 10])]
+    /** Where a still point falls on the map, in texels, with the casters spread this far. @param {number} reach */
+    const texelOf = (reach) => {
+      const fit = /** @type {NonNullable<ReturnType<typeof fitShadow>>} */ (fitShadow([0.3, -1, 0.2], [new Box3([-1, 0, -1], [reach, 2, 1])], receivers))
+      const m = fit.viewProjection, p = [0.37, 0, -0.41]
+      return [0, 1].map((r) => ((m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r]) * 0.5 + 0.5) * 2048)
+    }
+    // the debris spreading a little: the map keeps its size, and moves - if at all - by whole texels,
+    // so the still point falls on a texel exactly as it did, rather than part way across one
+    for (const [from, to] of [[1, 1.01], [1.5, 1.501], [2, 2.003]]) {
+      const [a, b] = [texelOf(from), texelOf(to)]
+      for (const axis of [0, 1]) {
+        const moved = b[axis] - a[axis]
+        expect(Math.abs(moved - Math.round(moved))).toBeLessThan(1e-3)
+      }
+    }
+  })
+
   it('go in the frame for the first casting light, which comes first, with casters the camera cannot see', () => {
     const scene = new Scene()
     scene.add(new DirectionalLight({ direction: [1, -1, 0] }))

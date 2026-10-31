@@ -85,6 +85,7 @@
     "plugin": "node scripts/plugin.mjs"
   },
   "devDependencies": {
+    "@dimforge/rapier3d-compat": "^0.21.0",
     "@eslint/js": "^10.0.1",
     "eslint": "^10.3.0",
     "gl-matrix": "^3.4.4",
