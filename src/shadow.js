@@ -58,10 +58,29 @@ export function fitShadow(direction, casters, receivers, size = SHADOW_MAP_SIZE)
   const margin = Math.max(x1 - x0, y1 - y0, 1e-3) * 0.02
   x0 -= margin; x1 += margin; y0 -= margin; y1 += margin
   const depthMargin = Math.max(z1 - z0, 1e-3) * 0.01
-  const projection = mat4.ortho(mat4.create(), x0, x1, y0, y1, -z1 - depthMargin, -z0 + depthMargin)
+  z0 -= depthMargin; z1 += depthMargin
+
+  // steady while things move: the map grows and shrinks in small steps rather than with every change
+  // in the casters' extent, and its edges sit on the texel grid, so a shadow that isn't moving falls
+  // on the same texels every frame, instead of shimmering as the fit slides about under it
+  const w = steps(x1 - x0), h = steps(y1 - y0)
+  const tx = w / size, ty = h / size
+  x0 = Math.floor((x0 + x1 - w) / 2 / tx) * tx
+  y0 = Math.floor((y0 + y1 - h) / 2 / ty) * ty
+  // the depth range too, which sets what each stored depth means
+  const dz = steps(z1 - z0) / 64
+  z0 = Math.floor(z0 / dz) * dz
+  z1 = Math.ceil(z1 / dz) * dz
+
+  const projection = mat4.ortho(mat4.create(), x0, x0 + w, y0, y0 + h, -z1, -z0)
   const viewProjection = new Mat4()
   mat4.multiply(viewProjection, projection, view)
-  return { viewProjection, texelSize: Math.max(x1 - x0, y1 - y0) / size }
+  return { viewProjection, texelSize: Math.max(w, h) / size }
+}
+
+/** A length rounded up to the next of a ladder of sizes, sixteen to each doubling. @param {number} v */
+function steps(v) {
+  return 2 ** (Math.ceil(Math.log2(Math.max(v, 1e-3)) * 16) / 16)
 }
 
 /** Spot shadows' map: four tiles of half its size, one a light. */
