@@ -280,6 +280,30 @@ export default function run({ canvas, gui, info }) {
     return part.add(new Label({ text: spec.n, position: [b.min[0] - 0.15, b.max[1] + 0.15, b.max[2]], className: 'gun-num', overlap: 'show' }))
   })
 
+  // ---- the framing follows the parts with a little lag, rather than jumping with each one: out
+  // quickly, so nothing leaves the view, in slowly, so parts settling into place don't make it wobble
+  const target = /** @type {import('phoria2').Vec3} */ (camera.target)
+  /** @type {{ position: import('phoria2').Vec3, target: import('phoria2').Vec3, height: number } | null} */
+  let aim = null
+  /** Where the camera would go to frame the pistol now - worked out by framing, then put back. @param {number} padding */
+  const aimAt = (padding) => {
+    const was = { position: camera.position.clone(), target: target.clone(), height: camera.height }
+    view.frame(pistol, { padding })
+    aim = { position: camera.position.clone(), target: target.clone(), height: camera.height }
+    camera.position.copy(was.position)
+    target.copy(was.target)
+    camera.height = was.height
+  }
+  /** The camera a step nearer its aim; at it, the aim is done with. @param {number} dt seconds, or Infinity to go straight there */
+  const follow = (dt) => {
+    if (!aim) return
+    const k = 1 - Math.exp(-dt / (aim.height > camera.height ? 0.08 : 0.25))
+    camera.position.lerp(aim.position, k)
+    target.lerp(aim.target, k)
+    camera.height += (aim.height - camera.height) * k
+    if (Math.abs(aim.height - camera.height) < aim.height * 1e-4) aim = null
+  }
+
   // ---- exploding: one value from assembled (0) to exploded (1); each part moves in its own slice of
   // it, the slide first, so they come apart and go back together one after another. The view frames
   // what is there at every step, so it zooms with the parts as they move
@@ -296,9 +320,10 @@ export default function run({ canvas, gui, info }) {
     }
     toggle.textContent = goal > 0.5 ? 'Assemble' : 'Explode'
     // a wider margin round the assembled pistol than round the parts, which fill the poster
-    view.frame(pistol, { padding: 0.14 - 0.08 * spread })
+    aimAt(0.14 - 0.08 * spread)
   }
   place()
+  follow(Infinity)
 
   toggle.addEventListener('click', () => {
     goal = goal > 0.5 ? 0 : 1
@@ -329,10 +354,12 @@ export default function run({ canvas, gui, info }) {
   })
 
   view.start((dt) => {
-    if (spread === goal) return
-    spread = goal > spread ? Math.min(goal, spread + dt * 0.45) : Math.max(goal, spread - dt * 0.45)
-    slider.value = String(spread)
-    place()
+    if (spread !== goal) {
+      spread = goal > spread ? Math.min(goal, spread + dt * 0.45) : Math.max(goal, spread - dt * 0.45)
+      slider.value = String(spread)
+      place()
+    }
+    follow(dt)
   })
 
   info.textContent = 'Explode and Assemble, or drag the slider · hover a part or a legend entry to find the other'
