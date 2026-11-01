@@ -2,43 +2,70 @@ import RAPIER from '@dimforge/rapier3d-compat'
 import { Box3, DirectionalLight, Geometry, InstancedMesh, Label, Mesh, PointLight, Raycaster, Texture, View, icosphere, plane } from 'phoria2'
 import { random } from './kit.js'
 
-// A tower of 477 bricks - or up to 1,650, its walls three thick - knocked down with Rapier (rapier.rs), a
-// physics engine written in Rust, compiled to WebAssembly. Rapier owns the motion: the bodies, their
-// collisions and the forces between them. phoria2 owns the picture: every brick is one instance of
-// one InstancedMesh, so the tower is a single draw call. Each frame Rapier steps and the bridge copies
-// its bodies' positions and turns into the instances. Then phoria2's own features go on top: a click fires a ball at what is under the
-// pointer - or drops a bomb on it from above, which bursts where it lands - the hardest hits and the
-// blasts get callouts at the point of impact, and hovering a brick says what Rapier knows about it.
-// Rapier sees each brick as a plain box; phoria2 draws it with its frog - the hollow in its top - and
-// a sandy, pitted face painted in code.
+// A tower of 477 bricks - or two or four times as many, smaller - knocked down with Rapier (rapier.rs),
+// a physics engine written in Rust, compiled to WebAssembly. Rapier owns the motion: the bodies, their
+// collisions and the forces between them. phoria2 owns the picture: the bricks are instances of one
+// InstancedMesh and the bands of stone every fifth course another, so the tower is two draw calls.
+// Each frame Rapier steps and the bridge copies its bodies' positions and turns into the instances.
+// Then phoria2's own features go on top: a click fires a ball at what is under the pointer - or drops
+// a bomb on it from above, which bursts where it lands - the hardest hits and the blasts get callouts
+// at the point of impact, and hovering a block says what Rapier knows about it. Rapier sees each block
+// as a plain box, a stone three times as dense as a brick; phoria2 draws the brick with its frog - the
+// hollow in its top - the stone with rounded edges, both with a sandy, pitted face painted in code.
 
 // a brick in a real one's proportions (215 x 65 x 102.5 mm)
 const [LONG, HIGH, DEEP] = [0.82, 0.26, 0.4]
-// the tower: its courses, and the bricks round the innermost wall. Bigger towers aren't taller - a tall
-// stack of loose bricks won't stand - but thicker: one, two or three walls, each round the last
-const RINGS = 26, AROUND = 18
-const WALLS = [1, 2, 3]
-/** The walls of a tower: each one's radius and bricks round. @param {number} count */
-const wallsOf = (count) => Array.from({ length: count }, (_, k) => {
-  // the innermost just wide enough that its bricks clear each other at its inner face; each other a
-  // brick's depth further out, with as many bricks round as clear each other there
-  const radius = LONG / 2 / Math.tan(Math.PI / AROUND) + DEEP / 2 + 0.075 + k * (DEEP + 0.02)
-  return { radius, around: Math.floor(Math.PI / Math.atan(LONG / 2 / (radius - DEEP / 2 - 0.075))) }
-})
-/** Bricks in a tower of so many walls: every wall's courses, and the battlements on the outermost. @param {number} count */
-const bricksIn = (count) => {
-  const walls = wallsOf(count), outer = walls[walls.length - 1].around
-  return walls.reduce((n, w) => n + RINGS * w.around, 0) + Math.ceil(outer / 2)
+// the tower: the same size whatever it's built of - its outside face 2.8 m from the middle, 26 full-size
+// courses tall. More bricks are smaller ones: two or four times as many, more round each course and more
+// courses, each brick scaled down by the square root
+const OUTSIDE = 2.8, COURSES = 26
+const DENSITIES = [1, 2, 4]
+/** The tower built of n times the bricks: their scale, the radius of the wall's middle, bricks round and courses. @param {number} n */
+const towerOf = (n) => {
+  const s = 1 / Math.sqrt(n), radius = OUTSIDE - (DEEP * s) / 2
+  // as many bricks round as clear each other at the wall's inner face - an even number, so the
+  // battlements on top alternate all the way round
+  let around = Math.floor(Math.PI / Math.atan((LONG * s) / 2 / (OUTSIDE - DEEP * s - 0.07 * s)))
+  around -= around % 2
+  return { s, radius, around, rings: Math.round(COURSES / s) }
 }
-const BALL = 0.5 // a ball's radius
-const SPEED = 34 // and how fast it leaves the camera, in m/s
-const MAX_BALLS = 12 // the oldest ball goes when another is fired
-const BOMB = 0.3, MAX_BOMBS = 4 // a bomb's radius, and how many can be in the air
+/**
+ * A tower's button: a patch of wall in its size of brick - two, three or four courses in the same
+ * square, so the bricks shrink as the towers' do - drawn in the button's text colour.
+ * @param {number} n the tower, as times the first's bricks
+ */
+const wallIcon = (n) => {
+  const rows = { 1: 2, 2: 3, 4: 4 }[n] ?? 2, h = 16 / rows, long = h * 2
+  let bricks = ''
+  for (let r = 0; r < rows; r++) {
+    // every other course shifted half a brick, as in the tower
+    for (let x = r % 2 ? -long / 2 : 0; x < 24; x += long) {
+      bricks += `<rect x="${(x + 0.6).toFixed(2)}" y="${(r * h + 0.6).toFixed(2)}" width="${(long - 1.2).toFixed(2)}" height="${(h - 1.2).toFixed(2)}" rx="0.6"/>`
+    }
+  }
+  return `<svg viewBox="0 0 24 16" width="24" height="16" fill="currentColor" aria-hidden="true">${bricks}</svg>`
+}
+const BRICK_SIZES = { 1: 'Large', 2: 'Medium', 4: 'Small' }
+/** Bricks in the tower: its courses, and every other brick of the battlements on top. @param {number} n */
+const bricksIn = (n) => {
+  const { around, rings } = towerOf(n)
+  return rings * around + around / 2
+}
+const BALL = 0.45 // a ball's radius
+const SPEED = 35 // and how fast it leaves the camera, in m/s
+const MAX_BALLS = 10 // the oldest ball goes when another is fired
+const BOMB = 0.3, MAX_BOMBS = 2 // a bomb's radius, and how many can be in the air
 const DROP = 11 // the height every bomb falls from, in m - well above the tower's top
-const BLAST = { radius: 3.4, kick: 30 } // how far a blast reaches, and the speed it gives a body at its centre, in m/s
+const BLAST = { radius: 3.3, kick: 30 } // how far a blast reaches, and the speed it gives a body at its centre, in m/s
 const STEP = 1 / 60 // Rapier's fixed timestep; the frame's time is spent in steps of this
+const SETTLE = 300 // the most steps a new tower is given to settle under its own weight
 const HIT = 400 // newtons: hits harder than this get a callout
 const BRICK = ['#a64b36', '#9c4432', '#b0553c', '#94402f', '#a95a42', '#9f4a37', '#8e3d2d']
+const STONE = ['#8e8f8f', '#9b9a95', '#7d8083', '#a5a39d', '#888a8c', '#949189', '#82847f']
+// every fifth course is a band of stone: rounded grey blocks, three times a brick's density
+const BAND = 5, DENSITY = { brick: 4, stone: 12 }
+// how many courses deep a band is, for each tower: the smaller the blocks, the more courses of them
+const BAND_DEPTH = { 1: 1, 2: 2, 4: 3 }
 
 /**
  * A brick with its frog: a box whose top is a rim round a hollow, the hollow's sides sloping in to its
@@ -88,6 +115,56 @@ function brickGeometry() {
   face([[ox, y, -oz], [fx, fy, -fz], [fx, fy, fz], [ox, y, oz]], [-1, 0, 0])
   face([[-ox, y, -oz], [-ox, y, oz], [-fx, fy, fz], [-fx, fy, -fz]], [1, 0, 0])
   face([[-fx, fy, -fz], [-fx, fy, fz], [fx, fy, fz], [fx, fy, -fz]], [0, 1, 0])
+  return new Geometry({ positions, normals, uvs, indices })
+}
+
+/**
+ * A stone: a brick-sized block with every edge and corner rounded. Each face is a grid, finer towards
+ * its edges; each point is pulled onto the rounded box - kept within a box shrunk by the rounding,
+ * then pushed out from it by the rounding's radius - and faces that way, so the curves shade smoothly.
+ * The grid lines towards an edge are spaced so the curve is cut into even angles.
+ * @param {number} [round] the radius of the rounding
+ */
+function stoneGeometry(round = 0.035) {
+  const half = [LONG / 2, HIGH / 2, DEEP / 2], steps = 4
+  /** Grid lines across one side of a face, from edge to edge. @param {number} h half the side */
+  const across = (h) => {
+    const out = []
+    for (let i = steps; i >= 0; i--) out.push(-(h - round + round * Math.tan((Math.PI / 4) * (i / steps))))
+    for (let i = 0; i <= steps; i++) out.push(h - round + round * Math.tan((Math.PI / 4) * (i / steps)))
+    return out
+  }
+  /** @type {number[]} */ const positions = [], normals = [], uvs = [], indices = []
+  for (const k of [0, 1, 2]) {
+    // the two axes across a face that looks along axis k, in the order that makes it face outward
+    const a = (k + 1) % 3, b = (k + 2) % 3, ta = across(half[a]), tb = across(half[b])
+    for (const sign of [1, -1]) {
+      const start = positions.length / 3
+      for (const vb of tb) {
+        for (const va of ta) {
+          const p = [0, 0, 0]
+          p[k] = sign * half[k]
+          p[a] = va
+          p[b] = vb
+          const c = p.map((v, i) => Math.max(-(half[i] - round), Math.min(half[i] - round, v)))
+          const d = p.map((v, i) => v - c[i]), l = Math.hypot(...d)
+          const n = d.map((v) => v / l), at = c.map((v, i) => v + n[i] * round)
+          positions.push(...at)
+          normals.push(...n)
+          // the texture across the face from the two axes it lies along, as on the bricks
+          uvs.push((k === 0 ? at[2] : at[0]) * 2.4, (k === 1 ? at[2] : at[1]) * 2.4)
+        }
+      }
+      const w = ta.length
+      for (let j = 0; j < tb.length - 1; j++) {
+        for (let i = 0; i < w - 1; i++) {
+          const q = start + j * w + i, quad = [q, q + 1, q + w + 1, q + w]
+          if (sign < 0) quad.reverse()
+          indices.push(quad[0], quad[1], quad[2], quad[0], quad[2], quad[3])
+        }
+      }
+    }
+  }
   return new Geometry({ positions, normals, uvs, indices })
 }
 
@@ -149,7 +226,7 @@ export default async function run({ canvas, info }) {
   await RAPIER.init()
 
   const view = new View({ canvas, orbit: true, background: '#e8e4dc', highlight: '#ffffff',
-    tooltip: (hit) => (hit.node === bricks && hit.instance !== null ? aboutBrick(hit.instance) : null) })
+    tooltip: (hit) => ((hit.node === bricks || hit.node === stones) && hit.instance !== null ? aboutBrick(slots[hit.node === stones ? 'stone' : 'brick'][hit.instance]) : null) })
   const { scene, camera } = view
   scene.environment = 'studio'
   scene.environmentIntensity = 0.5
@@ -158,39 +235,57 @@ export default async function run({ canvas, info }) {
   const sun = scene.add(new DirectionalLight({ direction: [-0.5, -1, -0.35], intensity: 1.6, castShadow: true }))
   scene.add(new Mesh({ geometry: plane(400), material: { color: '#d9d3c7', roughness: 0.95 }, receiveShadow: true, pickable: false }))
 
-  // ---- what phoria2 draws: one InstancedMesh of bricks - room for the biggest tower, drawing as many
-  // as the tower has - one of balls, one of bombs
-  const bricks = scene.add(new InstancedMesh({ geometry: brickGeometry(), count: bricksIn(Math.max(...WALLS)),
-    material: { ...brickSurface(), roughness: 0.9 }, castShadow: true, receiveShadow: true }))
+  // ---- what phoria2 draws: one InstancedMesh of bricks and one of stones - each with room for the
+  // biggest tower, drawing as many as the tower has - one of balls, one of bombs. Bricks and stones
+  // share the painted surface, the stones a little smoother
+  const surface = brickSurface(), most = bricksIn(Math.max(...DENSITIES))
+  const bricks = scene.add(new InstancedMesh({ geometry: brickGeometry(), count: most,
+    material: { ...surface, roughness: 0.9 }, castShadow: true, receiveShadow: true }))
+  const stones = scene.add(new InstancedMesh({ geometry: stoneGeometry(), count: most,
+    material: { ...surface, roughness: 0.7 }, castShadow: true, receiveShadow: true }))
+  const MESHES = { brick: bricks, stone: stones }
 
   // ---- the tower as Rapier sees it: where each brick starts, and how it is turned. A course's bricks
   // stand side by side round a circle, every other course shifted half a brick, like brickwork; on top
-  // of the outermost wall, every other brick of a last course makes the battlements, with a walk
-  // behind them over any walls inside
-  /** How many walls thick. */
-  let size = 1
-  /** @type {{ position: [number, number, number], turn: number, course: number }[]} */
+  // every other brick of a last course makes the battlements
+  /** How many times the first tower's bricks. */
+  let size = 2
+  /** The bricks' scale: smaller, the more of them there are. */
+  let scale = 1
+  /**
+   * Each block of the tower: where it starts, how it is turned, its course, what it is and the instance
+   * it's drawn as - its slot in its kind's InstancedMesh.
+   * @type {{ position: [number, number, number], turn: number, course: number, kind: 'brick' | 'stone', slot: number }[]}
+   */
   let layout = []
+  /** Which block each instance of each kind is, for the tooltip. @type {{ brick: number[], stone: number[] }} */
+  let slots = { brick: [], stone: [] }
   let radius = 0, height = 0
   /** Lay out the tower at the size chosen, colour its bricks - once, as the bridge never recolours them - and shade round it. */
   const plan = () => {
-    const walls = wallsOf(size), rand = random(7)
-    radius = walls[walls.length - 1].radius
-    height = (RINGS + 1) * HIGH
+    const { s, radius: r, around, rings } = towerOf(size), rand = random(7), high = HIGH * s
+    scale = s
+    radius = OUTSIDE
+    height = (rings + 1) * high
     layout = []
-    for (const [k, { radius: r, around }] of walls.entries()) {
-      const outer = k === walls.length - 1
-      for (let course = 0; course <= (outer ? RINGS : RINGS - 1); course++) {
-        for (let j = 0; j < around; j++) {
-          if (course === RINGS && j % 2) continue
-          const a = ((j + (course % 2) / 2) / around) * Math.PI * 2
-          // turned so the brick's length runs round the circle
-          layout.push({ position: [r * Math.cos(a), HIGH / 2 + course * HIGH, r * Math.sin(a)], turn: -a - Math.PI / 2, course })
-        }
+    slots = { brick: [], stone: [] }
+    for (let course = 0; course <= rings; course++) {
+      // a band of stone every fifth course - counting the courses as full-size bricks, so the bands are
+      // as far apart however small the bricks - one, two or three courses deep, but never the battlements
+      const starts = (/** @type {number} */ c) => c >= 0 && Math.floor((c + 1) * s / BAND) > Math.floor(c * s / BAND)
+      const depth = BAND_DEPTH[/** @type {keyof typeof BAND_DEPTH} */ (size)] ?? 1
+      const kind = course < rings && Array.from({ length: depth }, (_, k) => starts(course - k)).some(Boolean) ? 'stone' : 'brick'
+      for (let j = 0; j < around; j++) {
+        if (course === rings && j % 2) continue
+        const a = ((j + (course % 2) / 2) / around) * Math.PI * 2
+        const slot = slots[kind].push(layout.length) - 1
+        // turned so the brick's length runs round the circle
+        layout.push({ position: [r * Math.cos(a), high / 2 + course * high, r * Math.sin(a)], turn: -a - Math.PI / 2, course, kind, slot })
+        MESHES[kind].setColor(slot, (kind === 'stone' ? STONE : BRICK)[Math.floor(rand() * 7)])
       }
     }
-    bricks.count = layout.length
-    for (let i = 0; i < layout.length; i++) bricks.setColor(i, BRICK[Math.floor(rand() * BRICK.length)])
+    bricks.count = slots.brick.length
+    stones.count = slots.stone.length
     const reach = radius + 7.5
     sun.shadowBounds = { min: [-reach, 0, -reach], max: [reach, height + 0.5, reach] }
   }
@@ -223,18 +318,28 @@ export default async function run({ canvas, info }) {
     world.timestep = STEP
     // the ground: a fixed slab whose top is y = 0, where the plane is drawn
     world.createCollider(RAPIER.ColliderDesc.cuboid(60, 0.5, 60).setTranslation(0, -0.5, 0).setFriction(0.9))
-    bodies = layout.map(({ position: [x, y, z], turn }) => {
+    bodies = layout.map(({ position: [x, y, z], turn, kind }) => {
       const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(x, y, z)
         .setRotation({ x: 0, y: Math.sin(turn / 2), z: 0, w: Math.cos(turn / 2) }))
-      world.createCollider(RAPIER.ColliderDesc.cuboid(LONG / 2, HIGH / 2, DEEP / 2).setFriction(1).setDensity(4), body)
+      // the same box to Rapier either way - a stone is just denser, so heavier, and smoother
+      world.createCollider(RAPIER.ColliderDesc.cuboid((LONG * scale) / 2, (HIGH * scale) / 2, (DEEP * scale) / 2)
+        .setFriction(kind === 'stone' ? 0.8 : 1).setDensity(DENSITY[kind]), body)
       return body
     })
-    // asleep to begin with, so the tower stands still until something hits it. Rapier wakes bodies as
-    // it first finds them touching, which it does on the first step - so that step is taken here, with
-    // gravity off so nothing moves, and then they're put to sleep, their contacts known
-    world.gravity = { x: 0, y: 0, z: 0 }
-    world.step()
-    world.gravity = { x: 0, y: -9.81, z: 0 }
+    // settled, then asleep, so the tower stands still until something hits it. Rapier's contacts are
+    // soft - each sinks a little under the weight above it, like a stiff spring - so a tower stacked
+    // exactly sags as it wakes: the bottom courses squeeze down by about a centimetre each, and the
+    // top drops by half a brick or more. So it's left to sag here, before it's seen: stepped until it
+    // has stopped moving, then put to sleep as it stands
+    for (let step = 0, still = 0; step < SETTLE && still < 10; step++) {
+      world.step()
+      let fastest = 0
+      for (const body of bodies) {
+        const v = body.linvel()
+        fastest = Math.max(fastest, Math.abs(v.x), Math.abs(v.y), Math.abs(v.z))
+      }
+      still = fastest < 0.005 ? still + 1 : 0
+    }
     for (const body of bodies) body.sleep()
     flying = []
     ballOf = new Map()
@@ -248,7 +353,10 @@ export default async function run({ canvas, info }) {
   // ---- the bridge: Rapier's bodies into phoria2's instances, once a frame after stepping. Rapier
   // gives a translation { x, y, z } and a rotation { x, y, z, w }; setInstance takes them as they are
   const sync = () => {
-    for (const [i, body] of bodies.entries()) bricks.setInstance(i, { position: body.translation(), quaternion: body.rotation() })
+    for (const [i, body] of bodies.entries()) {
+      const { kind, slot } = layout[i]
+      MESHES[kind].setInstance(slot, { position: body.translation(), quaternion: body.rotation(), scale })
+    }
     for (const shot of [...flying]) {
       const t = shot.body.translation(), { mesh, size } = KINDS[shot.kind]
       // a shot that got away - past the debris, or over the ground's edge - goes
@@ -278,7 +386,7 @@ export default async function run({ canvas, info }) {
   const fire = (ray, kind = mode) => {
     aim.ray.origin.copy(ray.origin)
     aim.ray.direction.copy(ray.direction)
-    const hit = aim.intersect(bricks)[0]
+    const hit = aim.intersect([bricks, stones])[0]
     const t = hit?.distance ?? ray.intersectPlane([0, 1, 0], [0, 0, 0]) ?? 40
     const goal = ray.at(Math.min(t, 60))
     let from, v
@@ -420,7 +528,7 @@ export default async function run({ canvas, info }) {
   const aboutBrick = (i) => {
     const body = bodies[i], v = body.linvel()
     const speed = Math.hypot(v.x, v.y, v.z)
-    return { title: `Brick ${i + 1}`, rows: {
+    return { title: `${layout[i].kind === 'stone' ? 'Stone' : 'Brick'} ${i + 1}`, rows: {
       Course: String(layout[i].course + 1),
       Mass: `${body.mass().toFixed(2)} kg`,
       Speed: `${speed.toFixed(2)} m/s`,
@@ -436,7 +544,7 @@ export default async function run({ canvas, info }) {
     <button type="button" data-mode="bomb" title="Click to drop a bomb from above the spot - it bursts where it lands">Bomb</button>
     <span class="phx-gap"></span>
     <span class="phx-caption">Bricks</span>
-    ${WALLS.map((n) => `<button type="button" data-size="${n}" title="${n} wall${n > 1 ? 's' : ''} thick - ${bricksIn(n).toLocaleString()} bricks">${bricksIn(n).toLocaleString()}</button>`).join('')}
+    ${DENSITIES.map((n) => { const name = `${BRICK_SIZES[/** @type {1 | 2 | 4} */ (n)]} bricks - ${bricksIn(n).toLocaleString()} of them`; return `<button type="button" class="phx-icon" data-size="${n}" title="${name}" aria-label="${name}">${wallIcon(n)}</button>` }).join('')}
     <button type="button" class="phx-reset" data-reset title="Build the tower again">⟲</button>`
   document.body.append(bar)
   const showBar = () => {
@@ -445,7 +553,7 @@ export default async function run({ canvas, info }) {
   }
   const reset = (duration = 0.8) => {
     build()
-    view.frame(new Box3([-radius, 0, -radius], [radius, height, radius]), { direction: [1.3, 0.75, 1.6], padding: 0.17, duration })
+    view.frame(new Box3([-radius, 0, -radius], [radius, height, radius]), { direction: [1.3, 0.75, 1.6], padding: 0.1, duration })
   }
   bar.addEventListener('click', (event) => {
     const button = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (event.target).closest('button'))

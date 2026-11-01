@@ -2268,6 +2268,10 @@ button.demo-legend-item {
   background: rgba(255, 255, 255, 0.06);
 }
 
+.phx-bar .phx-icon svg {
+  display: block;
+}
+
 .phx-bar button.now {
   color: #16161a;
   background: var(--accent);
@@ -2308,5 +2312,34 @@ button.demo-legend-item {
     left: 16px;
     bottom: 92px;
     justify-content: center;
+  }
+}
+
+/* a phone: the controls tighten to stay on one line - snugger buttons, and a hairline between ball
+   and bomb and the brick counts instead of the caption */
+@media (max-width: 520px) {
+  .phx-bar {
+    flex-wrap: nowrap;
+    gap: 2px;
+    padding: 6px;
+  }
+
+  .phx-bar button {
+    padding: 7px 9px;
+  }
+
+  .phx-bar .phx-reset {
+    margin-left: 2px;
+  }
+
+  .phx-caption {
+    display: none;
+  }
+
+  .phx-gap {
+    align-self: stretch;
+    width: 1px;
+    margin: 4px 5px;
+    background: var(--border);
   }
 }
