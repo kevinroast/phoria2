@@ -3,7 +3,7 @@
 Small, friendly 3D for the web. A WebGL 2 renderer with PBR materials, shadows, instancing, points,
 lines, labels, picking, glTF models and particles, behind an API small enough to learn in an
 afternoon - aimed at business apps: charts, labelled scenes, diagrams, dashboards, floor plans and
-product viewers. The [demo gallery](https://kevs3d.co.uk/phoria2/)
+product viewers. The [demo gallery](https://kevs3d.co.uk/phoria2/).
 
 - **Small**: about 70 KB gzipped for a lit, interactive scene, and about 116 KB for everything;
   charts, particles, glTF, motion and editing are separate imports, and the heavier parts (shadows,
@@ -29,8 +29,7 @@ product viewers. The [demo gallery](https://kevs3d.co.uk/phoria2/)
 
 **New to phoria2?** The [getting started tutorial](https://kevs3d.co.uk/phoria2/tutorial.html)
 builds a first 3D scene and then a live dashboard of 3D charts, step by step - each step running
-beside its code, ready to copy as one HTML file. The [demo gallery](https://kevs3d.co.uk/phoria2/)
-shows the rest.
+beside its code, ready to copy as one HTML file.
 
 **Using a coding agent?** Point it at [llms-full.txt](https://kevs3d.co.uk/phoria2/llms-full.txt) - the whole API
 in one page ([llms.txt](https://kevs3d.co.uk/phoria2/llms.txt) is the short index). Both ship in the
