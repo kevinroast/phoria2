@@ -2,21 +2,34 @@ import RAPIER from '@dimforge/rapier3d-compat'
 import { Box3, DirectionalLight, Geometry, InstancedMesh, Label, Mesh, PointLight, Raycaster, Texture, View, icosphere, plane } from 'phoria2'
 import { random } from './kit.js'
 
-// A tower of 477 bricks, knocked down with Rapier (rapier.rs) - a physics engine written in Rust,
-// compiled to WebAssembly. Rapier owns the motion: the bodies, their collisions and the forces between
-// them. phoria2 owns the picture: every brick is one instance of one InstancedMesh, so the tower is a
-// single draw call. Each frame Rapier steps and the bridge copies its bodies' positions and turns into
-// the instances. Then phoria2's own features go on top: a click fires a ball at what is under the
+// A tower of 477 bricks - or up to 1,650, its walls three thick - knocked down with Rapier (rapier.rs), a
+// physics engine written in Rust, compiled to WebAssembly. Rapier owns the motion: the bodies, their
+// collisions and the forces between them. phoria2 owns the picture: every brick is one instance of
+// one InstancedMesh, so the tower is a single draw call. Each frame Rapier steps and the bridge copies
+// its bodies' positions and turns into the instances. Then phoria2's own features go on top: a click fires a ball at what is under the
 // pointer - or drops a bomb on it from above, which bursts where it lands - the hardest hits and the
 // blasts get callouts at the point of impact, and hovering a brick says what Rapier knows about it.
 // Rapier sees each brick as a plain box; phoria2 draws it with its frog - the hollow in its top - and
 // a sandy, pitted face painted in code.
 
-const RINGS = 26, AROUND = 18 // the tower's courses, and bricks in each
-const RADIUS = 2.6
-// a brick in a real one's proportions (215 x 65 x 102.5 mm), sized to just clear its neighbours at the
-// tower's inner face
+// a brick in a real one's proportions (215 x 65 x 102.5 mm)
 const [LONG, HIGH, DEEP] = [0.82, 0.26, 0.4]
+// the tower: its courses, and the bricks round the innermost wall. Bigger towers aren't taller - a tall
+// stack of loose bricks won't stand - but thicker: one, two or three walls, each round the last
+const RINGS = 26, AROUND = 18
+const WALLS = [1, 2, 3]
+/** The walls of a tower: each one's radius and bricks round. @param {number} count */
+const wallsOf = (count) => Array.from({ length: count }, (_, k) => {
+  // the innermost just wide enough that its bricks clear each other at its inner face; each other a
+  // brick's depth further out, with as many bricks round as clear each other there
+  const radius = LONG / 2 / Math.tan(Math.PI / AROUND) + DEEP / 2 + 0.075 + k * (DEEP + 0.02)
+  return { radius, around: Math.floor(Math.PI / Math.atan(LONG / 2 / (radius - DEEP / 2 - 0.075))) }
+})
+/** Bricks in a tower of so many walls: every wall's courses, and the battlements on the outermost. @param {number} count */
+const bricksIn = (count) => {
+  const walls = wallsOf(count), outer = walls[walls.length - 1].around
+  return walls.reduce((n, w) => n + RINGS * w.around, 0) + Math.ceil(outer / 2)
+}
 const BALL = 0.5 // a ball's radius
 const SPEED = 34 // and how fast it leaves the camera, in m/s
 const MAX_BALLS = 12 // the oldest ball goes when another is fired
@@ -140,32 +153,47 @@ export default async function run({ canvas, info }) {
   const { scene, camera } = view
   scene.environment = 'studio'
   scene.environmentIntensity = 0.5
-  // shadows over the ground round the tower, where the debris lands - kept sharp however far a brick flies
-  scene.add(new DirectionalLight({ direction: [-0.5, -1, -0.35], intensity: 1.6, castShadow: true,
-    shadowBounds: { min: [-10, 0, -10], max: [10, 7.5, 10] } }))
+  // shadows over the ground round the tower, where the debris lands - kept sharp however far a brick
+  // flies; the area grows with the tower
+  const sun = scene.add(new DirectionalLight({ direction: [-0.5, -1, -0.35], intensity: 1.6, castShadow: true }))
   scene.add(new Mesh({ geometry: plane(400), material: { color: '#d9d3c7', roughness: 0.95 }, receiveShadow: true, pickable: false }))
 
-  // ---- the tower as Rapier sees it: where each brick starts, and how it is turned. A course's bricks
-  // stand side by side round a circle, every other course shifted half a brick, like brickwork; on top,
-  // every other brick of a last course makes the battlements
-  const rand = random(7)
-  /** @type {{ position: [number, number, number], turn: number, course: number }[]} */
-  const layout = []
-  for (let course = 0; course <= RINGS; course++) {
-    for (let j = 0; j < AROUND; j++) {
-      if (course === RINGS && j % 2) continue
-      const a = ((j + (course % 2) / 2) / AROUND) * Math.PI * 2
-      // turned so the brick's length runs round the circle
-      layout.push({ position: [RADIUS * Math.cos(a), HIGH / 2 + course * HIGH, RADIUS * Math.sin(a)], turn: -a - Math.PI / 2, course })
-    }
-  }
-  const colours = layout.map(() => BRICK[Math.floor(rand() * BRICK.length)])
-
-  // ---- what phoria2 draws: one InstancedMesh of bricks, one of balls
-  const bricks = scene.add(new InstancedMesh({ geometry: brickGeometry(), count: layout.length,
+  // ---- what phoria2 draws: one InstancedMesh of bricks - room for the biggest tower, drawing as many
+  // as the tower has - one of balls, one of bombs
+  const bricks = scene.add(new InstancedMesh({ geometry: brickGeometry(), count: bricksIn(Math.max(...WALLS)),
     material: { ...brickSurface(), roughness: 0.9 }, castShadow: true, receiveShadow: true }))
-  // each brick's colour, set once - the bridge moves them, and never needs to recolour
-  colours.forEach((colour, i) => bricks.setColor(i, colour))
+
+  // ---- the tower as Rapier sees it: where each brick starts, and how it is turned. A course's bricks
+  // stand side by side round a circle, every other course shifted half a brick, like brickwork; on top
+  // of the outermost wall, every other brick of a last course makes the battlements, with a walk
+  // behind them over any walls inside
+  /** How many walls thick. */
+  let size = 1
+  /** @type {{ position: [number, number, number], turn: number, course: number }[]} */
+  let layout = []
+  let radius = 0, height = 0
+  /** Lay out the tower at the size chosen, colour its bricks - once, as the bridge never recolours them - and shade round it. */
+  const plan = () => {
+    const walls = wallsOf(size), rand = random(7)
+    radius = walls[walls.length - 1].radius
+    height = (RINGS + 1) * HIGH
+    layout = []
+    for (const [k, { radius: r, around }] of walls.entries()) {
+      const outer = k === walls.length - 1
+      for (let course = 0; course <= (outer ? RINGS : RINGS - 1); course++) {
+        for (let j = 0; j < around; j++) {
+          if (course === RINGS && j % 2) continue
+          const a = ((j + (course % 2) / 2) / around) * Math.PI * 2
+          // turned so the brick's length runs round the circle
+          layout.push({ position: [r * Math.cos(a), HIGH / 2 + course * HIGH, r * Math.sin(a)], turn: -a - Math.PI / 2, course })
+        }
+      }
+    }
+    bricks.count = layout.length
+    for (let i = 0; i < layout.length; i++) bricks.setColor(i, BRICK[Math.floor(rand() * BRICK.length)])
+    const reach = radius + 7.5
+    sun.shadowBounds = { min: [-reach, 0, -reach], max: [reach, height + 0.5, reach] }
+  }
   const balls = scene.add(new InstancedMesh({ geometry: icosphere({ radius: 1, detail: 3 }), count: MAX_BALLS,
     material: { color: '#3b3f46', metalness: 0.9, roughness: 0.25 }, castShadow: true, pickable: false }))
   // bombs: smaller, glowing at the seams
@@ -196,12 +224,18 @@ export default async function run({ canvas, info }) {
     // the ground: a fixed slab whose top is y = 0, where the plane is drawn
     world.createCollider(RAPIER.ColliderDesc.cuboid(60, 0.5, 60).setTranslation(0, -0.5, 0).setFriction(0.9))
     bodies = layout.map(({ position: [x, y, z], turn }) => {
-      // asleep to begin with, so the tower stands still until something hits it
       const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(x, y, z)
-        .setRotation({ x: 0, y: Math.sin(turn / 2), z: 0, w: Math.cos(turn / 2) }).setSleeping(true))
+        .setRotation({ x: 0, y: Math.sin(turn / 2), z: 0, w: Math.cos(turn / 2) }))
       world.createCollider(RAPIER.ColliderDesc.cuboid(LONG / 2, HIGH / 2, DEEP / 2).setFriction(1).setDensity(4), body)
       return body
     })
+    // asleep to begin with, so the tower stands still until something hits it. Rapier wakes bodies as
+    // it first finds them touching, which it does on the first step - so that step is taken here, with
+    // gravity off so nothing moves, and then they're put to sleep, their contacts known
+    world.gravity = { x: 0, y: 0, z: 0 }
+    world.step()
+    world.gravity = { x: 0, y: -9.81, z: 0 }
+    for (const body of bodies) body.sleep()
     flying = []
     ballOf = new Map()
     for (let i = 0; i < MAX_BALLS; i++) balls.setInstance(i, { scale: 0 })
@@ -341,6 +375,7 @@ export default async function run({ canvas, info }) {
   // body near enough gets an impulse straight away from the centre - strongest close in, falling to
   // nothing at the edge, with a little lift - applied a touch off its centre of mass, so it spins as
   // it flies. phoria2 draws the fireball, lights the bricks round it for a moment, and names the damage
+  const jitter = random(3)
   const blast = {
     ball: scene.add(new Mesh({ geometry: icosphere({ radius: 1, detail: 3 }), visible: false, pickable: false,
       material: { color: '#ffb547', unlit: true, opacity: 0.9 } })),
@@ -355,7 +390,7 @@ export default async function run({ canvas, info }) {
       if (r > BLAST.radius) return false
       // the change in speed this body gets, along the way out from the centre
       const kick = BLAST.kick * (1 - r / BLAST.radius) * body.mass(), out = 1 / Math.max(r, 0.05)
-      const off = () => (rand() - 0.5) * 0.2
+      const off = () => (jitter() - 0.5) * 0.2
       body.applyImpulseAtPoint({ x: d[0] * out * kick, y: (d[1] * out + 0.4) * kick, z: d[2] * out * kick },
         { x: t.x + off(), y: t.y + off(), z: t.z + off() }, true)
       return true
@@ -399,23 +434,33 @@ export default async function run({ canvas, info }) {
   bar.innerHTML = `
     <button type="button" data-mode="ball" title="Click to fire an iron ball">Ball</button>
     <button type="button" data-mode="bomb" title="Click to drop a bomb from above the spot - it bursts where it lands">Bomb</button>
+    <span class="phx-gap"></span>
+    <span class="phx-caption">Bricks</span>
+    ${WALLS.map((n) => `<button type="button" data-size="${n}" title="${n} wall${n > 1 ? 's' : ''} thick - ${bricksIn(n).toLocaleString()} bricks">${bricksIn(n).toLocaleString()}</button>`).join('')}
     <button type="button" class="phx-reset" data-reset title="Build the tower again">⟲</button>`
   document.body.append(bar)
   const showBar = () => {
     for (const b of bar.querySelectorAll('[data-mode]')) b.classList.toggle('now', /** @type {HTMLElement} */ (b).dataset.mode === mode)
+    for (const b of bar.querySelectorAll('[data-size]')) b.classList.toggle('now', Number(/** @type {HTMLElement} */ (b).dataset.size) === size)
   }
   const reset = (duration = 0.8) => {
     build()
-    view.frame(new Box3([-RADIUS, 0, -RADIUS], [RADIUS, (RINGS + 1) * HIGH, RADIUS]), { direction: [1.3, 0.75, 1.6], padding: 0.17, duration })
+    view.frame(new Box3([-radius, 0, -radius], [radius, height, radius]), { direction: [1.3, 0.75, 1.6], padding: 0.17, duration })
   }
   bar.addEventListener('click', (event) => {
     const button = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (event.target).closest('button'))
     if (!button) return
     if (button.dataset.mode) mode = /** @type {keyof typeof KINDS} */ (button.dataset.mode)
-    else if ('reset' in button.dataset) reset()
+    else if (button.dataset.size) {
+      // a new size of tower: laid out again, and rebuilt
+      size = Number(button.dataset.size)
+      plan()
+      reset()
+    } else if ('reset' in button.dataset) reset()
     showBar()
   })
   showBar()
+  plan()
   reset(0)
   if (import.meta.env.DEV) Object.assign(window, { view, fire })
 
