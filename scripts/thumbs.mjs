@@ -108,6 +108,11 @@ const PREPARE = {
   // the carved block and its cutters filling the picture
   csg: `const Box3 = view.scene.bounds.constructor
     view.frame(new Box3([-1.9, 0, -1.4], [1.9, 2.3, 1.4]), { direction: [1.1, 1, 1.5], padding: 0.02 })`,
+  // the office with its navigation mesh showing, the people part way along their walks
+  'path-finding': `(async () => {
+    document.querySelector('[data-mesh]').click()
+    await new Promise((r) => setTimeout(r, 1500))
+  })()`,
   'scene-json': `view.scene.find('turntable').rotation.set(0, 0, 0)
     view.camera.position.set(2.5, 4, 9)
     view.camera.target.set(0, 0.9, 0)

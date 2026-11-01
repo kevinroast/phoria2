@@ -2450,3 +2450,63 @@ button.demo-legend-item {
     margin-left: 2px;
   }
 }
+
+/* navigation: show the navigation mesh, and start again - top right, or along the bottom on a phone -
+   and the chosen person's name over their head */
+.nav-bar {
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+}
+
+.nav-bar button {
+  padding: 7px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.nav-bar button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.nav-bar button.now {
+  color: #16161a;
+  background: var(--accent);
+}
+
+.nav-bar .nav-reset {
+  padding: 7px 10px;
+  border-color: var(--border);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.nav-name {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #ffb000;
+  color: #16161a;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+@media (max-width: 860px) {
+  .nav-bar {
+    top: auto;
+    bottom: 92px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+  }
+}
