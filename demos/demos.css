@@ -2343,3 +2343,110 @@ button.demo-legend-item {
     background: var(--border);
   }
 }
+
+/* csg: the cutters and what each does, top right - or along the bottom on a phone - and each
+   cutter's name by its tip */
+.csg-bar {
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+}
+
+.csg-bar button {
+  padding: 7px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.csg-bar button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.csg-bar button.now {
+  color: #16161a;
+  background: var(--accent);
+}
+
+/* an operation, when it's the chosen cutter's, in the colour that cutter's ghost takes */
+.csg-bar button[data-op].now {
+  color: #fff;
+  background: var(--op);
+}
+
+.csg-bar .csg-icon {
+  padding: 5px 9px;
+}
+
+.csg-bar .csg-icon svg {
+  display: block;
+}
+
+.csg-gap {
+  align-self: stretch;
+  width: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+.csg-bar .csg-reset {
+  padding: 7px 10px;
+  margin-left: 4px;
+  border-color: var(--border);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.csg-tag {
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(22, 22, 26, 0.72);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+@media (max-width: 860px) {
+  .csg-bar {
+    top: auto;
+    left: 16px;
+    bottom: 92px;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 520px) {
+  .csg-bar {
+    gap: 2px;
+    padding: 6px;
+  }
+
+  .csg-bar button {
+    padding: 7px 7px;
+    font-size: 12px;
+  }
+
+  .csg-bar .csg-icon {
+    padding: 5px 5px;
+  }
+
+  .csg-gap {
+    margin: 4px 3px;
+  }
+
+  .csg-bar .csg-reset {
+    margin-left: 2px;
+  }
+}

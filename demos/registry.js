@@ -54,6 +54,7 @@ export const DEMOS = [
   { name: 'periodic table', title: 'the 118 elements - bars by category and atom animation on click', hint: 'Hover an element · click for its atom · zoom in for names' },
 
   { section: 'Integrations', name: 'physics', title: 'a brick tower - integrated with Rapier a WebAssembly physics engine', hint: 'Click to fire a ball, or a bomb · hover a brick' },
+  { name: 'csg', title: 'a carved metal block - integrated with Manifold a WebAssembly solid modelling library', hint: 'Drag a cutter over the block' },
 
   // tests of the API on bigger tasks go here with hidden: true - reachable by name
   // (demo.html?name=...), not listed in the gallery
