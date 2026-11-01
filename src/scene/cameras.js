@@ -20,7 +20,10 @@ const tmp3 = new Float32Array(9)
 export function aimAt(node, target) {
   if (node.position.equals(target, 1e-9)) return
   const dir = target.clone().sub(node.position).normalize()
-  const up = Math.abs(dir[1]) > 0.9999 ? [0, 0, -1] : UP
+  // world up keeps the picture upright, and turns it smoothly with the view right up to straight up
+  // or down - the orbit stops a thousandth of a radian short. Only within a hair of exactly vertical
+  // (the 'top' preset's view), where up would no longer say which way the screen faces, is north up
+  const up = Math.hypot(dir[0], dir[2]) < 5e-4 ? [0, 0, -1] : UP
   mat4.targetTo(tmp, node.position, target, up)
   const q = quat.normalize(new Float32Array(4), quat.fromMat3(new Float32Array(4), mat3.fromMat4(tmp3, tmp)))
   node.quaternion.copy(q)

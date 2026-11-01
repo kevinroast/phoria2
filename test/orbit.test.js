@@ -1,6 +1,6 @@
 // Orbiting in motion: dragging, panning, zooming and gliding, and the limits holding throughout.
 import { afterAll, describe, expect, it } from 'vitest'
-import { OrbitControl, OrthographicCamera, PerspectiveCamera } from '../src/index.js'
+import { OrbitControl, OrthographicCamera, PerspectiveCamera, Vec3 } from '../src/index.js'
 import { fakePage } from './fakes.js'
 
 const page = fakePage()
@@ -26,6 +26,28 @@ describe('orbit limits', () => {
     expect(round(control.spherical.pitch)).toBe(0.5)
     control.rotate(0, -3)
     expect(round(control.spherical.pitch)).toBe(-0.2)
+  })
+
+  it('keeps the picture the right way round all the way up to straight down', () => {
+    const { control, camera } = orbit()
+    /** Which way is up on screen, in the world - the camera's up, aimed as it is. */
+    const screenUp = () => {
+      camera.updateMatrix()
+      return new Vec3(0, 1, 0).applyQuaternion(camera.quaternion)
+    }
+    // looking down from the +x side: screen up points away from the camera, along -x
+    control.spherical = { yaw: Math.PI / 2, pitch: 1.5, distance: 10 }
+    const near = screenUp()
+    // turned on up to the limit, just short of straight down: the picture mustn't swing round
+    control.rotate(0, 1)
+    expect(control.spherical.pitch).toBeGreaterThan(1.569)
+    const top = screenUp()
+    expect(top.dot(near)).toBeGreaterThan(0.99)
+    expect(top[0]).toBeLessThan(-0.99)
+    // a camera looking exactly straight down still has north up the screen, as the 'top' preset says
+    const above = new PerspectiveCamera({ position: [0, 10, 0], target: [0, 0, 0] })
+    above.updateMatrix()
+    expect(Array.from(new Vec3(0, 1, 0).applyQuaternion(above.quaternion)).map(round)).toEqual([0, 0, -1])
   })
 
   it('zooms no closer than minDistance and no further than maxDistance, keeping the direction', () => {
