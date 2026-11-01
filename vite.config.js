@@ -89,6 +89,9 @@ export default defineConfig(({ mode }) => ({
   build: mode === 'demos'
     ? {
         outDir: 'dist-demos',
+        // the physics demo's chunk carries Rapier's WebAssembly inline (@dimforge/rapier3d-compat),
+        // about 4.3 MB - loaded only on that demo's page, so its size is expected, not a warning
+        chunkSizeWarningLimit: 5000,
         rollupOptions: {
           input: {
             index: resolve(root, 'index.html'),
