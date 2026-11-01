@@ -307,7 +307,9 @@ extrude({
 
 Your own: `new Geometry({ positions, normals?, uvs?, uvs2?, colors?, indices? })` - flat arrays, xyz per
 vertex; `colors` are rgb 0-1 per vertex (use `material: { vertexColors: true }`); `uvs2` is a second UV
-set, for baked occlusion and light maps (below).
+set, for baked occlusion and light maps (below). To animate one - cloth, a wave, a morph - write
+`geometry.positions` in place and call `geometry.needsUpdate()` each frame; normals you didn't give are
+worked out again to follow the shape.
 
 ## Materials
 

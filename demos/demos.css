@@ -2510,3 +2510,52 @@ button.demo-legend-item {
     transform: translateX(-50%);
   }
 }
+
+/* cloth: drape or hang, and the wind - top right, or along the bottom on a phone */
+.cloth-bar {
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+}
+
+.cloth-bar button {
+  padding: 7px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cloth-bar button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.cloth-bar button.now {
+  color: #16161a;
+  background: var(--accent);
+}
+
+.cloth-gap {
+  align-self: stretch;
+  width: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+@media (max-width: 860px) {
+  .cloth-bar {
+    top: auto;
+    bottom: 92px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+  }
+}

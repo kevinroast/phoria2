@@ -47,13 +47,14 @@ export const DEMOS = [
   { name: 'cells', title: 'an animal and a plant cell, cut open - a labelled science poster, hover a part to light it' },
   { name: 'skull', title: 'human skull as an anatomy plate - bones coloured and named in Latin, click to explode view' },
   { name: 'cad', title: 'a pillow-block bearing as an engineering drawing - four views, dimensions, exploded parts', hint: '' },
+  { name: 'schematic', title: 'a pistol as an exploded parts poster - numbered parts and legend, explode and assemble', hint: 'Explode or Assemble · hover a part or the legend' },
+  { name: 'periodic table', title: 'the 118 elements - bars by category and atom animation on click', hint: 'Hover an element · click for its atom · zoom in for names' },
   { name: 'galaxy', title: 'a spiral galaxy - 200,000 additive stars, old and young, round a glowing core' },
   { name: 'fireworks', title: 'fireworks over a city across the water - rockets with physics, four burst shapes, reflections' },
   { name: 'paint', title: 'a paint cannon - click the wall to aim; drops splat and drip into its canvas textures', orbit: false },
-  { name: 'schematic', title: 'a pistol as an exploded parts poster - numbered parts and legend, explode and assemble', hint: 'Explode or Assemble · hover a part or the legend' },
-  { name: 'periodic table', title: 'the 118 elements - bars by category and atom animation on click', hint: 'Hover an element · click for its atom · zoom in for names' },
 
   { section: 'Integrations', name: 'physics', title: 'a brick tower - integrated with Rapier a WebAssembly physics engine', hint: 'Click to fire a ball, or a bomb · hover a brick' },
+  { name: 'cloth', title: 'a tablecloth draped and blown - integrated with Rapier soft bodies', hint: 'Drag the cloth to lift it · drag what is on the table' },
   { name: 'csg', title: 'a carved metal block - integrated with Manifold a WebAssembly solid modelling library', hint: 'Drag a cutter over the block' },
   { name: 'path finding', title: 'meeple in an office - integrated with recast-navigation a WebAssembly pathfinding library', hint: 'Tap a meeple, then the floor location · drag a filing cabinet' },
 

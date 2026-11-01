@@ -87,6 +87,31 @@ function expectWellFormed(g) {
 
 // --- generators ------------------------------------------------------------------------------
 
+describe('normals after an edit', () => {
+  // a single triangle in the floor (y = 0), facing up
+  const flat = () => [0, 0, 0, 0, 0, 1, 1, 0, 0]
+  const up = (n) => Array.from(n.slice(0, 3)).map((v) => Math.round(v * 1000) / 1000)
+
+  it('works out normals again after needsUpdate(), when they were worked out on first read', () => {
+    const g = new Geometry({ positions: flat(), indices: [0, 1, 2] })
+    expect(up(g.normals)).toEqual([0, 1, 0])
+    // stood on its edge: it now faces along -z... once phoria2 has looked again
+    g.positions.set([0, 0, 0, 0, 1, 0, 1, 0, 0])
+    g.needsUpdate()
+    expect(up(g.normals)).toEqual([0, 0, -1])
+  })
+
+  it('keeps normals that were given, assigned or asked for', () => {
+    const given = new Geometry({ positions: flat(), indices: [0, 1, 2], normals: [0, 1, 0, 0, 1, 0, 0, 1, 0] })
+    given.positions.set([0, 0, 0, 0, 1, 0, 1, 0, 0])
+    expect(up(given.needsUpdate().normals)).toEqual([0, 1, 0])
+    // computeNormals() called by hand - the way to say "these, until I say otherwise"
+    const asked = new Geometry({ positions: flat(), indices: [0, 1, 2] }).computeNormals()
+    asked.positions.set([0, 0, 0, 0, 1, 0, 1, 0, 0])
+    expect(up(asked.needsUpdate().normals)).toEqual([0, 1, 0])
+  })
+})
+
 describe('box', () => {
   it('has 4 vertices and 2 triangles per face by default, 1 unit across', () => {
     const g = box()

@@ -45,6 +45,8 @@ export class Geometry {
 
   /** @type {Float32Array | null} */
   #normals = null
+  /** The normals were worked out on first read, rather than given or asked for: they follow the shape. */
+  #autoNormals = false
   /** @type {Box3 | null} */
   #bounds = null
   /** @type {Set<() => void>} */
@@ -75,16 +77,22 @@ export class Geometry {
 
   /**
    * xyz per vertex. Computed (smooth) from the triangles on first read when not supplied, so
-   * points and lines - whose geometry has no triangles - never pay for them.
+   * points and lines - whose geometry has no triangles - never pay for them - and computed again after
+   * needsUpdate(), so they follow positions edited in place. Normals that were supplied, assigned or
+   * made by calling computeNormals() are kept as they are.
    * @type {Float32Array}
    */
   get normals() {
-    if (!this.#normals) this.computeNormals()
+    if (!this.#normals) {
+      this.computeNormals()
+      this.#autoNormals = true
+    }
     return /** @type {Float32Array} */ (this.#normals)
   }
 
   set normals(v) {
     this.#normals = v
+    this.#autoNormals = false
   }
 
   /** True once normals exist, supplied or computed. */
@@ -121,9 +129,14 @@ export class Geometry {
     return this.#bounds ??= new Box3().expandByPositions(this.positions)
   }
 
-  /** Call after editing the arrays in place. It is no longer what its generator made, so toJSON() saves the arrays. @returns {this} */
+  /**
+   * Call after editing the arrays in place. It is no longer what its generator made, so toJSON() saves
+   * the arrays; normals that were worked out on first read are worked out again on the next.
+   * @returns {this}
+   */
   needsUpdate() {
     this.source = null
+    if (this.#autoNormals) this.#normals = null
     return this.#changed()
   }
 
