@@ -98,7 +98,7 @@ export default function run({ canvas, gui, info }) {
         section.innerHTML = '<h3></h3><canvas></canvas>'
         section.querySelector('h3').textContent = tile.title
         grid.append(section)
-        const view = new View({ canvas: section.querySelector('canvas'), orbit: true, framing: 'both',
+        const view = new View({ canvas: section.querySelector('canvas'), orbit: true, framing: 'both', keyboard: true,
           background: tile.light ? '#f4f5f7' : '#1b1c22', camera: /** @type {import('phoria2').CameraPreset} */ (tile.camera ?? 'perspective') })
         const made = view.scene.add(chart({ ...tile.spec, data: data[tile.data](), tooltip: true }))
         // instrumentation for the readout: count each frame a view draws, and time it

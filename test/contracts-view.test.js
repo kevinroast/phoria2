@@ -36,6 +36,9 @@ contract('View', {
     bloom: { value: { strength: 2 }, read: (v) => v.bloom?.strength, expect: 2, bad: 'on', error: 'bloom' },
     autoLight: { value: false, read: (v) => v.autoLight, default: true },
     maxDelta: { value: 0.05, read: (v) => v.maxDelta, default: 0.1, bad: 'slow', error: 'maxDelta' },
+    reducedMotion: { value: true, read: (v) => v.reducedMotion, default: false, bad: 'yes', error: 'reducedMotion' },
+    keyboard: { value: true, only: 'it loads its code, then works the canvas - see accessibility.test.js', bad: 'yes', error: 'keyboard' },
+    description: { value: 'Sales', read: (v) => v.description, default: null, bad: 3, error: 'description' },
   },
 })
 

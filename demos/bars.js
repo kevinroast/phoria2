@@ -12,7 +12,7 @@ const rowsFor = () => REGIONS.flatMap((region, s) => MONTHS.map((month, m) => ({
 // A 3D bar chart from a spec: axes, a legend that hides regions, value labels that give way,
 // tooltips and highlight all come with it. New data animates; stacking swaps the depth for stacks.
 export default function run({ canvas, gui, info }) {
-  const view = new View({ canvas, orbit: true, background: '#1c1c20', camera: 'perspective' })
+  const view = new View({ canvas, orbit: true, background: '#1c1c20', camera: 'perspective', keyboard: true })
   view.scene.environment = 'studio'
   const bars = view.scene.add(chart({
     mark: 'bar', data: rowsFor(),

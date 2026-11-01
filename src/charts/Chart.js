@@ -118,6 +118,22 @@ export class Chart extends Group {
     return `Chart (${s.mark}): ${shown} of ${s.rows.length} rows shown${axes.length ? `; ${axes.join(', ')}` : ''}${s.links.length ? `; ${s.links.length} links` : ''}`
   }
 
+  /**
+   * One sentence about this chart for screen readers - the spec's description, or its title and what
+   * it shows: "Sales by month: bar chart of 12 rows by Month, Sales". A View with keyboard: true labels
+   * its canvas with this.
+   * @returns {string}
+   */
+  summary() {
+    const s = /** @type {ReturnType<typeof normalise>} */ (this.#spec), o = /** @type {any} */ (s.options)
+    if (o.description) return String(o.description)
+    // each field once, though it may set more than one channel (z and colour by region)
+    const by = [...new Set(['x', 'y', 'z', 'color', 'size'].map((k) => /** @type {any} */ (s.channels)[k]).filter((c) => c?.field).map((c) => c.title))]
+    const count = (n, one) => `${n} ${n === 1 ? one : `${one}s`}`
+    const what = `${s.mark} chart of ${count(s.rows.length, 'row')}${by.length ? ` by ${by.join(', ')}` : ''}${s.links.length ? ` and ${count(s.links.length, 'link')}` : ''}`
+    return o.title ? `${o.title}: ${what}` : what
+  }
+
   /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     return { ...this.#input }
@@ -305,14 +321,16 @@ export class Chart extends Group {
 
   /** @param {number} dt */
   #step(dt) {
-    this.#mark?.tick?.(dt)
+    // with motion reduced (the View's reducedMotion), flows stand still and a change shows at once
+    const still = /** @type {any} */ (this.root).motionReduced === true
+    if (!still) this.#mark?.tick?.(dt)
     const tw = this.#tween
     if (!tw) return
     const o = this.#input.transition ?? {}
     const duration = o.duration ?? 0.5
     const ease = EASES[o.ease ?? 'out']
     if (!ease) fail('chart()', `transition ease '${o.ease}' - expected ${Object.keys(EASES).map((e) => `'${e}'`).join(', ')}`)
-    tw.t = Math.min(1, tw.t + dt / duration)
+    tw.t = still ? 1 : Math.min(1, tw.t + dt / duration)
     const k = ease(tw.t)
     const state = new Float32Array(tw.from.length)
     for (let i = 0; i < state.length; i++) state[i] = tw.from[i] + (tw.to[i] - tw.from[i]) * k

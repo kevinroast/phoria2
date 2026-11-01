@@ -15,7 +15,7 @@ export default function run({ canvas, gui, info }) {
     return { day, hour, latency: Math.round(40 + 160 * work + 120 * monday + rand() * 25) }
   }))
 
-  const view = new View({ canvas, orbit: true, background: '#16171c', camera: 'perspective' })
+  const view = new View({ canvas, orbit: true, background: '#16171c', camera: 'perspective', keyboard: true })
   const settings = { scheme: 'heat' }
   const spec = (scheme) => ({
     color: { field: 'latency', title: 'Latency (ms)', scale: { scheme } },

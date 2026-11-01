@@ -477,13 +477,16 @@
           "description": "Anything of your own."
         },
         "highlight": {
-          "description": "Hover tint for this subtree, or null for none.",
+          "description": "Hover tint for this subtree; false for none, null to use the View's.",
           "anyOf": [
             {
               "$ref": "#/$defs/color"
             },
             {
               "type": "null"
+            },
+            {
+              "const": false
             }
           ]
         },

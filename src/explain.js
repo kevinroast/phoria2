@@ -22,7 +22,7 @@ import { Box3 } from './value/Box3.js'
  * @property {boolean} autoLight
  * @property {boolean} contextLost
  * @property {boolean} [sharedContext] drawn with the page's shared WebGL context
- * @property {{ hover: number, click: number, tooltip: boolean, highlight: boolean }} interaction
+ * @property {{ hover: number, click: number, tooltip: boolean, highlight: boolean, keyboard?: boolean, reducedMotion?: boolean, description?: string | null }} interaction
  * @property {string[]} [notes] lines from nodes that describe themselves, such as charts
  */
 
@@ -124,6 +124,10 @@ export function explain(info) {
   if (ix.hover || ix.click || ix.tooltip || ix.highlight) {
     lines.push(`Interaction: ${[ix.hover && plural(ix.hover, 'hover handler'), ix.click && plural(ix.click, 'click handler'),
       ix.tooltip && 'tooltip', ix.highlight && 'hover highlight'].filter(Boolean).join(', ')}`)
+  }
+  if (ix.keyboard || ix.reducedMotion || ix.description) {
+    lines.push(`Accessibility: ${[ix.keyboard && 'keyboard (arrow keys step through what can be hovered)', ix.reducedMotion && 'reduced motion',
+      ix.description && `described as "${ix.description}"`].filter(Boolean).join(', ')}`)
   }
 
   if (info.width < 2 || info.height < 2) warnings.unshift(`the canvas is ${info.width} x ${info.height} - give it a size in the page (CSS width and height)`)

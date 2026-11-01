@@ -54,7 +54,8 @@ import { Clip } from '../clip.js'
  * @property {UpdateHandler | UpdateHandler[]} [onUpdate]
  * @property {((hit: Hit) => any) | null} [tooltip] tooltip for anything picked in this subtree; nearer nodes win, and
  *   all win over the View's
- * @property {ColorInput | null} [highlight] hover tint for this subtree, over the View's
+ * @property {ColorInput | null | false} [highlight] hover tint for this subtree, over the View's; false for none - a
+ *   floor or wall left plain under a View that tints everything else (null: the View's)
  * @property {boolean} [highlightWhole] hovering any part of this subtree tints all of it, as one thing - a
  *   piece of furniture, a machine - rather than just the part under the pointer (default false)
  * @property {((hit: Hit | null) => void) | null} [onHover] called as the thing under the pointer in this subtree changes
@@ -136,7 +137,7 @@ export class Node {
   onDrag = null
   /** @type {Outline | null} */
   #outline = null
-  /** @type {Color | null} */
+  /** @type {Color | null | false} */
   #highlight = null
   /** Hovering any part of this subtree tints all of it, not just the part under the pointer. */
   highlightWhole = false
@@ -191,7 +192,7 @@ export class Node {
       if (typeof fn !== 'function') fail(owner, `'${key}' must be a function, got ${describe(fn)}`)
       this[key] = fn
     }
-    if (options.highlight != null) this.#highlight = Color.fromInput(options.highlight, owner)
+    if (options.highlight != null) this.#setHighlight(options.highlight, owner)
     if (options.highlightWhole !== undefined) {
       if (typeof options.highlightWhole !== 'boolean') fail(owner, `'highlightWhole' must be true or false, got ${describe(options.highlightWhole)}`)
       this.highlightWhole = options.highlightWhole
@@ -201,14 +202,23 @@ export class Node {
     if (options.children) for (const child of options.children) this.add(child)
   }
 
-  /** Hover tint for this subtree, over the View's; set any colour, or null. @returns {Color | null} */
+  /**
+   * Hover tint for this subtree, over the View's: a colour, false for none, or null to use the View's.
+   * @returns {Color | null | false}
+   */
   get highlight() {
     return this.#highlight
   }
 
-  /** @param {ColorInput | null} value */
+  /** @param {ColorInput | null | false} value */
   set highlight(value) {
-    this.#highlight = value == null ? null : Color.fromInput(value, this.constructor.name)
+    this.#setHighlight(value, this.constructor.name)
+  }
+
+  /** @param {ColorInput | null | false | true} value @param {string} owner */
+  #setHighlight(value, owner) {
+    if (value === true) fail(owner, "'highlight' is a colour, false for no tint, or null to use the View's - got true")
+    this.#highlight = value == null ? null : value === false ? false : Color.fromInput(value, owner)
   }
 
   /**
@@ -612,6 +622,7 @@ export class Node {
     if (!this.pickable) json.pickable = false
     if (!this.matrixAutoUpdate) json.matrixAutoUpdate = false
     if (this.highlight) json.highlight = this.highlight.getStyle()
+    else if (this.highlight === false) json.highlight = false
     if (this.highlightWhole) json.highlightWhole = true
     if (this.#clip) json.clip = this.#clip.toJSON()
     if (this.#outline) json.outline = { color: this.#outline.color.getStyle(), width: this.#outline.width }

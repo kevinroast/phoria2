@@ -21,7 +21,7 @@ export default function run({ canvas, gui, info }) {
   let rows = []
   for (; day < DAYS; day++) rows.push(...dayRows(day))
 
-  const view = new View({ canvas, orbit: true, background: '#17181d', camera: 'front' })
+  const view = new View({ canvas, orbit: true, background: '#17181d', camera: 'front', keyboard: true })
   const shared = {
     mark: 'area', x: { field: 'date', title: 'Day' }, y: { field: 'visitors', title: 'Visitors' },
     color: { field: 'channel', title: 'Channel' }, tooltip: ['channel', 'date', 'visitors'], legend: { position: 'bottom-right' },

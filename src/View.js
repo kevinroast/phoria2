@@ -27,6 +27,7 @@ import { checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '
 /** @import { CameraOptions } from './scene/cameras.js' */
 /** @import { ColorInput, Vec3Input } from './types.js' */
 /** @import { Node } from './scene/Node.js' */
+/** @import { Keyboard, KeyboardOptions } from './keyboard.js' */
 
 /**
  * @typedef {'auto' | 'always' | 'manual'} RenderMode
@@ -65,13 +66,23 @@ import { checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '
  *   additive points and lines (default off). true for the defaults, or { strength, radius, threshold }
  * @property {boolean} [autoLight] light a scene that has no lights, with one console note (default true)
  * @property {number} [maxDelta] longest frame step in seconds, so a background tab doesn't jump (default 0.1)
+ * @property {'auto' | boolean} [reducedMotion] cut motion short, for people it makes unwell: frame() jumps rather
+ *   than glides, auto-rotation holds, and charts change at once with their flows still. Default 'auto': as the
+ *   system's setting (prefers-reduced-motion), followed as it changes
+ * @property {boolean | KeyboardOptions} [keyboard] use without a pointer: the canvas joins the page's tab order, and
+ *   the arrow keys step through what can be hovered or clicked - each with the hover tint, the tooltip and hover
+ *   handlers - with Enter or Space to click and Escape to leave. A screen reader hears each one. { label: (hit) =>
+ *   text } says what it hears (default: the tooltip's text, the data, or the name). Default false
+ * @property {string | null} [description] what the view shows, for screen readers: the canvas's label. With keyboard
+ *   on and no description, one is made from the scene (charts describe themselves)
  */
 
 /** @typedef {'click' | 'hover'} ViewEvent */
 /** @typedef {(hit: Hit | null, event: PointerEvent | MouseEvent | null) => void} ViewHandler */
 
 const OPTIONS = ['canvas', 'scene', 'camera', 'orbit', 'background', 'renderMode', 'framing', 'highlight', 'tooltip', 'pixelRatio',
-  'antialias', 'outlineAntialias', 'context', 'toneMapping', 'exposure', 'bloom', 'autoLight', 'maxDelta']
+  'antialias', 'outlineAntialias', 'context', 'toneMapping', 'exposure', 'bloom', 'autoLight', 'maxDelta', 'reducedMotion',
+  'keyboard', 'description']
 const FRAMING_OPTIONS = ['keep', 'aspect']
 const HINTS = {
   renderer: 'the View makes its renderer - read it from view.renderer',
@@ -90,6 +101,8 @@ const EVENT_HINTS = {
 }
 // how far the highlight colour is mixed in
 const HIGHLIGHT_AMOUNT = 0.45
+// what the keyboard's focus is tinted with when nothing says otherwise - focus must always show
+const FOCUS_COLOR = Color.fromInput('#ffcc00')
 // views that get a WebGL context of their own before 'auto' starts sharing one
 const OWN_CONTEXTS = 4
 // above this many things to test (instances, triangles, points, segments), picking goes to the
@@ -161,6 +174,15 @@ export class View {
   #tooltipClass = ''
   #tooltipLoading = false
   /** @type {Color | null} */ #highlight = null
+  /** @type {'auto' | boolean} */ #motion = 'auto'
+  // keyboard use: its code loads when asked for; the thing it has stepped to shows as hovered
+  /** @type {Keyboard | null} */ #keyboard = null
+  /** @type {Hit | null} */ #keyFocus = null
+  /** @type {string | null} */ #description = null
+  // the canvas had no role, so describing it gave it one - taken away again with the description
+  #gaveRole = false
+  // the system's prefers-reduced-motion, kept up to date
+  #systemReduced = false
   /** @type {{ x: number, y: number, clientX: number, clientY: number, event: PointerEvent } | null} */ #pointer = null
   #pickPending = false
   // a hover pick is out on the GPU
@@ -227,6 +249,7 @@ export class View {
       this.invalidate()
     }
     if (options.autoLight !== undefined) this.autoLight = !!options.autoLight
+    if (options.reducedMotion !== undefined) this.#setMotion(options.reducedMotion)
     if (options.maxDelta !== undefined) this.maxDelta = checkRange('View', 'maxDelta', options.maxDelta, 0, Infinity, { above: true })
     if (options.renderMode !== undefined) this.renderMode = checkOneOf('View', 'renderMode', options.renderMode, ['auto', 'always', 'manual'])
     if (options.pixelRatio !== undefined) {
@@ -247,6 +270,8 @@ export class View {
     }
     if (options.highlight !== undefined) this.#setHighlight(options.highlight)
     if (options.tooltip !== undefined) this.tooltip(options.tooltip)
+    if (options.description !== undefined) this.description = options.description
+    if (options.keyboard !== undefined && options.keyboard !== false) this.#loadKeyboard(options.keyboard)
     this.#labels = new LabelLayer(this.canvas, {
       interactive: (label) => labelHandlers(label, 'click').length > 0 || labelHandlers(label, 'hover').length > 0,
       on: (type, label, e) => this.#labelPointer(type, label, e),
@@ -324,6 +349,51 @@ export class View {
     this.invalidate()
   }
 
+  /**
+   * Is motion cut short - glides, auto-rotation, chart transitions? Set true or false, or 'auto' (the
+   * default) to follow the system's setting. Read it for motion of your own, such as a timeline.
+   * @returns {boolean}
+   */
+  get reducedMotion() { return this.#motion === 'auto' ? this.#systemReduced : this.#motion }
+  /** @param {'auto' | boolean} v */
+  set reducedMotion(v) { this.#setMotion(v) }
+
+  /** @param {'auto' | boolean} v */
+  #setMotion(v) {
+    if (v !== 'auto' && typeof v !== 'boolean') fail('View', `'reducedMotion' is 'auto' (as the system's setting), true or false, got ${describe(v)}`)
+    this.#motion = v
+    this.invalidate()
+  }
+
+  /**
+   * What the view shows, for screen readers - the canvas's label - or null. With keyboard on and no
+   * description, one is made from the scene.
+   * @returns {string | null}
+   */
+  get description() { return this.#description }
+  /** @param {string | null} v */
+  set description(v) {
+    if (v !== null && typeof v !== 'string') fail('View', `'description' is text for screen readers, or null, got ${describe(v)}`)
+    this.#description = v
+    if (this.#keyboard) {
+      this.#keyboard.setDescription(v)
+      return
+    }
+    const canvas = this.canvas
+    if (v === null) {
+      canvas.removeAttribute('aria-label')
+      if (this.#gaveRole) canvas.removeAttribute('role')
+      this.#gaveRole = false
+      return
+    }
+    canvas.setAttribute('aria-label', v)
+    // a picture, to a screen reader, unless the page has said otherwise
+    if (!canvas.hasAttribute('role')) {
+      canvas.setAttribute('role', 'img')
+      this.#gaveRole = true
+    }
+  }
+
   /** Canvas width in CSS pixels. */
   get width() { return this.#width }
   /** Canvas height in CSS pixels. */
@@ -397,6 +467,7 @@ export class View {
     this.time += dt
     this.#onFrame?.(dt, this.time)
     // the same order as the live loop, so a stepped frame is the frame a user sees
+    this.scene.motionReduced = this.reducedMotion
     this.scene.update(dt, this.time)
     this.#updateControls(dt)
     return this.#render(true)
@@ -411,7 +482,7 @@ export class View {
     if (this.#flight) return this.#fly(dt)
     if (!this.controls) return
     const waiting = this.#autoFrame && samePlace(cameraPlace(this.camera), this.#autoFrameFrom)
-    this.controls.update(dt)
+    this.controls.update(dt, this.reducedMotion)
     if (waiting) this.#autoFrameFrom = cameraPlace(this.camera)
   }
 
@@ -450,8 +521,8 @@ export class View {
     // remember what was drawn - including what drawing changed, such as fitting the camera - so
     // the next frame compares against it and doesn't draw the same picture again
     if (this.renderMode === 'auto') this.#watch.changed(this.scene, this.camera)
-    // things may have moved under a still pointer
-    if (this.#pointer && this.#needsHover()) this.#pickPending = true
+    // things may have moved under a still pointer - or the keyboard's focus moved on screen
+    if ((this.#pointer || this.#keyFocus) && this.#needsHover()) this.#pickPending = true
     return frame
   }
 
@@ -493,7 +564,8 @@ export class View {
    * @param {Node | Box3} [target] (default the scene)
    * @param {{ padding?: number, direction?: CameraPreset | Vec3Input, duration?: number }} [options] padding is
    *   the margin around it, as a fraction of its size: 0 is a tight fit, 0.2 (the default) leaves a fifth.
-   *   duration is in seconds (default 0: straight there); a press or the wheel stops the glide
+   *   duration is in seconds (default 0: straight there); a press or the wheel stops the glide, and with
+   *   reducedMotion it goes straight there
    * @returns {this}
    */
   frame(target = this.scene, { padding = 0.2, direction: towards, duration = 0 } = {}) {
@@ -511,7 +583,7 @@ export class View {
     // framed for the canvas as it is now
     this.#designed = cam.aspect
     this.#applied = 1
-    if (duration > 0) {
+    if (duration > 0 && !this.reducedMotion) {
       // the camera starts where it was and glides there, frame by frame
       this.#flight = { from, to: placeOf(cam), time: 0, duration }
       setPlace(cam, from)
@@ -806,6 +878,39 @@ export class View {
     })
   }
 
+  /** @param {true | KeyboardOptions} options */
+  #loadKeyboard(options) {
+    if (options !== true && (typeof options !== 'object' || options === null || Array.isArray(options))) {
+      fail('View', `'keyboard' is true, false or { label: (hit) => text }, got ${describe(options)}`)
+    }
+    const o = options === true ? {} : options
+    checkOptions('View', o, ['label'], { describe: "use 'label: (hit) => text'", text: "use 'label: (hit) => text'" }, 'keyboard')
+    if (o.label !== undefined && typeof o.label !== 'function') fail('View', `keyboard.label is a function (hit) => text, got ${describe(o.label)}`)
+    import('./keyboard.js').then(({ Keyboard }) => {
+      if (this.#disposed) return
+      this.#keyboard = new Keyboard(this, {
+        focus: (hit) => {
+          this.#keyFocus = hit
+          this.#pickPending = true
+          this.invalidate()
+        },
+        press: (hit) => {
+          for (const fn of handlersAbove(hit.node, 'click')) fn(hit)
+          for (const fn of this.#handlers.click) fn(hit, null)
+        },
+        tooltip: (hit) => this.#tooltipFor(hit)?.(hit),
+        viewWide: () => this.#handlers.hover.size > 0 || this.#handlers.click.size > 0 || !!this.#tooltipContent,
+      }, o)
+      this.#keyboard.setDescription(this.#description)
+    })
+  }
+
+  /** Where the keyboard's focus shows - its middle, on screen - in place of the pointer. @param {Hit} hit */
+  #keyAt(hit) {
+    const { x, y } = this.project(hit.point), rect = this.canvas.getBoundingClientRect()
+    return { x, y, clientX: rect.left + x, clientY: rect.top + y, event: null }
+  }
+
   /** The nearest node tooltip above the hit, or the View's. @param {Hit} hit */
   #tooltipFor(hit) {
     for (let n = /** @type {any} */ (hit.node); n; n = n.parent) if (n.tooltip) return n.tooltip
@@ -854,7 +959,8 @@ export class View {
       sharedContext: this.renderer.shared,
       frame, labels: this.#labelStats, bounds: drawn, nodes, autoLight: this.autoLight,
       contextLost: !!this.renderer.gl?.isContextLost?.(),
-      interaction: { hover: this.#handlers.hover.size, click: this.#handlers.click.size, tooltip: !!this.#tooltipContent, highlight: !!this.#highlight },
+      interaction: { hover: this.#handlers.hover.size, click: this.#handlers.click.size, tooltip: !!this.#tooltipContent, highlight: !!this.#highlight,
+        keyboard: !!this.#keyboard, reducedMotion: this.reducedMotion, description: this.canvas.getAttribute?.('aria-label') ?? this.#description },
     })
   }
 
@@ -871,6 +977,8 @@ export class View {
     this.controls?.dispose()
     this.#labels.dispose()
     this.#tooltip?.dispose()
+    this.#keyboard?.dispose()
+    if (this.#description !== null && !this.#keyboard) this.description = null
     this.renderer.dispose(this.scene)
     if (this.#ownContext) ownContexts--
     if (this.#ownCanvas) this.canvas.remove()
@@ -911,6 +1019,7 @@ export class View {
       if (this.#running) {
         this.time += dt
         this.#onFrame?.(dt, this.time)
+        this.scene.motionReduced = this.reducedMotion
         this.scene.update(dt, this.time)
       }
       this.#updateControls(dt)
@@ -936,6 +1045,8 @@ export class View {
     this.#pickPending = false
     if (!this.#needsHover()) return
     const p = this.#pointer
+    // what the keyboard stepped to is shown until the pointer moves
+    if (this.#keyFocus) return this.#setHovered(this.#keyFocus, this.#keyAt(this.#keyFocus))
     if (this.#labelHover) return this.#setHovered(this.#labelHover)
     if (!p || this.#dragging) return this.#setHovered(null)
     const frame = this.#gpuFrame()
@@ -956,9 +1067,11 @@ export class View {
     })
   }
 
-  /** @param {Hit | null} hit */
-  #setHovered(hit) {
-    const p = this.#pointer
+  /**
+   * @param {Hit | null} hit
+   * @param {{ clientX: number, clientY: number, event: PointerEvent | null } | null} [p] where it is shown - the pointer, or the keyboard's focus
+   */
+  #setHovered(hit, p = this.#pointer) {
     const before = this.#hovered
     // the same thing under the pointer: the same node, instance and row of data - a line's segments
     // and a surface's rows are told apart by their data, without a plain mesh changing per triangle
@@ -1012,13 +1125,16 @@ export class View {
   /** @param {Hit | null} hit @returns {FrameHighlight | null} */
   #highlightFor(hit) {
     if (!hit) return null
-    // the nearest colour wins, and the nearest highlightWhole is what is tinted as one
+    // the nearest colour wins - or the nearest false, which tints nothing - and the nearest
+    // highlightWhole is what is tinted as one
     let color = null, whole = null
     for (let n = /** @type {any} */ (hit.node); n; n = n.parent) {
       color ??= n.highlight
       whole ??= n.highlightWhole ? n : null
     }
     color ??= this.#highlight
+    // the keyboard's focus always shows
+    if (!color && hit === this.#keyFocus) color = FOCUS_COLOR
     if (!color) return null
     const node = /** @type {any} */ (hit.node)
     if (whole) {
@@ -1058,6 +1174,8 @@ export class View {
       return { x: e.clientX - rect.left, y: e.clientY - rect.top, clientX: e.clientX, clientY: e.clientY, event: e }
     }
     const move = (e) => {
+      // the pointer takes over from the keyboard
+      if (this.#keyFocus) this.#keyboard?.clear()
       this.#pointer = at(e)
       const press = this.#press
       if (press && press.id === e.pointerId && !press.moved && Math.hypot(this.#pointer.x - press.x, this.#pointer.y - press.y) >= DRAG_START) press.moved = true
@@ -1143,6 +1261,17 @@ export class View {
       })
       resize.observe(canvas)
       this.#cleanup.push(() => resize.disconnect())
+    }
+    // the system's reduced-motion setting, followed as it changes
+    const motion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')
+    if (motion) {
+      const follow = () => {
+        this.#systemReduced = motion.matches
+        this.invalidate()
+      }
+      this.#systemReduced = motion.matches
+      motion.addEventListener?.('change', follow)
+      this.#cleanup.push(() => motion.removeEventListener?.('change', follow))
     }
     // an off-screen view (a dashboard tile scrolled away) does no work at all
     if (typeof IntersectionObserver !== 'undefined') {

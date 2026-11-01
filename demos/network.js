@@ -30,7 +30,7 @@ function services(rand) {
 export default function run({ canvas, gui, info }) {
   const rand = random(21)
   let data = services(rand)
-  const view = new View({ canvas, orbit: true, background: '#14161c', camera: 'perspective' })
+  const view = new View({ canvas, orbit: true, background: '#14161c', camera: 'perspective', keyboard: true })
   view.scene.environment = 'studio'
   const layouts = { force: 'force', tiers: { tiers: 'tier', order: ['edge', 'service', 'data'] } }
   const spec = {

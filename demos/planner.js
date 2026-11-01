@@ -161,7 +161,8 @@ function extent(corners) {
 
 export default function run({ canvas, info }) {
   const view = new View({
-    canvas, background: '#e7e9ec',
+    canvas, background: '#e7e9ec', keyboard: true,
+    description: 'An office floor plan of desks, chairs, a meeting table and shelving - select a piece to move, turn or delete it',
     orbit: { minDistance: 6, maxDistance: 30, maxPitch: 1.45, minPitch: 0.35 },
     camera: { position: [0, 11.5, 11.5], target: [0, 0, 0.6], fov: 40 },
     tooltip: (hit) => {

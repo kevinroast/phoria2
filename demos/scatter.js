@@ -25,7 +25,7 @@ export default function run({ canvas, gui, info }) {
     tenure: clamp(s.centre[2] + gauss() * s.spread[2], 10),
   })))
 
-  const view = new View({ canvas, orbit: true, background: '#18181c', camera: 'perspective' })
+  const view = new View({ canvas, orbit: true, background: '#18181c', camera: 'perspective', keyboard: true })
   const customersChart = view.scene.add(chart({
     mark: 'point', data: customers,
     x: { field: 'spend', title: 'Spend ($k)' }, y: { field: 'visits', title: 'Visits / month' }, z: { field: 'tenure', title: 'Tenure (years)' },

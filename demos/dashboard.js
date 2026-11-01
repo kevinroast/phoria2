@@ -48,7 +48,7 @@ export default function run({ canvas, info }) {
     grid.append(tile)
     // the cameras were set in tiles 1.5 times as wide as tall; in any other shape, keep all of
     // that framing in view rather than cutting off the sides
-    const view = new View({ canvas: tile.querySelector('canvas'), orbit: true, background: '#1b1c22', camera, framing: { keep: 'both', aspect: 1.5 } })
+    const view = new View({ canvas: tile.querySelector('canvas'), orbit: true, background: '#1b1c22', camera, framing: { keep: 'both', aspect: 1.5 }, keyboard: true })
     view.scene.add(chart({ legend: false, ...spec }))
     return view
   })

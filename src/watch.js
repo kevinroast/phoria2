@@ -123,7 +123,7 @@ export class ChangeWatch {
     this.#push((node.handlersFor('click').length ? 1 : 0) | (node.handlersFor('hover').length ? 2 : 0) | (node.tooltip ? 4 : 0) | (node.onDrag ? 8 : 0) | (node.highlightWhole ? 16 : 0))
     // what hovering tints it with - a different colour shows straight away on what is hovered
     if (node.highlight) this.#pushAll(node.highlight)
-    else this.#push(-4)
+    else this.#push(node.highlight === false ? -5 : -4)
     const outline = node.outline
     if (outline) {
       this.#pushAll(outline.color)

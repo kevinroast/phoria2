@@ -110,7 +110,17 @@ export function fakePage() {
     dispatch(type, event = {}) {
       for (const fn of this.listeners.get(type) ?? []) fn({ type, clientX: 0, clientY: 0, buttons: 0, preventDefault() {}, stopImmediatePropagation() {}, ...event })
     }
-    after() {}
+    // attributes, as accessibility sets them (role, tabindex, aria-*)
+    /** @type {Map<string, string>} */ attributes = new Map()
+    setAttribute(name, value) { this.attributes.set(name, String(value)) }
+    getAttribute(name) { return this.attributes.get(name) ?? null }
+    hasAttribute(name) { return this.attributes.has(name) }
+    removeAttribute(name) { this.attributes.delete(name) }
+    get tabIndex() { return Number(this.attributes.get('tabindex') ?? -1) }
+    set tabIndex(v) { this.attributes.set('tabindex', String(v)) }
+    // what was put after it in the page, such as the keyboard's live region
+    /** @type {any[]} */ siblings = []
+    after(...els) { this.siblings.push(...els) }
     removed = false
     remove() { this.removed = true }
   }

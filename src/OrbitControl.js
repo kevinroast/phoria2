@@ -255,8 +255,12 @@ export class OrbitControl {
     this.target.add(move)
   }
 
-  /** Apply inertia and auto-rotate; the View calls this each frame. @param {number} dt seconds */
-  update(dt) {
+  /**
+   * Apply inertia and auto-rotate; the View calls this each frame.
+   * @param {number} dt seconds
+   * @param {boolean} [still] hold auto-rotation - the View passes its reducedMotion
+   */
+  update(dt, still = false) {
     if (!this.enabled) return
     if (this.#pointers.size === 0) {
       const v = this.#velocity
@@ -267,7 +271,7 @@ export class OrbitControl {
         v.yaw *= keep
         v.pitch *= keep
       }
-      if (this.autoRotate) this.rotate(-(this.autoRotate === true ? 0.5 : this.autoRotate) * dt, 0)
+      if (this.autoRotate && !still) this.rotate(-(this.autoRotate === true ? 0.5 : this.autoRotate) * dt, 0)
     }
   }
 

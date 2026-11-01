@@ -280,6 +280,7 @@ export class Mesh extends Drawable {
 const INSTANCE_OPTIONS = new Set(['position', 'rotation', 'quaternion', 'scale', 'color'])
 // reused by setInstance, so updating every instance of a large mesh each frame allocates nothing
 const scratch = { position: new Vec3(), scale: new Vec3(), quaternion: new Quat(), rotation: new Euler() }
+const SCRATCH_COLOR = new Color()
 const scratchMatrix = new Float32Array(16)
 
 /**
@@ -405,7 +406,7 @@ export class InstancedMesh extends Mesh {
   /** @param {number} i @param {ColorInput} color */
   #setColor(i, color) {
     if (!this.instanceColors) this.instanceColors = new Float32Array(this.instanceMatrices.length / 16 * 3).fill(1)
-    this.instanceColors.set(Color.fromInput(color, 'InstancedMesh'), i * 3)
+    this.instanceColors.set(SCRATCH_COLOR.set(color, 'InstancedMesh'), i * 3)
   }
 
   /** @internal @param {Box3} box */

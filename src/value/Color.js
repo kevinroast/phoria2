@@ -16,6 +16,11 @@ const HELP = "use '#rrggbb', a CSS name, 'rgb(...)', 'hsl(...)', 0xrrggbb or [r,
  * An RGB colour. Input is sRGB, as everywhere in phoria2; the components are stored **linear**,
  * ready for lighting maths. `toJSON()` gives sRGB '#rrggbb' back.
  */
+// colour strings already worked out, as linear rgb - emptied when full, as a palette never fills it
+/** @type {Map<string, number[]>} */
+const PARSED = new Map()
+const PARSED_MAX = 1024
+
 export class Color extends Float32Array {
   static get [Symbol.species]() { return Float32Array }
 
@@ -154,6 +159,22 @@ export class Color extends Float32Array {
 
   /** @param {string} s @param {string} owner */
   #setString(s, owner) {
+    // the same few strings come again and again - an instance's colour set every frame - so each is
+    // worked out once
+    const known = PARSED.get(s)
+    if (known) {
+      this[0] = known[0]
+      this[1] = known[1]
+      this[2] = known[2]
+      return
+    }
+    this.#parse(s, owner)
+    if (PARSED.size >= PARSED_MAX) PARSED.clear()
+    PARSED.set(s, [this[0], this[1], this[2]])
+  }
+
+  /** @param {string} s @param {string} owner */
+  #parse(s, owner) {
     const lower = s.toLowerCase()
     if (lower.startsWith('#')) {
       let hex = lower.slice(1)

@@ -114,9 +114,13 @@ const view = new View({ canvas: '#c', orbit: true })
 | `autoLight` | `true` | light a scene that has no lights (a chart needs none of its own); `false` to leave it dark |
 | `pixelRatio` | `min(devicePixelRatio, 2)` | |
 | `context` | `'auto'` | WebGL context: own for the first four views on a page, then one shared context - so a page can hold any number of views |
+| `keyboard` | `false` | `true` or `{ label: (hit) => text }`: use without a pointer, with a screen reader - see Interaction |
+| `description` | none | what the view shows, for screen readers (the canvas's label); made from the scene when `keyboard` is on |
+| `reducedMotion` | `'auto'` | as the system's reduced-motion setting: `frame()` jumps rather than glides, auto-rotation holds, charts change at once. `true` or `false` to choose |
 
 Members: `view.scene`, `view.camera` (assign a camera or a preset name to switch), `view.controls`
-(the orbit control), `view.renderer`, `view.width`, `view.height`.
+(the orbit control), `view.renderer`, `view.width`, `view.height`, `view.description`, `view.reducedMotion`
+(true or false as it stands - check it for motion of your own, such as a timeline; set `'auto'`, true or false).
 
 Methods:
 
@@ -551,7 +555,8 @@ view.on('hover', (hit) => show(hit?.datum))                 // fires when the th
   children. A node's `highlight` is the colour for its subtree; it tints the mesh, instance or point
   under the pointer. Add `highlightWhole: true` to tint the whole subtree as one thing (a piece of
   furniture, a machine) whichever part is hovered. Without the View's `highlight`, only nodes with
-  their own highlight light up - leave it off to keep floors and walls plain.
+  their own highlight light up - leave it off to keep floors and walls plain, or keep it and give
+  those `highlight: false` (`null` means "the View's").
 - `onHover` and `onClick` are the app's own handler for a node; to add more without replacing it
   (an add-on, a second concern), `node.on('hover' | 'click', fn)` - it returns a function that stops
   listening. Both run. A drag has one handler, `onDrag`: one thing moves a node at a time.
@@ -576,6 +581,22 @@ chair.onDrag = (drag) => {
   corners - as the canvas is; `outlineAntialias: false` on the View (or `view.renderer.outlineAntialias =
   false`, any time) draws them in hard pixel steps instead.
 - `view.controls.cancel()` lets go of the orbit gesture in progress, for apps that take over a press.
+- **Keyboard and screen readers**: `keyboard: true` on the View makes the canvas a stop in the page's
+  tab order. The arrow keys (and Home, End, PageUp, PageDown) step through what can be hovered or
+  clicked, in scene order and each mesh's instances in order: each instance, point, surface grid
+  point (a mesh with a row per vertex) or row of data under a node with its own `tooltip`, `onClick`,
+  `onHover`, `onDrag` or `highlight` - and, when the View has a tooltip or handlers itself, each one
+  with data. A mesh with no rows is a stop when it has a name or a handler of its own. A
+  `highlightWhole` subtree is one stop. Lines with a row per segment (a network's links) are a stop
+  per segment, after everything else. The one stepped to is shown as hovering would show it - tint (`#ffcc00` when no highlight
+  is set), tooltip, hover handlers - and Enter or Space clicks it (the handler's event is null);
+  Escape leaves it, and moving the pointer takes over. A screen reader hears each one: the tooltip's
+  text, else its data, else its name, with "3 of 12" - or `keyboard: { label: (hit) => text }`. The
+  canvas is labelled with `description`, or from the scene: each chart's `summary()` ("Sales: bar
+  chart of 12 rows by month, sales"), else "3D view of 12 items".
+- **Reduced motion**: `reducedMotion` follows the system's setting by default. When on, `frame()`
+  with a `duration` jumps, `autoRotate` holds, and chart transitions and flowing links settle at
+  once. Motion of your own (a `Timeline`, `onUpdate` spin) can check `view.reducedMotion`.
 
 ## Charts: `phoria2/charts`
 
@@ -627,7 +648,8 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
   in it as a wrapping row, so give it no fixed height). Categories get swatches that click to hide
   and show; a number colour gets a key - a ramp, highest at the top, with values marked up its side,
   `ticks` as on an axis),
-  `theme: 'dark' | 'light'`, `title`, `transition: false | { duration, ease }`,
+  `theme: 'dark' | 'light'`, `title`, `description` (what a screen reader hears for it; else `chart.summary()`
+  makes one from the title and channels), `transition: false | { duration, ease }`,
   `overlap: 'dim' | 'hide' | 'show'` (labels), `highlight` (a colour, false, or for networks
   `'neighbours'` - the default, lighting the node's links and linked nodes - or `'node'`, the node alone), and node options (`position`, ...).
 - **Surfaces**: one row per grid point - `x` and `z` are the grid (numbers or categories), `y` the

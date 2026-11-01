@@ -44,6 +44,8 @@ export class Scene extends Node {
   environmentIntensity = 1
   /** 0-1: how blurred a panorama background is drawn - a soft backdrop that doesn't compete. */
   backgroundBlur = 0
+  /** @internal Set by the View drawing it, from its reducedMotion: charts' transitions and flows stand still. */
+  motionReduced = false
   /** @type {Fog | null} */
   #fog = null
 
