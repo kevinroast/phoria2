@@ -1,12 +1,16 @@
 # phoria2
 
-Small, friendly 3D for the web. A WebGL 2 renderer with PBR materials, instancing, points, lines,
-labels, picking and particles, behind an API small enough to learn in an afternoon - aimed at
-business apps: charts, labelled scenes, diagrams, dashboards and product viewers.
+Small, friendly 3D for the web. A WebGL 2 renderer with PBR materials, shadows, instancing, points,
+lines, labels, picking, glTF models and particles, behind an API small enough to learn in an
+afternoon - aimed at business apps: charts, labelled scenes, diagrams, dashboards, floor plans and
+product viewers.
 
 - **Small**: about 57 KB gzipped for a lit, interactive scene, and about 116 KB for everything;
   charts, particles, glTF, motion and editing are separate imports, and the heavier parts (shadows,
   HDR environments, GPU picking) load only when used.
+- **Interaction built in**: tooltips, hover highlights, click and drag handlers, and HTML labels
+  that hide when they overlap or go behind something - each an option or a line of code, not a
+  layer to build.
 - **Idle when nothing changes**: a view draws only when something in it changed, so a dashboard of
   many views only updates when needed.
 - **Any number of views on a page**: browsers allow about 16 WebGL contexts per page, so most
@@ -16,6 +20,11 @@ business apps: charts, labelled scenes, diagrams, dashboards and product viewers
 - **Tells you what to write**: every option is checked, and a mistake throws an error that names
   the fix - pass `colour` and you get `Material: use 'color'`. Written to be easy for coding
   agents too.
+- **Accessible**: `keyboard: true` lets people step through bars, points and parts with the
+  arrow keys while a screen reader says what each one is; motion follows the system's
+  reduced-motion setting.
+- **Integrates well**: physics, solid modelling and path finding can be added using libraries made
+  for them - the gallery shows phoria2 rendering with Rapier, Manifold and recast-navigation.
 - **No runtime dependencies.** ES modules, with TypeScript types.
 
 **New to phoria2?** The [getting started tutorial](https://kevs3d.co.uk/phoria2/tutorial.html)
@@ -97,6 +106,18 @@ The camera starts fitted to the scene, and `orbit: true` lets the user turn, pan
 [tutorial](https://kevs3d.co.uk/phoria2/tutorial.html) takes it on from here: materials, shadows,
 labels, hover and click.
 
+## Interaction
+
+```js
+const view = new View({ canvas: '#c', orbit: true, highlight: '#ffffff',
+  tooltip: (hit) => ({ title: hit.datum.name, rows: { Sales: hit.datum.sales } }) })
+view.on('click', (hit) => hit && select(hit.datum))             // hit is null for empty space
+chair.onDrag = (drag) => drag.point && chair.position.copy(drag.point)
+```
+
+A hit carries the node, the instance and its row of `data`, so a chart of 10,000 bars is one mesh
+with one handler. Labels are HTML, styled with your CSS.
+
 ## Charts
 
 ```js
@@ -127,6 +148,34 @@ view.scene.add(model)
 view.frame(model)
 model.play()                                        // its first animation
 ```
+
+## With other libraries
+
+phoria2 draws; a library built for the job does the rest. Physics engines hand back positions and
+`{ x, y, z, w }` rotations, which instances take as they are:
+
+```js
+// each frame: Rapier moves the bricks, phoria2 draws them - one mesh, one draw call
+world.step()
+bodies.forEach((body, i) => bricks.setInstance(i, { position: body.translation(), quaternion: body.rotation() }))
+```
+
+The gallery's Integrations section has four, each with its source: a brick tower knocked down with
+[Rapier](https://rapier.rs), a tablecloth simulated by Rapier's soft bodies, a block cut and joined with
+[Manifold](https://github.com/elalish/manifold), and people finding their way round an office with
+[recast-navigation](https://github.com/isaac-mason/recast-navigation-js).
+
+## Accessibility *(1.2)*
+
+```js
+const view = new View({ canvas: '#c', keyboard: true })
+```
+
+The canvas joins the page's tab order. The arrow keys step through whatever can be hovered or
+clicked - each bar, point, link or part - showing its highlight and tooltip, and Enter clicks it. A
+screen reader hears each one ("North, Sales: 26. 1 of 48") and a description of the view, which
+charts write for themselves. Glides, auto-rotation and chart transitions follow the system's
+reduced-motion setting (`reducedMotion` to choose).
 
 ## With React
 
@@ -197,9 +246,9 @@ Any browser with WebGL 2: current Chrome, Edge, Firefox and Safari (desktop and 
 ## Examples
 
 The [getting started tutorial](https://kevs3d.co.uk/phoria2/tutorial.html) walks through a first
-scene and a chart dashboard. The [demo gallery](https://kevs3d.co.uk/phoria2/) shows each feature
-and a few showcase scenes; its source, and the tutorial's, is in
-[`demos/`](https://github.com/kevinroast/phoria2/tree/main/demos).
+scene and a chart dashboard. The [demo gallery](https://kevs3d.co.uk/phoria2/) has charts and
+diagrams, a demo for each feature, showcase scenes and integrations with other libraries; its
+source, and the tutorial's, is in [`demos/`](https://github.com/kevinroast/phoria2/tree/main/demos).
 
 ## Licence
 
