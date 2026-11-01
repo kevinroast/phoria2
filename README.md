@@ -5,7 +5,7 @@ lines, labels, picking, glTF models and particles, behind an API small enough to
 afternoon - aimed at business apps: charts, labelled scenes, diagrams, dashboards, floor plans and
 product viewers.
 
-- **Small**: about 57 KB gzipped for a lit, interactive scene, and about 116 KB for everything;
+- **Small**: about 70 KB gzipped for a lit, interactive scene, and about 116 KB for everything;
   charts, particles, glTF, motion and editing are separate imports, and the heavier parts (shadows,
   HDR environments, GPU picking) load only when used.
 - **Interaction built in**: tooltips, hover highlights, click and drag handlers, and HTML labels
@@ -70,12 +70,12 @@ own). Pin the version so a new release can't change your page:
 <script type="importmap">
 {
   "imports": {
-    "phoria2": "https://cdn.jsdelivr.net/npm/phoria2@1.1.0/dist/phoria2.js",
-    "phoria2/charts": "https://cdn.jsdelivr.net/npm/phoria2@1.1.0/dist/charts.js",
-    "phoria2/particles": "https://cdn.jsdelivr.net/npm/phoria2@1.1.0/dist/particles.js",
-    "phoria2/gltf": "https://cdn.jsdelivr.net/npm/phoria2@1.1.0/dist/gltf.js",
-    "phoria2/motion": "https://cdn.jsdelivr.net/npm/phoria2@1.1.0/dist/motion.js",
-    "phoria2/edit": "https://cdn.jsdelivr.net/npm/phoria2@1.1.0/dist/edit.js"
+    "phoria2": "https://cdn.jsdelivr.net/npm/phoria2@1.2.0/dist/phoria2.js",
+    "phoria2/charts": "https://cdn.jsdelivr.net/npm/phoria2@1.2.0/dist/charts.js",
+    "phoria2/particles": "https://cdn.jsdelivr.net/npm/phoria2@1.2.0/dist/particles.js",
+    "phoria2/gltf": "https://cdn.jsdelivr.net/npm/phoria2@1.2.0/dist/gltf.js",
+    "phoria2/motion": "https://cdn.jsdelivr.net/npm/phoria2@1.2.0/dist/motion.js",
+    "phoria2/edit": "https://cdn.jsdelivr.net/npm/phoria2@1.2.0/dist/edit.js"
   }
 }
 </script>
