@@ -3,7 +3,7 @@
 Small, friendly 3D for the web. A WebGL 2 renderer with PBR materials, shadows, instancing, points,
 lines, labels, picking, glTF models and particles, behind an API small enough to learn in an
 afternoon - aimed at business apps: charts, labelled scenes, diagrams, dashboards, floor plans and
-product viewers.
+product viewers. The [demo gallery](https://kevs3d.co.uk/phoria2/)
 
 - **Small**: about 70 KB gzipped for a lit, interactive scene, and about 116 KB for everything;
   charts, particles, glTF, motion and editing are separate imports, and the heavier parts (shadows,
