@@ -117,6 +117,8 @@ export class WebGLRenderer {
   /** This frame's prefiltered environment, when it is an HDR image. @type {Environment | null} */ #environment = null
   /** This frame's shadows - directional, spot, point - for the meshes that receive them. @type {import('./passes.js').ShadowMap[]} */ #shadows = []
   /** @type {Float32Array} */ #normalMatrix = new Float32Array(9)
+  /** Model-view for sorting points back to front. */
+  #modelView = new Float32Array(16)
   /** @type {Record<string, any>} */ #lights = {}
   /** This frame waits for shaders to compile rather than leaving things out. */
   #wait = false
@@ -407,6 +409,7 @@ export class WebGLRenderer {
 
     const clip = kind === 'mesh' ? item.clip : null
     const defines = this.#defines(kind, material, geometry.colors !== null, !!instances, geometry.uvs2 !== null)
+    if (kind === 'points' && /** @type {any} */ (node).drawsSprites) defines.push('SPRITES')
     for (const shadow of shadows) defines.push(shadow.define)
     const fog = material.fog ? frame.fog : null
     if (fog) {
@@ -541,6 +544,17 @@ export class WebGLRenderer {
     if (kind === 'points') {
       gl.disable(gl.CULL_FACE)
       program.set('uSize', material.sizeAttenuation ? material.size : material.size * this.pixelRatio)
+      if (/** @type {any} */ (node).drawsSprites) {
+        // each point a square, any size and turned - drawn back to front when the points ask, for
+        // smoke and other soft things that hide what is behind them
+        program.set('uResolution', [this.canvas.width, this.canvas.height])
+        const modelView = /** @type {any} */ (node).sort ? mat4.multiply(this.#modelView, frame.camera.view, worldMatrix) : null
+        const buffers = this.#gpu.resources.sprites(geometry, modelView)
+        gl.bindVertexArray(buffers.vao)
+        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, buffers.count)
+        this.info.drawCalls++
+        return
+      }
       const buffers = this.#gpu.resources.mesh(geometry, null, false)
       gl.bindVertexArray(buffers.vao)
       gl.drawArrays(gl.POINTS, 0, geometry.drawnVertices)
@@ -677,6 +691,7 @@ export class WebGLRenderer {
       if (material.map) d.push('MAP')
       if (material.sizeAttenuation) d.push('SIZE_ATTENUATION')
     }
+    // (points drawn as squares add SPRITES - see #draw, which knows the node)
     return d
   }
 }

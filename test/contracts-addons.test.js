@@ -119,6 +119,11 @@ contract('Emitter', {
     drag: { value: 0.5, read: (e) => e.drag, default: 0, bad: 'some', error: 'drag' },
     follow: { fresh: () => new Group(), check: (e, n) => { if (e.follow !== n) throw new Error('not the node given') }, bad: 'it', error: 'follow' },
     onParticle: { value: () => true, read: (e) => typeof e.onParticle, expect: 'function', keep: false },
+    sort: { value: true, read: (e) => e.sort, default: false, bad: 'yes', error: 'sort' },
+    size: { value: [0.5, 3], read: (e) => e.size, default: [1], bad: -1, error: 'size' },
+    sizeSpread: { value: 0.3, read: (e) => e.sizeSpread, default: 0, bad: 'some', error: 'sizeSpread' },
+    opacity: { value: [0, 1, 0], read: (e) => e.opacity, default: [1], bad: [1, 'x'], error: 'opacity' },
+    spin: { value: [-1, 2], read: (e) => e.spin, default: [0, 0], bad: 'fast', error: 'spin' },
   },
 })
 

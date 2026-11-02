@@ -466,20 +466,44 @@ export class InstancedMesh extends Mesh {
 /** Each vertex drawn as a square point sprite: star fields, particles, scatter plots. */
 export class Points extends Drawable {
   static type = 'points'
-  static get OPTIONS() { return [...DRAWABLE_OPTIONS, 'labels'] }
+  static get OPTIONS() { return [...DRAWABLE_OPTIONS, 'labels', 'sort'] }
 
   /** A label per point from its row of data - or a list of them, several per point. @type {ReturnType<typeof instanceLabels>} */
   labels = null
+  /**
+   * Draw the points back to front, furthest first, each frame - for soft points that cover what is
+   * behind them (smoke, with blending 'normal'), which then layer the right way round. Drawn as squares.
+   */
+  sort = false
 
-  /** @param {DrawableOptions & { labels?: InstanceLabels | InstanceLabels[] | null }} options */
+  /** @param {DrawableOptions & { labels?: InstanceLabels | InstanceLabels[] | null, sort?: boolean }} options */
   constructor(options) {
     super(options)
     this.labels = instanceLabels(this.constructor.name, options?.labels)
+    if (options?.sort !== undefined) {
+      if (typeof options.sort !== 'boolean') fail(this.constructor.name, `'sort' is true or false, got ${describe(options.sort)}`)
+      this.sort = options.sort
+    }
+  }
+
+  /**
+   * @internal Drawn as squares, one a point, rather than as GL points: when the geometry gives each
+   * point its own size, opacity or angle, or the points are sorted. Squares can be any size and stay
+   * whole at the edge of the view.
+   */
+  get drawsSprites() {
+    const g = this.geometry
+    return this.sort || !!(g.sizes || g.opacities || g.angles)
   }
 
   /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
-    return { ...super.cloneOptions(), labels: this.labels }
+    return { ...super.cloneOptions(), labels: this.labels, sort: this.sort }
+  }
+
+  /** @internal @returns {Record<string, unknown>} */
+  jsonOptions() {
+    return { ...super.jsonOptions(), ...(this.sort ? { sort: true } : {}) }
   }
 
   /** @returns {'points'} */

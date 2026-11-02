@@ -147,7 +147,7 @@ export class ChangeWatch {
     this.#push(g.version)
     this.#push(g.drawCount ?? -1)
     this.#push(node.renderOrder)
-    this.#push((node.castShadow ? 1 : 0) | (node.receiveShadow ? 2 : 0))
+    this.#push((node.castShadow ? 1 : 0) | (node.receiveShadow ? 2 : 0) | (node.sort ? 4 : 0))
     // per-instance labels come from these, so swapping either redraws
     this.#push(node.labels ? idOf(node.labels) : 0)
     this.#push(node.data && typeof node.data === 'object' ? idOf(node.data) : 0)

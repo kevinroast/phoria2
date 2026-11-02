@@ -18,6 +18,9 @@ const PICK_FRAGMENT = /* glsl */ `
 precision highp float;
 precision highp int;
 flat in uint vPickElement;
+#ifdef SPRITES
+in vec2 vUv;
+#endif
 #ifdef CLIP
 in vec3 vWorldPosition;
 #endif
@@ -30,7 +33,11 @@ void main() {
   clipAway(vWorldPosition);
 #endif
 #ifdef ROUND
+#ifdef SPRITES
+  vec2 p = vUv * 2.0 - 1.0;
+#else
   vec2 p = gl_PointCoord * 2.0 - 1.0;
+#endif
   if (dot(p, p) > 1.0) discard;
 #endif
   pickOut = uvec4(uPickId, vPickElement, floatBitsToUint(gl_FragCoord.z), 1u);
@@ -219,9 +226,11 @@ export class Picker {
     const kind = mode === 'points' ? 'points' : mode === 'lines' ? 'lines' : 'mesh'
     const defines = ['PICK']
     if (instances) defines.push('INSTANCED')
+    const sprites = kind === 'points' && /** @type {any} */ (node).drawsSprites
     if (kind === 'points') {
       if (material.sizeAttenuation) defines.push('SIZE_ATTENUATION')
       if (!material.map) defines.push('ROUND')
+      if (sprites) defines.push('SPRITES')
     }
     if (kind === 'mesh' && item.clip) defines.push('CLIP')
     const program = this.programs.ready(`pick-${kind}`, defines, SOURCES[kind])
@@ -250,6 +259,14 @@ export class Picker {
       // sizes as drawn: world sizes scale by the real projection, not the zoomed one
       program.set('uSize', material.sizeAttenuation ? material.size : material.size * pixelRatio)
       program.set('uScale', frame.camera.projection[5] * height / 2)
+      if (sprites) {
+        // squares, in whatever order they were last drawn - each says which point it is
+        program.set('uResolution', [REGION, REGION])
+        const buffers = this.resources.sprites(geometry)
+        gl.bindVertexArray(buffers.vao)
+        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, buffers.count)
+        return
+      }
       const buffers = this.resources.mesh(geometry, null, false)
       gl.bindVertexArray(buffers.vao)
       gl.drawArrays(gl.POINTS, 0, geometry.drawnVertices)

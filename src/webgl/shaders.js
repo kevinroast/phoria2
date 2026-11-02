@@ -12,6 +12,11 @@ export const ATTRIBUTES = {
   instanceColor: 8,
   tangent: 9, // brushed metal's direction: along the UVs' u, and which way their v runs
   uv2: 10, // a second UV set, for baked occlusion and light maps
+  // points drawn as squares (sprites): each one's size, opacity and angle, and which point it is
+  pointSize: 11,
+  pointOpacity: 12,
+  pointAngle: 13,
+  pointIndex: 14,
   // lines: per-segment endpoints and colours, and the corner of the quad being drawn
   segmentStart: 0,
   segmentEnd: 1,
@@ -957,6 +962,17 @@ void main() {
 export const POINTS_VERTEX = /* glsl */ `
 layout(location = 0) in vec3 position;
 layout(location = 3) in vec3 color;
+#ifdef SPRITES
+// each point a square: one instance a point, drawn as a strip over the corners (along 0-1, across -1-1)
+layout(location = 4) in vec2 corner;
+layout(location = 11) in float pointSize;
+layout(location = 12) in float pointOpacity;
+layout(location = 13) in float pointAngle;
+layout(location = 14) in float pointIndex;
+uniform vec2 uResolution;   // drawing buffer size in pixels
+out vec2 vUv;
+out float vOpacity;
+#endif
 
 uniform mat4 uModel;
 uniform mat4 uView;
@@ -978,11 +994,34 @@ ${COMMON}
 
 void main() {
   vec4 viewPosition = uView * (uModel * vec4(position, 1.0));
+#ifdef SPRITES
+  // the square's corner, turned by the point's angle: the texture turns with it
+  vec2 c = vec2(corner.x * 2.0 - 1.0, corner.y);
+  float s = sin(pointAngle), k = cos(pointAngle);
+  vec2 turned = vec2(c.x * k - c.y * s, c.x * s + c.y * k);
+  float size = uSize * pointSize;
+#ifdef SIZE_ATTENUATION
+  // world units: the square sits in the view, facing the camera
+  viewPosition.xy += turned * size * 0.5;
   gl_Position = uProjection * viewPosition;
+#else
+  // pixels: the square is laid out on the screen
+  gl_Position = uProjection * viewPosition;
+  gl_Position.xy += turned * size / uResolution * gl_Position.w;
+#endif
+  // the image upright on the square, its top at the top, as a point's is
+  vUv = vec2(c.x * 0.5 + 0.5, 0.5 - c.y * 0.5);
+  vOpacity = pointOpacity;
+  int self = int(pointIndex + 0.5);
+#else
+  gl_Position = uProjection * viewPosition;
+  int self = gl_VertexID;
+#endif
 #ifdef FOG
   vFogDepth = -viewPosition.z;
 #endif
-#ifdef SIZE_ATTENUATION
+#ifdef SPRITES
+#elif defined(SIZE_ATTENUATION)
   // perspective shrinks with distance; an orthographic projection (w row 0, 0, 0, 1) doesn't
   float depth = uProjection[3][3] == 1.0 ? 1.0 : max(-viewPosition.z, 1e-4);
   gl_PointSize = uSize * uScale / depth;
@@ -993,9 +1032,9 @@ void main() {
 #ifdef VERTEX_COLORS
   vColor = srgbToLinear(color);
 #endif
-  vHighlight = uHighlightIndex == -1 || gl_VertexID == uHighlightIndex ? 1.0 : 0.0;
+  vHighlight = uHighlightIndex == -1 || self == uHighlightIndex ? 1.0 : 0.0;
 #ifdef PICK
-  vPickElement = uint(gl_VertexID);
+  vPickElement = uint(self);
 #endif
 }
 `
@@ -1004,6 +1043,10 @@ const POINTS_FRAGMENT = /* glsl */ `
 precision highp float;
 in vec3 vColor;
 flat in float vHighlight;
+#ifdef SPRITES
+in vec2 vUv;
+in float vOpacity;
+#endif
 uniform vec4 uHighlight;
 uniform vec3 uColor;
 uniform float uOpacity;
@@ -1016,12 +1059,18 @@ ${COMMON}
 ${FOG}
 
 void main() {
+#ifdef SPRITES
+  vec2 at = vUv;
+  vec4 base = vec4(uColor * vColor, uOpacity * vOpacity);
+#else
+  vec2 at = gl_PointCoord;
   vec4 base = vec4(uColor * vColor, uOpacity);
+#endif
 #ifdef MAP
-  base *= texture(uMap, vec2(gl_PointCoord.x, gl_PointCoord.y));
+  base *= texture(uMap, at);
 #else
   // round points with a one pixel soft edge
-  vec2 p = gl_PointCoord * 2.0 - 1.0;
+  vec2 p = at * 2.0 - 1.0;
   float r = dot(p, p);
   float edge = fwidth(r);
   base.a *= 1.0 - smoothstep(1.0 - edge, 1.0, r);

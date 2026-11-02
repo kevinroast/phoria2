@@ -9,10 +9,16 @@ import { checkOptions, describe, fail } from '../validate.js'
  * @property {ArrayLike<number>} [uvs2] a second uv per vertex, for maps that need every surface on its own
  *   patch of texture - baked occlusion and light maps (a texture's uvSet: 1 reads it)
  * @property {ArrayLike<number>} [colors] rgb per vertex, sRGB 0-1 like every colour input
+ * @property {ArrayLike<number>} [sizes] points: one per vertex, a multiple of the material's size
+ * @property {ArrayLike<number>} [opacities] points: one per vertex, 0-1, multiplying the material's opacity
+ * @property {ArrayLike<number>} [angles] points: one per vertex, radians anticlockwise on screen - turns
+ *   each point's texture
  * @property {ArrayLike<number>} [indices] vertex indices; triangles for meshes, pairs for lines
  */
 
-const OPTIONS = ['positions', 'normals', 'uvs', 'uvs2', 'colors', 'indices']
+const OPTIONS = ['positions', 'normals', 'uvs', 'uvs2', 'colors', 'sizes', 'opacities', 'angles', 'indices']
+// the per-point arrays: Points with any of them draw each point as its own square, sized, faded and turned
+const POINT_ARRAYS = /** @type {const} */ (['sizes', 'opacities', 'angles'])
 
 /**
  * Vertex data: flat typed arrays plus an optional index. Generators such as box() and sphere()
@@ -25,6 +31,9 @@ export class Geometry {
   /** @type {Float32Array | null} */ uvs = null
   /** A second UV set, for baked occlusion and light maps. @type {Float32Array | null} */ uvs2 = null
   /** @type {Float32Array | null} */ colors = null
+  /** Points: each one's size, as a multiple of the material's. @type {Float32Array | null} */ sizes = null
+  /** Points: each one's opacity, 0-1, times the material's. @type {Float32Array | null} */ opacities = null
+  /** Points: each one's turn on screen, in radians anticlockwise. @type {Float32Array | null} */ angles = null
   /** @type {Uint16Array | Uint32Array | null} */ indices = null
 
   /** @internal Bumped by needsUpdate() so renderers know to re-upload. */
@@ -62,6 +71,7 @@ export class Geometry {
     if (options.uvs) this.uvs = toFloat32('uvs', options.uvs, 2, n)
     if (options.uvs2) this.uvs2 = toFloat32('uvs2', options.uvs2, 2, n)
     if (options.colors) this.colors = toFloat32('colors', options.colors, 3, n)
+    for (const name of POINT_ARRAYS) if (options[name]) this[name] = toFloat32(name, options[name], 1, n)
     if (options.indices) {
       // -1: no indices at all refer to no vertex, so an empty geometry can say so
       let max = -1
@@ -191,6 +201,9 @@ export class Geometry {
       uvs: this.uvs ?? undefined,
       uvs2: this.uvs2 ?? undefined,
       colors: this.colors ?? undefined,
+      sizes: this.sizes ?? undefined,
+      opacities: this.opacities ?? undefined,
+      angles: this.angles ?? undefined,
       indices: this.indices ?? undefined,
     })
     g.source = this.source && { ...this.source }
@@ -218,6 +231,7 @@ export class Geometry {
     if (this.uvs) json.uvs = Array.from(this.uvs)
     if (this.uvs2) json.uvs2 = Array.from(this.uvs2)
     if (this.colors) json.colors = Array.from(this.colors)
+    for (const name of POINT_ARRAYS) if (this[name]) json[name] = Array.from(/** @type {Float32Array} */ (this[name]))
     if (this.indices) json.indices = Array.from(this.indices)
     return json
   }
@@ -242,6 +256,7 @@ export class Geometry {
     this.uvs = expand(this.uvs, 2)
     this.uvs2 = expand(this.uvs2, 2)
     this.colors = expand(this.colors, 3)
+    for (const name of POINT_ARRAYS) this[name] = expand(this[name], 1)
     this.indices = null
     this.source = null
   }

@@ -112,6 +112,11 @@ export function uvMatrix(t) {
 
 // a quad as a triangle strip of [along, across] corners, shared by every Lines draw
 const LINE_CORNERS = new Float32Array([0, -1, 0, 1, 1, -1, 1, 1])
+// a point drawn as a square: position, colour, size, opacity, angle and index, as [location, floats,
+// offset in floats]
+const SPRITE_LAYOUT = [[ATTRIBUTES.position, 3, 0], [ATTRIBUTES.color, 3, 3], [ATTRIBUTES.pointSize, 1, 6],
+  [ATTRIBUTES.pointOpacity, 1, 7], [ATTRIBUTES.pointAngle, 1, 8], [ATTRIBUTES.pointIndex, 1, 9]]
+const SPRITE_STRIDE = 10
 
 export class Resources {
   /** @type {WebGL2RenderingContext} */ gl
@@ -119,6 +124,7 @@ export class Resources {
   /** @type {WeakMap<object, MeshBuffers>} */ #triangles = new WeakMap()
   /** @type {WeakMap<object, MeshBuffers>} */ #points = new WeakMap()
   /** @type {WeakMap<object, MeshBuffers>} */ #lines = new WeakMap()
+  /** Points drawn as squares: an instance a point. @type {WeakMap<object, MeshBuffers & { capacity: number, sorted: boolean, data: Float32Array }>} */ #sprites = new WeakMap()
   /** The GPU copy of each texture: the version it holds, and the storage it was made with. @type {WeakMap<Texture, { texture: WebGLTexture, version: number, width: number, height: number, internal: number }>} */ #textures = new WeakMap()
   /** @type {WebGLTexture | null} */ #white = null
   /** @type {WebGLBuffer | null} */ #corners = null
@@ -439,7 +445,7 @@ export class Resources {
       const users = this.#usedBy.get(key)
       if (!users?.delete(owner) || users.size) continue
       this.#usedBy.delete(key)
-      for (const cache of [this.#triangles, this.#points, this.#lines]) {
+      for (const cache of [this.#triangles, this.#points, this.#lines, this.#sprites]) {
         const entry = cache.get(key)
         if (!entry) continue
         this.#free(entry)
@@ -458,6 +464,64 @@ export class Resources {
     users.add(this.owner)
   }
 
+  /**
+   * Vertex array for points drawn as squares: one instance a point - its position, colour, size,
+   * opacity, angle and index - over the corner strip lines use. Given a model-view matrix, the points
+   * go back to front (furthest first) - re-sorted every call, as the camera may have moved; without
+   * one, in their own order; with undefined, in whatever order they were last sent (picking, which
+   * reads each point's index and doesn't mind).
+   * @param {Geometry} geometry @param {ArrayLike<number> | null} [modelView]
+   * @returns {MeshBuffers}
+   */
+  sprites(geometry, modelView) {
+    this.#mark(geometry)
+    const gl = this.gl
+    let entry = this.#sprites.get(geometry)
+    const sorting = !!modelView
+    if (entry && entry.version === geometry.version && !sorting && (modelView === undefined || !entry.sorted)) return entry
+    const n = geometry.drawnVertices, count = geometry.vertexCount
+    if (!entry || entry.capacity < count) {
+      if (entry) this.#free(entry)
+      else this.#watch(geometry, geometry, this.#sprites)
+      const vao = /** @type {WebGLVertexArrayObject} */ (gl.createVertexArray())
+      gl.bindVertexArray(vao)
+      const buffer = /** @type {WebGLBuffer} */ (gl.createBuffer())
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+      gl.bufferData(gl.ARRAY_BUFFER, count * SPRITE_STRIDE * 4, gl.DYNAMIC_DRAW)
+      for (const [location, size, offset] of SPRITE_LAYOUT) {
+        gl.enableVertexAttribArray(location)
+        gl.vertexAttribPointer(location, size, gl.FLOAT, false, SPRITE_STRIDE * 4, offset * 4)
+        gl.vertexAttribDivisor(location, 1)
+      }
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.#cornerBuffer())
+      gl.enableVertexAttribArray(ATTRIBUTES.corner)
+      gl.vertexAttribPointer(ATTRIBUTES.corner, 2, gl.FLOAT, false, 0, 0)
+      gl.bindVertexArray(null)
+      entry = { vao, buffers: [buffer], count: 0, indexType: 0, geometry, version: -1, instanceVersion: 0, capacity: count, sorted: false, data: new Float32Array(count * SPRITE_STRIDE) }
+      this.#sprites.set(geometry, entry)
+    }
+    const order = sorting ? backToFront(geometry.positions, n, /** @type {ArrayLike<number>} */ (modelView)) : null
+    const p = geometry.positions, c = geometry.colors, sizes = geometry.sizes, opacities = geometry.opacities, angles = geometry.angles
+    const data = entry.data
+    for (let j = 0; j < n; j++) {
+      const i = order ? order[j] : j, o = j * SPRITE_STRIDE
+      data[o] = p[i * 3]
+      data[o + 1] = p[i * 3 + 1]
+      data[o + 2] = p[i * 3 + 2]
+      data[o + 3] = c ? c[i * 3] : 1
+      data[o + 4] = c ? c[i * 3 + 1] : 1
+      data[o + 5] = c ? c[i * 3 + 2] : 1
+      data[o + 6] = sizes ? sizes[i] : 1
+      data[o + 7] = opacities ? opacities[i] : 1
+      data[o + 8] = angles ? angles[i] : 0
+      data[o + 9] = i
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, entry.buffers[0])
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, data, 0, n * SPRITE_STRIDE)
+    Object.assign(entry, { count: n, version: geometry.version, sorted: sorting })
+    return entry
+  }
+
   /** @param {Texture} texture */
   #freeTexture(texture) {
     const entry = this.#textures.get(texture)
@@ -472,6 +536,7 @@ export class Resources {
     this.#triangles = new WeakMap()
     this.#points = new WeakMap()
     this.#lines = new WeakMap()
+    this.#sprites = new WeakMap()
     this.#textures = new WeakMap()
     this.#usedBy = new WeakMap()
     this.#white = null
@@ -553,4 +618,20 @@ function byCell(regions, width, height) {
     }
   }
   return [...cells.values()].map(([x0, y0, x1, y1]) => ({ x: x0, y: y0, width: x1 - x0, height: y1 - y0 }))
+}
+
+/**
+ * The first n points' order furthest from the camera first: by their depth in view, given the
+ * model-view matrix.
+ * @param {Float32Array} p @param {number} n @param {ArrayLike<number>} m
+ * @returns {Uint32Array}
+ */
+function backToFront(p, n, m) {
+  const depth = new Float32Array(n), order = new Uint32Array(n)
+  for (let i = 0; i < n; i++) {
+    // view space z: more negative is further away
+    depth[i] = m[2] * p[i * 3] + m[6] * p[i * 3 + 1] + m[10] * p[i * 3 + 2] + m[14]
+    order[i] = i
+  }
+  return order.sort((a, b) => depth[a] - depth[b])
 }

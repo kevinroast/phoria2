@@ -1,7 +1,8 @@
 // A particle system as one Points node: particles are born at the emitter's origin, move under
 // velocity, gravity and drag, fade through a list of colours and die. The simulation runs in the
 // emitter's own update handler, so it follows the scene clock (frame-rate independent) and its
-// arrays go to the GPU as one buffer refill per frame.
+// arrays go to the GPU as one buffer refill per frame. Particles that grow, fade or turn give the
+// geometry per-point sizes, opacities or angles, and are drawn as squares.
 import * as mat4 from '../math/mat4.js'
 import { Geometry } from '../geometry/Geometry.js'
 import { Material } from '../material/Material.js'
@@ -48,17 +49,32 @@ import { checkNumber, describe, fail } from '../validate.js'
  *   frustumCulled?: boolean,
  *   renderOrder?: number,
  *   onParticle?: ((p: Particle) => boolean | void) | null,
- * }} EmitterOptions
+ *   sort?: boolean,
+ * } & LookOptions} EmitterOptions
  * max: most live particles at once (default 1000). rate: particles born per second (default 100).
  * gravity: acceleration, e.g. [0, -9.8, 0] (default none). drag: share of velocity lost per second
  * (default 0). follow: a node whose position becomes the origin each frame - a trail that stays
  * behind it. onParticle: called for every live particle each frame after it moves; return false to
- * remove it (a particle hitting something).
+ * remove it (a particle hitting something). sort: draw furthest first, for soft particles with
+ * blending 'normal' (smoke) that would otherwise layer wrongly.
+ */
+
+/**
+ * How particles look over their lives, beyond colour.
+ * @typedef {object} LookOptions
+ * @property {number | number[]} [size] a multiple of the material's size, or several each particle goes
+ *   through over its life - [0.5, 3] for smoke that billows out (default 1)
+ * @property {number} [sizeSpread] each particle's size varies by up to this share either way, 0-1 (default 0)
+ * @property {number | number[]} [opacity] 0-1, or several each particle goes through - [0, 1, 0] fades in
+ *   and out (default 1)
+ * @property {number | [number, number]} [spin] radians per second: a number turns each particle up to that
+ *   fast either way, [min, max] a range. Spinning particles start at a random angle (default 0)
  */
 
 const SPAWN_OPTIONS = ['origin', 'originSpread', 'velocity', 'velocitySpread', 'lifetime', 'color']
-const OPTIONS = [...Points.OPTIONS, ...SPAWN_OPTIONS,
-  'max', 'rate', 'gravity', 'drag', 'follow', 'onParticle']
+const LOOK_OPTIONS = ['size', 'sizeSpread', 'opacity', 'spin']
+const BEHAVIOUR_OPTIONS = ['rate', 'gravity', 'drag', 'follow', 'onParticle', ...LOOK_OPTIONS]
+const OPTIONS = [...Points.OPTIONS, ...SPAWN_OPTIONS, 'max', ...BEHAVIOUR_OPTIONS]
 const HINTS = {
   count: "use 'max' for the most particles alive at once, 'rate' for how many are born per second",
   lifetimeRnd: "give 'lifetime' a [min, max] range",
@@ -111,6 +127,13 @@ export class Emitter extends Points {
   /** @type {Map<string, number>} */ #paletteIds = new Map()
   /** @type {Uint8Array} */ #palette
   #spawnPalette = 0
+  // the looks: stops over each particle's life, and each one's own size factor and turn rate
+  /** @type {number[]} */ #size = [1]
+  #sizeSpread = 0
+  /** @type {number[]} */ #opacity = [1]
+  /** @type {[number, number]} */ #spin = [0, 0]
+  /** @type {Float32Array | null} */ #sizeFactors = null
+  /** @type {Float32Array | null} */ #spins = null
   /** Last frame's origin, so a moving source leaves an even trail rather than clumps. */
   #lastOrigin = /** @type {Vec3 | null} */ (null)
   #particle = /** @type {Particle} */ ({ position: new Vec3(), velocity: new Vec3(), age: 0, lifetime: 0 })
@@ -144,12 +167,12 @@ export class Emitter extends Points {
   /**
    * Change several settings at once - a preset, say. Vectors are copied into the emitter's own,
    * so anything bound to `emitter.gravity` and friends stays bound. Live particles carry on.
-   * @param {SpawnOptions & { rate?: number, gravity?: Vec3Input, drag?: number, follow?: Node | null,
+   * @param {SpawnOptions & LookOptions & { rate?: number, gravity?: Vec3Input, drag?: number, follow?: Node | null,
    *   onParticle?: ((p: Particle) => boolean | void) | null }} options
    * @returns {this}
    */
   set(options) {
-    const known = [...SPAWN_OPTIONS, 'rate', 'gravity', 'drag', 'follow', 'onParticle']
+    const known = [...SPAWN_OPTIONS, ...BEHAVIOUR_OPTIONS]
     for (const key of Object.keys(options ?? {})) {
       if (!known.includes(key)) fail('Emitter', `set() doesn't take '${key}' - it takes ${known.join(', ')}`)
     }
@@ -168,6 +191,22 @@ export class Emitter extends Points {
   set color(v) { this.#palettes[0] = colorStops(v) }
   /** @returns {[number, number, number][]} */
   get color() { return /** @type {[number, number, number][]} */ (this.#palettes[0].map((s) => [...s])) }
+
+  /** Each particle's size over its life, as multiples of the material's. @param {number | number[]} v */
+  set size(v) { this.#setLooks({ size: v }) }
+  /** @returns {number[]} */
+  get size() { return [...this.#size] }
+  /** How much each particle's size varies, 0-1 either way. @param {number} v */
+  set sizeSpread(v) { this.#setLooks({ sizeSpread: v }) }
+  get sizeSpread() { return this.#sizeSpread }
+  /** Each particle's opacity over its life. @param {number | number[]} v */
+  set opacity(v) { this.#setLooks({ opacity: v }) }
+  /** @returns {number[]} */
+  get opacity() { return [...this.#opacity] }
+  /** How fast particles turn, radians per second, as a [min, max] range. @param {number | [number, number]} v */
+  set spin(v) { this.#setLooks({ spin: v }) }
+  /** @returns {[number, number]} */
+  get spin() { return [...this.#spin] }
 
   /**
    * Birth `count` particles at once - explosions, splashes. Options override the emitter's own
@@ -211,6 +250,7 @@ export class Emitter extends Points {
     const v = this.#velocities, ages = this.#ages, lives = this.#lifetimes
     const g = this.gravity, keep = Math.exp(-this.drag * dt)
     const hook = this.onParticle, particle = this.#particle
+    const angles = this.geometry.angles, spins = this.#spins
 
     for (let i = 0; i < this.#alive;) {
       const age = ages[i] += dt
@@ -223,6 +263,7 @@ export class Emitter extends Points {
         v[i3 + k] = (v[i3 + k] + g[k] * dt) * keep
         p[i3 + k] += v[i3 + k] * dt
       }
+      if (angles && spins) angles[i] += spins[i] * dt
       this.#paint(i, age / lives[i])
       if (hook) {
         particle.position.set(p[i3], p[i3 + 1], p[i3 + 2])
@@ -256,7 +297,7 @@ export class Emitter extends Points {
     const rest = super.cloneOptions()
     delete rest.geometry
     return { ...rest, ...this.#saveSpawn(), max: this.#max, rate: this.rate, gravity: this.gravity.clone(),
-      drag: this.drag, follow: this.follow, onParticle: this.onParticle, color: this.color }
+      drag: this.drag, follow: this.follow, onParticle: this.onParticle, color: this.color, ...this.#looks() }
   }
 
   /** @internal @returns {Record<string, unknown>} */
@@ -266,7 +307,8 @@ export class Emitter extends Points {
     return { ...rest, max: this.#max, rate: this.rate, gravity: this.gravity.toArray(), drag: this.drag,
       origin: this.origin.toArray(), originSpread: this.originSpread, velocity: this.velocity.toArray(),
       velocitySpread: typeof this.velocitySpread === 'number' ? this.velocitySpread : this.velocitySpread.toArray(),
-      lifetime: [...this.lifetime], color: this.#palettes[0].map((s) => new Color().setSRGB(s[0], s[1], s[2]).toJSON()) }
+      lifetime: [...this.lifetime], color: this.#palettes[0].map((s) => new Color().setSRGB(s[0], s[1], s[2]).toJSON()),
+      ...this.#looks() }
   }
 
   // birth one particle somewhere between a and b, already `head` seconds into its life
@@ -287,6 +329,12 @@ export class Emitter extends Points {
     this.#lifetimes[i] = min + Math.random() * (max - min)
     this.#ages[i] = head
     this.#palette[i] = this.#spawnPalette
+    if (this.#sizeFactors) this.#sizeFactors[i] = 1 + (Math.random() * 2 - 1) * this.#sizeSpread
+    const angles = this.geometry.angles, spins = this.#spins
+    if (angles && spins) {
+      spins[i] = this.#spin[0] + Math.random() * (this.#spin[1] - this.#spin[0])
+      angles[i] = Math.random() * Math.PI * 2 + spins[i] * head
+    }
     this.#paint(i, head / this.#lifetimes[i])
   }
 
@@ -302,10 +350,16 @@ export class Emitter extends Points {
     this.#ages[i] = this.#ages[last]
     this.#lifetimes[i] = this.#lifetimes[last]
     this.#palette[i] = this.#palette[last]
+    for (const a of [this.geometry.sizes, this.geometry.opacities, this.geometry.angles, this.#sizeFactors, this.#spins]) {
+      if (a) a[i] = a[last]
+    }
   }
 
   /** @param {number} i @param {number} t 0-1 through its life */
   #paint(i, t) {
+    const { sizes, opacities } = this.geometry
+    if (sizes) sizes[i] = along(this.#size, t) * (this.#sizeFactors ? this.#sizeFactors[i] : 1)
+    if (opacities) opacities[i] = along(this.#opacity, t)
     const c = /** @type {Float32Array} */ (this.geometry.colors), stops = this.#palettes[this.#palette[i]]
     if (stops.length === 1) {
       c.set(stops[0], i * 3)
@@ -349,14 +403,40 @@ export class Emitter extends Points {
     if (o.color !== undefined) this.#palettes[0] = colorStops(o.color)
   }
 
-  /** @param {{ rate?: number, gravity?: Vec3Input, drag?: number, follow?: Node | null, onParticle?: ((p: Particle) => boolean | void) | null }} o */
+  /** @param {LookOptions & { rate?: number, gravity?: Vec3Input, drag?: number, follow?: Node | null, onParticle?: ((p: Particle) => boolean | void) | null }} o */
   #setBehaviour(o) {
+    this.#setLooks(o)
     const owner = 'Emitter'
     if (o.rate !== undefined) this.rate = Math.max(0, checkNumber(owner, 'rate', o.rate))
     if (o.gravity !== undefined) this.gravity.copy(o.gravity, owner)
     if (o.drag !== undefined) this.drag = Math.max(0, checkNumber(owner, 'drag', o.drag))
     if (o.follow !== undefined) this.follow = checkFollow(o.follow)
     if (o.onParticle !== undefined) this.onParticle = o.onParticle
+  }
+
+  // Sizes, opacities and angles go on the geometry when first wanted (the points are then drawn as
+  // squares) and stay; live particles get the plain values until they are next painted.
+  /** @param {LookOptions} o */
+  #setLooks(o) {
+    const owner = 'Emitter', g = this.geometry, max = this.#max
+    if (o.size !== undefined) this.#size = lookStops('size', o.size, Infinity)
+    if (o.sizeSpread !== undefined) this.#sizeSpread = Math.min(Math.max(checkNumber(owner, 'sizeSpread', o.sizeSpread), 0), 1)
+    if (o.opacity !== undefined) this.#opacity = lookStops('opacity', o.opacity, 1)
+    if (o.spin !== undefined) this.#spin = spinRange(o.spin)
+    const plain = (/** @type {number[]} */ stops) => stops.length === 1 && stops[0] === 1
+    if (!g.sizes && (!plain(this.#size) || this.#sizeSpread)) g.sizes = new Float32Array(max).fill(1)
+    if (!this.#sizeFactors && this.#sizeSpread) this.#sizeFactors = new Float32Array(max).fill(1)
+    if (!g.opacities && !plain(this.#opacity)) g.opacities = new Float32Array(max).fill(1)
+    if (!g.angles && (this.#spin[0] || this.#spin[1])) {
+      g.angles = new Float32Array(max)
+      this.#spins = new Float32Array(max)
+    }
+  }
+
+  /** The looks, as options. @returns {LookOptions} */
+  #looks() {
+    return { size: unstop(this.#size), sizeSpread: this.#sizeSpread, opacity: unstop(this.#opacity),
+      spin: /** @type {[number, number]} */ ([...this.#spin]) }
   }
 
   /** The spawn settings other than colour, as options. @returns {SpawnOptions} */
@@ -393,6 +473,37 @@ function lifetimeRange(v) {
   const range = typeof v === 'number' ? [v, v] : v
   if (!Array.isArray(range) || range.length !== 2 || !range.every((n) => typeof n === 'number' && n > 0)) {
     fail('Emitter', `'lifetime' must be seconds above 0, or a [min, max] range, got ${describe(v)}`)
+  }
+  return [Math.min(range[0], range[1]), Math.max(range[0], range[1])]
+}
+
+/** @param {string} name @param {number | number[]} v @param {number} most @returns {number[]} */
+function lookStops(name, v, most) {
+  const list = Array.isArray(v) ? v : [v]
+  if (!list.length || !list.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0)) {
+    fail('Emitter', `'${name}' must be a number of 0 or more, or a list of them a particle goes through, got ${describe(v)}`)
+  }
+  return list.map((n) => Math.min(n, most))
+}
+
+/** One stop as a number, several as a list. @param {number[]} stops @returns {number | number[]} */
+function unstop(stops) {
+  return stops.length === 1 ? stops[0] : [...stops]
+}
+
+/** The value t (0-1) of the way through evenly spaced stops. @param {number[]} stops @param {number} t */
+function along(stops, t) {
+  if (stops.length === 1) return stops[0]
+  const x = Math.min(Math.max(t, 0), 1) * (stops.length - 1)
+  const s = Math.min(Math.floor(x), stops.length - 2)
+  return stops[s] + (stops[s + 1] - stops[s]) * (x - s)
+}
+
+/** @param {number | [number, number]} v @returns {[number, number]} */
+function spinRange(v) {
+  const range = typeof v === 'number' ? [-Math.abs(v), Math.abs(v)] : v
+  if (!Array.isArray(range) || range.length !== 2 || !range.every((n) => typeof n === 'number' && Number.isFinite(n))) {
+    fail('Emitter', `'spin' must be radians per second, or a [min, max] range, got ${describe(v)}`)
   }
   return [Math.min(range[0], range[1]), Math.max(range[0], range[1])]
 }

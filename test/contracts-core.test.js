@@ -77,6 +77,7 @@ nodeContract(InstancedMesh, (o) => new InstancedMesh({ geometry: box(1), ...(o.c
 nodeContract(Points, (o) => new Points({ geometry: new Geometry({ positions: [0, 0, 0, 1, 1, 1] }), ...o }), {
   ...drawableRows(() => new Geometry({ positions: [0, 0, 0] })),
   labels: labelsRow,
+  sort: { value: true, read: (n) => n.sort, default: false, bad: 'yes', error: 'sort' },
 })
 
 nodeContract(Lines, (o) => new Lines({ geometry: new Geometry({ positions: [0, 0, 0, 1, 0, 0] }), ...o }), drawableRows(() => new Geometry({ positions: [0, 0, 0, 0, 1, 0] })))
@@ -237,6 +238,9 @@ contract('Geometry', {
     uvs: { value: [0, 0, 1, 0, 0, 1], read: (g) => Array.from(g.uvs), bad: [0, 0], error: 'uvs' },
     uvs2: { value: [0, 0, 1, 0, 0, 1], read: (g) => Array.from(g.uvs2), bad: [0, 0], error: 'uvs2' },
     colors: { value: [1, 0, 0, 0, 1, 0, 0, 0, 1], read: (g) => Array.from(g.colors), bad: [1, 0, 0], error: 'colors' },
+    sizes: { value: [1, 2, 3], read: (g) => Array.from(g.sizes), bad: [1, 2], error: 'sizes' },
+    opacities: { value: [1, 0.5, 0], read: (g) => Array.from(g.opacities), bad: [1], error: 'opacities' },
+    angles: { value: [0, 1, 2], read: (g) => Array.from(g.angles), bad: [0, 1, 2, 3], error: 'angles' },
     indices: { value: [0, 1, 2], read: (g) => Array.from(g.indices), bad: [0, 1, 9], error: 'indices' },
   },
 })

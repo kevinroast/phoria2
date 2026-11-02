@@ -102,6 +102,10 @@
           "properties": {
             "type": {
               "const": "points"
+            },
+            "sort": {
+              "type": "boolean",
+              "description": "Draw the points furthest first each frame, for soft points that cover what is behind them."
             }
           },
           "unevaluatedProperties": false
@@ -1276,6 +1280,27 @@
             },
             "colors": {
               "type": "array",
+              "items": {
+                "type": "number"
+              }
+            },
+            "sizes": {
+              "type": "array",
+              "description": "Points: one per vertex, a multiple of the material's size.",
+              "items": {
+                "type": "number"
+              }
+            },
+            "opacities": {
+              "type": "array",
+              "description": "Points: one per vertex, 0-1, times the material's opacity.",
+              "items": {
+                "type": "number"
+              }
+            },
+            "angles": {
+              "type": "array",
+              "description": "Points: one per vertex, radians anticlockwise on screen.",
               "items": {
                 "type": "number"
               }

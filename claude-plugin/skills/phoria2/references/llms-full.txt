@@ -222,6 +222,12 @@ new Lines({ geometry: edges(box(2)), material: { color: '#333', width: 2 } })   
 new Label({ text: 'Rack A1', position: [0, 2, 0], className: 'my-label', place: 'above' })
 ```
 
+**Points** each their own size, opacity or angle: give the geometry `sizes` (multiples of the material's
+`size`), `opacities` (0-1) or `angles` (radians, turning the point's `map`), one per vertex. Such points
+are drawn as camera-facing squares, so any size works and they stay whole at the edge of the view.
+`sort: true` draws them furthest first each frame - for soft points with `blending: 'normal'`
+(smoke, cloud) that would otherwise layer wrongly; with additive blending order doesn't matter.
+
 **InstancedMesh** - many copies of one geometry in one draw call, for bars, racks, nodes:
 
 ```js
@@ -809,6 +815,20 @@ second), `follow` (a node whose position is the origin each frame - a trail), `o
 (every live particle each frame; return false to remove it), plus node and material options; the
 default material is small additive points. `burst(count, spawnOptions)`, `clear()`, `set(options)`,
 `count`.
+
+How particles look over their lives: `size` (a multiple of the material's size, or a list each particle
+goes through - `[0.5, 3]` billows), `sizeSpread` (each one's size varies by up to this share, 0-1),
+`opacity` (0-1, or a list - `[0, 1, 0]` fades in and out) and `spin` (radians per second: a number
+either way, or `[min, max]`; spinning particles start at a random angle). For smoke, a soft `map`,
+`blending: 'normal'` and `sort: true`:
+
+```js
+const smoke = view.scene.add(new Emitter({
+  rate: 40, velocity: [0, 1.5, 0], velocitySpread: 0.4, lifetime: [3, 5], color: ['#777', '#333'],
+  size: [0.6, 4], sizeSpread: 0.3, opacity: [0, 0.6, 0], spin: 0.5, sort: true,
+  material: { map: puff, size: 1, blending: 'normal' },
+}))
+```
 
 `Body` moves any node: `node.onUpdate(new Body({ velocity, gravity, drag }).update)`;
 `body.impulse([x, y, z])` kicks it.
