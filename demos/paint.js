@@ -331,7 +331,16 @@ export default async function run({ canvas, gui, info }) {
   const fire = (on) => {
     firing = on
     aim()
+    showAim()
   }
+  // a crosshair over the wall and while spraying, for aiming - rather than the hand the View shows for
+  // something that drags (the class's cursor wins over the one the View sets on the canvas)
+  let overWall = false
+  const showAim = () => canvas.classList.toggle('paint-aim', overWall || (firing && sweep >= SWEEP))
+  view.on('hover', (hit) => {
+    overWall = hit?.node === wall
+    showAim()
+  })
   canvas.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return
     const hit = view.pick(e)

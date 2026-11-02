@@ -2560,7 +2560,14 @@ button.demo-legend-item {
   }
 }
 
-/* ---- paint: the bar along the bottom - palettes, colour speed, a clean wall ---- */
+/* ---- paint: aiming at the wall, and the bar along the bottom - palettes, colour speed, a clean wall ---- */
+/* aiming: a crosshair drawn white over a dark outline, so it shows on any colour - the system one
+   inverts what is under it, which on Windows looks odd over paint and brick - with its hot spot in
+   the middle */
+.paint-aim {
+  cursor: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cg%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M12%202v7M12%2015v7M2%2012h7M15%2012h7%22%20stroke%3D%22%23000%22%20stroke-opacity%3D%22.75%22%20stroke-width%3D%224%22%2F%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%221.6%22%20fill%3D%22%23000%22%20fill-opacity%3D%22.75%22%2F%3E%3Cpath%20d%3D%22M12%202v7M12%2015v7M2%2012h7M15%2012h7%22%20stroke%3D%22%23fff%22%20stroke-width%3D%222%22%2F%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%220.8%22%20fill%3D%22%23fff%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E") 12 12, crosshair !important;
+}
+
 .paint-bar {
   left: 50%;
   bottom: 72px;
