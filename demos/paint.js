@@ -29,53 +29,58 @@ const CAMERAS = {
   landscape: { position: [-9.45, 3.8, 7.56], target: [6.3, 3.3, 1.03], fov: 60 },
   portrait: { position: [-23.77, 13.46, 7.93], target: [6, 4.1, 0.49], fov: 60 },
 }
-// fresh paint is glossy and dries to satin: roughness (as the ARM map's green, 0-255) by age in seconds
-const DRYING = [[0, 30], [1.5, 50], [3, 70], [5, 95], [8, 115]]
-
 // A paint cannon. Drops fly under gravity, and when one reaches the wall it is removed and a splat
-// is drawn into the canvases behind the wall's textures: its colour, and its roughness (wet paint is
-// glossy, drying to satin) - the bricks' normal map stays as it is, so their bumps show through the
-// paint. A splat stretches along the way the drop was going, and throws spatter that way; a big one
-// may run in a drip down the bricks, ending in a bead. texture.needsUpdate() sends a canvas to the
-// GPU, once a frame, when it changed.
+// is drawn into the canvas behind the wall's colour - the bricks' normal, roughness and occlusion maps
+// stay as they are, so their bumps show through the paint. A splat stretches along the way the drop
+// was going, and throws spatter that way; a big one may run in a drip down the bricks, ending in a
+// bead. texture.needsUpdate(region) sends the parts of the canvas that changed to the GPU, once a
+// frame - a splat's or a drip's few pixels, not the whole wall's canvas each time.
 // Press on the wall to fire and drag to sweep the stream: the cannon works out the arc that lands
 // under the pointer (the wall's onDrag has the press, and the drag plane is the wall's).
 export default async function run({ canvas, gui, info }) {
   // a touch screen has no space bar, and less room: the bar's ⟲ cleans the wall
   info.textContent = matchMedia('(pointer: coarse)').matches ? 'Drag on the wall to spray · elsewhere to look around'
     : 'Press and drag on the wall to spray · drag elsewhere to look around · space cleans it'
-  const [brick, arm] = await Promise.all(['diff', 'arm'].map((m) => loadTexture(`textures/red_brick_03_${m}_1k.jpg`)))
+  const brick = await loadTexture('textures/red_brick_03_diff_1k.jpg')
 
-  // the wall's colour and ARM (occlusion, roughness, metal) textures are canvases, painted as drops land
-  const layer = () => {
-    const c = document.createElement('canvas')
-    c.width = ACROSS
-    c.height = SIDE
-    return /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'))
+  // the wall's colour is a canvas, painted as drops land
+  const canvas2d = document.createElement('canvas')
+  canvas2d.width = ACROSS
+  canvas2d.height = SIDE
+  const colour = /** @type {CanvasRenderingContext2D} */ (canvas2d.getContext('2d'))
+  const colourMap = new Texture({ image: canvas2d })
+  /** @typedef {{ x: number, y: number, width: number, height: number }} Box */
+  // what changed in each canvas this frame, to send only that: the boxes drawn in, or null for all of it
+  /** @type {Map<Texture, Box[] | null>} */
+  const dirty = new Map()
+  /** @param {Texture} map @param {Box | null} box */
+  const touch = (map, box) => {
+    const boxes = dirty.get(map)
+    if (boxes === null) return
+    if (!box) dirty.set(map, null)
+    else if (boxes) boxes.push(box)
+    else dirty.set(map, [box])
   }
-  const colour = layer(), rough = layer()
-  const colourMap = new Texture({ image: colour.canvas })
-  const armMap = new Texture({ image: rough.canvas, colorSpace: 'linear' })
-  // which canvases changed this frame, to send only those
-  const dirty = new Set()
+  /** The box round a square of half-size `reach`, centred in a shape's own frame, placed by its transform - a pixel over, for antialiasing. @param {DOMMatrix} at @param {number} reach @returns {Box} */
+  const boxOf = (at, reach) => {
+    const corners = [[-reach, -reach], [reach, -reach], [reach, reach], [-reach, reach]].map(([x, y]) => at.transformPoint({ x, y }))
+    const x0 = Math.min(...corners.map((p) => p.x)) - 2, y0 = Math.min(...corners.map((p) => p.y)) - 2
+    const x1 = Math.max(...corners.map((p) => p.x)) + 2, y1 = Math.max(...corners.map((p) => p.y)) + 2
+    return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
+  }
 
   /** @type {{ x: number, y: number, w: number, left: number, speed: number, paint: string, from: number }[]} */
   let drips = []
-  /** Paint still drying: its shape, where it is, when it landed and how dry it's drawn. @type {{ shape: Path2D, at: DOMMatrix, born: number, stage: number }[]} */
-  let wet = []
-  let clock = 0
   const clean = () => {
     // the photos tile TILES times up the wall, and on across it - the last one cut off at the edge
     const t = SIDE / TILES
     for (let i = 0; i < Math.ceil(ACROSS / t); i++) {
       for (let j = 0; j < TILES; j++) {
         colour.drawImage(/** @type {CanvasImageSource} */ (brick.image), i * t, j * t, t, t)
-        rough.drawImage(/** @type {CanvasImageSource} */ (arm.image), i * t, j * t, t, t)
       }
     }
     drips = []
-    wet = []
-    dirty.add(colourMap).add(armMap)
+    touch(colourMap, null)
   }
   clean()
 
@@ -92,8 +97,10 @@ export default async function run({ canvas, gui, info }) {
   scene.add(new DirectionalLight({ direction: [1, -1.3, -0.45], intensity: 1.6, castShadow: true }))
   scene.add(new Mesh({ geometry: plane(300), material: { color: '#34353a', roughness: 0.9 }, receiveShadow: true, pickable: false }))
 
-  // the wall faces the cannon (-x); built from corners so its textures run upright, u along +z
+  // the wall faces the cannon (-x); built from corners so its textures run upright, u along +z. Its
+  // roughness and occlusion (the ARM map's red and green) are the bricks', tiled as the normal map is
   const h = WALL_WIDTH / 2
+  const arm = new Texture({ url: 'textures/red_brick_03_arm_1k.jpg', colorSpace: 'linear', repeat: [TILES * ACROSS / SIDE, TILES] })
   const wall = scene.add(new Mesh({
     geometry: new Geometry({
       positions: [WALL_X, 0, -h, WALL_X, 0, h, WALL_X, WALL_HEIGHT, h, WALL_X, WALL_HEIGHT, -h],
@@ -101,7 +108,7 @@ export default async function run({ canvas, gui, info }) {
       indices: [0, 1, 2, 0, 2, 3],
     }),
     material: {
-      map: colourMap, roughnessMap: armMap, aoMap: armMap,
+      map: colourMap, roughnessMap: arm, aoMap: arm,
       normalMap: { url: 'textures/red_brick_03_nor_gl_1k.jpg', repeat: [TILES * ACROSS / SIDE, TILES] },
     },
     receiveShadow: true,
@@ -152,7 +159,7 @@ export default async function run({ canvas, gui, info }) {
   }
 
   // a splat: a blob, longer the more glancing the drop's arrival, with spatter thrown ahead of it -
-  // drawn in colour, and as wet gloss
+  // drawn in the wall's colour
   const splat = (y, z, velocity, paint) => {
     const x = (z + h) / WALL_WIDTH * ACROSS, py = (1 - y / WALL_HEIGHT) * SIDE
     // across the wall, the drop runs along (z, -y) in the canvas's terms; the shallower it comes in,
@@ -174,13 +181,11 @@ export default async function run({ canvas, gui, info }) {
     const shape = new Path2D(blob)
     shape.addPath(spatter)
     fill(colour, shape, at, paint)
-    fill(rough, shape, at, gloss(0))
-    wet.push({ shape, at, born: clock, stage: 0 })
-    if (wet.length > 3000) wet.splice(0, wet.length - 3000)
+    // as far as the spatter can reach, before the stretch
+    touch(colourMap, boxOf(at, r * (2.2 + stretch * 0.7)))
     if (r > 22 && Math.random() < 0.4 && drips.length < 80) {
       drips.push({ x: x + (Math.random() - 0.5) * r, y: py + r * 0.6, w: r * 0.45, left: 40 + Math.random() * 160, speed: 50 + Math.random() * 40, paint, from: py + r * 0.6 })
     }
-    dirty.add(colourMap).add(armMap)
   }
 
   // drips run down, thinning and slowing until the paint runs out - and gather in a bead where they stop
@@ -197,42 +202,24 @@ export default async function run({ canvas, gui, info }) {
         ctx.stroke(line)
       }
       stroke(colour, d.paint)
-      stroke(rough, gloss(0))
+      // the step's few pixels, its round ends and all
+      touch(colourMap, { x: d.x - d.w, y: d.y - d.w, width: d.w * 2, height: step + d.w * 2 })
       d.y += step
       d.left -= step
       d.w = Math.max(2, d.w * (1 - 0.6 * dt))
       d.speed *= 1 - 0.5 * dt
     }
     if (!drips.length) return
-    dirty.add(colourMap).add(armMap)
     drips = drips.filter((d) => {
       if (d.left > 0.5 && d.speed > 4) return true
-      // run out: a bead of what was left, and the run's whole length to dry
+      // run out: a bead of what was left
       const bead = new Path2D()
       bead.ellipse(0, 0, d.w * 0.9, d.w * 1.15, 0, 0, Math.PI * 2)
       const at = new DOMMatrix().translate(d.x, d.y)
       fill(colour, bead, at, d.paint)
-      fill(rough, bead, at, gloss(0))
-      const run = new Path2D()
-      run.rect(d.x - d.w, d.from, d.w * 2, d.y - d.from)
-      run.addPath(bead, at)
-      wet.push({ shape: run, at: new DOMMatrix(), born: clock, stage: 0 })
+      touch(colourMap, boxOf(at, d.w * 1.2))
       return false
     })
-  }
-
-  // as paint ages it's drawn again, a step less glossy, until it's dry
-  const dry = () => {
-    for (const w of wet) {
-      const age = clock - w.born
-      let stage = w.stage
-      while (stage + 1 < DRYING.length && age >= DRYING[stage + 1][0]) stage++
-      if (stage === w.stage) continue
-      w.stage = stage
-      fill(rough, w.shape, w.at, gloss(stage))
-      dirty.add(armMap)
-    }
-    wet = wet.filter((w) => w.stage < DRYING.length - 1)
   }
 
   // the drops: fired in bursts, each burst in the paint of the moment - so drops keep the colour they
@@ -365,7 +352,6 @@ export default async function run({ canvas, gui, info }) {
   f.add(settings, 'spread', 0, 2, 0.05).onChange(aim)
 
   return view.start((dt) => {
-    clock += dt
     if (sweep < SWEEP) {
       firing = true
       sweep += dt
@@ -379,16 +365,14 @@ export default async function run({ canvas, gui, info }) {
     }
     if (firing) fireDrops(dt)
     runDrips(dt)
-    dry()
-    for (const map of dirty) map.needsUpdate()
+    for (const [map, boxes] of dirty) {
+      if (!boxes) map.needsUpdate()
+      else for (const box of boxes) map.needsUpdate(box)
+    }
     dirty.clear()
   })
 }
 
-/** The ARM map's colour for paint at a stage of drying: no occlusion, its roughness, not metal. @param {number} stage */
-function gloss(stage) {
-  return `rgb(255, ${DRYING[stage][1]}, 0)`
-}
 
 /** A shaded drop: a highlight up and to the left, darkening to the rim (grey, so the paint tints it). */
 function drop(size = 64) {
