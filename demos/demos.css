@@ -2559,3 +2559,107 @@ button.demo-legend-item {
     transform: translateX(-50%);
   }
 }
+
+/* ---- paint: the bar along the bottom - palettes, colour speed, a clean wall ---- */
+.paint-bar {
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  max-width: calc(100vw - 32px);
+}
+
+.paint-bar button {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.paint-bar button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.paint-bar button.now {
+  color: #16161a;
+  background: var(--accent);
+}
+
+/* a palette is a round swatch of its colours; the chosen one is ringed */
+.paint-bar .paint-swatch {
+  padding: 4px;
+  border-radius: 50%;
+}
+
+.paint-swatch span {
+  display: block;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.paint-bar .paint-swatch.now {
+  background: transparent;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.paint-bar .paint-clean {
+  padding: 7px 10px;
+  border-color: var(--border);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.paint-gap {
+  flex-shrink: 0;
+  align-self: stretch;
+  width: 1px;
+  margin: 4px 4px;
+  background: var(--border);
+}
+
+/* narrow: the hint above the readout can wrap to two lines, so the bar sits a little higher */
+@media (max-width: 860px) {
+  .paint-bar {
+    bottom: 92px;
+  }
+}
+
+/* a phone: snugger buttons and swatches, to stay on one line - and above the hint, which wraps */
+@media (max-width: 520px) {
+  .paint-bar {
+    bottom: 104px;
+    gap: 0;
+    padding: 4px;
+  }
+
+  .paint-bar button {
+    padding: 7px 7px;
+    font-size: 12px;
+  }
+
+  .paint-bar .paint-swatch {
+    padding: 3px;
+  }
+
+  .paint-swatch span {
+    width: 20px;
+    height: 20px;
+  }
+
+  .paint-gap {
+    margin: 4px 3px;
+  }
+}
