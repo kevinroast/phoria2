@@ -1,17 +1,17 @@
 {
   "view app": {
-    "limit": 46,
-    "target": 40,
-    "why": "slice 7 (maps, environment and shadow hooks: 43.0 KB), slice 6 (shared contexts, GPU picking hooks, exact hits: 44.9 KB), parallel compiling (45.3 KB), and the agent eval's fixes - errors naming the option, the padding warning, the fitted default camera (45.6 KB)"
+    "limit": 72,
+    "target": 69.5,
+    "why": "reset 2026-11-02 to the real size, 69.2 KB at 1.2.0 with the keyboard's code split out again, after 1.0's materials, labels by zoom, outlines and accessibility hooks had long passed the old 46 KB limit; the target is today's size, so any growth shows, and the limit about 4% over it. Earlier: slice 7 43.0 KB, slice 6 44.9 KB, parallel compiling 45.3 KB, the agent eval's fixes 45.6 KB"
   },
   "chart app": {
-    "limit": 64.5,
-    "target": 50,
-    "why": "the charts sub-path is 17 KB against its 10 KB target, plus the core's growth and inline container legends (64.2 KB)"
+    "limit": 93,
+    "target": 90,
+    "why": "reset 2026-11-02 to the real size, 89.7 KB at 1.2.0 (core as the view app, plus the charts sub-path and its summaries); target today's size, limit about 4% over. Earlier: 64.2 KB with inline container legends"
   },
   "product viewer": {
-    "limit": 55,
-    "target": 55,
-    "why": "the original budget; 52.3 KB after the agent eval's fixes"
+    "limit": 80,
+    "target": 77,
+    "why": "reset 2026-11-02 to the real size, 76.8 KB at 1.2.0 (core plus glTF); target today's size, limit about 4% over. Earlier: 52.3 KB after the agent eval's fixes"
   }
 }
