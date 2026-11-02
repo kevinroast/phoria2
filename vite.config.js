@@ -112,9 +112,10 @@ export default defineConfig(({ mode }) => ({
         rollupOptions: {
           output: {
             // everything the sub-paths share with the core goes in one predictable chunk; modules
-            // loaded on demand (explain, toImage, the tooltip, the .hdr parser, the renderer's
-            // environment and shadow passes, bloom, GPU picking) keep chunks of their own
-            manualChunks: (id) => (/[\\/]src[\\/](?!particles|charts|gltf|motion|edit|explain|snapshot|tooltip|hdr|irradiance|webgl[\\/](?:passes|picking|bloom))/.test(id) ? 'core' : undefined),
+            // loaded on demand (explain, toImage, the tooltip, keyboard use, the .hdr parser, the
+            // renderer's environment and shadow passes, bloom, GPU picking) keep chunks of their
+            // own - a new one must be named here too, or it is bundled into core
+            manualChunks: (id) => (/[\\/]src[\\/](?!particles|charts|gltf|motion|edit|explain|snapshot|tooltip|keyboard|hdr|irradiance|webgl[\\/](?:passes|picking|bloom))/.test(id) ? 'core' : undefined),
             chunkFileNames: '[name].js',
           },
         },
