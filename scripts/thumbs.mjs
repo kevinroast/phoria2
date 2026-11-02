@@ -108,6 +108,22 @@ const PREPARE = {
   // the carved block and its cutters filling the picture
   csg: `const Box3 = view.scene.bounds.constructor
     view.frame(new Box3([-1.9, 0, -1.4], [1.9, 2.3, 1.4]), { direction: [1.1, 1, 1.5], padding: 0.02 })`,
+  // the wall sprayed in a zigzag across it, the rainbow palette cycling fast - paint and drips all
+  // over, the stream still flying
+  paint: `(async () => {
+    document.querySelector('[data-palette="rainbow"]').click()
+    document.querySelector('[data-speed="Fast"]').click()
+    const c = view.canvas, rect = c.getBoundingClientRect()
+    const at = (y, z) => view.project([6, y, z])
+    const send = (type, p, buttons) => c.dispatchEvent(new PointerEvent(type, { clientX: rect.left + p.x, clientY: rect.top + p.y, buttons, button: 0, pointerId: 1, pointerType: 'mouse', bubbles: true }))
+    send('pointerdown', at(7.5, -6.5), 1)
+    for (let i = 0; i <= 120; i++) {
+      const t = i / 120
+      send('pointermove', at(5 + Math.sin(t * Math.PI * 5) * 2.6, -6.5 + t * 13), 1)
+      await new Promise((r) => setTimeout(r, 30))
+    }
+    await new Promise((r) => setTimeout(r, 400))
+  })()`,
   // the office with its navigation mesh showing, the people part way along their walks
   'path-finding': `(async () => {
     document.querySelector('[data-mesh]').click()
