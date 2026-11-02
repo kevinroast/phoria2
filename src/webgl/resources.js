@@ -10,6 +10,9 @@ import { isVideo } from '../material/Texture.js'
 
 // uploads bind textures here, out of the way of the units programs sample from
 const UPLOAD_UNIT = 15
+// past this many changed regions since the last upload, those in each cell of a GRID x GRID split of
+// the image go as one rectangle round them - nearby changes together, far ones still apart
+const MOST_REGIONS = 16, GRID = 4
 
 /**
  * @typedef {object} MeshBuffers
@@ -116,7 +119,7 @@ export class Resources {
   /** @type {WeakMap<object, MeshBuffers>} */ #triangles = new WeakMap()
   /** @type {WeakMap<object, MeshBuffers>} */ #points = new WeakMap()
   /** @type {WeakMap<object, MeshBuffers>} */ #lines = new WeakMap()
-  /** @type {WeakMap<Texture, { texture: WebGLTexture, version: number }>} */ #textures = new WeakMap()
+  /** The GPU copy of each texture: the version it holds, and the storage it was made with. @type {WeakMap<Texture, { texture: WebGLTexture, version: number, width: number, height: number, internal: number }>} */ #textures = new WeakMap()
   /** @type {WebGLTexture | null} */ #white = null
   /** @type {WebGLBuffer | null} */ #corners = null
   /** Counts for renderer.info. */
@@ -354,7 +357,7 @@ export class Resources {
     // a video with no frame yet: what it showed before, or white - and try again next frame
     if (isVideo(texture.image) && /** @type {HTMLVideoElement} */ (texture.image).readyState < 2) return entry?.texture ?? this.#whiteTexture()
     if (!entry) {
-      entry = { texture: /** @type {WebGLTexture} */ (gl.createTexture()), version: -1 }
+      entry = { texture: /** @type {WebGLTexture} */ (gl.createTexture()), version: -1, width: 0, height: 0, internal: 0 }
       this.#textures.set(texture, entry)
       this.counts.textures++
       texture.onDispose(() => this.#freeTexture(texture))
@@ -364,16 +367,37 @@ export class Resources {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, texture.flipY)
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
     const image = texture.image
-    if ('data' in image) {
-      // raw pixels: bytes as usual, floats (HDR) as half floats, which filter everywhere
-      const d = /** @type {DataImage} */ (image)
-      const float = d.data instanceof Float32Array
-      const internal = float ? gl.RGBA16F : texture.colorSpace === 'srgb' ? gl.SRGB8_ALPHA8 : gl.RGBA8
-      gl.texImage2D(gl.TEXTURE_2D, 0, internal, d.width, d.height, 0, gl.RGBA, float ? gl.FLOAT : gl.UNSIGNED_BYTE, d.data)
+    const data = 'data' in image ? /** @type {DataImage} */ (image) : null
+    // raw pixels: bytes as usual, floats (HDR) as half floats, which filter everywhere; sRGB textures
+    // are stored as sRGB so sampling returns linear values, filtered correctly
+    const float = !!data && data.data instanceof Float32Array
+    const internal = float ? gl.RGBA16F : texture.colorSpace === 'srgb' ? gl.SRGB8_ALPHA8 : gl.RGBA8
+    const type = float ? gl.FLOAT : gl.UNSIGNED_BYTE
+    const [width, height] = sizeOf(image)
+    if (entry.version < 0 || entry.width !== width || entry.height !== height || entry.internal !== internal) {
+      // new storage: the first upload, or the image changed size or kind
+      if (data) gl.texImage2D(gl.TEXTURE_2D, 0, internal, width, height, 0, gl.RGBA, type, data.data)
+      else gl.texImage2D(gl.TEXTURE_2D, 0, internal, gl.RGBA, type, /** @type {TexImageSource} */ (image))
+      Object.assign(entry, { width, height, internal })
     } else {
-      // sRGB textures are stored as sRGB so sampling returns linear values, filtered correctly
-      const internal = texture.colorSpace === 'srgb' ? gl.SRGB8_ALPHA8 : gl.RGBA8
-      gl.texImage2D(gl.TEXTURE_2D, 0, internal, gl.RGBA, gl.UNSIGNED_BYTE, /** @type {TexImageSource} */ (image))
+      // the same storage, refilled: just the parts that changed, when the updates since said - a
+      // canvas drawn on a little at a time - or the whole image (a video's next frame). A flipped
+      // image's rows run the other way, so it goes whole
+      let regions = texture.flipY ? null : texture.changedSince(entry.version)
+      if (regions && regions.length > MOST_REGIONS) regions = byCell(regions, width, height)
+      for (const r of regions ?? [{ x: 0, y: 0, width, height }]) {
+        // inside the image: a region over its edge is cut there, one off it sends nothing
+        const x = Math.max(0, r.x), y = Math.max(0, r.y)
+        const w = Math.min(width, r.x + r.width) - x, h = Math.min(height, r.y + r.height) - y
+        if (!(w > 0 && h > 0)) continue
+        gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, x)
+        gl.pixelStorei(gl.UNPACK_SKIP_ROWS, y)
+        if (data) gl.pixelStorei(gl.UNPACK_ROW_LENGTH, width)
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, w, h, gl.RGBA, type, /** @type {any} */ (data ? data.data : image))
+      }
+      gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0)
+      gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0)
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0)
     }
     const wrap = { repeat: gl.REPEAT, clamp: gl.CLAMP_TO_EDGE, mirror: gl.MIRRORED_REPEAT }[texture.wrap]
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap)
@@ -496,4 +520,37 @@ export class Resources {
     gl.bufferData(gl.ARRAY_BUFFER, LINE_CORNERS, gl.STATIC_DRAW)
     return this.#corners
   }
+}
+
+/**
+ * An image's size in pixels - a video's frames, an <img>'s own pixels rather than its size on the page.
+ * @param {any} image @returns {[number, number]}
+ */
+function sizeOf(image) {
+  if (isVideo(image)) return [image.videoWidth, image.videoHeight]
+  if ('naturalWidth' in image) return [image.naturalWidth, image.naturalHeight]
+  return [image.width, image.height]
+}
+
+/**
+ * Many regions as a few: those whose middles fall in the same cell of a GRID x GRID split of the
+ * image, as one rectangle round them.
+ * @param {import('../material/Texture.js').TextureRegion[]} regions @param {number} width @param {number} height
+ */
+function byCell(regions, width, height) {
+  /** @type {Map<number, number[]>} x0, y0, x1, y1 round each cell's regions */
+  const cells = new Map()
+  for (const r of regions) {
+    const cx = Math.min(GRID - 1, Math.max(0, Math.floor((r.x + r.width / 2) / width * GRID)))
+    const cy = Math.min(GRID - 1, Math.max(0, Math.floor((r.y + r.height / 2) / height * GRID)))
+    const key = cy * GRID + cx, box = cells.get(key)
+    if (!box) cells.set(key, [r.x, r.y, r.x + r.width, r.y + r.height])
+    else {
+      box[0] = Math.min(box[0], r.x)
+      box[1] = Math.min(box[1], r.y)
+      box[2] = Math.max(box[2], r.x + r.width)
+      box[3] = Math.max(box[3], r.y + r.height)
+    }
+  }
+  return [...cells.values()].map(([x0, y0, x1, y1]) => ({ x: x0, y: y0, width: x1 - x0, height: y1 - y0 }))
 }

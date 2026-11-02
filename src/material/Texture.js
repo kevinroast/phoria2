@@ -44,8 +44,17 @@ const HINTS = {
 }
 
 /**
+ * Part of an image, in its pixels from the top left, as needsUpdate() takes it.
+ * @typedef {{ x: number, y: number, width: number, height: number }} TextureRegion
+ */
+
+// how many updates a texture remembers the region of, for a renderer catching up on several - a
+// frame of paint can make a hundred or so
+const CHANGES_KEPT = 256
+
+/**
  * An image for a material map. A video's frames upload by themselves as it plays; after drawing on
- * a canvas, call `needsUpdate()`.
+ * a canvas, call `needsUpdate()` - with the rectangle drawn in, to send only that.
  */
 export class Texture {
   /** The options it takes, and hints for names people reach for instead. */
@@ -77,6 +86,8 @@ export class Texture {
   flipY = false
   /** @internal Bumped by needsUpdate() so renderers re-upload. */
   version = 0
+  /** What each recent update changed - its region, or null for all of it. @type {{ version: number, region: TextureRegion | null }[]} */
+  #changes = []
   /** Resolves when the image is available (immediately when one was given). @type {Promise<Texture>} */
   ready
 
@@ -180,9 +191,51 @@ export class Texture {
   /** @internal Whether the app chose the colour space, rather than leaving the default. @returns {boolean} */
   get colorSpaceSet() { return this.#colorSpaceSet }
 
-  needsUpdate() {
+  /**
+   * Upload the image again, after drawing on it (a canvas) or changing its pixels. Give the
+   * rectangle that changed - in the image's pixels, from its top left - and only that is sent: for a
+   * big canvas drawn on a little at a time, far less to send each frame.
+   *
+   *     ctx.fillRect(x, y, 20, 20)
+   *     texture.needsUpdate({ x, y, width: 20, height: 20 })
+   * @param {TextureRegion} [region]
+   * @returns {this}
+   */
+  needsUpdate(region) {
+    /** @type {TextureRegion | null} */
+    let changed = null
+    if (region !== undefined) {
+      const { x, y, width, height } = region ?? /** @type {any} */ ({})
+      if (![x, y, width, height].every((v) => typeof v === 'number' && Number.isFinite(v)) || width < 0 || height < 0) {
+        fail('Texture', `needsUpdate() takes the region changed, { x, y, width, height } in the image's pixels, got ${describe(region)}`)
+      }
+      // whole pixels, covering every one the region touches
+      const x0 = Math.floor(x), y0 = Math.floor(y)
+      changed = { x: x0, y: y0, width: Math.ceil(x + width) - x0, height: Math.ceil(y + height) - y0 }
+    }
     this.version++
+    this.#changes.push({ version: this.version, region: changed })
+    if (this.#changes.length > CHANGES_KEPT) this.#changes.shift()
     return this
+  }
+
+  /**
+   * @internal What changed since a version a renderer uploaded: each update's region since, or null
+   * when that's all of it - an update without a region, or one too long ago to know.
+   * @param {number} version
+   * @returns {TextureRegion[] | null}
+   */
+  changedSince(version) {
+    const first = this.#changes[0]
+    if (!first || first.version > version + 1) return null
+    /** @type {TextureRegion[]} */
+    const regions = []
+    for (const { version: v, region } of this.#changes) {
+      if (v <= version) continue
+      if (!region) return null
+      regions.push(region)
+    }
+    return regions.length ? regions : null
   }
 
   /** Release the GPU copy. @returns {void} */

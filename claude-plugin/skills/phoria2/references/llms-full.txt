@@ -361,7 +361,10 @@ unless its `colorSpace` was set on purpose - `normalMap: await loadTexture('n.pn
 
 **Canvas and video textures**: a texture's `image` can be a canvas - draw on it, then call
 `texture.needsUpdate()` - or a `<video>`, whose frames upload by themselves while it plays, with
-nothing to call. `new Texture({ url: 'promo.mp4' })` (or .webm, .ogv, .mov, .m4v) makes the video
+nothing to call. For a big canvas drawn on a little at a time (paint, a map being revealed), say what
+changed - `texture.needsUpdate({ x, y, width, height })`, in the canvas's pixels from its top left -
+and only that rectangle is sent, rather than the whole canvas every frame (several calls before a
+frame add up). `new Texture({ url: 'promo.mp4' })` (or .webm, .ogv, .mov, .m4v) makes the video
 for you, muted and looping so browsers let it start by itself; `texture.image` is that `<video>` -
 pause, seek or unmute it as any other. A browser that blocks autoplay leaves it on its first frame
 until `texture.image.play()` from a click. Video textures make no mipmaps (they would be remade
