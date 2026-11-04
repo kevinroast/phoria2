@@ -4,6 +4,7 @@ import { DRAG_START, OrbitControl } from './OrbitControl.js'
 import { cameraPreset, fitPoints, framingScale, presetDirection } from './presets.js'
 import { EASES } from './ease.js'
 import { Raycaster } from './Raycaster.js'
+import { pickArea } from './area.js'
 import { ChangeWatch } from './watch.js'
 import { Box3 } from './value/Box3.js'
 import { Color } from './value/Color.js'
@@ -801,6 +802,21 @@ export class View {
     const camera = this.camera
     camera.updateWorld()
     return new Mat4().multiplyMatrices(camera.projectionMatrix, camera.viewMatrix)
+  }
+
+  /**
+   * Everything inside an area of the canvas, nearest first: a box `{ x, y, width, height }` or a
+   * lasso of `[x, y]` points, CSS pixels from the canvas's top left. Each point, instance and line
+   * segment is its own hit, found by where it is (a mesh by its middle) - hidden behind others or
+   * not - so a box dragged over a scatter selects that region of it.
+   *
+   *     const picked = view.pickArea({ x: 40, y: 30, width: 200, height: 120 }).map((h) => h.datum)
+   * @param {import('./area.js').PickArea} area
+   * @returns {Hit[]}
+   */
+  pickArea(area) {
+    this.scene.updateWorldTree()
+    return pickArea(this.scene, this.camera, this.#viewProjection(), this.#width, this.#height, area)
   }
 
   /** Every hit under a canvas position, nearest first. @param {number | MouseEvent} x @param {number} [y] @returns {Hit[]} */

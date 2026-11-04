@@ -11,11 +11,11 @@ export const slug = (name) => name.replaceAll(' ', '-')
 
 export const DEMOS = [
   { section: 'Charts and diagrams', name: 'bars', title: 'a bar chart from a spec - axes, legend, value labels, animated updates' },
-  { name: 'scatter', title: 'a 3D scatter of customers from a spec - legend, tooltips, flat projections' },
+  { name: 'scatter', title: 'a 3D scatter of points from a spec - legend, tooltips, flat projections, selection modes', hint: 'Drag a lasso round points to select · set drag mode to orbit the chart' },
   { name: 'timeseries', title: 'visitors over time - stacked areas, ribbons in depth or lines, live data' },
   { name: 'surface', title: 'latency by hour and day as heat-coloured surface, tweens to new data' },
   { name: 'network', title: 'a service dependency map - force or tiered layout, flowing traffic, failures' },
-  { name: 'topology', title: 'a network topology built by hand - status colours, hover to trace links, live traffic' },
+  { name: 'topology', title: 'a network topology - status colours, hover to trace links, live traffic' },
   { name: 'dashboard', title: 'eight chart tiles, each its own view, idle until touched' },
   { name: 'chartlab', title: 'every chart mark, axis and legend option, a view each - live updates, stress test' },
   { name: 'graph', title: 'a memory graph of points and thousands of additive links - hover to light a neighbourhood' },

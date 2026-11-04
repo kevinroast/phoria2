@@ -249,9 +249,13 @@ export class Picker {
       program.set('uResolution', [REGION, REGION])
       program.set('uWidth', material.width * pixelRatio)
       program.set('uNear', frame.camera.near)
+      // arrowheads pick as their segment; dashes' gaps do too, so a dashed link is as easy to hit
+      const arrows = /** @type {any} */ (node).arrowBits ?? 0
+      program.set('uArrows', arrows)
+      program.set('uArrowSize', /** @type {any} */ (node).arrowPixels?.(material.width) * pixelRatio || 0)
       const buffers = this.resources.lines(geometry)
       gl.bindVertexArray(buffers.vao)
-      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Math.min(buffers.count, Math.floor(geometry.drawnCount / 2)))
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, arrows ? 12 : 6, Math.min(buffers.count, Math.floor(geometry.drawnCount / 2)))
       return
     }
     if (kind === 'points') {

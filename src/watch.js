@@ -148,6 +148,10 @@ export class ChangeWatch {
     this.#push(g.drawCount ?? -1)
     this.#push(node.renderOrder)
     this.#push((node.castShadow ? 1 : 0) | (node.receiveShadow ? 2 : 0) | (node.sort ? 4 : 0))
+    if ('arrowBits' in node) {
+      this.#push(node.arrowBits)
+      this.#push(node.arrowSize)
+    }
     // per-instance labels come from these, so swapping either redraws
     this.#push(node.labels ? idOf(node.labels) : 0)
     this.#push(node.data && typeof node.data === 'object' ? idOf(node.data) : 0)
@@ -164,6 +168,9 @@ export class ChangeWatch {
     this.#push(m.metalness)
     this.#push(m.size)
     this.#push(m.width)
+    this.#push(m.dash)
+    this.#push(m.gap)
+    this.#push(m.dashOffset)
     this.#push(m.alphaTest)
     this.#push(m.normalScale)
     this.#push(m.aoMapIntensity)

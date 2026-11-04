@@ -534,9 +534,18 @@ export class WebGLRenderer {
     if (kind === 'lines') {
       gl.disable(gl.CULL_FACE)
       program.set('uWidth', material.width * this.pixelRatio)
+      const arrows = /** @type {any} */ (node).arrowBits ?? 0
+      program.set('uArrows', arrows)
+      program.set('uArrowSize', /** @type {any} */ (node).arrowPixels?.(material.width) * this.pixelRatio || 0)
+      if (material.dash > 0) {
+        program.set('uDash', material.dash)
+        program.set('uGap', material.gap || material.dash)
+        program.set('uDashOffset', material.dashOffset)
+      }
       const buffers = this.#gpu.resources.lines(geometry)
       gl.bindVertexArray(buffers.vao)
-      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Math.min(buffers.count, Math.floor(geometry.drawnCount / 2)))
+      // a quad a segment, and two arrowheads where there are any
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, arrows ? 12 : 6, Math.min(buffers.count, Math.floor(geometry.drawnCount / 2)))
       this.info.drawCalls++
       return
     }
@@ -544,6 +553,13 @@ export class WebGLRenderer {
     if (kind === 'points') {
       gl.disable(gl.CULL_FACE)
       program.set('uSize', material.sizeAttenuation ? material.size : material.size * this.pixelRatio)
+      // round points are solid, but their edges are soft: blended over what is behind even in the
+      // opaque pass, or the edge fades to black - a dark ring round every dot
+      const round = !transparent && !material.map
+      if (round) {
+        gl.enable(gl.BLEND)
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+      }
       if (/** @type {any} */ (node).drawsSprites) {
         // each point a square, any size and turned - drawn back to front when the points ask, for
         // smoke and other soft things that hide what is behind them
@@ -552,12 +568,12 @@ export class WebGLRenderer {
         const buffers = this.#gpu.resources.sprites(geometry, modelView)
         gl.bindVertexArray(buffers.vao)
         gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, buffers.count)
-        this.info.drawCalls++
-        return
+      } else {
+        const buffers = this.#gpu.resources.mesh(geometry, null, false)
+        gl.bindVertexArray(buffers.vao)
+        gl.drawArrays(gl.POINTS, 0, geometry.drawnVertices)
       }
-      const buffers = this.#gpu.resources.mesh(geometry, null, false)
-      gl.bindVertexArray(buffers.vao)
-      gl.drawArrays(gl.POINTS, 0, geometry.drawnVertices)
+      if (round) gl.disable(gl.BLEND)
       this.info.drawCalls++
       return
     }
@@ -690,7 +706,7 @@ export class WebGLRenderer {
     } else if (kind === 'points') {
       if (material.map) d.push('MAP')
       if (material.sizeAttenuation) d.push('SIZE_ATTENUATION')
-    }
+    } else if (material.dash > 0) d.push('DASHED')
     // (points drawn as squares add SPRITES - see #draw, which knows the node)
     return d
   }

@@ -512,12 +512,52 @@ export class Points extends Drawable {
   }
 }
 
+const ARROWS = ['none', 'start', 'end', 'both']
+
+/**
+ * @typedef {DrawableOptions & { arrows?: 'none' | 'start' | 'end' | 'both', arrowSize?: number }} LinesOptions
+ */
+
 /**
  * Line segments: indices (or consecutive vertices) in pairs. Width is in pixels and works on
- * every platform. edges(geometry) makes a wireframe of any geometry.
+ * every platform. edges(geometry) makes a wireframe of any geometry. Segments each starting where
+ * the one before ended make a chain - a polyline - which dashes run on along and arrowheads finish.
  */
 export class Lines extends Drawable {
   static type = 'lines'
+  static get OPTIONS() { return [...DRAWABLE_OPTIONS, 'arrows', 'arrowSize'] }
+
+  /** Arrowheads at the ends of each chain: at its 'start', its 'end', 'both' or 'none'. @type {'none' | 'start' | 'end' | 'both'} */
+  arrows = 'none'
+  /** Arrowhead length in pixels; 0 sizes them from the material's width. */
+  arrowSize = 0
+
+  /** @param {LinesOptions} options */
+  constructor(options) {
+    super(options)
+    if (options?.arrows !== undefined) this.arrows = /** @type {any} */ (checkOneOf('Lines', 'arrows', options.arrows, ARROWS))
+    if (options?.arrowSize !== undefined) this.arrowSize = Math.max(0, checkNumber('Lines', 'arrowSize', options.arrowSize))
+  }
+
+  /** @internal Which ends get arrowheads, for the shader: 1 the start, 2 the end. */
+  get arrowBits() {
+    return ARROWS.indexOf(this.arrows)
+  }
+
+  /** @internal An arrowhead's length in pixels, before the pixel ratio. @param {number} width */
+  arrowPixels(width) {
+    return this.arrowSize || 6 + width * 3
+  }
+
+  /** @internal @returns {Record<string, unknown>} */
+  cloneOptions() {
+    return { ...super.cloneOptions(), arrows: this.arrows, arrowSize: this.arrowSize }
+  }
+
+  /** @internal @returns {Record<string, unknown>} */
+  jsonOptions() {
+    return { ...super.jsonOptions(), ...(this.arrows !== 'none' ? { arrows: this.arrows } : {}), ...(this.arrowSize ? { arrowSize: this.arrowSize } : {}) }
+  }
 
   /** @returns {'lines'} */
   get drawMode() {

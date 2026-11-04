@@ -3,6 +3,7 @@
 // lay out and draw, never animate.
 import { Geometry } from '../geometry/Geometry.js'
 import { box as boxGeometry, icosphere } from '../geometry/generators.js'
+import { Texture } from '../material/Texture.js'
 import { InstancedMesh, Lines, Mesh, Points } from '../scene/drawables.js'
 import { fail } from '../validate.js'
 import { distinct } from './scales.js'
@@ -154,8 +155,10 @@ export function pointMark(ctx) {
   /** @type {any} */
   let node = sized
     ? new InstancedMesh({ geometry: icosphere({ radius: 1, detail: 1 }), material, count: 64, labels: labelsOf(ctx, 'above') })
-    : new Points({ geometry: emptyPoints(64), material: { size: ctx.spec.channels.size?.value ?? unit * 1.4, vertexColors: true, ...material },
-      labels: labelsOf(ctx, 'above') })
+    // dots with a darker rim, so each one reads where they crowd together - drawn furthest first, so
+    // each blends over the ones behind it
+    : new Points({ geometry: emptyPoints(64), material: { size: ctx.spec.channels.size?.value ?? unit * 1.4, vertexColors: true, map: dot(), depthWrite: false, ...material },
+      sort: true, labels: labelsOf(ctx, 'above') })
   if (sized) node.count = 0
   const mark = {
     nodes: [node],
@@ -203,6 +206,30 @@ export function pointMark(ctx) {
     },
   }
   return mark
+}
+
+/** @type {Texture | null} */
+let dotTexture = null
+
+/**
+ * A dot: a white disc whose outer part darkens to a rim, with a soft edge - pixels of its own, so
+ * charts need no canvas to make it. Shared by every scatter.
+ */
+function dot() {
+  if (dotTexture) return dotTexture
+  const size = 64, data = new Uint8Array(size * size * 4), r = size / 2
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const d = Math.hypot(x + 0.5 - r, y + 0.5 - r) / r
+      // the colour full to 0.78 of the radius, then down to 0.62 at the edge; alpha soft over the last pixel and a half
+      const shade = d < 0.78 ? 1 : 1 - (d - 0.78) / 0.22 * 0.38
+      const alpha = Math.min(1, Math.max(0, (1 - d) * r / 1.5))
+      const o = (y * size + x) * 4
+      data[o] = data[o + 1] = data[o + 2] = Math.round(shade * 255)
+      data[o + 3] = Math.round(alpha * 255)
+    }
+  }
+  return (dotTexture = new Texture({ image: { data, width: size, height: size } }))
 }
 
 /** @param {number} n */

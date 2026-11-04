@@ -117,6 +117,15 @@
           "properties": {
             "type": {
               "const": "lines"
+            },
+            "arrows": {
+              "enum": ["none", "start", "end", "both"],
+              "description": "Arrowheads at the ends of each chain of joined segments."
+            },
+            "arrowSize": {
+              "type": "number",
+              "description": "Arrowhead length in pixels; 0 sizes them from the material's width.",
+              "minimum": 0
             }
           },
           "unevaluatedProperties": false
@@ -919,6 +928,20 @@
           "type": "number",
           "description": "Lines: width in pixels.",
           "minimum": 0
+        },
+        "dash": {
+          "type": "number",
+          "description": "Lines: dashed, with dashes this long in the model's units; 0 is solid.",
+          "minimum": 0
+        },
+        "gap": {
+          "type": "number",
+          "description": "Lines: the gaps between dashes; 0 is as long as the dashes.",
+          "minimum": 0
+        },
+        "dashOffset": {
+          "type": "number",
+          "description": "Lines: moves the dashes along the lines - animate it for flow."
         },
         "alphaTest": {
           "type": "number",

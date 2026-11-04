@@ -72,6 +72,9 @@ import { Texture } from './Texture.js'
  * @property {number} [size] Points: diameter in world units, or pixels when sizeAttenuation is off (default 1)
  * @property {boolean} [sizeAttenuation] Points: sized in the world, so smaller with distance (default true)
  * @property {number} [width] Lines: width in pixels (default 1)
+ * @property {number} [dash] Lines: dashed, with dashes this long in the model's units; 0 is solid (default 0)
+ * @property {number} [gap] Lines: the gaps between dashes; 0 is as long as the dashes (default 0)
+ * @property {number} [dashOffset] Lines: moves the dashes along the lines - animate it for flow (default 0)
  */
 
 // the matcap last: the first map's repeat and offset are every map's, and a matcap has none
@@ -83,7 +86,8 @@ const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiv
   alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1], triplanar: [0, Infinity], bumpScale: [-Infinity, Infinity],
   transmission: [0, 1], clearcoat: [0, 1], clearcoatRoughness: [0, 1], sheen: [0, 1], sheenRoughness: [0, 1], ior: [1, Infinity],
   specularIntensity: [0, 1], anisotropy: [0, 1], anisotropyRotation: [-Infinity, Infinity], translucency: [0, 1], toon: [0, 16],
-  lightMapIntensity: [0, Infinity], environmentIntensity: [0, Infinity] }
+  lightMapIntensity: [0, Infinity], environmentIntensity: [0, Infinity], dash: [0, Infinity], gap: [0, Infinity],
+  dashOffset: [-Infinity, Infinity] }
 // colours, and their defaults
 const COLORS = { color: 0xffffff, emissive: 0x000000, sheenColor: 0xffffff, specularColor: 0xffffff, translucencyColor: 0xffffff }
 const DEFAULTS = {
@@ -91,7 +95,7 @@ const DEFAULTS = {
   transmission: 0, clearcoat: 0, clearcoatRoughness: 0, sheen: 0, sheenRoughness: 0.5, ior: 1.5, specularIntensity: 1, anisotropy: 0,
   anisotropyRotation: 0, translucency: 0, toon: 0, lightMapIntensity: 1, environmentIntensity: 1, unlit: false, flatShading: false,
   doubleSided: false, vertexColors: false, blending: 'normal', depthWrite: true, depthTest: true, fog: true,
-  size: 1, sizeAttenuation: true, width: 1,
+  size: 1, sizeAttenuation: true, width: 1, dash: 0, gap: 0, dashOffset: 0,
 }
 const OPTIONS = ['name', ...Object.keys(COLORS), ...MAPS, ...FLAGS, ...Object.keys(NUMBERS), 'blending']
 
@@ -161,6 +165,9 @@ export class Material {
   /** @type {number} */ size
   /** @type {boolean} */ sizeAttenuation
   /** @type {number} */ width
+  /** Lines: dash length in the model's units; 0 is solid. @type {number} */ dash
+  /** Lines: gap length; 0 is the dash's. @type {number} */ gap
+  /** Lines: how far the dashes have moved along. @type {number} */ dashOffset
 
   /** @type {Record<string, Color>} */
   #colors = Object.fromEntries(Object.entries(COLORS).map(([key, hex]) => [key, new Color(hex)]))

@@ -139,6 +139,8 @@ Methods:
 - `on('click' | 'hover', (hit, event) => ...)` - see Interaction. Returns an unsubscribe function.
 - `tooltip(fn)` - set the tooltip function later.
 - `pick(x, y)` / `pick(event)` - the hit under a canvas position; `pickAll` for every hit.
+- `pickArea(area)` - every hit inside a box `{ x, y, width, height }` or a lasso of `[x, y]` points
+  (CSS pixels), nearest first - see Interaction.
 - `rayAt(x, y)` / `rayAt(event)` - the world `Ray` through a canvas position, for placing things:
   `ray.at(ray.intersectPlane([0, 1, 0], [0, 0, 0]))` is the point on the floor under the pointer
   (`intersectPlane` returns null when the ray runs along the plane or away from it).
@@ -220,6 +222,18 @@ new Mesh({ geometry: box(1), material: { color: '#c33', roughness: 0.3 } })
 new Points({ geometry, material: { color: 'white', size: 4, sizeAttenuation: false } })  // size in pixels when not attenuated
 new Lines({ geometry: edges(box(2)), material: { color: '#333', width: 2 } })            // segments: pairs of vertices; width in pixels
 new Label({ text: 'Rack A1', position: [0, 2, 0], className: 'my-label', place: 'above' })
+```
+
+**Lines** dashed and with arrowheads - flow and direction in network diagrams. Dashes are material
+options in the model's units: `dash` (0 is solid), `gap` (0 is the dash's length) and `dashOffset`,
+which moves them along - animate it for traffic. Arrowheads are Lines options: `arrows: 'start' |
+'end' | 'both'` puts them at the ends of each chain (segments each starting where the one before
+ended - a polyline is one chain, separate links are one each), `arrowSize` in pixels (0, the default,
+sizes them from the width). The dashes run on along a chain, and arrowheads are never dashed.
+
+```js
+const flow = view.scene.add(new Lines({ geometry: links, arrows: 'end', material: { color: '#4cc9f0', width: 2, dash: 0.3, gap: 0.15 } }))
+view.start((dt) => { flow.material.dashOffset += dt * 0.8 })   // traffic moving along each link
 ```
 
 **Points** each their own size, opacity or angle: give the geometry `sizes` (multiples of the material's
@@ -546,6 +560,16 @@ view.on('hover', (hit) => show(hit?.datum))                 // fires when the th
 - The **nearest surface** under the pointer is the hit - a link drawn over a site's top wins the
   hover there. To let one kind of thing through, give it `pickable: false`; to choose among
   everything under the pointer, `view.pickAll(event)` lists every hit, nearest first.
+- **Selecting an area** - `view.pickArea({ x, y, width, height })` (width and height may be negative,
+  as a drag up or left makes them) or `view.pickArea([[x, y], ...])` for a lasso: a hit for each point,
+  instance and line segment whose place on screen is inside, and each mesh whose middle is. Places, not
+  surfaces: what is hidden behind other things is found too, so a box over a scatter takes that whole
+  region. Hidden, unpickable and zero-scale instances are left out. Turn `view.controls.enabled` off
+  while the user drags out the area.
+
+  ```js
+  const chosen = view.pickArea({ x: 40, y: 30, width: 200, height: 120 }).map((h) => h.datum)
+  ```
 - **Rays of your own** - line of sight, what's below a dropped object, picking in tests: a
   `Raycaster` finds what any ray hits, on the CPU. Set `raycaster.ray.origin` and `.direction`, or aim
   it with `setFromCamera([x, y], camera)` (-1 to 1, y up); `intersect(nodeOrNodes)` returns hits,

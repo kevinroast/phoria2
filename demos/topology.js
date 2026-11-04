@@ -44,8 +44,9 @@ function network(rand) {
 }
 
 // A network topology: hubs and hosts are two InstancedMeshes with their rows bound, coloured by
-// status. Hovering a node highlights it, lights up its links and shows its row; labels name as
-// many nodes as fit, problem hosts first. Packets run along the live links.
+// status. Hovering a node highlights it, shows its row, and draws its links as dashed arrows with
+// traffic flowing out along them; links to a node that is down are dashed in red. Labels name as many
+// nodes as fit, problem hosts first. Packets run along the live links.
 export default function run({ canvas, gui, info }) {
   const { nodes, links } = network(random(11))
   const view = new View({
@@ -79,18 +80,31 @@ export default function run({ canvas, gui, info }) {
     },
   }))
 
-  // links: all of them dim, and the hovered node's again on top, bright and wide
+  // links: the working ones dim and solid, those to a node that is down dashed in red - and the
+  // hovered node's again on top, bright, wide and dashed, an arrow to each neighbour
   const segment = ([a, b]) => [...nodes[a].position, ...nodes[b].position]
-  scene.add(new Lines({ geometry: new Geometry({ positions: links.flatMap(segment) }), material: { color: '#3b4358', width: 1.5 }, pickable: false }))
+  const broken = ([a, b]) => nodes[a].status === 'down' || nodes[b].status === 'down'
+  scene.add(new Lines({ geometry: new Geometry({ positions: links.filter((l) => !broken(l)).flatMap(segment) }), material: { color: '#3b4358', width: 1.5 }, pickable: false }))
+  scene.add(new Lines({ geometry: new Geometry({ positions: links.filter(broken).flatMap(segment) }), material: { color: '#a8474c', width: 1.5, dash: 0.35, gap: 0.25 }, pickable: false }))
   const active = scene.add(new Lines({
-    geometry: new Geometry({ positions: new Float32Array(links.length * 6) }), material: { color: '#7fd3ff', width: 3 }, pickable: false,
+    geometry: new Geometry({ positions: new Float32Array(links.length * 6) }), material: { color: '#7fd3ff', width: 3, dash: 0.6, gap: 0.3 },
+    arrows: 'end', pickable: false,
   }))
   active.geometry.drawCount = 0
+  // how far a node's surface is from its middle, so a link stops short of it and its arrow shows
+  const radius = (n) => (n.type === 'router' ? 0.8 : n.type === 'switch' ? 0.55 : 0.45)
+  /** From one node out to another, stopping at each one's surface. */
+  const outward = (from, to) => {
+    const a = from.position, b = to.position
+    const d = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) || 1
+    const ra = radius(from) / d, rb = (radius(to) + 0.15) / d
+    return [0, 1, 2].map((k) => a[k] + (b[k] - a[k]) * ra).concat([0, 1, 2].map((k) => b[k] - (b[k] - a[k]) * rb))
+  }
 
   view.on('hover', (hit) => {
     const row = hit?.datum
     const own = row ? links.filter(([a, b]) => a === row.index || b === row.index) : []
-    active.geometry.positions.set(own.flatMap(segment))
+    active.geometry.positions.set(own.flatMap(([a, b]) => outward(row, nodes[a === row.index ? b : a])))
     active.geometry.drawCount = own.length * 2
     active.geometry.needsUpdate()
   })
@@ -124,6 +138,8 @@ export default function run({ canvas, gui, info }) {
   })
 
   return view.start((dt) => {
+    // the hovered node's traffic, flowing out to its neighbours
+    if (active.geometry.drawCount) active.material.dashOffset += dt * 1.5
     if (!settings.traffic) return
     const p = packets.geometry.positions
     live.forEach(([a, b], i) => {

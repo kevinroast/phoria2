@@ -23,6 +23,7 @@ export const ATTRIBUTES = {
   segmentColorStart: 2,
   segmentColorEnd: 3,
   corner: 4,
+  segmentInfo: 5, // how far along its chain the segment starts, and whether it starts or ends one
 }
 
 // a section plane: fragments on its far side are cut away
@@ -1086,7 +1087,9 @@ layout(location = 0) in vec3 segmentStart;
 layout(location = 1) in vec3 segmentEnd;
 layout(location = 2) in vec3 segmentColorStart;
 layout(location = 3) in vec3 segmentColorEnd;
-layout(location = 4) in vec2 corner; // x: 0 at start, 1 at end; y: -1 or 1 across
+// the distance along its chain (segments joined end to start) where it starts, in the model's
+// units; 1 if it starts a chain; 1 if it ends one
+layout(location = 5) in vec3 segmentInfo;
 
 uniform mat4 uModel;
 uniform mat4 uView;
@@ -1094,8 +1097,18 @@ uniform mat4 uProjection;
 uniform vec2 uResolution;   // drawing buffer size in pixels
 uniform float uWidth;       // pixels, already scaled by the pixel ratio
 uniform float uNear;
+uniform int uArrows;        // arrowheads: 1 at the start of each chain, 2 at its end, 3 at both
+uniform float uArrowSize;   // their length in pixels, scaled by the pixel ratio
+
+// six vertices an instance make the segment's quad, as two triangles - x: 0 at its start, 1 at its
+// end; y: -1 or 1 across - and six more its two arrowheads, drawn only when asked for
+const vec2 QUAD[6] = vec2[6](vec2(0.0, -1.0), vec2(0.0, 1.0), vec2(1.0, -1.0), vec2(1.0, -1.0), vec2(0.0, 1.0), vec2(1.0, 1.0));
 
 out vec3 vColor;
+#ifdef DASHED
+out float vDistance;        // along the chain, in the model's units
+flat out float vArrow;      // 1 on an arrowhead, which is never dashed
+#endif
 #ifdef PICK
 flat out uint vPickElement; // which instance, point or segment, for GPU picking
 #endif
@@ -1126,21 +1139,48 @@ void main() {
   dir = len > 0.0 ? dir / len : vec2(1.0, 0.0);
   vec2 normal = vec2(-dir.y, dir.x);
 
-  vec4 clip = mix(ca, cb, corner.x);
+  bool arrowStart = (uArrows & 1) != 0 && segmentInfo.y > 0.5;
+  bool arrowEnd = (uArrows & 2) != 0 && segmentInfo.z > 0.5;
+  float along, arrow = 0.0;
+  vec2 offset;
+  if (gl_VertexID < 6) {
+    vec2 c = QUAD[gl_VertexID];
+    along = c.x;
+    // past each end by half the width so joins look continuous - or short of it, under an arrowhead
+    float startOut = arrowStart ? -uArrowSize * 0.8 : uWidth * 0.5;
+    float endOut = arrowEnd ? -uArrowSize * 0.8 : uWidth * 0.5;
+    offset = normal * c.y * uWidth * 0.5 + dir * (along > 0.5 ? endOut : -startOut);
+  } else {
+    // an arrowhead: its tip on the chain's end, pointing out along the segment
+    int which = (gl_VertexID - 6) / 3, k = gl_VertexID - 6 - which * 3;
+    if (which == 0 ? !arrowStart : !arrowEnd) {
+      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      return;
+    }
+    along = float(which);
+    vec2 d = which == 1 ? dir : -dir;
+    float wing = uArrowSize * 0.45;
+    offset = k == 0 ? vec2(0.0) : -d * uArrowSize + normal * (k == 1 ? wing : -wing);
+    arrow = 1.0;
+  }
+
+  vec4 clip = mix(ca, cb, along);
 #ifdef FOG
-  vFogDepth = -mix(a.z, b.z, corner.x);
+  vFogDepth = -mix(a.z, b.z, along);
 #endif
-  // extend past each end by half the width so joins look continuous
-  vec2 offset = normal * corner.y * uWidth * 0.5 + dir * (corner.x * 2.0 - 1.0) * uWidth * 0.5;
   clip.xy += offset / (uResolution * 0.5) * clip.w;
   gl_Position = clip;
+#ifdef DASHED
+  vDistance = segmentInfo.x + length(segmentEnd - segmentStart) * along;
+  vArrow = arrow;
+#endif
 #ifdef PICK
   vPickElement = uint(gl_InstanceID);
 #endif
 
   vColor = vec3(1.0);
 #ifdef VERTEX_COLORS
-  vColor = srgbToLinear(mix(segmentColorStart, segmentColorEnd, corner.x));
+  vColor = srgbToLinear(mix(segmentColorStart, segmentColorEnd, along));
 #endif
 }
 `
@@ -1150,12 +1190,22 @@ precision highp float;
 in vec3 vColor;
 uniform vec3 uColor;
 uniform float uOpacity;
+#ifdef DASHED
+in float vDistance;
+flat in float vArrow;
+uniform float uDash;        // dash and gap lengths, in the model's units
+uniform float uGap;
+uniform float uDashOffset;  // moves the dashes along: animate it for flow
+#endif
 out vec4 fragColor;
 
 ${COMMON}
 ${FOG}
 
 void main() {
+#ifdef DASHED
+  if (vArrow < 0.5 && mod(vDistance - uDashOffset, uDash + uGap) >= uDash) discard;
+#endif
   vec3 color = fogged(uColor * vColor);
   fragColor = vec4(linearToSrgb(color) * uOpacity, uOpacity);
 }

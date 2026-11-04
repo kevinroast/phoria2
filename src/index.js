@@ -50,6 +50,7 @@ export { PhoriaError } from './validate.js'
 /** @typedef {import('./presets.js').CameraPreset} CameraPreset */
 /** @typedef {import('./tooltip.js').TooltipContent} TooltipContent */
 /** @typedef {import('./Raycaster.js').Hit} Hit */
+/** @typedef {import('./area.js').PickArea} PickArea */
 /** @typedef {import('./scene/drawables.js').LabelPlacement} LabelPlacement */
 /** @typedef {import('./scene/drawables.js').LabelPlace} LabelPlace */
 /** @typedef {import('./scene/drawables.js').InstanceLabels} InstanceLabels */

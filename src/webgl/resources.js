@@ -293,8 +293,8 @@ export class Resources {
   }
 
   /**
-   * Vertex array for Lines: one instance per segment with its two endpoints (and colours),
-   * expanded to a screen-space quad in the vertex shader.
+   * Vertex array for Lines: one instance per segment with its two endpoints (and colours) and where
+   * it is along its chain, expanded to a screen-space quad - and arrowheads - in the vertex shader.
    * @param {Geometry} geometry
    * @returns {MeshBuffers}
    */
@@ -310,6 +310,9 @@ export class Resources {
     const segments = geometry.elementCount / 2
     const ends = new Float32Array(segments * 6)
     const colors = new Float32Array(segments * 6).fill(1)
+    // chains: runs of segments each starting where the one before ended - a polyline. Dashes run
+    // on along a chain, and arrowheads go at its ends
+    const info = new Float32Array(segments * 3)
     for (let s = 0; s < segments; s++) {
       const i0 = idx ? idx[s * 2] : s * 2, i1 = idx ? idx[s * 2 + 1] : s * 2 + 1
       for (let k = 0; k < 3; k++) {
@@ -320,6 +323,12 @@ export class Resources {
           colors[s * 6 + 3 + k] = c[i1 * 3 + k]
         }
       }
+      const o = s * 6, joined = s > 0 && ends[o - 3] === ends[o] && ends[o - 2] === ends[o + 1] && ends[o - 1] === ends[o + 2]
+      if (joined) {
+        info[s * 3] = info[s * 3 - 3] + Math.hypot(ends[o - 3] - ends[o - 6], ends[o - 2] - ends[o - 5], ends[o - 1] - ends[o - 4])
+        info[s * 3 - 1] = 0
+      } else info[s * 3 + 1] = 1
+      info[s * 3 + 2] = 1
     }
 
     const vao = /** @type {WebGLVertexArrayObject} */ (gl.createVertexArray())
@@ -339,6 +348,13 @@ export class Resources {
     }
     interleavedPair(ends, ATTRIBUTES.segmentStart, ATTRIBUTES.segmentEnd)
     interleavedPair(colors, ATTRIBUTES.segmentColorStart, ATTRIBUTES.segmentColorEnd)
+    const chains = /** @type {WebGLBuffer} */ (gl.createBuffer())
+    gl.bindBuffer(gl.ARRAY_BUFFER, chains)
+    gl.bufferData(gl.ARRAY_BUFFER, info, gl.STATIC_DRAW)
+    gl.enableVertexAttribArray(ATTRIBUTES.segmentInfo)
+    gl.vertexAttribPointer(ATTRIBUTES.segmentInfo, 3, gl.FLOAT, false, 0, 0)
+    gl.vertexAttribDivisor(ATTRIBUTES.segmentInfo, 1)
+    buffers.push(chains)
     gl.bindBuffer(gl.ARRAY_BUFFER, this.#cornerBuffer())
     gl.enableVertexAttribArray(ATTRIBUTES.corner)
     gl.vertexAttribPointer(ATTRIBUTES.corner, 2, gl.FLOAT, false, 0, 0)

@@ -124,6 +124,12 @@ const PREPARE = {
     }
     await new Promise((r) => setTimeout(r, 400))
   })()`,
+  // the explosion a moment after the fuel caught: the fireball turning from yellow to orange, soot
+  // starting in its folds, fragments and sparks still in the air - stepped there, so it is the same
+  // picture every time
+  explosion: `view.stop()
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }))
+    for (let i = 0; i < 100; i++) view.step(1 / 60)`,
   // the office with its navigation mesh showing, the people part way along their walks
   'path-finding': `(async () => {
     document.querySelector('[data-mesh]').click()

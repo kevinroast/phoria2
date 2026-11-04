@@ -80,7 +80,11 @@ nodeContract(Points, (o) => new Points({ geometry: new Geometry({ positions: [0,
   sort: { value: true, read: (n) => n.sort, default: false, bad: 'yes', error: 'sort' },
 })
 
-nodeContract(Lines, (o) => new Lines({ geometry: new Geometry({ positions: [0, 0, 0, 1, 0, 0] }), ...o }), drawableRows(() => new Geometry({ positions: [0, 0, 0, 0, 1, 0] })))
+nodeContract(Lines, (o) => new Lines({ geometry: new Geometry({ positions: [0, 0, 0, 1, 0, 0] }), ...o }), {
+  ...drawableRows(() => new Geometry({ positions: [0, 0, 0, 0, 1, 0] })),
+  arrows: { value: 'end', read: (n) => n.arrows, default: 'none', bad: 'pointy', error: 'arrows' },
+  arrowSize: { value: 14, read: (n) => n.arrowSize, default: 0, bad: 'big', error: 'arrowSize' },
+})
 
 nodeContract(Label, (o) => new Label({ text: 'label', ...o }), {
   text: { value: 'Crater', read: (l) => l.text, bad: {}, error: 'text' },
@@ -183,6 +187,9 @@ contract('Material', {
     emissiveIntensity: { value: 3, read: (m) => m.emissiveIntensity, default: 1, bad: -1, error: 'emissiveIntensity' },
     size: { value: 4, read: (m) => m.size, default: 1, bad: -1, error: 'size' },
     width: { value: 3, read: (m) => m.width, default: 1, bad: -1, error: 'width' },
+    dash: { value: 0.5, read: (m) => m.dash, default: 0, bad: -1, error: 'dash' },
+    gap: { value: 0.25, read: (m) => m.gap, default: 0, bad: 'wide', error: 'gap' },
+    dashOffset: { value: -2, read: (m) => m.dashOffset, default: 0, bad: 'along', error: 'dashOffset' },
     alphaTest: { value: 0.5, read: (m) => m.alphaTest, default: 0, bad: 2, error: 'alphaTest' },
     normalScale: { value: 0.5, read: (m) => m.normalScale, default: 1, bad: 'strong', error: 'normalScale' },
     bumpScale: { value: 0.002, read: (m) => m.bumpScale, default: 1, bad: 'deep', error: 'bumpScale' },
