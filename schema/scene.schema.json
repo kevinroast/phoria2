@@ -943,6 +943,33 @@
           "type": "number",
           "description": "Lines: moves the dashes along the lines - animate it for flow."
         },
+        "shader": {
+          "type": "object",
+          "description": "GLSL hooks run inside phoria2's own shader: vertex (change local, and n on meshes), fragment (change base and emissive before lighting; discard cuts) and lit (change color after lighting). Every hook can read uTime.",
+          "additionalProperties": false,
+          "properties": {
+            "vertex": { "type": "string" },
+            "fragment": { "type": "string" },
+            "lit": { "type": "string" },
+            "uniforms": {
+              "type": "object",
+              "description": "Values the hooks read, by GLSL name: a number, two to four numbers, a colour string, or a texture description.",
+              "additionalProperties": {
+                "anyOf": [
+                  { "type": "number" },
+                  { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 4 },
+                  { "type": "string" },
+                  { "type": "object", "required": ["url"] }
+                ]
+              }
+            },
+            "bounds": {
+              "type": "number",
+              "minimum": 0,
+              "description": "How far, in world units, the vertex hook can move a vertex; without it a vertex hook turns frustum culling off."
+            }
+          }
+        },
         "alphaTest": {
           "type": "number",
           "description": "Cut-outs: drop pixels with less alpha.",

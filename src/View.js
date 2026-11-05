@@ -511,6 +511,7 @@ export class View {
     this.scene.updateWorldTree()
     const frame = collect(this.scene, this.camera)
     if (this.autoLight && frame.lights.length === 0) this.#addAutoLights(frame)
+    frame.time = this.time
     frame.highlight = this.#highlightFor(this.#hovered)
     this.#occlude(frame)
     this.renderer.renderFrame(frame, { wait })
@@ -521,7 +522,7 @@ export class View {
     this.#dirty = false
     // remember what was drawn - including what drawing changed, such as fitting the camera - so
     // the next frame compares against it and doesn't draw the same picture again
-    if (this.renderMode === 'auto') this.#watch.changed(this.scene, this.camera)
+    if (this.renderMode === 'auto') this.#watch.changed(this.scene, this.camera, this.time)
     // things may have moved under a still pointer - or the keyboard's focus moved on screen
     if ((this.#pointer || this.#keyFocus) && this.#needsHover()) this.#pickPending = true
     return frame
@@ -732,7 +733,9 @@ export class View {
     const frame = this.lastFrame
     if (!frame) return null
     let work = 0
-    for (const { node, geometry, instances } of [...frame.opaque, ...frame.transparent]) {
+    for (const { node, geometry, instances, material } of [...frame.opaque, ...frame.transparent]) {
+      // a shader hook moves vertices where only the GPU knows: picked there, however small the scene
+      if (material.shader?.vertex) return frame
       const mode = /** @type {any} */ (node).drawMode
       work += instances ? instances.count : mode === 'points' ? geometry.drawnVertices : mode === 'lines' ? geometry.drawnCount / 2 : geometry.drawnCount / 3
     }
@@ -748,7 +751,8 @@ export class View {
   #exact(found, frame) {
     const node = /** @type {any} */ (found.item.node)
     const raycaster = new Raycaster().setFromCamera(found.ndc, this.camera)
-    const hit = raycaster.intersectElement(node, found.element)
+    // moved by a shader hook, the CPU's copy isn't where it was drawn: the GPU's depth is the hit
+    const hit = node.material.shader?.vertex ? null : raycaster.intersectElement(node, found.element)
     if (hit) return hit
     // the ray grazed an edge the GPU drew: place the hit at the depth the GPU found
     const inverse = new Mat4().copy(frame.camera.viewProjection).invert()
@@ -1041,7 +1045,7 @@ export class View {
       this.#updateControls(dt)
       if (this.#pickPending) this.#updateHover()
       const draw = this.#dirty || this.renderMode === 'always' ||
-        (this.renderMode === 'auto' && this.#watch.changed(this.scene, this.camera))
+        (this.renderMode === 'auto' && this.#watch.changed(this.scene, this.camera, this.time))
       if (draw) this.render()
     } finally {
       // the next frame comes even if this one threw - the error still reaches the console, but one

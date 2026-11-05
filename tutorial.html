@@ -98,6 +98,15 @@ npm run dev</code></pre>
           Every option is checked like this, and the error names the fix - for you, or for a coding agent
           writing the code.
         </aside>
+
+        <h3>6. A shader hook</h3>
+        <p>For what the material options can't say, <code>shader</code> runs a few lines of GLSL inside
+          phoria2's own shader. The <code>vertex</code> hook here moves each point of the floor - more
+          <code>segments</code> give it points to move - into ripples, and bends its normal <code>n</code>
+          to match, so the light and the shadows follow them. <code>uTime</code> is the View's clock: a
+          hook that reads it keeps the scene moving with no frame loop. Hooks can change colours too, and
+          the reference has the names each can use and recipes to copy.</p>
+        <figure class="step" data-step="first-scene-6"></figure>
       </section>
 
       <section id="dashboard">

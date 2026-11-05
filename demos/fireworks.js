@@ -23,7 +23,7 @@ export default function run({ canvas, gui, info }) {
   const sprite = glow(32, { core: 0.25 })
   const sparks = scene.add(new Emitter({
     max: 30000, rate: 0, velocity: [0, 0, 0], gravity: [0, -4, 0], drag: 1.1, lifetime: [1.6, 2.4], renderOrder: 1,
-    material: { map: sprite, size: 0.7 },
+    material: { map: sprite, size: 0.2 },
   }))
   const willow = scene.add(new Emitter({
     max: 8000, rate: 0, velocity: [0, 0, 0], gravity: [0, -2.2, 0], drag: 1.9, lifetime: [3.5, 4.5], renderOrder: 1,

@@ -20,6 +20,9 @@ product viewers. The [demo gallery](https://kevs3d.co.uk/phoria2/).
 - **Tells you what to write**: every option is checked, and a mistake throws an error that names
   the fix - pass `colour` and you get `Material: use 'color'`. Written to be easy for coding
   agents too.
+- **Small shader hooks, not full shaders**: a line or two of GLSL in `material.shader` waves a flag,
+  dissolves a part or pulses a line, and lighting, shadows, picking and outlines keep working - the
+  hook runs inside phoria2's own shader. A hook that doesn't compile says which of its lines is wrong.
 - **Accessible**: `keyboard: true` lets people step through bars, points and parts with the
   arrow keys while a screen reader says what each one is; motion follows the system's
   reduced-motion setting.

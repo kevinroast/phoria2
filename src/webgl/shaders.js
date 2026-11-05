@@ -116,9 +116,17 @@ export const CLIP_ONLY_FRAGMENT = /* glsl */ `
 precision highp float;
 in vec3 vWorldPosition;
 out vec4 fragColor;
+#if defined(ALPHA_TEST) || defined(HOOK_FRAGMENT)
+in vec2 vUv;
+#endif
+#ifdef HOOK_FRAGMENT
+// a fragment hook's discards cut the shadow too - a dissolving thing casts what is left of it
+in vec3 vNormal;
+in vec3 vColor;
+//@hook uniforms
+#endif
 #ifdef ALPHA_TEST
 // a cut-out casts the shadow of what is left of it - leaves, fences, grilles - not of its rectangle
-in vec2 vUv;
 uniform float uOpacity;
 uniform float uAlphaTest;
 #ifdef MAP
@@ -129,6 +137,14 @@ ${SAMPLING}
 ${CLIP}
 void main() {
   clipAway(vWorldPosition);
+#ifdef HOOK_FRAGMENT
+  {
+    vec4 base = vec4(vColor, 1.0);
+    vec3 emissive = vec3(0.0);
+//@hook fragment
+    if (base.a <= 0.0) discard;
+  }
+#endif
 #ifdef ALPHA_TEST
   float alpha = uOpacity;
 #ifdef MAP
@@ -225,6 +241,7 @@ uniform int uHighlightIndex; // -2 none, -1 the whole node, otherwise the instan
 uniform mat4 uView;
 out float vFogDepth;
 #endif
+//@hook uniforms
 
 out vec3 vWorldPosition;
 out vec3 vNormal;
@@ -248,25 +265,34 @@ ${COMMON}
 void main() {
   vColor = vec3(1.0);
   vHighlight = uHighlightIndex == -1 ? 1.0 : 0.0;
+  // the vertex in the geometry's own space - where a shader hook moves it
+  vec3 local = position;
+  vec3 n = normal;
+#ifdef HOOK_VERTEX
+  {
+    int index = gl_InstanceID;
+//@hook vertex
+  }
+#endif
 #ifdef INSTANCED
-  vec4 local = instanceMatrix * vec4(position, 1.0);
+  vec4 placed = instanceMatrix * vec4(local, 1.0);
   // the instance's normal matrix as its cofactor: the inverse transpose up to scale, from three
   // cross products, flipped back for mirroring transforms
   mat3 m = mat3(instanceMatrix);
   mat3 instanceNormal = mat3(cross(m[1], m[2]), cross(m[2], m[0]), cross(m[0], m[1])) * sign(dot(m[0], cross(m[1], m[2])));
-  vec3 n = instanceNormal * normal;
+  vec3 placedNormal = instanceNormal * n;
   vColor *= instanceColor;
   if (gl_InstanceID == uHighlightIndex) vHighlight = 1.0;
 #else
-  vec4 local = vec4(position, 1.0);
-  vec3 n = normal;
+  vec4 placed = vec4(local, 1.0);
+  vec3 placedNormal = n;
 #endif
 #ifdef VERTEX_COLORS
   vColor *= srgbToLinear(color);
 #endif
-  vec4 world = uModel * local;
+  vec4 world = uModel * placed;
   vWorldPosition = world.xyz;
-  vNormal = uNormalMatrix * n;
+  vNormal = uNormalMatrix * placedNormal;
   vUv = uv;
 #ifdef UV2
   vUv2 = uv2;
@@ -280,8 +306,8 @@ void main() {
 #endif
 #endif
 #ifdef TRIPLANAR
-  vObjectPosition = position;
-  vObjectNormal = normal;
+  vObjectPosition = local;
+  vObjectNormal = n;
 #ifdef INSTANCED
   vObjectToWorld = uNormalMatrix * instanceNormal;
 #else
@@ -322,6 +348,7 @@ uniform float uAlphaTest;
 #ifdef EMISSIVE_MAP
 uniform sampler2D uEmissiveMap;
 #endif
+//@hook uniforms
 
 ${SAMPLING}
 #ifdef LIT
@@ -739,16 +766,21 @@ void main() {
 #ifdef MAP
   base *= uMapTexel; // sRGB textures are decoded to linear by the hardware
 #endif
+  vec3 emissive = uEmissive;
+#ifdef EMISSIVE_MAP
+  emissive *= uEmissiveMapTexel.rgb;
+#endif
+#ifdef HOOK_FRAGMENT
+  {
+//@hook fragment
+  }
+#endif
 #ifdef ALPHA_TEST
   if (base.a < uAlphaTest) discard;
   base.a = 1.0;
 #endif
   // how much of what is behind it this hides: its opacity - less for glass, which lets light through
   float coverage = base.a;
-  vec3 emissive = uEmissive;
-#ifdef EMISSIVE_MAP
-  emissive *= uEmissiveMapTexel.rgb;
-#endif
 
 #ifdef LIT
 #ifdef FLAT_SHADING
@@ -949,6 +981,14 @@ void main() {
 #else
   vec3 color = base.rgb + emissive;
 #endif
+#ifdef HOOK_LIT
+  {
+    // a fade here fades what it hides too
+    float before = max(base.a, 1e-5);
+//@hook lit
+    coverage *= clamp(base.a / before, 0.0, 1.0);
+  }
+#endif
   color = mix(color, uHighlight.rgb, vHighlight * uHighlight.a);
   // a highlight shows on glass as on anything else
   coverage = mix(coverage, base.a, vHighlight * uHighlight.a);
@@ -981,9 +1021,13 @@ uniform mat4 uProjection;
 uniform float uSize;        // pixels (with the pixel ratio applied), or world units when attenuated
 uniform float uScale;       // projection focal term x half the buffer height: world size -> pixels at depth 1
 uniform int uHighlightIndex; // -2 none, -1 every point, otherwise the point
+//@hook uniforms
 
 out vec3 vColor;
 flat out float vHighlight;
+#ifdef HOOK_FRAGMENT
+flat out float vPointIndex;
+#endif
 #ifdef PICK
 flat out uint vPickElement; // which instance, point or segment, for GPU picking
 #endif
@@ -994,29 +1038,46 @@ out float vFogDepth;
 ${COMMON}
 
 void main() {
-  vec4 viewPosition = uView * (uModel * vec4(position, 1.0));
+  // the point in the geometry's own space, and its size as a multiple of the material's - where a
+  // shader hook changes them
+  vec3 local = position;
+#ifdef SPRITES
+  int self = int(pointIndex + 0.5);
+  float size = pointSize;
+#else
+  int self = gl_VertexID;
+  float size = 1.0;
+#endif
+#ifdef HOOK_VERTEX
+  {
+    int index = self;
+//@hook vertex
+  }
+#endif
+#ifdef HOOK_FRAGMENT
+  vPointIndex = float(self);
+#endif
+  vec4 viewPosition = uView * (uModel * vec4(local, 1.0));
 #ifdef SPRITES
   // the square's corner, turned by the point's angle: the texture turns with it
   vec2 c = vec2(corner.x * 2.0 - 1.0, corner.y);
   float s = sin(pointAngle), k = cos(pointAngle);
   vec2 turned = vec2(c.x * k - c.y * s, c.x * s + c.y * k);
-  float size = uSize * pointSize;
+  float across = uSize * size;
 #ifdef SIZE_ATTENUATION
   // world units: the square sits in the view, facing the camera
-  viewPosition.xy += turned * size * 0.5;
+  viewPosition.xy += turned * across * 0.5;
   gl_Position = uProjection * viewPosition;
 #else
   // pixels: the square is laid out on the screen
   gl_Position = uProjection * viewPosition;
-  gl_Position.xy += turned * size / uResolution * gl_Position.w;
+  gl_Position.xy += turned * across / uResolution * gl_Position.w;
 #endif
   // the image upright on the square, its top at the top, as a point's is
   vUv = vec2(c.x * 0.5 + 0.5, 0.5 - c.y * 0.5);
   vOpacity = pointOpacity;
-  int self = int(pointIndex + 0.5);
 #else
   gl_Position = uProjection * viewPosition;
-  int self = gl_VertexID;
 #endif
 #ifdef FOG
   vFogDepth = -viewPosition.z;
@@ -1025,9 +1086,9 @@ void main() {
 #elif defined(SIZE_ATTENUATION)
   // perspective shrinks with distance; an orthographic projection (w row 0, 0, 0, 1) doesn't
   float depth = uProjection[3][3] == 1.0 ? 1.0 : max(-viewPosition.z, 1e-4);
-  gl_PointSize = uSize * uScale / depth;
+  gl_PointSize = uSize * size * uScale / depth;
 #else
-  gl_PointSize = uSize;
+  gl_PointSize = uSize * size;
 #endif
   vColor = vec3(1.0);
 #ifdef VERTEX_COLORS
@@ -1054,6 +1115,10 @@ uniform float uOpacity;
 #ifdef MAP
 uniform sampler2D uMap;
 #endif
+#ifdef HOOK_FRAGMENT
+flat in float vPointIndex;
+#endif
+//@hook uniforms
 out vec4 fragColor;
 
 ${COMMON}
@@ -1076,9 +1141,21 @@ void main() {
   float edge = fwidth(r);
   base.a *= 1.0 - smoothstep(1.0 - edge, 1.0, r);
 #endif
+#ifdef HOOK_FRAGMENT
+  {
+    vec2 pointUv = at;
+    int index = int(vPointIndex + 0.5);
+//@hook fragment
+  }
+#endif
   if (base.a <= 0.0) discard;
-  base.rgb = fogged(mix(base.rgb, uHighlight.rgb, vHighlight * uHighlight.a));
-  fragColor = vec4(linearToSrgb(base.rgb) * base.a, base.a);
+  vec3 color = fogged(mix(base.rgb, uHighlight.rgb, vHighlight * uHighlight.a));
+#ifdef HOOK_LIT
+  {
+//@hook lit
+  }
+#endif
+  fragColor = vec4(linearToSrgb(color) * base.a, base.a);
 }
 `
 
@@ -1099,14 +1176,17 @@ uniform float uWidth;       // pixels, already scaled by the pixel ratio
 uniform float uNear;
 uniform int uArrows;        // arrowheads: 1 at the start of each chain, 2 at its end, 3 at both
 uniform float uArrowSize;   // their length in pixels, scaled by the pixel ratio
+//@hook uniforms
 
 // six vertices an instance make the segment's quad, as two triangles - x: 0 at its start, 1 at its
 // end; y: -1 or 1 across - and six more its two arrowheads, drawn only when asked for
 const vec2 QUAD[6] = vec2[6](vec2(0.0, -1.0), vec2(0.0, 1.0), vec2(1.0, -1.0), vec2(1.0, -1.0), vec2(0.0, 1.0), vec2(1.0, 1.0));
 
 out vec3 vColor;
-#ifdef DASHED
+#if defined(DASHED) || defined(HOOK_FRAGMENT)
 out float vDistance;        // along the chain, in the model's units
+#endif
+#ifdef DASHED
 flat out float vArrow;      // 1 on an arrowhead, which is never dashed
 #endif
 #ifdef PICK
@@ -1118,9 +1198,22 @@ out float vFogDepth;
 
 ${COMMON}
 
+#ifdef HOOK_VERTEX
+// a shader hook moves each end of each segment: local is the end, along 0 at the start and 1 at the end
+vec3 hookVertex(vec3 local, float along, int index) {
+//@hook vertex
+  return local;
+}
+#endif
+
 void main() {
-  vec4 a = uView * (uModel * vec4(segmentStart, 1.0));
-  vec4 b = uView * (uModel * vec4(segmentEnd, 1.0));
+  vec3 start = segmentStart, end = segmentEnd;
+#ifdef HOOK_VERTEX
+  start = hookVertex(segmentStart, 0.0, gl_InstanceID);
+  end = hookVertex(segmentEnd, 1.0, gl_InstanceID);
+#endif
+  vec4 a = uView * (uModel * vec4(start, 1.0));
+  vec4 b = uView * (uModel * vec4(end, 1.0));
   // clip the segment to the near plane so lines passing behind the camera stay correct
   float clipZ = -uNear;
   if (a.z > clipZ && b.z > clipZ) {
@@ -1170,8 +1263,10 @@ void main() {
 #endif
   clip.xy += offset / (uResolution * 0.5) * clip.w;
   gl_Position = clip;
+#if defined(DASHED) || defined(HOOK_FRAGMENT)
+  vDistance = segmentInfo.x + length(end - start) * along;
+#endif
 #ifdef DASHED
-  vDistance = segmentInfo.x + length(segmentEnd - segmentStart) * along;
   vArrow = arrow;
 #endif
 #ifdef PICK
@@ -1190,8 +1285,11 @@ precision highp float;
 in vec3 vColor;
 uniform vec3 uColor;
 uniform float uOpacity;
-#ifdef DASHED
+#if defined(DASHED) || defined(HOOK_FRAGMENT)
 in float vDistance;
+#endif
+//@hook uniforms
+#ifdef DASHED
 flat in float vArrow;
 uniform float uDash;        // dash and gap lengths, in the model's units
 uniform float uGap;
@@ -1206,8 +1304,21 @@ void main() {
 #ifdef DASHED
   if (vArrow < 0.5 && mod(vDistance - uDashOffset, uDash + uGap) >= uDash) discard;
 #endif
-  vec3 color = fogged(uColor * vColor);
-  fragColor = vec4(linearToSrgb(color) * uOpacity, uOpacity);
+  vec4 base = vec4(uColor * vColor, uOpacity);
+#ifdef HOOK_FRAGMENT
+  {
+    float distance = vDistance;
+//@hook fragment
+  }
+  if (base.a <= 0.0) discard;
+#endif
+  vec3 color = fogged(base.rgb);
+#ifdef HOOK_LIT
+  {
+//@hook lit
+  }
+#endif
+  fragColor = vec4(linearToSrgb(color) * base.a, base.a);
 }
 `
 
@@ -1220,13 +1331,44 @@ const SOURCES = {
 }
 
 /**
- * Vertex and fragment source for a kind of drawable, or a pass's own pair, with a set of feature defines.
+ * GLSL of a material's own, spliced in at the shaders' `//@hook` lines: uniform declarations, and
+ * code run on each vertex, before lighting and after it.
+ * @typedef {object} HookSource
+ * @property {string} uniforms declarations
+ * @property {string} vertex
+ * @property {string} fragment
+ * @property {string} lit
+ */
+
+// a hook's own lines are numbered from 1 in a source string of their own, so compile errors point
+// at the line of the hook, not of the generated shader
+export const HOOK_SOURCE_NUMBERS = { vertex: 101, fragment: 102, lit: 103 }
+
+/**
+ * Vertex and fragment source for a kind of drawable, or a pass's own pair, with a set of feature
+ * defines - and a material's shader hooks, when it has them.
  * @param {ShaderKind | [string, string]} kind
  * @param {string[]} defines e.g. ['LIT', 'MAP']
+ * @param {HookSource | null} [hooks]
  * @returns {[string, string]}
  */
-export function shaderSource(kind, defines) {
+export function shaderSource(kind, defines, hooks = null) {
   const header = `#version 300 es\n${defines.map((d) => `#define ${d}\n`).join('')}`
   const [vs, fs] = typeof kind === 'string' ? SOURCES[kind] : kind
-  return [header + vs, header + fs]
+  if (!hooks) return [header + vs, header + fs]
+  const first = 2 + defines.length
+  return [header + splice(vs, hooks, first), header + splice(fs, hooks, first)]
+}
+
+/** @param {string} source @param {HookSource} hooks @param {number} first the line number of the source's first line */
+function splice(source, hooks, first) {
+  return source.split('\n').map((line, i) => {
+    const at = /^\s*\/\/@hook (\w+)$/.exec(line)
+    if (!at) return line
+    const part = /** @type {keyof HookSource} */ (at[1])
+    // the shader's own numbering carries on after the hook as if it weren't there
+    const resume = `#line ${first + i + 1} 0`
+    if (part === 'uniforms') return `${hooks.uniforms}\n${resume}`
+    return `#line 1 ${HOOK_SOURCE_NUMBERS[part]}\n${hooks[part]}\n${resume}`
+  }).join('\n')
 }

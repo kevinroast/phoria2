@@ -455,7 +455,7 @@ export class Resources {
       if (!d.isDrawable) return
       keys.add(d.geometry)
       if ('instanceMatrices' in d) keys.add(d)
-      for (const [, t] of d.material.textures) keys.add(t)
+      for (const [, t] of d.material.allTextures) keys.add(t)
     })
     for (const key of keys) {
       const users = this.#usedBy.get(key)

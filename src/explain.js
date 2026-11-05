@@ -113,6 +113,19 @@ export function explain(info) {
   const invisible = items.filter((i) => i.material.opacity === 0).length
   if (invisible) warnings.push(`${plural(invisible, 'object')} with material opacity 0 - drawn but invisible`)
 
+  // shader hooks: which drawn things have GLSL of their own, and what they read
+  const hooked = items.filter((i) => i.material.shader)
+  if (hooked.length) {
+    const parts = (/** @type {any} */ s) => ['vertex', 'fragment', 'lit'].filter((p) => s[p]).join(', ')
+    lines.push(`Shader hooks: ${hooked.map((i) => {
+      const s = /** @type {any} */ (i.material.shader), n = /** @type {any} */ (i.node)
+      const reads = [...(/\buTime\b/.test(s.vertex + s.fragment + s.lit) ? ['uTime'] : []), ...Object.keys(s.uniforms)]
+      return `${n.constructor.name}${n.name ? ` '${n.name}'` : ''} (${parts(s)}${reads.length ? `; ${reads.join(', ')}` : ''})`
+    }).join(', ')}`)
+    const unculled = hooked.filter((i) => i.material.shader?.vertex && i.material.shader.bounds === null).length
+    if (unculled) lines.push(`  ${plural(unculled, 'object')} moved by a vertex hook without shader.bounds - not frustum culled, and picked on the GPU`)
+  }
+
   if (info.labels && info.labels.total) {
     const s = info.labels
     lines.push(`Labels: ${s.shown} shown, ${s.dimmed ? `${s.dimmed} dimmed (covered by labels or geometry), ` : ''}${s.overlapped} hidden by overlap, ${s.occluded} hidden behind geometry, ${s.offscreen} off screen${s.zoomedOut ? `, ${s.zoomedOut} waiting to be zoomed in to (minScale)` : ''}`)

@@ -5,6 +5,7 @@ import * as mat4 from '../math/mat4.js'
 import { irradianceSH } from '../irradiance.js'
 import { POINT_SHADOW_SIZE, SHADOW_MAP_SIZE, SPOT_ATLAS_SIZE } from '../shadow.js'
 import { CLIP, CLIP_ONLY_FRAGMENT, COMMON, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
+import { hookFor, passDefines, setHookUniforms } from './hooks.js'
 import { uvMatrix } from './resources.js'
 
 /** @import { Programs } from './programs.js' */
@@ -281,6 +282,8 @@ const ENV_LEVELS = 6
  */
 
 export class Passes {
+  /** The View's clock, for shader hooks that read uTime - set by the renderer each frame. */
+  time = 0
   /** @type {WeakMap<Texture, Environment>} */ #environments = new WeakMap()
   /** @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #shadow = null
   /** Spot lights' shadows, a tile each. @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #spotShadow = null
@@ -512,8 +515,13 @@ export class Passes {
       if (cutout) defines.push('ALPHA_TEST', ...(material.map ? ['MAP'] : []), ...(triplanar ? ['TRIPLANAR'] : []))
       // a map on the second UV set reads it here too
       if (cutout && material.map?.uvSet === 1 && item.geometry.uvs2) defines.push('UV2', 'uMapSet vUv2')
-      const program = this.programs.ready('depth', defines, DEPTH)
+      // shader hooks: the shadow of the moved shape, with a fragment hook's holes in it
+      const hook = hookFor(material)
+      if (hook) defines.push(...passDefines(hook, true))
+      const program = this.programs.ready('depth', defines, DEPTH, hook?.source)
+      if (program.failed) continue
       gl.useProgram(program.program)
+      if (hook) setHookUniforms(program, material, this.time, (t) => this.resources.texture(t))
       program.set('uViewProjection', viewProjection)
       program.set('uModel', item.worldMatrix)
       if (item.clip) program.set('uClipPlane', item.clip.plane)
@@ -562,8 +570,13 @@ export class Passes {
       for (const item of outline.items) {
         const defines = item.instances ? ['INSTANCED'] : []
         if (item.clip) defines.push('CLIP')
-        const program = smooth ? this.programs.ready('outline-cover', defines, OUTLINE_COVER) : this.programs.ready('outline-mask', defines, OUTLINE_MASK)
+        // round the moved shape
+        const hook = hookFor(item.material)
+        if (hook) defines.push(...passDefines(hook, false))
+        const program = smooth ? this.programs.ready('outline-cover', defines, OUTLINE_COVER, hook?.source) : this.programs.ready('outline-mask', defines, OUTLINE_MASK, hook?.source)
+        if (program.failed) continue
         gl.useProgram(program.program)
+        if (hook) setHookUniforms(program, item.material, frame.time ?? 0, (t) => this.resources.texture(t))
         program.set('uViewProjection', frame.camera.viewProjection)
         program.set('uModel', item.worldMatrix)
         program.set('uMask', [outline.color[0], outline.color[1], outline.color[2], px / OUTLINE_MAX])

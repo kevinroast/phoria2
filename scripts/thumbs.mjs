@@ -130,6 +130,12 @@ const PREPARE = {
   explosion: `view.stop()
     document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }))
     for (let i = 0; i < 100; i++) view.step(1 / 60)`,
+  // the shader hooks a little before the ring is whole again: partly dissolved, its edge glowing,
+  // the flag mid-wave - stepped to the same moment of the hooks' clock every time
+  'shader-hooks': `view.stop()
+    const Box3 = view.scene.bounds.constructor
+    view.frame(new Box3([-8.2, 0, -7], [7.8, 4.6, 3]), { padding: 0 })
+    while (view.time < 8.3) view.step(1 / 60)`,
   // the office with its navigation mesh showing, the people part way along their walks
   'path-finding': `(async () => {
     document.querySelector('[data-mesh]').click()

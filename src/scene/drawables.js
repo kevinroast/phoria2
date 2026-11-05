@@ -215,7 +215,9 @@ export class Drawable extends Node {
 
   /** @internal @param {Box3} box */
   expandBounds(box) {
-    if (this.geometry.vertexCount) box.union(this.geometry.bounds.clone().applyMatrix4(this.worldMatrix))
+    if (!this.geometry.vertexCount) return box
+    const own = this.geometry.bounds.clone().applyMatrix4(this.worldMatrix)
+    box.union(padForHooks(own, this.material))
     return box
   }
 
@@ -249,7 +251,7 @@ export class Drawable extends Node {
   dispose() {
     this.geometry.dispose()
     this.material.dispose()
-    for (const [, t] of this.material.textures) t.dispose()
+    for (const [, t] of this.material.allTextures) t.dispose()
     super.dispose()
   }
 }
@@ -411,9 +413,11 @@ export class InstancedMesh extends Mesh {
 
   /** @internal @param {Box3} box */
   expandBounds(box) {
+    // as far as a shader hook can move a vertex, round each copy
+    const pad = this.material.shader?.vertex ? this.material.shader.bounds ?? 0 : 0
     this.eachInstanceBox((x0, y0, z0, x1, y1, z1) => {
-      box.expandByXYZ(x0, y0, z0)
-      box.expandByXYZ(x1, y1, z1)
+      box.expandByXYZ(x0 - pad, y0 - pad, z0 - pad)
+      box.expandByXYZ(x1 + pad, y1 + pad, z1 + pad)
     })
     return box
   }
@@ -646,4 +650,17 @@ export class Label extends Node {
     if (this.minScale) json.minScale = this.minScale
     return json
   }
+}
+
+/**
+ * A drawable's world box, grown by as far as its shader's vertex hook says it can move a vertex.
+ * @param {import('../value/Box3.js').Box3} box @param {import('../material/Material.js').Material} material
+ */
+function padForHooks(box, material) {
+  const pad = material.shader?.vertex ? material.shader.bounds ?? 0 : 0
+  if (pad > 0 && !box.isEmpty()) {
+    box.min.set(box.min[0] - pad, box.min[1] - pad, box.min[2] - pad)
+    box.max.set(box.max[0] + pad, box.max[1] + pad, box.max[2] + pad)
+  }
+  return box
 }

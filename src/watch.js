@@ -10,6 +10,8 @@
 /** @type {WeakMap<object, number>} */
 const ids = new WeakMap()
 let nextId = 1
+/** Does a material's shader hook read the clock? @param {{ vertex: string, fragment: string, lit: string }} h */
+export const usesTime = (h) => /\buTime\b/.test(h.vertex + h.fragment + h.lit)
 /** @param {object} o */
 const idOf = (o) => {
   let id = ids.get(o)
@@ -24,14 +26,17 @@ export class ChangeWatch {
   #previousCount = -1
   /** @type {string[]} */ #strings = []
   /** @type {string[]} */ #previousStrings = []
+  #time = 0
 
   /**
    * Has anything that affects the picture changed since the last call? The first call says yes.
    * @param {Scene} scene
    * @param {Camera} camera
+   * @param {number} [time] the View's clock, which shader hooks reading uTime follow
    * @returns {boolean}
    */
-  changed(scene, camera) {
+  changed(scene, camera, time = 0) {
+    this.#time = time
     this.#count = 0
     this.#strings = []
     this.#camera(camera)
@@ -194,7 +199,18 @@ export class ChangeWatch {
     this.#pushAll(m.translucencyColor)
     this.#push((m.unlit ? 1 : 0) | (m.flatShading ? 2 : 0) | (m.doubleSided ? 4 : 0) | (m.vertexColors ? 8 : 0) |
       (m.depthWrite ? 16 : 0) | (m.depthTest ? 32 : 0) | (m.sizeAttenuation ? 64 : 0) | (m.blending === 'additive' ? 128 : m.blending === 'multiply' ? 1024 : 0) | (m.transparent ? 256 : 0) | (m.fog ? 512 : 0))
-    for (const [, texture] of m.textures) this.#texture(texture)
+    for (const [, texture] of m.allTextures) this.#texture(texture)
+    const hooks = m.shader
+    if (hooks) {
+      this.#push(idOf(hooks))
+      for (const v of Object.values(hooks.uniforms)) {
+        if (typeof v === 'number') this.#push(v)
+        // numbers and colours - textures count through their versions, above
+        else if (Array.isArray(v) || ArrayBuffer.isView(v)) this.#pushAll(/** @type {ArrayLike<number>} */ (v))
+      }
+      // a hook that reads the clock moves on its own while time runs
+      if (usesTime(hooks)) this.#push(this.#time)
+    }
   }
 
   /** @param {any} texture */

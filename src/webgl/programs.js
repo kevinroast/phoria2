@@ -4,7 +4,7 @@
 // draws again when they are done. Nothing waits on a status check until a program is used.
 import { shaderSource } from './shaders.js'
 
-/** @import { ShaderKind } from './shaders.js' */
+/** @import { HookSource, ShaderKind } from './shaders.js' */
 
 /**
  * @typedef {object} Program
@@ -13,10 +13,12 @@ import { shaderSource } from './shaders.js'
  * @property {(name: string, value: any) => void} set set a uniform by name (ignored if the shader doesn't use it)
  * @property {number} frame the frame its per-frame uniforms were last set for
  * @property {boolean} ready compiled, linked and its uniforms found
+ * @property {string} [failed] the compiler's log, for a program with a material's shader hooks that
+ *   failed - those are reported and drawn without, rather than thrown
  */
 
 /**
- * @typedef {Program & { shaders: [WebGLShader, WebGLShader], sources: [string, string] }} Building
+ * @typedef {Program & { shaders: [WebGLShader, WebGLShader], sources: [string, string], hooked: boolean }} Building
  */
 
 export class Programs {
@@ -49,13 +51,14 @@ export class Programs {
    * @param {ShaderKind | string} kind a drawable kind, or a pass's name when it brings its sources
    * @param {string[]} defines
    * @param {[string, string]} [sources] a pass's vertex and fragment shaders
+   * @param {HookSource | null} [hooks] a material's shader hooks, spliced in (its id is in the defines)
    * @returns {Program}
    */
-  get(kind, defines, sources) {
+  get(kind, defines, sources, hooks = null) {
     const key = `${kind}|${defines.join(',')}`
     let p = this.#cache.get(key)
     if (!p) {
-      p = this.#start(key, shaderSource(sources ?? /** @type {ShaderKind} */ (kind), defines))
+      p = this.#start(key, shaderSource(sources ?? /** @type {ShaderKind} */ (kind), defines, hooks), !!hooks)
       this.#cache.set(key, p)
     }
     return p
@@ -65,10 +68,11 @@ export class Programs {
    * A program, waiting for it to finish compiling if it hasn't - for passes and picking, which
    * need their programs now.
    * @param {ShaderKind | string} kind @param {string[]} defines @param {[string, string]} [sources]
+   * @param {HookSource | null} [hooks]
    * @returns {Program}
    */
-  ready(kind, defines, sources) {
-    const p = this.get(kind, defines, sources)
+  ready(kind, defines, sources, hooks = null) {
+    const p = this.get(kind, defines, sources, hooks)
     if (!p.ready) this.#finish(/** @type {Building} */ (p))
     return p
   }
@@ -115,9 +119,10 @@ export class Programs {
 
   /**
    * Start compiling and linking, without asking how it went - that would wait for it.
-   * @param {string} key @param {[string, string]} sources @returns {Program}
+   * @param {string} key @param {[string, string]} sources @param {boolean} [hooked] has a material's own code
+   * @returns {Program}
    */
-  #start(key, sources) {
+  #start(key, sources, hooked = false) {
     const gl = this.gl
     const shader = (type, source) => {
       const s = /** @type {WebGLShader} */ (gl.createShader(type))
@@ -132,7 +137,7 @@ export class Programs {
     gl.attachShader(program, fs)
     gl.linkProgram(program)
     /** @type {Building} */
-    const p = { program, key, frame: -1, ready: false, set() {}, shaders: [vs, fs], sources }
+    const p = { program, key, frame: -1, ready: false, set() {}, shaders: [vs, fs], sources, hooked }
     // without parallel compiling there is nothing to gain by waiting until it's used
     if (!this.#parallel) this.#finish(p)
     return p
@@ -143,6 +148,12 @@ export class Programs {
     const gl = this.gl
     const { program, key, shaders, sources } = p
     if (!gl.getProgramParameter(program, gl.LINK_STATUS) && !gl.isContextLost()) {
+      // a material's own code failing is its problem, not the frame's: kept to be reported
+      if (p.hooked) {
+        p.failed = shaders.map((s) => gl.getShaderParameter(s, gl.COMPILE_STATUS) ? '' : gl.getShaderInfoLog(s) ?? '').join('\n') || (gl.getProgramInfoLog(program) ?? 'failed to link')
+        p.ready = true
+        return
+      }
       // the shader that failed says why, with its source numbered to match the log
       shaders.forEach((s, i) => {
         if (gl.getShaderParameter(s, gl.COMPILE_STATUS)) return

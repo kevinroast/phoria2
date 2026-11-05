@@ -190,6 +190,8 @@ contract('Material', {
     dash: { value: 0.5, read: (m) => m.dash, default: 0, bad: -1, error: 'dash' },
     gap: { value: 0.25, read: (m) => m.gap, default: 0, bad: 'wide', error: 'gap' },
     dashOffset: { value: -2, read: (m) => m.dashOffset, default: 0, bad: 'along', error: 'dashOffset' },
+    shader: { value: { vertex: 'local.y += uAmp;', uniforms: { uAmp: 0.5 } }, read: (m) => m.shader && [m.shader.vertex, m.shader.uniforms.uAmp], expect: ['local.y += uAmp;', 0.5],
+      default: null, bad: { vertex: 3 }, error: 'GLSL as a string' },
     alphaTest: { value: 0.5, read: (m) => m.alphaTest, default: 0, bad: 2, error: 'alphaTest' },
     normalScale: { value: 0.5, read: (m) => m.normalScale, default: 1, bad: 'strong', error: 'normalScale' },
     bumpScale: { value: 0.002, read: (m) => m.bumpScale, default: 1, bad: 'deep', error: 'bumpScale' },

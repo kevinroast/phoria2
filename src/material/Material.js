@@ -8,6 +8,33 @@ import { Texture } from './Texture.js'
 /** A map: a Texture, its options, or just a url. @typedef {Texture | TextureOptions | string} MapInput */
 
 /**
+ * A shader uniform's value: a number (float), two to four numbers (vec2-vec4), a colour - a colour
+ * string or Color, sent linear as the shader works (vec3) - or a Texture (sampler2D).
+ * @typedef {number | number[] | ColorInput | Texture} ShaderUniform
+ */
+
+/**
+ * Small pieces of GLSL run inside phoria2's own shader, so lighting, shadows, fog, clipping,
+ * picking and outlines keep working. Every hook can read `uTime` (the View's clock, in seconds)
+ * and the uniforms given.
+ * @typedef {object} ShaderHooks
+ * @property {string} [vertex] runs on each vertex before it is placed: change `local` (vec3, the
+ *   geometry's own space) - and for meshes `n`, its normal; reads `uv` (meshes), `index` (the
+ *   instance, point or segment), `size` (points: change it too) and `along` (lines: 0 at a
+ *   segment's start, 1 at its end)
+ * @property {string} [fragment] runs on each pixel before lighting: change `base` (vec4: linear
+ *   colour and alpha) and, on meshes, `emissive`; `discard` cuts the pixel away - shadows and
+ *   picking too. Reads `vUv`, `vWorldPosition`, `vNormal` (meshes), `pointUv` and `index`
+ *   (points), `distance` along the line (lines)
+ * @property {string} [lit] runs after lighting: change `color` (vec3, linear) and `base.a` - glows,
+ *   scanlines and fades the light doesn't touch
+ * @property {Record<string, ShaderUniform>} [uniforms] values the hooks read, by name; change them on
+ *   `material.shader.uniforms` and the View redraws
+ * @property {number} [bounds] how far, in world units, the vertex hook can move a vertex: bounds are
+ *   padded by it for culling, framing and shadows. Without it a vertex hook turns frustum culling off
+ */
+
+/**
  * @typedef {object} MaterialOptions
  * @property {string} [name]
  * @property {ColorInput} [color] base colour (default white)
@@ -71,6 +98,8 @@ import { Texture } from './Texture.js'
  * @property {boolean} [depthTest] (default true)
  * @property {number} [size] Points: diameter in world units, or pixels when sizeAttenuation is off (default 1)
  * @property {boolean} [sizeAttenuation] Points: sized in the world, so smaller with distance (default true)
+ * @property {ShaderHooks | null} [shader] GLSL of your own, run at fixed points in the shader - waves,
+ *   dissolves, glows (default none)
  * @property {number} [width] Lines: width in pixels (default 1)
  * @property {number} [dash] Lines: dashed, with dashes this long in the model's units; 0 is solid (default 0)
  * @property {number} [gap] Lines: the gaps between dashes; 0 is as long as the dashes (default 0)
@@ -97,7 +126,10 @@ const DEFAULTS = {
   doubleSided: false, vertexColors: false, blending: 'normal', depthWrite: true, depthTest: true, fog: true,
   size: 1, sizeAttenuation: true, width: 1, dash: 0, gap: 0, dashOffset: 0,
 }
-const OPTIONS = ['name', ...Object.keys(COLORS), ...MAPS, ...FLAGS, ...Object.keys(NUMBERS), 'blending']
+const OPTIONS = ['name', ...Object.keys(COLORS), ...MAPS, ...FLAGS, ...Object.keys(NUMBERS), 'blending', 'shader']
+const HOOKS = ['vertex', 'fragment', 'lit', 'uniforms', 'bounds']
+// names the shader keeps for itself
+const RESERVED = /^(gl_|phoria)|^uTime$/
 
 // what agents (and three.js habits) will reach for
 const HINTS = {
@@ -119,6 +151,10 @@ const HINTS = {
   colour: "use 'color'",
   emissiveColor: "use 'emissive'",
   alpha: "use 'opacity'",
+  onBeforeCompile: "use 'shader': { vertex, fragment, lit, uniforms } - GLSL run inside phoria2's own shader",
+  vertexShader: "use 'shader': { vertex: 'local.y += sin(local.x + uTime);' } - a hook, not a whole shader",
+  fragmentShader: "use 'shader': { fragment: 'base.rgb *= 0.5;' } - a hook, not a whole shader",
+  uniforms: "use 'shader': { uniforms: { uAmount: 1 } }",
 }
 
 /**
@@ -176,6 +212,8 @@ export class Material {
   #maps = Object.fromEntries(MAPS.map((m) => [m, null]))
   /** @type {Set<() => void>} */
   #onDispose = new Set()
+  /** @type {Required<Omit<ShaderHooks, 'bounds'>> & { bounds: number | null } | null} */
+  #shader = null
 
   /** @param {MaterialOptions} [options] */
   constructor(options = {}) {
@@ -189,7 +227,25 @@ export class Material {
       else if (key in NUMBERS) this[key] = range(key, value, NUMBERS[key])
       else if (key === 'blending') this.blending = checkOneOf('Material', 'blending', value, ['normal', 'additive', 'multiply'])
       else if (key === 'name') this.name = String(value)
+      else if (key === 'shader') this.shader = value
     }
+  }
+
+  /**
+   * GLSL hooks run inside the shader, or null. Change its uniforms in place
+   * (`material.shader.uniforms.uAmount = 2`); assign a new object to change the code.
+   * @returns {Required<Omit<ShaderHooks, 'bounds'>> & { bounds: number | null } | null}
+   */
+  get shader() { return this.#shader }
+  /** @param {ShaderHooks | null} v */
+  set shader(v) { this.#shader = shaderHooks(v) }
+
+  /** @internal Every texture the material reads: its maps, then its shader's uniform textures. @returns {[string, Texture][]} */
+  get allTextures() {
+    const maps = this.textures
+    const u = this.#shader?.uniforms
+    if (!u) return maps
+    return [...maps, ...Object.entries(u).filter(([, v]) => v instanceof Texture).map(([k, v]) => /** @type {[string, Texture]} */ ([`shader.${k}`, v]))]
   }
 
   /** @internal
@@ -322,12 +378,13 @@ export class Material {
     if (this.toon > 0) parts.push('toon')
     if (this.flatShading) parts.push('flat')
     if (this.vertexColors) parts.push('vcolor')
+    if (this.#shader) parts.push('hooks')
     return parts.join('+')
   }
 
   /** Resolves when every texture has loaded. @returns {Promise<void>} */
   async ready() {
-    await Promise.all(this.textures.map(([, t]) => t.ready))
+    await Promise.all(this.allTextures.map(([, t]) => t.ready))
   }
 
   /** @returns {Material} */
@@ -366,6 +423,17 @@ export class Material {
       const desc = keepTextures ? t : t.toJSON()
       if (desc) json[slot] = desc
     }
+    const s = this.#shader
+    if (s) {
+      /** @type {Record<string, unknown>} */
+      const hooks = {}
+      for (const part of ['vertex', 'fragment', 'lit']) if (s[part]) hooks[part] = s[part]
+      const uniforms = Object.entries(s.uniforms).map(([k, v]) => [k, v instanceof Texture ? (keepTextures ? v : v.toJSON())
+        : v instanceof Color ? v.getStyle() : Array.isArray(v) || ArrayBuffer.isView(v) ? Array.from(/** @type {ArrayLike<number>} */ (v)) : v])
+      if (uniforms.length) hooks.uniforms = Object.fromEntries(uniforms.filter(([, v]) => v != null))
+      if (s.bounds !== null) hooks.bounds = s.bounds
+      json.shader = hooks
+    }
     return json
   }
 }
@@ -382,4 +450,46 @@ function range(name, v, [min, max]) {
   const n = /** @type {number} */ (v)
   if (n < min || n > max) fail('Material', `'${name}' must be ${max === Infinity ? `${min} or more` : `${min}-${max}`}, got ${n}`)
   return n
+}
+
+/**
+ * Shader hooks checked and copied: each piece of code a string, the uniforms by valid names, their
+ * values numbers, two to four numbers, colours or textures.
+ * @param {ShaderHooks | null | undefined} v
+ */
+function shaderHooks(v) {
+  if (v == null) return null
+  if (typeof v !== 'object' || Array.isArray(v)) fail('Material', `'shader' is { vertex, fragment, lit, uniforms, bounds } - GLSL hooks - got ${describe(v)}`)
+  checkOptions('Material shader', v, HOOKS, {
+    vertexShader: "use 'vertex' - a few lines run on each vertex, not a whole shader",
+    fragmentShader: "use 'fragment' (before lighting) or 'lit' (after) - a few lines, not a whole shader",
+  })
+  for (const part of ['vertex', 'fragment', 'lit']) {
+    if (v[part] !== undefined && typeof v[part] !== 'string') fail('Material', `shader '${part}' is GLSL as a string, got ${describe(v[part])}`)
+  }
+  if (!v.vertex && !v.fragment && !v.lit) fail('Material', "'shader' needs at least one of 'vertex', 'fragment' or 'lit'")
+  const uniforms = v.uniforms ?? {}
+  if (typeof uniforms !== 'object' || Array.isArray(uniforms)) fail('Material', `shader 'uniforms' is an object of name: value, got ${describe(uniforms)}`)
+  /** @type {Record<string, ShaderUniform>} */
+  const own = {}
+  for (const [name, value] of Object.entries(uniforms)) {
+    if (!/^[A-Za-z_]\w*$/.test(name)) fail('Material', `shader uniform '${name}' isn't a GLSL name - letters, digits and _, not starting with a digit`)
+    if (RESERVED.test(name)) fail('Material', `shader uniform '${name}' is a name phoria2 keeps${name === 'uTime' ? " - uTime is there already, the View's clock in seconds" : ''}`)
+    own[name] = uniformValue(name, value)
+  }
+  const bounds = v.bounds === undefined || v.bounds === null ? null : Math.max(0, checkNumber('Material', 'shader bounds', v.bounds))
+  return { vertex: v.vertex ?? '', fragment: v.fragment ?? '', lit: v.lit ?? '', uniforms: own, bounds }
+}
+
+/** A uniform's value as kept: numbers and arrays as given, colours as Colors, textures as Textures. @param {string} name @param {unknown} v @returns {ShaderUniform} */
+function uniformValue(name, v) {
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if ((Array.isArray(v) || ArrayBuffer.isView(v)) && /** @type {ArrayLike<unknown>} */ (v).length >= 2 && /** @type {ArrayLike<unknown>} */ (v).length <= 4 && Array.from(/** @type {ArrayLike<unknown>} */ (v)).every((n) => typeof n === 'number' && Number.isFinite(n))) {
+    return Array.from(/** @type {ArrayLike<number>} */ (v))
+  }
+  if (v instanceof Texture) return v
+  if (v instanceof Color) return v
+  if (v && typeof v === 'object' && 'url' in v) return new Texture(/** @type {any} */ (v))
+  if (typeof v === 'string') return Color.fromInput(v, 'Material')
+  return fail('Material', `shader uniform '${name}' is a number, two to four numbers, a colour or a Texture, got ${describe(v)}`)
 }

@@ -3,6 +3,7 @@ import * as mat4 from '../math/mat4.js'
 import { Geometry } from '../geometry/Geometry.js'
 import { Material } from '../material/Material.js'
 import { CLIP_ONLY_FRAGMENT, MESH_VERTEX } from './shaders.js'
+import { hookFailed, hookFor, setHookUniforms } from './hooks.js'
 import { collect } from '../frame.js'
 import { checkNumber, checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '../validate.js'
 import { GLContext } from './context.js'
@@ -223,6 +224,8 @@ export class WebGLRenderer {
     const env = frame.environment
     const bg = frame.background
     const passes = gpu.loadPasses(!!frame.shadow || frame.spotShadows.length > 0 || !!frame.pointShadow || frame.outlines.length > 0 || (typeof env === 'object' && !!env.image) || (!!bg && !('getHex' in bg) && !!bg.image))
+    // shader hooks that read the clock read it in the shadow maps and outlines too
+    if (passes) passes.time = frame.time ?? 0
     this.#environment = passes && typeof env === 'object' ? passes.environment(env) : null
     if (passes && typeof env === 'object' && env.image && !this.#environment) {
       warnOnce(env, env.isHDR ? "this device can't render to float textures, which HDR environments need - lighting without it"
@@ -419,15 +422,25 @@ export class WebGLRenderer {
       else if (material.blending === 'multiply') defines.push('FOG_MULTIPLY')
     }
     if (clip) defines.push('CLIP')
+    // a material's own GLSL, spliced into this program
+    const hook = hookFor(material)
+    if (hook) defines.push(...hook.defines)
     const programs = this.#gpu.programs
-    const program = programs.get(kind, defines)
+    const program = programs.get(kind, defines, undefined, hook?.source)
     if (!programs.isReady(program)) {
       if (!this.#wait) {
         // still compiling: drawn once it's done, rather than holding up everything else
         this.info.compiling++
         return
       }
-      programs.ready(kind, defines)
+      programs.ready(kind, defines, undefined, hook?.source)
+    }
+    if (program.failed) {
+      // reported once; drawn without the hooks from the next frame
+      hookFailed(material, /** @type {import('./hooks.js').Hook} */ (hook), program.failed)
+      // counted as still compiling, so the View draws again - with the material's plain program
+      this.info.compiling++
+      return
     }
     gl.useProgram(program.program)
 
@@ -472,6 +485,7 @@ export class WebGLRenderer {
     }
     program.set('uColor', material.color)
     program.set('uOpacity', material.opacity)
+    if (hook) setHookUniforms(program, material, frame.time ?? 0, (t) => this.#gpu.resources.texture(t))
     if (fog) {
       program.set('uFogColor', fog.color)
       program.set('uFogRange', [fog.near, fog.far])

@@ -3,6 +3,7 @@
 // instances there are, where testing rays against 100,000 instances on the CPU takes milliseconds.
 // Loaded the first time a View picks.
 import { CLIP, COMMON, LINES_VERTEX, MESH_VERTEX, POINTS_VERTEX } from './shaders.js'
+import { hookFor, passDefines, setHookUniforms } from './hooks.js'
 import * as mat4 from '../math/mat4.js'
 
 /** @import { Programs } from './programs.js' */
@@ -21,9 +22,16 @@ flat in uint vPickElement;
 #ifdef SPRITES
 in vec2 vUv;
 #endif
-#ifdef CLIP
+#if defined(CLIP) || defined(HOOK_FRAGMENT)
 in vec3 vWorldPosition;
 #endif
+#ifdef HOOK_FRAGMENT
+// a mesh's fragment hook: what it cuts away can't be picked
+in vec3 vNormal;
+in vec2 vUv;
+in vec3 vColor;
+#endif
+//@hook uniforms
 uniform uint uPickId;
 layout(location = 0) out uvec4 pickOut;
 ${COMMON}
@@ -31,6 +39,14 @@ ${CLIP}
 void main() {
 #ifdef CLIP
   clipAway(vWorldPosition);
+#endif
+#ifdef HOOK_FRAGMENT
+  {
+    vec4 base = vec4(vColor, 1.0);
+    vec3 emissive = vec3(0.0);
+//@hook fragment
+    if (base.a <= 0.0) discard;
+  }
 #endif
 #ifdef ROUND
 #ifdef SPRITES
@@ -233,7 +249,10 @@ export class Picker {
       if (sprites) defines.push('SPRITES')
     }
     if (kind === 'mesh' && item.clip) defines.push('CLIP')
-    const program = this.programs.ready(`pick-${kind}`, defines, SOURCES[kind])
+    const hook = hookFor(material)
+    if (hook) defines.push(...passDefines(hook, kind === 'mesh'))
+    const program = this.programs.ready(`pick-${kind}`, defines, SOURCES[kind], hook?.source)
+    if (program.failed) return
     gl.useProgram(program.program)
     program.set('uView', frame.camera.view)
     program.set('uProjection', this.#projection)
@@ -242,6 +261,7 @@ export class Picker {
     program.set('uPickId', id)
     program.set('uHighlightIndex', -2)
     if (item.clip) program.set('uClipPlane', item.clip.plane)
+    if (hook) setHookUniforms(program, material, frame.time ?? 0, (t) => this.resources.texture(t))
 
     if (kind === 'lines') {
       gl.disable(gl.CULL_FACE)

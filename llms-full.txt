@@ -468,6 +468,116 @@ on top, as with UVs (animate `offset` to scroll a pattern). 0 (the default) uses
 { bumpMap: pores, bumpScale: 0.0005, roughnessMap: sheen, triplanar: 45 }   // bone texture on a scanned skull
 ```
 
+**Shader hooks** - a few lines of GLSL of your own, run at fixed points inside phoria2's shader, for
+what the material options can't say: waves, wind, dissolves, scanlines, glows, colour by height. You
+write statements, not a shader: lighting, shadows, fog, clipping, picking and outlines keep working -
+a waving flag casts a waving shadow and is picked where it is drawn. Meshes, instanced meshes, points
+and lines all take them, as `material.shader`:
+
+```js
+new Mesh({ geometry: plane({ width: 3, depth: 2, segments: 40 }), material: {
+  color: '#3a7bd5', doubleSided: true,
+  shader: {
+    uniforms: { uAmp: 0.25 },
+    vertex: 'local.y += sin(local.x * 3.0 + uTime * 3.0) * uAmp;',        // a wave, in the geometry's own space
+    fragment: 'base.rgb *= 0.8 + 0.2 * sin(vWorldPosition.y * 20.0);',   // stripes, before lighting
+    lit: 'color += vec3(0.0, 0.1, 0.2) * (0.5 + 0.5 * sin(uTime));',     // a glow the light doesn't touch
+  },
+} })
+```
+
+Three hooks, each optional. What each can use (✎ = change it; everything else is read only):
+
+| | Mesh / InstancedMesh | Points | Lines |
+|---|---|---|---|
+| `vertex` - each vertex, before it is placed | ✎ `local` (vec3, own space), ✎ `n` (vec3 normal), `uv` (vec2), `index` (int: the instance) | ✎ `local`, ✎ `size` (float, times the material's), `index` (int: the point) | ✎ `local`, `along` (float: 0 at a segment's start, 1 at its end), `index` (int: the segment) - runs once per end, so a segment moves but stays straight |
+| `fragment` - each pixel, before lighting | ✎ `base` (vec4: linear colour, alpha), ✎ `emissive` (vec3), `vUv`, `vWorldPosition`, `vNormal`, `vColor`; `discard` | ✎ `base`, `pointUv` (vec2, 0-1 across the point), `index` (int); `discard` | ✎ `base`, `distance` (float: along the line, in the geometry's units); `discard` |
+| `lit` - each pixel, after lighting | ✎ `color` (vec3, linear, lit), ✎ `base.a` | ✎ `color`, ✎ `base.a` | ✎ `color`, ✎ `base.a` |
+
+Every hook can also read `uTime` - the View's clock in seconds - and the uniforms you give.
+
+- **`uniforms`**, by GLSL name: a number (float), two to four numbers (vec2-vec4), a colour string or
+  Color (vec3, sent linear) or a Texture (sampler2D, read with `texture(uName, uv)`). Change one on
+  `material.shader.uniforms` (`mesh.material.shader.uniforms.uAmp = 0.5`) and the View redraws; assign
+  a new `material.shader` to change the code. Names starting `gl_` or `phoria`, `uTime`, and phoria2's
+  own uniforms (`uColor`, `uModel`, `uOpacity`...) are taken.
+- **`uTime`**: a hook that reads it keeps the View drawing while time runs - no frame loop of your own.
+  `view.stop()` freezes it.
+- **Every pass runs the vertex hook** - shadow maps, outlines, GPU picking. A mesh's `fragment`
+  `discard` cuts its shadow and its picking too, so a dissolve leaves no shadow of what has gone.
+- **`bounds`**: how far, in world units, the vertex hook can move a vertex. Bounds are padded by it for
+  culling, `view.frame()` and shadows; without it a vertex hook turns frustum culling off for the node.
+- **Picking** a node a vertex hook moves is always done on the GPU, so clicks, hovers and tooltips find
+  it where it is drawn (the hit has the point, not a normal or uv). `pickAll`, `pickArea` and
+  `Raycaster` work from the geometry as given, not as moved.
+- **A hook that doesn't compile** is reported once, by its own line numbers - `shader.vertex line 2:
+  'wobble' : undeclared identifier` - with the names it can use, and the material is drawn without its
+  hooks. `view.explain()` lists the hooked materials.
+
+Recipes - each a material option to copy:
+
+```js
+// a wave with its normal bent to match, so the light follows the folds (a plane, a flag, a sheet)
+shader: { uniforms: { uAmp: 0.2 }, vertex: `
+  float phase = local.x * 3.0 - uTime * 4.0;
+  local.y += sin(phase) * uAmp;
+  n = normalize(vec3(-cos(phase) * 3.0 * uAmp, 1.0, 0.0));` }
+
+// ripples spreading from the middle of a plane (give it segments: 64 or so)
+shader: { vertex: `
+  float r = length(local.xz), phase = r * 6.0 - uTime * 3.0, h = 0.04 * exp(-r * 0.4);
+  local.y += sin(phase) * h;
+  vec2 slope = local.xz / max(r, 1e-3) * cos(phase) * 6.0 * h;
+  n = normalize(vec3(-slope.x, 1.0, -slope.y));` }
+
+// breathing: grow and shrink about the middle
+shader: { vertex: 'local *= 1.0 + 0.06 * sin(uTime * 2.0);' }
+
+// dissolve through a noise texture, its edge glowing (its shadow dissolves too)
+shader: { uniforms: { uNoise: noiseTexture }, fragment: `
+  float level = 0.5 - 0.55 * cos(uTime * 0.6);
+  float v = texture(uNoise, vUv).r;
+  if (v < level) discard;
+  emissive += vec3(1.0, 0.2, 0.02) * smoothstep(level + 0.05, level, v) * 5.0;` }
+
+// colour by height - a ramp from deep blue at y = 0 to orange at y = 2
+shader: { fragment: 'base.rgb = mix(vec3(0.01, 0.05, 0.5), vec3(1.0, 0.25, 0.0), clamp(vWorldPosition.y / 2.0, 0.0, 1.0));' }
+
+// scanlines over the lit picture
+shader: { lit: 'color *= 0.75 + 0.25 * step(0.5, fract(vWorldPosition.y * 20.0 - uTime));' }
+
+// fade with distance from a point (with transparent: true on the material)
+shader: { uniforms: { uCentre: [0, 0, 0] }, lit: 'base.a *= 1.0 - smoothstep(2.0, 4.0, distance(vWorldPosition, uCentre));' }
+
+// points: twinkling, each at its own rate, and soft and round
+shader: {
+  vertex: 'size *= 1.0 + 0.6 * sin(uTime * (1.5 + mod(float(index) * 0.618, 1.0) * 3.0) + float(index));',
+  fragment: 'base.a *= smoothstep(1.0, 0.0, length(pointUv * 2.0 - 1.0));',
+}
+
+// lines: pulses running along them (distance is along each run of joined segments)
+shader: { fragment: 'base.rgb += vec3(0.3, 0.9, 1.0) * smoothstep(0.85, 1.0, fract(distance * 0.6 - uTime)) * 4.0;' }
+```
+
+Mistakes to avoid:
+
+- **Colours are linear**, as the shader works, so an sRGB-looking value comes out pale. Strong colours
+  are low numbers - roughly the sRGB value squared: orange `vec3(1.0, 0.22, 0.0)`, deep blue
+  `vec3(0.01, 0.04, 0.42)`. Colour uniforms given as strings are converted for you.
+- **Hooks are statements**, run inside phoria2's `main()`: no functions of your own, no `uniform`
+  declarations (use `uniforms`), no `return` in a mesh or points hook. Declare locals as you like.
+- **`index` is an int**: `float(index)` to do sums with it.
+- **Bend the normal when you move vertices**, or the light shades the shape as it was: change `n`
+  (meshes) to match, and keep it normalised. Waves on a flat plane need `segments` to bend at all.
+- **Fades need `transparent: true`**: changing `base.a` in an opaque material changes nothing.
+  `discard` works either way.
+- **Move in the geometry's own space**: `local` is before the node's position, rotation and scale (and
+  an instance's), so a wave along `local.y` turns with the mesh.
+- **Use `vWorldPosition`** for effects fixed in the world - a band at a height, a fade round a point -
+  and `vUv` for ones fixed to the surface.
+- **Lines move by their ends**: a straight segment stays straight - give the geometry more segments to
+  bend a line.
+
 ## Lights and cameras
 
 | | Options |

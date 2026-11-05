@@ -151,6 +151,7 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  * @property {PointShadowFrame | null} pointShadow a point light's shadow, all round it
  * @property {FrameCap[]} caps section planes' caps to fill, after the opaque pass
  * @property {{ drawn: number, culled: number }} stats
+ * @property {number} [time] the View's clock in seconds, for shader hooks that read uTime
  * @property {FrameHighlight | null} highlight set by the View for hover highlighting
  * @property {any[]} overlays HTML elements carried by the nodes drawn (node.overlay)
  * @property {boolean} interactive some node has a tooltip, highlight or pointer handler
@@ -191,6 +192,7 @@ export function collect(scene, camera) {
     pointShadow: null,
     caps: [],
     stats: { drawn: 0, culled: 0 },
+    time: 0,
     highlight: null,
     overlays: [],
     interactive: false,
@@ -359,8 +361,11 @@ function drawItem(node, view, planes, clip) {
   const center = box.getCenter().applyMatrix4(worldMatrix)
   const scale = Math.max(Math.hypot(worldMatrix[0], worldMatrix[1], worldMatrix[2]),
     Math.hypot(worldMatrix[4], worldMatrix[5], worldMatrix[6]), Math.hypot(worldMatrix[8], worldMatrix[9], worldMatrix[10]))
-  // instanced meshes spread their copies anywhere, so they aren't culled as a whole
-  if (planes && node.frustumCulled && !instances && !sphereInFrustum(planes, center, box.getRadius() * scale)) return null
+  // instanced meshes spread their copies anywhere, so they aren't culled as a whole; a shader hook
+  // that moves vertices is culled by its padded bounds, or - without them - not at all
+  const hooks = material.shader?.vertex ? material.shader : null
+  const pad = hooks ? hooks.bounds : 0
+  if (planes && node.frustumCulled && !instances && pad !== null && !sphereInFrustum(planes, center, box.getRadius() * scale + pad)) return null
   // all of it on the cut-away side of a clip - points and lines aren't cut, so they stay
   const cuts = clip && node.drawMode === 'triangles' ? clip : null
   if (cuts && !instances) {
