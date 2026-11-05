@@ -24,6 +24,7 @@ import { Box3 } from './value/Box3.js'
  * @property {boolean} [sharedContext] drawn with the page's shared WebGL context
  * @property {{ hover: number, click: number, tooltip: boolean, highlight: boolean, keyboard?: boolean, reducedMotion?: boolean, description?: string | null }} interaction
  * @property {string[]} [notes] lines from nodes that describe themselves, such as charts
+ * @property {Record<string, unknown> | null} [debug] what debug drawing shows, when it is on
  */
 
 const fmt = (n) => (Math.abs(n) >= 1e4 || (n !== 0 && Math.abs(n) < 1e-3) ? n.toExponential(2) : String(+n.toFixed(2)))
@@ -150,6 +151,11 @@ export function explain(info) {
     warnings.unshift(`nothing is in view: ${plural(frame.stats.culled, 'object')} are outside the camera's view - call view.frame() to fit the camera to the scene`)
   }
 
+  // debug drawing on: said, so a picture full of lines isn't a mystery
+  if (info.debug) {
+    const shown = Object.entries(info.debug).filter(([, v]) => v).map(([k, v]) => (v === true ? k : `${k} (${v})`))
+    lines.push(`Debug drawing: ${shown.join(', ') || 'nothing'} - helpers aren't part of the scene, picked or counted above`)
+  }
   lines.push(warnings.length ? `Warnings:\n${warnings.map((w) => `- ${w}`).join('\n')}` : 'No warnings.')
   return lines.join('\n')
 }

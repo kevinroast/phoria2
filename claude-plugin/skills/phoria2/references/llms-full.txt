@@ -147,6 +147,29 @@ Methods:
 - `await view.toImage()` - a PNG `Blob` of the picture, labels included.
 - `await view.explain()` - a plain-text report of what is drawn, with warnings ("nothing in view",
   "no lights", labels hidden...). Use it to debug a blank or wrong picture.
+- `view.debug` (or the `debug` option) - pictures for a person checking a scene, drawn over it:
+  `true` for all but normals, or `{ lights, shadows, bounds, normals, axes, camera, stats }`.
+  - `lights`: an arrow for each directional light (over the scene's middle, the way it shines), a
+    small sphere and a ring at its range for point lights, a cone for spot lights - in the light's colour.
+  - `shadows`: the box (directional) or cone (spot) each shadow map is drawn from, in yellow - the
+    usual reason a shadow is cut off, blocky or soft.
+  - `bounds`: each drawable's world box, in cyan - what culling, `view.frame()` and shadow fitting
+    see. `'hovered'`: only what is under the pointer (an instance's own box).
+  - `normals`: a short magenta line along each vertex normal - for lighting that looks wrong on
+    imported or generated geometry. Meshes up to 5,000 vertices when all are shown; `'hovered'` shows
+    the mesh under the pointer, whatever its size.
+  - `axes`: x, y and z at the origin, red, green and blue. `camera`: the point the orbit turns round.
+  - `stats`: a corner readout - fps and frame time, the CPU time of a frame, draw calls, triangles,
+    programs, textures and geometries; `true` is top left, or `'top-right'`, `'bottom-left'`,
+    `'bottom-right'`.
+
+  The helpers are lines in the scene's depth that also show faintly through what is in front of
+  them. They aren't part of the scene: never picked, framed, saved or counted, and `explain()` says
+  when debug drawing is on. Their code loads the first time debug is turned on.
+
+  ```js
+  view.debug = { lights: true, shadows: true, bounds: 'hovered', stats: 'bottom-right' }
+  ```
 - `render()`, `invalidate()` (redraw after changing data the view can't see), `dispose()`.
 
 If a page shows nothing or the wrong thing, `console.log(await view.explain())` before anything else.

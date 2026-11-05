@@ -29,6 +29,7 @@ import { checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '
 /** @import { ColorInput, Vec3Input } from './types.js' */
 /** @import { Node } from './scene/Node.js' */
 /** @import { Keyboard, KeyboardOptions } from './keyboard.js' */
+/** @import { DebugDraw, DebugOptions } from './debug.js' */
 
 /**
  * @typedef {'auto' | 'always' | 'manual'} RenderMode
@@ -76,6 +77,8 @@ import { checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '
  *   text } says what it hears (default: the tooltip's text, the data, or the name). Default false
  * @property {string | null} [description] what the view shows, for screen readers: the canvas's label. With keyboard
  *   on and no description, one is made from the scene (charts describe themselves)
+ * @property {boolean | DebugOptions} [debug] pictures for checking a scene: lights, shadow cameras, bounds,
+ *   normals, axes, the orbit target and a stats readout. true shows all but normals. Default false
  */
 
 /** @typedef {'click' | 'hover'} ViewEvent */
@@ -83,7 +86,12 @@ import { checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '
 
 const OPTIONS = ['canvas', 'scene', 'camera', 'orbit', 'background', 'renderMode', 'framing', 'highlight', 'tooltip', 'pixelRatio',
   'antialias', 'outlineAntialias', 'context', 'toneMapping', 'exposure', 'bloom', 'autoLight', 'maxDelta', 'reducedMotion',
-  'keyboard', 'description']
+  'keyboard', 'description', 'debug']
+// what debug: true shows - everything but normals, which bristle on a big model
+/** @type {Required<DebugOptions>} */
+const DEBUG_ALL = { lights: true, shadows: true, bounds: true, normals: false, axes: true, camera: true, stats: 'top-left' }
+const DEBUG_OPTIONS = Object.keys(DEBUG_ALL)
+const CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
 const FRAMING_OPTIONS = ['keep', 'aspect']
 const HINTS = {
   renderer: 'the View makes its renderer - read it from view.renderer',
@@ -180,6 +188,12 @@ export class View {
   /** @type {Keyboard | null} */ #keyboard = null
   /** @type {Hit | null} */ #keyFocus = null
   /** @type {string | null} */ #description = null
+  // debug drawing: its code loads when turned on; the helpers are added to each frame, then taken out
+  /** @type {Required<DebugOptions> | null} */ #debug = null
+  /** @type {DebugDraw | null} */ #debugDraw = null
+  #debugLoading = false
+  #drawnAt = 0
+  #frameMs = 0
   // the canvas had no role, so describing it gave it one - taken away again with the description
   #gaveRole = false
   // the system's prefers-reduced-motion, kept up to date
@@ -277,6 +291,7 @@ export class View {
       interactive: (label) => labelHandlers(label, 'click').length > 0 || labelHandlers(label, 'hover').length > 0,
       on: (type, label, e) => this.#labelPointer(type, label, e),
     })
+    if (options.debug !== undefined) this.debug = options.debug
 
     if (options.framing !== undefined) {
       // 'both' is short for { keep: 'both' }
@@ -363,6 +378,32 @@ export class View {
   #setMotion(v) {
     if (v !== 'auto' && typeof v !== 'boolean') fail('View', `'reducedMotion' is 'auto' (as the system's setting), true or false, got ${describe(v)}`)
     this.#motion = v
+    this.invalidate()
+  }
+
+  /**
+   * Debug drawing, or false: what it shows, as DebugOptions. Assign true for everything but normals,
+   * options for some, or false. Its code loads the first time it's turned on.
+   *
+   *     view.debug = { lights: true, shadows: true, bounds: 'hovered', stats: 'bottom-right' }
+   * @returns {boolean | DebugOptions} the options in force, every one given, or false
+   */
+  get debug() { return this.#debug ?? false }
+  /** @param {boolean | DebugOptions} v */
+  set debug(v) {
+    this.#debug = debugOptions(v)
+    if (this.#debug && !this.#debugDraw && !this.#debugLoading) {
+      this.#debugLoading = true
+      import('./debug.js').then(({ DebugDraw }) => {
+        this.#debugLoading = false
+        if (this.#disposed) return
+        this.#debugDraw = new DebugDraw(this.#labels.root)
+        this.invalidate()
+      })
+    }
+    // hovered helpers need the pointer followed
+    if (this.#debug && (this.#debug.bounds === 'hovered' || this.#debug.normals === 'hovered')) this.#pickPending = true
+    if (!this.#debug) this.#debugDraw?.stats(false, /** @type {any} */ ({}), 0, 0)
     this.invalidate()
   }
 
@@ -514,7 +555,25 @@ export class View {
     frame.time = this.time
     frame.highlight = this.#highlightFor(this.#hovered)
     this.#occlude(frame)
+    // debug helpers go on the end of the frame for drawing, and come off again after: never picked,
+    // explained or kept in lastFrame
+    const debug = this.#debug && this.#debugDraw
+      ? this.#debugDraw.add(frame, this.#debug, { camera: this.camera, hovered: this.#hovered, bounds: this.scene.boundsFrom(this.camera) })
+      : null
+    const started = performance.now()
     this.renderer.renderFrame(frame, { wait })
+    if (debug) {
+      frame.opaque.length -= debug.opaque
+      frame.transparent.length -= debug.transparent
+    }
+    if (this.#debugDraw) {
+      const now = performance.now()
+      // time between frames drawn one after another, smoothed; after a pause, none
+      const gap = this.#drawnAt ? now - this.#drawnAt : 0
+      this.#frameMs = gap > 0 && gap < 250 ? this.#frameMs * 0.9 + gap * 0.1 : 0
+      this.#drawnAt = now
+      this.#debugDraw.stats(this.#debug?.stats ?? false, this.renderer.info, this.#frameMs, now - started)
+    }
     this.#labelStats = this.#labels.update(frame.labels, frame.overlays)
     // a node with its own tooltip needs the tooltip's code
     if (frame.tooltips && !this.#tooltip) this.#loadTooltip()
@@ -981,6 +1040,7 @@ export class View {
       contextLost: !!this.renderer.gl?.isContextLost?.(),
       interaction: { hover: this.#handlers.hover.size, click: this.#handlers.click.size, tooltip: !!this.#tooltipContent, highlight: !!this.#highlight,
         keyboard: !!this.#keyboard, reducedMotion: this.reducedMotion, description: this.canvas.getAttribute?.('aria-label') ?? this.#description },
+      debug: this.#debug,
     })
   }
 
@@ -998,6 +1058,7 @@ export class View {
     this.#labels.dispose()
     this.#tooltip?.dispose()
     this.#keyboard?.dispose()
+    this.#debugDraw?.dispose()
     if (this.#description !== null && !this.#keyboard) this.description = null
     this.renderer.dispose(this.scene)
     if (this.#ownContext) ownContexts--
@@ -1056,7 +1117,12 @@ export class View {
 
   #needsHover() {
     return this.#handlers.hover.size > 0 || !!this.#tooltipContent || !!this.#highlight || this.#handlers.click.size > 0 ||
-      !!this.lastFrame?.interactive
+      !!this.lastFrame?.interactive || this.#debugHovers()
+  }
+
+  /** Does debug draw something for what is under the pointer? */
+  #debugHovers() {
+    return !!this.#debug && (this.#debug.bounds === 'hovered' || this.#debug.normals === 'hovered')
   }
 
   // pick under the pointer and tell everyone when the thing under it changes - on the GPU without
@@ -1101,7 +1167,7 @@ export class View {
     if (p && hit && this.#tooltip) this.#tooltip.show(hit, p.clientX, p.clientY)
     else this.#tooltip?.hide()
     if (same) return
-    if (this.#highlightFor(before) || this.#highlightFor(hit)) this.invalidate()
+    if (this.#highlightFor(before) || this.#highlightFor(hit) || this.#debugHovers()) this.invalidate()
     if (this.#handlers.click.size || this.lastFrame?.interactive) {
       this.canvas.style.cursor = hit && nearestAbove(hit.node, 'onDrag') ? 'grab' : hit && this.#clickable(hit) ? 'pointer' : ''
     }
@@ -1493,4 +1559,32 @@ function resolveCanvas(canvas) {
   }
   if (!(canvas instanceof HTMLCanvasElement)) fail('View', `'canvas' must be a <canvas> element or a selector, got ${describe(canvas)}`)
   return canvas
+}
+
+/**
+ * Debug options checked: true for everything but normals, false or null for none.
+ * @param {boolean | DebugOptions | null} v
+ * @returns {Required<DebugOptions> | null}
+ */
+function debugOptions(v) {
+  if (v === false || v === null) return null
+  if (v === true) return { ...DEBUG_ALL }
+  if (!v || typeof v !== 'object' || Array.isArray(v)) fail('View', `'debug' is true, false or { ${DEBUG_OPTIONS.join(', ')} }, got ${describe(v)}`)
+  checkOptions('View', v, DEBUG_OPTIONS, { helpers: "list what to draw: { lights: true, bounds: true, ... }", fps: "use 'stats: true'", wireframe: "use new Lines({ geometry: edges(geometry) }) for a wireframe" }, 'debug')
+  /** @type {any} */
+  const o = {}
+  for (const key of DEBUG_OPTIONS) {
+    const value = /** @type {any} */ (v)[key]
+    if (value === undefined) o[key] = false
+    else if (key === 'bounds' || key === 'normals') o[key] = value === 'hovered' ? 'hovered' : checkBool(key, value, "true, false or 'hovered'")
+    else if (key === 'stats') o[key] = value === true ? 'top-left' : value === false ? false : checkOneOf('View', 'debug.stats', value, CORNERS)
+    else o[key] = checkBool(key, value, 'true or false')
+  }
+  return o
+}
+
+/** @param {string} key @param {unknown} v @param {string} expected */
+function checkBool(key, v, expected) {
+  if (typeof v !== 'boolean') fail('View', `debug.${key} is ${expected}, got ${describe(v)}`)
+  return v
 }

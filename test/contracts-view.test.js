@@ -39,6 +39,7 @@ contract('View', {
     reducedMotion: { value: true, read: (v) => v.reducedMotion, default: false, bad: 'yes', error: 'reducedMotion' },
     keyboard: { value: true, only: 'it loads its code, then works the canvas - see accessibility.test.js', bad: 'yes', error: 'keyboard' },
     description: { value: 'Sales', read: (v) => v.description, default: null, bad: 3, error: 'description' },
+    debug: { value: { bounds: 'hovered', stats: 'bottom-right' }, read: (v) => v.debug && [v.debug.bounds, v.debug.stats, v.debug.lights], expect: ['hovered', 'bottom-right', false], default: false, bad: { bounds: 'some' }, error: "debug.bounds is true, false or 'hovered'" },
   },
 })
 
