@@ -284,6 +284,8 @@ const ENV_LEVELS = 6
 export class Passes {
   /** The View's clock, for shader hooks that read uTime - set by the renderer each frame. */
   time = 0
+  /** The camera's world position, for shader hooks' fresnel and cameraPosition - set each frame too. @type {ArrayLike<number>} */
+  cameraPosition = [0, 0, 0]
   /** @type {WeakMap<Texture, Environment>} */ #environments = new WeakMap()
   /** @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #shadow = null
   /** Spot lights' shadows, a tile each. @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #spotShadow = null
@@ -521,7 +523,7 @@ export class Passes {
       const program = this.programs.ready('depth', defines, DEPTH, hook?.source)
       if (program.failed) continue
       gl.useProgram(program.program)
-      if (hook) setHookUniforms(program, material, this.time, (t) => this.resources.texture(t))
+      if (hook) setHookUniforms(program, material, this.time, this.cameraPosition, (t) => this.resources.texture(t))
       program.set('uViewProjection', viewProjection)
       program.set('uModel', item.worldMatrix)
       if (item.clip) program.set('uClipPlane', item.clip.plane)
@@ -576,7 +578,7 @@ export class Passes {
         const program = smooth ? this.programs.ready('outline-cover', defines, OUTLINE_COVER, hook?.source) : this.programs.ready('outline-mask', defines, OUTLINE_MASK, hook?.source)
         if (program.failed) continue
         gl.useProgram(program.program)
-        if (hook) setHookUniforms(program, item.material, frame.time ?? 0, (t) => this.resources.texture(t))
+        if (hook) setHookUniforms(program, item.material, frame.time ?? 0, frame.camera.position, (t) => this.resources.texture(t))
         program.set('uViewProjection', frame.camera.viewProjection)
         program.set('uModel', item.worldMatrix)
         program.set('uMask', [outline.color[0], outline.color[1], outline.color[2], px / OUTLINE_MAX])

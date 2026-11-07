@@ -61,7 +61,7 @@ export function hookFor(material) {
         signature,
         defines: [...(s.vertex ? ['HOOK_VERTEX'] : []), ...(s.fragment ? ['HOOK_FRAGMENT'] : []), ...(s.lit ? ['HOOK_LIT'] : []), `HOOKS ${hooks.size + 1}`],
         source: {
-          uniforms: ['uniform float uTime;', ...types.split(';').filter(Boolean).map((t) => `uniform ${t};`)].join('\n'),
+          uniforms: ['uniform float uTime;', 'uniform vec3 cameraPosition;', ...types.split(';').filter(Boolean).map((t) => `uniform ${t};`)].join('\n'),
           helpers: HOOK_HELPERS,
           vertex: s.vertex, fragment: s.fragment, lit: s.lit,
         },
@@ -85,12 +85,14 @@ export function passDefines(hook, cuts) {
 }
 
 /**
- * Set the hook's uniforms: the clock, and the material's own values.
+ * Set the hook's uniforms: the clock, where the camera is, and the material's own values.
  * @param {Program} program @param {Material} material @param {number} time
+ * @param {ArrayLike<number>} camera the camera's world position
  * @param {(t: Texture) => WebGLTexture} texture
  */
-export function setHookUniforms(program, material, time, texture) {
+export function setHookUniforms(program, material, time, camera, texture) {
   program.set('uTime', time)
+  program.set('cameraPosition', camera)
   const u = /** @type {NonNullable<Material['shader']>} */ (material.shader).uniforms
   for (const name in u) {
     const v = u[name]
@@ -113,7 +115,7 @@ export function hookFailed(material, hook, log) {
     ? own.map((m) => `shader.${names[m[1]]} line ${m[2]}: ${m[3]}`).join('; ')
     : `in phoria2's shader around the hook: ${lines[0]?.[3] ?? log.trim().split('\n')[0]}`
   const uniforms = Object.keys(/** @type {NonNullable<Material['shader']>} */ (material.shader).uniforms)
-  warnOnce(material, `a shader hook doesn't compile - ${where}. Hooks can use ${HOOK_NAMES}, uTime${uniforms.length ? `, ${uniforms.join(', ')}` : ''}, and call hash, vnoise, snoise, snoised, vfbm, sfbm and sfbmd. The material is drawn without its hooks`)
+  warnOnce(material, `a shader hook doesn't compile - ${where}. Hooks can use ${HOOK_NAMES}, uTime${uniforms.length ? `, ${uniforms.join(', ')}` : ''}, cameraPosition, and call hash, vnoise, snoise, snoised, vfbm, sfbm, sfbmd, srgb, hsv2rgb, palette, fresnel, rotate2, rotate3, remap and saturate. The material is drawn without its hooks`)
 }
 
 const HOOK_NAMES = 'local, n, uv, index, size, along (vertex); base, emissive, vUv, vWorldPosition, vNormal, vColor, pointUv, distance (fragment); color, base (lit)'

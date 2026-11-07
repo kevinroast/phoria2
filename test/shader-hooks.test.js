@@ -51,6 +51,8 @@ describe('material.shader', () => {
     expect(make({ vertex: 'x;', uniforms: { '2fast': 1 } })).toThrow("isn't a GLSL name")
     expect(make({ vertex: 'x;', uniforms: { uTime: 1 } })).toThrow("uTime is there already")
     expect(make({ vertex: 'x;', uniforms: { snoise: 1 } })).toThrow('snoise() is a function every hook can call')
+    expect(make({ vertex: 'x;', uniforms: { saturate: 1 } })).toThrow('saturate() is a function every hook can call')
+    expect(make({ vertex: 'x;', uniforms: { cameraPosition: [0, 0, 0] } })).toThrow("the camera's world position")
     expect(make({ vertex: 'x;', uniforms: { gl_Foo: 1 } })).toThrow('a name phoria2 keeps')
     expect(make({ vertex: 'x;', uniforms: { uBad: [1, 2, 3, 4, 5] } })).toThrow('two to four numbers')
     expect(() => new Material(/** @type {any} */ ({ onBeforeCompile: () => {} }))).toThrow("use 'shader'")
@@ -77,7 +79,9 @@ describe('splicing hooks into the shaders', () => {
     const [vs, fs] = shaderSource('mesh', ['HOOK_VERTEX', 'HOOK_FRAGMENT'], { ...source, helpers: HOOK_HELPERS })
     for (const s of [vs, fs]) {
       for (const fn of ['float hash(float x)', 'float hash(vec3 p)', 'float vnoise(vec2 p)', 'float vnoise(vec3 p)', 'float snoise(vec2 p)', 'vec4 snoised(vec3 p)',
-        'float vfbm(vec2 p, int octaves)', 'float sfbm(vec3 p, int octaves)', 'vec3 sfbmd(vec2 p, int octaves)', 'float sfbm(vec2 p) {']) expect(s).toContain(fn)
+        'float vfbm(vec2 p, int octaves)', 'float sfbm(vec3 p, int octaves)', 'vec3 sfbmd(vec2 p, int octaves)', 'float sfbm(vec2 p) {',
+        'vec3 srgb(vec3 c)', 'vec3 hsv2rgb(vec3 hsv)', 'vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d)', 'float fresnel(vec3 normal, vec3 position, float power)',
+        'mat2 rotate2(float a)', 'mat3 rotate3(vec3 axis, float a)', 'float remap(float x, float a, float b, float c, float d)', 'vec4 saturate(vec4 x)']) expect(s).toContain(fn)
     }
     // built from integer bit-mixing, which GLSL ES 3.00 defines exactly - never fract(sin())
     expect(HOOK_HELPERS).not.toContain('fract(sin')
@@ -106,7 +110,7 @@ describe('hookFor()', () => {
     const b = hookFor(new Material({ shader: { ...wave, uniforms: { uAmp: 2 } } }))
     expect(a?.defines.slice(0, 1)).toEqual(['HOOK_VERTEX'])
     expect(a?.defines).toEqual(b?.defines)
-    expect(a?.source.uniforms).toBe('uniform float uTime;\nuniform float uAmp;')
+    expect(a?.source.uniforms).toBe('uniform float uTime;\nuniform vec3 cameraPosition;\nuniform float uAmp;')
     // a uniform of another type is another program
     expect(hookFor(new Material({ shader: { ...wave, uniforms: { uAmp: [1, 2] } } }))?.defines).not.toEqual(a?.defines)
     expect(hookFor(new Material())).toBe(null)

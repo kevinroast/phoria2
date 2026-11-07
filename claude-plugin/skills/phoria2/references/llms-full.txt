@@ -537,6 +537,22 @@ is a vec2 or vec3, and every result is 0 to 1:
   detail, fewer for softer and cheaper (1-12). Mostly 0.25-0.75 - the octaves average out.
 - `sfbmd(p)`, `sfbmd(p, octaves)` - simplex fbm with its gradient, as `snoised`: terrain normals.
 
+And the everyday ones, with `cameraPosition` (vec3, the camera in world space) to read too:
+
+- `srgb(c)` - a colour as picked (sRGB, as in a colour picker or CSS) to the linear colour hooks work
+  in: `base.rgb = srgb(vec3(0.75, 0.12, 0.16))` is the red you picked, not a pale pink.
+- `hsv2rgb(h, s, v)` (or a vec3) - hue, saturation and value 0-1 to a linear colour. Hue 0 red, 1/3
+  green, 2/3 blue, wrapping: `hsv2rgb(fract(vWorldPosition.y * 0.2 - uTime * 0.1), 0.8, 1.0)`.
+- `palette(t, a, b, c, d)` - Inigo Quilez's cosine palette, `a + b cos(2pi(c t + d))`, its four
+  vec3s as picked, the result linear. `palette(t, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.0, 0.33,
+  0.67))` is a rainbow; other a-d give heat, ocean, pastel ramps.
+- `fresnel(normal, position, power)` - how side-on a surface is to the camera, 0 facing it, 1 edge-on,
+  sharpened by the power: rim light, holograms, force fields, `fresnel(vNormal, vWorldPosition, 3.0)`.
+- `rotate2(angle)` - a mat2 turning anticlockwise: `rotate2(a) * v`. `rotate3(axis, angle)` - a mat3
+  turning about an axis. Twists, spins, turned uvs or noise.
+- `remap(x, inMin, inMax, outMin, outMax)` - from one range to another (not clamped; float, vec2 or
+  vec3 x). `saturate(x)` - clamped to 0-1, as HLSL has it.
+
 - **`uniforms`**, by GLSL name: a number (float), two to four numbers (vec2-vec4), a colour string or
   Color (vec3, sent linear) or a Texture (sampler2D, read with `texture(uName, uv)`). Change one on
   `material.shader.uniforms` (`mesh.material.shader.uniforms.uAmp = 0.5`) and the View redraws; assign
@@ -594,6 +610,23 @@ shader: { uniforms: { uPattern: patternTexture }, fragment: 'base.rgb *= texture
 // colour by height - a ramp from deep blue at y = 0 to orange at y = 2
 shader: { fragment: 'base.rgb = mix(vec3(0.01, 0.05, 0.5), vec3(1.0, 0.25, 0.0), clamp(vWorldPosition.y / 2.0, 0.0, 1.0));' }
 
+// rim glow: a hologram or force field - a faint body, bright where it turns away (with
+// transparent: true)
+shader: {
+  fragment: 'base.rgb = srgb(vec3(0.25, 0.9, 1.0)) * 0.15; emissive += srgb(vec3(0.25, 0.9, 1.0)) * fresnel(vNormal, vWorldPosition, 2.5) * 2.0;',
+  lit: 'base.a *= 0.3 + 0.7 * fresnel(vNormal, vWorldPosition, 1.5);',
+}
+
+// a twist: each height turned further round the y axis, its normal turned with it (give the mesh segments)
+shader: { vertex: 'mat2 turn = rotate2(local.y * 1.2 * sin(uTime)); local.xz = turn * local.xz; n.xz = turn * n.xz;' }
+
+// a hue climbing an object, and a cosine palette across another
+shader: { fragment: 'base.rgb = hsv2rgb(fract(vWorldPosition.y * 0.2 - uTime * 0.1), 0.75, 1.0);' }
+shader: { fragment: 'base.rgb = palette(vUv.x + uTime * 0.05, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.0, 0.33, 0.67));' }
+
+// instances as a meter: each bar's height from one sine, a phase apart by index, remapped and saturated
+shader: { vertex: 'float h = saturate(remap(sin(uTime * 2.0 + float(index) * 0.5), -1.0, 1.0, 0.05, 1.0)); local.y = (local.y + 0.5) * h - 0.5;' }
+
 // scanlines over the lit picture
 shader: { lit: 'color *= 0.75 + 0.25 * step(0.5, fract(vWorldPosition.y * 20.0 - uTime));' }
 
@@ -613,9 +646,10 @@ shader: { fragment: 'base.rgb += vec3(0.3, 0.9, 1.0) * smoothstep(0.85, 1.0, fra
 
 Mistakes to avoid:
 
-- **Colours are linear**, as the shader works, so an sRGB-looking value comes out pale. Strong colours
-  are low numbers - roughly the sRGB value squared: orange `vec3(1.0, 0.22, 0.0)`, deep blue
-  `vec3(0.01, 0.04, 0.42)`. Colour uniforms given as strings are converted for you.
+- **Colours are linear**, as the shader works, so an sRGB-looking value comes out pale. Wrap a colour
+  as picked in `srgb()` - `srgb(vec3(0.75, 0.12, 0.16))` - or write linear values, roughly the sRGB
+  value squared: orange `vec3(1.0, 0.22, 0.0)`. `hsv2rgb` and `palette` give linear colour already,
+  and colour uniforms given as strings are converted for you.
 - **Hooks are statements**, run inside phoria2's `main()`: no functions of your own, no `uniform`
   declarations (use `uniforms`), no `return` in a mesh or points hook. Declare locals as you like.
   `hash`, the noises and the fbms are there for what you'd otherwise write a function for.

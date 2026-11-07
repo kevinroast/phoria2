@@ -34,6 +34,7 @@ export const DEMOS = [
   { name: 'colour', title: 'colour - HSL cylinder, RGB cube, light adding and filters multiplying, harmony swatches', hint: '' },
   { name: 'particles', title: 'particle emitters in three set pieces - a fountain, a brazier and falling snow' },
   { name: 'shader hooks', title: 'GLSL of your own inside the material shader - waving flag, rippling water, dissolve effects, hash, noise and fbm functions', hint: 'Click a piece to see its shader hooks · drag to orbit' },
+  { name: 'shader hooks 2', title: 'more shader hook functions - hologram edges, rotations, palette transforms and remapping', hint: 'Click a piece to see its shader hooks · drag to orbit' },
   { name: 'fog shadows', title: 'a harbour on a foggy night - lamps and a lighthouse beam casting shadows through mist' },
   { name: 'point lights', title: "a jack-o'-lantern - candle inside casting shadows, light escaping through the carved face" },
   { name: 'viewer', title: 'a glTF product viewer - full material maps, baked occlusion, an HDR studio, shadows, animation' },

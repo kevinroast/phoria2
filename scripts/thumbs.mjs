@@ -134,8 +134,11 @@ const PREPARE = {
   // the flag mid-wave - stepped to the same moment of the hooks' clock every time
   'shader-hooks': `view.stop()
     const Box3 = view.scene.bounds.constructor
-    view.frame(new Box3([-8.2, 0, -7], [7.8, 4.6, 6.2]), { padding: 0 })
+    view.frame(new Box3([-9.2, 0, -7], [7.8, 4.6, 6.2]), { padding: 0 })
     while (view.time < 8.3) view.step(1 / 60)`,
+  // the second hooks demo at a moment the column is well twisted and the meter part way up
+  'shader-hooks-2': `view.stop()
+    while (view.time < 8.4) view.step(1 / 60)`,
   // the office with its navigation mesh showing, the people part way along their walks
   'path-finding': `(async () => {
     document.querySelector('[data-mesh]').click()

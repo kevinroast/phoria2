@@ -29,7 +29,7 @@ float disc = step(length((vUv - vec2(0.3, 0.5)) * vec2(1.5, 1.0)), 0.24);
 base.rgb = mix(mix(field, vec3(1.0, 0.22, 0.0), stripe), vec3(1.0, 0.62, 0.02), disc);`,
 }
 const WATER = {
-  uniforms: { uAmp: 0.08, uPool: [-5, 0] },
+  uniforms: { uAmp: 0.08, uPool: [-6, 0] },
   // rings spreading from the pole: height and slope from the same wave
   vertex: `float r = length(local.xz);
 float phase = r * 7.0 - uTime * 3.0;
@@ -37,8 +37,9 @@ float fade = exp(-r * 0.35);
 local.y += sin(phase) * uAmp * fade;
 vec2 slope = local.xz / max(r, 1e-3) * cos(phase) * 7.0 * uAmp * fade;
 n = normalize(vec3(-slope.x, 1.0, -slope.y));`,
-  // a square of water, cut round to fit the pool
-  fragment: 'if (length(vWorldPosition.xz - uPool) > 2.95) discard;',
+  // a square of water, cut round to fit the pool, with a sheen where it's seen at a glancing angle
+  fragment: `if (length(vWorldPosition.xz - uPool) > 2.95) discard;
+emissive += srgb(vec3(0.45, 0.85, 1.0)) * fresnel(vNormal, vWorldPosition, 4.0) * 0.5;`,
 }
 const DISSOLVE = {
   uniforms: { uSpeed: 0.6 },
@@ -46,7 +47,7 @@ const DISSOLVE = {
   fragment: `float level = 0.5 - 0.56 * cos(uTime * uSpeed);
 float v = vfbm(vUv * vec2(10.0, 3.0));
 if (v < level) discard;
-emissive += vec3(1.0, 0.18, 0.02) * smoothstep(level + 0.05, level, v) * 6.0;`,
+emissive += vec3(1.0, 0.25, 0.03) * smoothstep(level + 0.06, level, v) * 9.0;`,
 }
 const STARS = {
   uniforms: { uSpin: 0.15, uTwinkle: 1 },
@@ -65,7 +66,7 @@ const NETWORK = {
   vertex: 'local.y += sin(uTime * 1.3 + float(index)) * 0.12 * along;',
   // pulses running out along each link, each link's starting when its hash says
   fragment: `float p = fract(distance * 0.6 - uTime * uPulse + hash(float(index)));
-base.rgb += vec3(0.3, 0.9, 1.0) * smoothstep(0.85, 1.0, p) * 4.0;`,
+base.rgb += vec3(0.3, 0.9, 1.0) * smoothstep(0.8, 1.0, p) * 6.0;`,
 }
 
 const TERRAIN = {
@@ -80,17 +81,17 @@ n = height > -0.12 ? normalize(vec3(-h.y * 2.0 * 0.45, 1.0, -h.z * 2.0 * 0.45)) 
   fragment: `float y = vWorldPosition.y - uBase;
 float slope = 1.0 - normalize(vNormal).y;
 float grain = vnoise(vWorldPosition.xz * 40.0);
-vec3 c = mix(vec3(0.55, 0.38, 0.14), vec3(0.05, 0.2, 0.02), smoothstep(-0.06, 0.04, y));
-c = mix(c, vec3(0.13, 0.1, 0.08), smoothstep(0.12, 0.3, slope));
-c = mix(c, vec3(0.85, 0.88, 0.92), smoothstep(0.3, 0.42, y + grain * 0.08));
-base.rgb = y < -0.115 ? vec3(0.0, 0.07, 0.3) : c * (0.85 + 0.3 * grain);`,
+vec3 c = mix(vec3(0.8, 0.5, 0.14), vec3(0.04, 0.32, 0.02), smoothstep(-0.06, 0.04, y));
+c = mix(c, vec3(0.2, 0.13, 0.08), smoothstep(0.12, 0.3, slope));
+c = mix(c, vec3(0.95, 0.97, 1.0), smoothstep(0.3, 0.42, y + grain * 0.08));
+base.rgb = y < -0.115 ? vec3(0.0, 0.14, 0.62) : c * (0.85 + 0.3 * grain);`,
 }
 
 export default function run({ canvas, gui, info }) {
   const view = new View({
     canvas, orbit: { maxPitch: 1.2 }, background: '#0d0f14',
-    camera: { position: [0, 9, 17], target: [0, 0.2, 0] },
-    bloom: { strength: 0.7, radius: 0.5, threshold: 0.8 },
+    camera: { position: [0, 15, 12], target: [0, 0.2, 0] },
+    bloom: { strength: 0.85, radius: 0.5, threshold: 0.7 },
   })
   const { scene } = view
   // the studio for the metal's reflections, turned down so it doesn't flatten the colours; a warm key
@@ -99,10 +100,10 @@ export default function run({ canvas, gui, info }) {
   scene.environmentIntensity = 0.55
   scene.add(new HemisphereLight({ sky: '#6f8bd0', ground: '#1a1612', intensity: 0.25 }))
   scene.add(new DirectionalLight({ color: '#fff0dc', direction: [-0.5, -1, -0.4], intensity: 2.4, castShadow: true }))
-  scene.add(new Mesh({ geometry: plane(40), material: { color: '#1e2027', roughness: 0.95 }, receiveShadow: true, pickable: false }))
+  scene.add(new Mesh({ geometry: plane(40), material: { color: '#141826', roughness: 0.85 }, receiveShadow: true, pickable: false }))
 
   // the flag on its pole, over a pool whose water ripples out from it
-  const flagAt = [-5, 0, 0]
+  const flagAt = [-6, 0, 0]
   scene.add(new Mesh({ geometry: cylinder({ radius: 0.06, height: 4.4 }), material: { color: '#d8d2c6', metalness: 0.9, roughness: 0.25 }, position: [flagAt[0], 2.2, 0], castShadow: true, pickable: false }))
   const flag = scene.add(new Mesh({
     name: 'flag', geometry: plane({ width: 3, depth: 2, segments: 40 }), position: [flagAt[0] + 1.5, 3.3, 0], rotation: [Math.PI / 2, 0, 0],
@@ -111,7 +112,7 @@ export default function run({ canvas, gui, info }) {
   scene.add(new Mesh({ geometry: cylinder({ radius: 3.2, height: 0.2, segments: 64 }), material: { color: '#3d3a36', roughness: 0.85 }, position: [flagAt[0], 0.1, 0], receiveShadow: true, pickable: false }))
   const water = scene.add(new Mesh({
     name: 'water', geometry: plane({ width: 6, depth: 6, segments: 96 }), position: [flagAt[0], 0.22, 0],
-    material: { color: '#0077c8', roughness: 0.05, shader: { ...WATER, bounds: 0.05 } }, receiveShadow: true,
+    material: { color: '#008cf0', roughness: 0.05, shader: { ...WATER, bounds: 0.05 } }, receiveShadow: true,
   }))
   // a stone rim round the pool
   scene.add(new Mesh({ geometry: torus({ radius: 3.05, tube: 0.18, segments: 64 }), material: { color: '#8a8378', roughness: 0.7 }, position: [flagAt[0], 0.22, 0], castShadow: true, pickable: false }))
@@ -119,7 +120,7 @@ export default function run({ canvas, gui, info }) {
   // the ring that dissolves, on a plinth - its shadow dissolving with it
   const ring = scene.add(new Mesh({
     name: 'dissolve', geometry: torus({ radius: 1.2, tube: 0.42, segments: 96 }), position: [0, 2.2, 0],
-    material: { color: '#d4a2ff', metalness: 1, roughness: 0.22, shader: DISSOLVE },
+    material: { color: '#c77dff', metalness: 1, roughness: 0.18, shader: DISSOLVE },
     castShadow: true,
   }))
   scene.add(new Mesh({ geometry: cylinder({ radius: 0.9, height: 0.6 }), material: { color: '#2e3038', roughness: 0.6 }, position: [0, 0.3, 0], castShadow: true, receiveShadow: true, pickable: false }))
@@ -132,7 +133,7 @@ export default function run({ canvas, gui, info }) {
   }
   const stars = scene.add(new Points({
     name: 'points', geometry: new Geometry({ positions }), position: [5, 2.4, 0],
-    material: { color: '#ffffff', size: 0.1, blending: 'additive', depthWrite: false, shader: STARS },
+    material: { color: '#ffffff', size: 0.13, opacity: 0.6, blending: 'additive', depthWrite: false, shader: STARS },
   }))
 
   // a network behind: a hub, a ring of nodes, links out and round
@@ -141,9 +142,9 @@ export default function run({ canvas, gui, info }) {
     return [Math.cos(a) * 4.5, 1.2 + Math.sin(i * 1.7) * 0.6, -6 + Math.sin(a) * 2]
   })
   const links = nodes.flatMap((p, i) => [...hub, ...p, ...p, ...nodes[(i + 1) % nodes.length]])
-  const network = scene.add(new Lines({ name: 'lines', geometry: new Geometry({ positions: links }), material: { color: '#0a63c9', width: 2.5, shader: NETWORK } }))
-  scene.add(new Mesh({ geometry: icosphere({ radius: 0.3, detail: 2 }), material: { color: '#00d4ff', emissive: '#00d4ff', emissiveIntensity: 1.4 }, position: hub, pickable: false }))
-  for (const p of nodes) scene.add(new Mesh({ geometry: icosphere({ radius: 0.16, detail: 1 }), material: { color: '#ff4fa3', emissive: '#ff2f8f', emissiveIntensity: 0.9 }, position: p, pickable: false }))
+  const network = scene.add(new Lines({ name: 'lines', geometry: new Geometry({ positions: links }), material: { color: '#1f7dff', width: 2.5, shader: NETWORK } }))
+  scene.add(new Mesh({ geometry: icosphere({ radius: 0.3, detail: 2 }), material: { color: '#00d4ff', emissive: '#00d4ff', emissiveIntensity: 2.2 }, position: hub, pickable: false }))
+  for (const p of nodes) scene.add(new Mesh({ geometry: icosphere({ radius: 0.16, detail: 1 }), material: { color: '#ff4fa3', emissive: '#ff2f8f', emissiveIntensity: 1.6 }, position: p, pickable: false }))
 
   // a little terrain at the front: one flat plane, raised by its hook, on a slab whose top is just
   // under the sea - level with it, the two would fight for the same pixels
@@ -191,7 +192,7 @@ export default function run({ canvas, gui, info }) {
   show('points')
 
   // the five pieces, not the floor round them
-  view.frame(new Box3([-8.3, 0, -8.2], [8, 4.8, 6.2]), { padding: 0.1 })
+  view.frame(new Box3([-9.3, 0, -8.2], [8, 4.8, 6.2]), { padding: 0.1 })
   // everything moves on uTime: nothing to do each frame
   return view.start()
 }

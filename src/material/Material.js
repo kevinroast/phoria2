@@ -19,7 +19,9 @@ import { Texture } from './Texture.js'
  * and the uniforms given, and call - p a vec2 or vec3, every result 0-1 - `hash(x)` (the same on every
  * GPU for the same bits), `vnoise(p)` (value noise), `snoise(p)` (simplex noise; `snoised(p)` with its
  * gradient), and `vfbm(p)` / `sfbm(p)` / `sfbmd(p)` (octaves of either, five unless given:
- * `sfbm(p, 8)`).
+ * `sfbm(p, 8)`); and `srgb(c)` (a colour as picked to linear), `hsv2rgb`, `palette` (cosine
+ * palettes, linear), `fresnel(normal, position, power)` (rim light - `cameraPosition` is there too),
+ * `rotate2(a)` / `rotate3(axis, a)` matrices, `remap` and `saturate`.
  * @typedef {object} ShaderHooks
  * @property {string} [vertex] runs on each vertex before it is placed: change `local` (vec3, the
  *   geometry's own space) - and for meshes `n`, its normal; reads `uv` (meshes), `index` (the
@@ -133,8 +135,8 @@ const OPTIONS = ['name', ...Object.keys(COLORS), ...MAPS, ...FLAGS, ...Object.ke
 const HOOKS = ['vertex', 'fragment', 'lit', 'uniforms', 'bounds']
 // names the shader keeps for itself
 // the functions hooks can call
-const HELPERS = ['hash', 'vnoise', 'snoise', 'snoised', 'vfbm', 'sfbm', 'sfbmd']
-const RESERVED = new RegExp(`^(gl_|phoria)|^(uTime|${HELPERS.join('|')})$`)
+const HELPERS = ['hash', 'vnoise', 'snoise', 'snoised', 'vfbm', 'sfbm', 'sfbmd', 'srgb', 'hsv2rgb', 'palette', 'fresnel', 'rotate2', 'rotate3', 'remap', 'saturate']
+const RESERVED = new RegExp(`^(gl_|phoria)|^(uTime|cameraPosition|${HELPERS.join('|')})$`)
 
 // what agents (and three.js habits) will reach for
 const HINTS = {
@@ -479,7 +481,7 @@ function shaderHooks(v) {
   const own = {}
   for (const [name, value] of Object.entries(uniforms)) {
     if (!/^[A-Za-z_]\w*$/.test(name)) fail('Material', `shader uniform '${name}' isn't a GLSL name - letters, digits and _, not starting with a digit`)
-    if (RESERVED.test(name)) fail('Material', `shader uniform '${name}' is a name phoria2 keeps${name === 'uTime' ? " - uTime is there already, the View's clock in seconds" : HELPERS.includes(name) ? ` - ${name}() is a function every hook can call` : ''}`)
+    if (RESERVED.test(name)) fail('Material', `shader uniform '${name}' is a name phoria2 keeps${name === 'uTime' ? " - uTime is there already, the View's clock in seconds" : name === 'cameraPosition' ? " - cameraPosition is there already, the camera's world position" : HELPERS.includes(name) ? ` - ${name}() is a function every hook can call` : ''}`)
     own[name] = uniformValue(name, value)
   }
   const bounds = v.bounds === undefined || v.bounds === null ? null : Math.max(0, checkNumber('Material', 'shader bounds', v.bounds))

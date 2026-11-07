@@ -261,7 +261,7 @@ export class Picker {
     program.set('uPickId', id)
     program.set('uHighlightIndex', -2)
     if (item.clip) program.set('uClipPlane', item.clip.plane)
-    if (hook) setHookUniforms(program, material, frame.time ?? 0, (t) => this.resources.texture(t))
+    if (hook) setHookUniforms(program, material, frame.time ?? 0, frame.camera.position, (t) => this.resources.texture(t))
 
     if (kind === 'lines') {
       gl.disable(gl.CULL_FACE)

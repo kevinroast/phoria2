@@ -225,7 +225,10 @@ export class WebGLRenderer {
     const bg = frame.background
     const passes = gpu.loadPasses(!!frame.shadow || frame.spotShadows.length > 0 || !!frame.pointShadow || frame.outlines.length > 0 || (typeof env === 'object' && !!env.image) || (!!bg && !('getHex' in bg) && !!bg.image))
     // shader hooks that read the clock read it in the shadow maps and outlines too
-    if (passes) passes.time = frame.time ?? 0
+    if (passes) {
+      passes.time = frame.time ?? 0
+      passes.cameraPosition = frame.camera.position
+    }
     this.#environment = passes && typeof env === 'object' ? passes.environment(env) : null
     if (passes && typeof env === 'object' && env.image && !this.#environment) {
       warnOnce(env, env.isHDR ? "this device can't render to float textures, which HDR environments need - lighting without it"
@@ -485,7 +488,7 @@ export class WebGLRenderer {
     }
     program.set('uColor', material.color)
     program.set('uOpacity', material.opacity)
-    if (hook) setHookUniforms(program, material, frame.time ?? 0, (t) => this.#gpu.resources.texture(t))
+    if (hook) setHookUniforms(program, material, frame.time ?? 0, frame.camera.position, (t) => this.#gpu.resources.texture(t))
     if (fog) {
       program.set('uFogColor', fog.color)
       program.set('uFogRange', [fog.near, fog.far])

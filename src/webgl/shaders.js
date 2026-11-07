@@ -1361,6 +1361,9 @@ const SOURCES = {
 //   default; snoised(p) also gives its gradient, for normals
 // - vfbm / sfbm (p[, octaves]): octaves of either added up, each turned and scaled by 2.03 so their
 //   grids never line up; sfbmd adds the gradient. Five octaves unless told; 1-12
+// And the everyday ones people (and agents) reach for: srgb() to turn a colour as picked into the
+// linear one hooks work in, hsv2rgb() and palette() (Quilez's cosine palette) - both giving linear
+// colour - fresnel() for rim light, rotate2() / rotate3() matrices, remap() and saturate().
 // Every int highp: a fragment shader's ints are mediump unless they say so.
 export const HOOK_HELPERS = /* glsl */ `
 highp uint phoriaMix(highp uint h) {
@@ -1514,6 +1517,40 @@ float sfbm(vec2 p) { return sfbm(p, 5); }
 float sfbm(vec3 p) { return sfbm(p, 5); }
 vec3 sfbmd(vec2 p) { return sfbmd(p, 5); }
 vec4 sfbmd(vec3 p) { return sfbmd(p, 5); }
+
+// a colour as picked (sRGB) to the linear colour hooks work in
+vec3 srgb(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
+// hue, saturation and value 0-1 to a linear colour - the colour a colour picker shows
+vec3 hsv2rgb(vec3 hsv) {
+  vec3 k = clamp(abs(mod(hsv.x * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+  return srgb(hsv.z * mix(vec3(1.0), k, hsv.y));
+}
+vec3 hsv2rgb(float h, float s, float v) { return hsv2rgb(vec3(h, s, v)); }
+// a cosine palette (Quilez): a + b cos(2 pi (c t + d)), its four vectors as picked; a linear colour
+vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) { return srgb(clamp(a + b * cos(6.28318530718 * (c * t + d)), 0.0, 1.0)); }
+// how edge-on a surface is seen: 0 facing the camera, 1 side on, sharpened by the power - rim light
+float fresnel(vec3 normal, vec3 position, float power) {
+  vec3 v = normalize(cameraPosition - position);
+  return pow(1.0 - clamp(abs(dot(normalize(normal), v)), 0.0, 1.0), power);
+}
+// turning: rotate2(a) * v anticlockwise by a radians; rotate3(axis, a) * v about an axis
+mat2 rotate2(float a) { float s = sin(a), c = cos(a); return mat2(c, s, -s, c); }
+mat3 rotate3(vec3 axis, float a) {
+  vec3 u = normalize(axis);
+  float s = sin(a), c = cos(a), t = 1.0 - c;
+  return mat3(t * u.x * u.x + c, t * u.x * u.y + s * u.z, t * u.x * u.z - s * u.y,
+    t * u.x * u.y - s * u.z, t * u.y * u.y + c, t * u.y * u.z + s * u.x,
+    t * u.x * u.z + s * u.y, t * u.y * u.z - s * u.x, t * u.z * u.z + c);
+}
+// x from one range to another, not clamped
+float remap(float x, float a, float b, float c, float d) { return c + (x - a) * (d - c) / (b - a); }
+vec2 remap(vec2 x, float a, float b, float c, float d) { return c + (x - a) * (d - c) / (b - a); }
+vec3 remap(vec3 x, float a, float b, float c, float d) { return c + (x - a) * (d - c) / (b - a); }
+// clamped to 0-1, as HLSL has it
+float saturate(float x) { return clamp(x, 0.0, 1.0); }
+vec2 saturate(vec2 x) { return clamp(x, 0.0, 1.0); }
+vec3 saturate(vec3 x) { return clamp(x, 0.0, 1.0); }
+vec4 saturate(vec4 x) { return clamp(x, 0.0, 1.0); }
 `
 
 // a hook's own lines are numbered from 1 in a source string of their own, so compile errors point
