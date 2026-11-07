@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Color, DirectionalLight, Geometry, Lines, Material, Mesh, PerspectiveCamera, Points, Scene, Texture, WebGLRenderer, box, plane } from '../src/index.js'
 import { collect } from '../src/frame.js'
 import { ChangeWatch } from '../src/watch.js'
-import { shaderSource } from '../src/webgl/shaders.js'
+import { HOOK_HELPERS, shaderSource } from '../src/webgl/shaders.js'
 import { hookFor } from '../src/webgl/hooks.js'
 import { fakeCanvas, fakeGL } from './fakes.js'
 
@@ -50,6 +50,7 @@ describe('material.shader', () => {
     expect(make({ vertexShader: 'void main() {}' })).toThrow("use 'vertex'")
     expect(make({ vertex: 'x;', uniforms: { '2fast': 1 } })).toThrow("isn't a GLSL name")
     expect(make({ vertex: 'x;', uniforms: { uTime: 1 } })).toThrow("uTime is there already")
+    expect(make({ vertex: 'x;', uniforms: { snoise: 1 } })).toThrow('snoise() is a function every hook can call')
     expect(make({ vertex: 'x;', uniforms: { gl_Foo: 1 } })).toThrow('a name phoria2 keeps')
     expect(make({ vertex: 'x;', uniforms: { uBad: [1, 2, 3, 4, 5] } })).toThrow('two to four numbers')
     expect(() => new Material(/** @type {any} */ ({ onBeforeCompile: () => {} }))).toThrow("use 'shader'")
@@ -70,6 +71,18 @@ describe('splicing hooks into the shaders', () => {
     const lines = vs.split('\n')
     const resume = lines.findIndex((l) => l.startsWith('#line') && l.endsWith(' 0') && lines[lines.indexOf(l) - 1] === 'local.y += uAmp;')
     expect(resume).toBeGreaterThan(0)
+  })
+
+  it('gives every hook hash, value and simplex noise, and fbm of either - in the vertex and the fragment shader', () => {
+    const [vs, fs] = shaderSource('mesh', ['HOOK_VERTEX', 'HOOK_FRAGMENT'], { ...source, helpers: HOOK_HELPERS })
+    for (const s of [vs, fs]) {
+      for (const fn of ['float hash(float x)', 'float hash(vec3 p)', 'float vnoise(vec2 p)', 'float vnoise(vec3 p)', 'float snoise(vec2 p)', 'vec4 snoised(vec3 p)',
+        'float vfbm(vec2 p, int octaves)', 'float sfbm(vec3 p, int octaves)', 'vec3 sfbmd(vec2 p, int octaves)', 'float sfbm(vec2 p) {']) expect(s).toContain(fn)
+    }
+    // built from integer bit-mixing, which GLSL ES 3.00 defines exactly - never fract(sin())
+    expect(HOOK_HELPERS).not.toContain('fract(sin')
+    // the helpers come with a hook's program
+    expect(hookFor(new Material({ shader: wave }))?.source.helpers).toBe(HOOK_HELPERS)
   })
 
   it('leaves the shaders as they are without hooks', () => {

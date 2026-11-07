@@ -134,7 +134,7 @@ const PREPARE = {
   // the flag mid-wave - stepped to the same moment of the hooks' clock every time
   'shader-hooks': `view.stop()
     const Box3 = view.scene.bounds.constructor
-    view.frame(new Box3([-8.2, 0, -7], [7.8, 4.6, 3]), { padding: 0 })
+    view.frame(new Box3([-8.2, 0, -7], [7.8, 4.6, 6.2]), { padding: 0 })
     while (view.time < 8.3) view.step(1 / 60)`,
   // the office with its navigation mesh showing, the people part way along their walks
   'path-finding': `(async () => {

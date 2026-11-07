@@ -4,7 +4,7 @@
 // without it from then on, rather than stopping the frame.
 import { Texture } from '../material/Texture.js'
 import { warnOnce } from '../validate.js'
-import { CLIP_ONLY_FRAGMENT, HOOK_SOURCE_NUMBERS, LINES_VERTEX, MESH_VERTEX, POINTS_VERTEX, shaderSource } from './shaders.js'
+import { CLIP_ONLY_FRAGMENT, HOOK_HELPERS, HOOK_SOURCE_NUMBERS, LINES_VERTEX, MESH_VERTEX, POINTS_VERTEX, shaderSource } from './shaders.js'
 
 /** @import { Material, ShaderUniform } from '../material/Material.js' */
 /** @import { HookSource } from './shaders.js' */
@@ -62,6 +62,7 @@ export function hookFor(material) {
         defines: [...(s.vertex ? ['HOOK_VERTEX'] : []), ...(s.fragment ? ['HOOK_FRAGMENT'] : []), ...(s.lit ? ['HOOK_LIT'] : []), `HOOKS ${hooks.size + 1}`],
         source: {
           uniforms: ['uniform float uTime;', ...types.split(';').filter(Boolean).map((t) => `uniform ${t};`)].join('\n'),
+          helpers: HOOK_HELPERS,
           vertex: s.vertex, fragment: s.fragment, lit: s.lit,
         },
         moves: !!s.vertex,
@@ -112,7 +113,7 @@ export function hookFailed(material, hook, log) {
     ? own.map((m) => `shader.${names[m[1]]} line ${m[2]}: ${m[3]}`).join('; ')
     : `in phoria2's shader around the hook: ${lines[0]?.[3] ?? log.trim().split('\n')[0]}`
   const uniforms = Object.keys(/** @type {NonNullable<Material['shader']>} */ (material.shader).uniforms)
-  warnOnce(material, `a shader hook doesn't compile - ${where}. Hooks can use ${HOOK_NAMES}, uTime${uniforms.length ? `, ${uniforms.join(', ')}` : ''}. The material is drawn without its hooks`)
+  warnOnce(material, `a shader hook doesn't compile - ${where}. Hooks can use ${HOOK_NAMES}, uTime${uniforms.length ? `, ${uniforms.join(', ')}` : ''}, and call hash, vnoise, snoise, snoised, vfbm, sfbm and sfbmd. The material is drawn without its hooks`)
 }
 
 const HOOK_NAMES = 'local, n, uv, index, size, along (vertex); base, emissive, vUv, vWorldPosition, vNormal, vColor, pointUv, distance (fragment); color, base (lit)'

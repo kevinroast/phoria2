@@ -514,10 +514,28 @@ Three hooks, each optional. What each can use (✎ = change it; everything else 
 | | Mesh / InstancedMesh | Points | Lines |
 |---|---|---|---|
 | `vertex` - each vertex, before it is placed | ✎ `local` (vec3, own space), ✎ `n` (vec3 normal), `uv` (vec2), `index` (int: the instance) | ✎ `local`, ✎ `size` (float, times the material's), `index` (int: the point) | ✎ `local`, `along` (float: 0 at a segment's start, 1 at its end), `index` (int: the segment) - runs once per end, so a segment moves but stays straight |
-| `fragment` - each pixel, before lighting | ✎ `base` (vec4: linear colour, alpha), ✎ `emissive` (vec3), `vUv`, `vWorldPosition`, `vNormal`, `vColor`; `discard` | ✎ `base`, `pointUv` (vec2, 0-1 across the point), `index` (int); `discard` | ✎ `base`, `distance` (float: along the line, in the geometry's units); `discard` |
+| `fragment` - each pixel, before lighting | ✎ `base` (vec4: linear colour, alpha), ✎ `emissive` (vec3), `vUv`, `vWorldPosition`, `vNormal`, `vColor`; `discard` | ✎ `base`, `pointUv` (vec2, 0-1 across the point), `index` (int); `discard` | ✎ `base`, `distance` (float: along the line, in the geometry's units), `index` (int: the segment); `discard` |
 | `lit` - each pixel, after lighting | ✎ `color` (vec3, linear, lit), ✎ `base.a` | ✎ `color`, ✎ `base.a` | ✎ `color`, ✎ `base.a` |
 
-Every hook can also read `uTime` - the View's clock in seconds - and the uniforms you give.
+Every hook can also read `uTime` - the View's clock in seconds - and the uniforms you give, and
+call functions for randomness and texture without a texture (hooks can't define their own). `p`
+is a vec2 or vec3, and every result is 0 to 1:
+
+- `hash(x)` - from a float, vec2 or vec3's exact bits. The same on every GPU for the same bits, so hash
+  exact things - `hash(float(index))` gives each point, instance or segment its own random number,
+  `hash(floor(vUv * 20.0))` each cell of a grid. An interpolated value such as `vWorldPosition` can
+  differ in its last bits from GPU to GPU, and so can its hash.
+- `vnoise(p)` - value noise: random values at whole-number points, eased between. Cheapest; looks
+  blockier, its features lined up with the axes.
+- `snoise(p)` - simplex noise: smoother, rounder, no grid to see - the better choice for anything
+  natural. About one feature per unit of `p`: scale `p` up for finer detail, `snoise(vUv * 10.0)`,
+  `snoise(vec3(local.xz, uTime))` to change over time.
+- `snoised(p)` - simplex noise with its gradient: a vec3 (value, d/dx, d/dy) from a vec2, a vec4
+  from a vec3. The slope for a normal, with no extra samples.
+- `vfbm(p)`, `sfbm(p)` - fractal noise: octaves of value or simplex noise added up, each finer and
+  half as strong, each turned so their grids don't line up. Five octaves; `sfbm(p, 8)` for more
+  detail, fewer for softer and cheaper (1-12). Mostly 0.25-0.75 - the octaves average out.
+- `sfbmd(p)`, `sfbmd(p, octaves)` - simplex fbm with its gradient, as `snoised`: terrain normals.
 
 - **`uniforms`**, by GLSL name: a number (float), two to four numbers (vec2-vec4), a colour string or
   Color (vec3, sent linear) or a Texture (sampler2D, read with `texture(uName, uv)`). Change one on
@@ -556,12 +574,22 @@ shader: { vertex: `
 // breathing: grow and shrink about the middle
 shader: { vertex: 'local *= 1.0 + 0.06 * sin(uTime * 2.0);' }
 
-// dissolve through a noise texture, its edge glowing (its shadow dissolves too)
-shader: { uniforms: { uNoise: noiseTexture }, fragment: `
+// dissolve through fractal noise, its edge glowing (its shadow dissolves too)
+shader: { fragment: `
   float level = 0.5 - 0.55 * cos(uTime * 0.6);
-  float v = texture(uNoise, vUv).r;
+  float v = sfbm(vUv * vec2(10.0, 3.0));
   if (v < level) discard;
   emissive += vec3(1.0, 0.2, 0.02) * smoothstep(level + 0.05, level, v) * 5.0;` }
+
+// terrain from simplex fbm, its normal from the same call's gradient (a plane with segments: 128
+// or so); the octaves set how rugged - 3 rolling hills, 8 craggy
+shader: { uniforms: { uOctaves: 7 }, vertex: `
+  vec3 h = sfbmd(local.xz * 0.4, int(uOctaves));
+  local.y += h.x * 2.0;
+  n = normalize(vec3(-h.y * 2.0 * 0.4, 1.0, -h.z * 2.0 * 0.4));` }
+
+// a texture uniform: scroll a noise or pattern image across a surface
+shader: { uniforms: { uPattern: patternTexture }, fragment: 'base.rgb *= texture(uPattern, vUv * 4.0 + vec2(uTime * 0.1, 0.0)).rgb;' }
 
 // colour by height - a ramp from deep blue at y = 0 to orange at y = 2
 shader: { fragment: 'base.rgb = mix(vec3(0.01, 0.05, 0.5), vec3(1.0, 0.25, 0.0), clamp(vWorldPosition.y / 2.0, 0.0, 1.0));' }
@@ -574,12 +602,13 @@ shader: { uniforms: { uCentre: [0, 0, 0] }, lit: 'base.a *= 1.0 - smoothstep(2.0
 
 // points: twinkling, each at its own rate, and soft and round
 shader: {
-  vertex: 'size *= 1.0 + 0.6 * sin(uTime * (1.5 + mod(float(index) * 0.618, 1.0) * 3.0) + float(index));',
+  vertex: 'size *= 1.0 + 0.6 * sin(uTime * (1.5 + hash(float(index)) * 3.0) + float(index));',
   fragment: 'base.a *= smoothstep(1.0, 0.0, length(pointUv * 2.0 - 1.0));',
 }
 
-// lines: pulses running along them (distance is along each run of joined segments)
-shader: { fragment: 'base.rgb += vec3(0.3, 0.9, 1.0) * smoothstep(0.85, 1.0, fract(distance * 0.6 - uTime)) * 4.0;' }
+// lines: pulses running along them (distance is along each run of joined segments), each line's
+// at its own time
+shader: { fragment: 'base.rgb += vec3(0.3, 0.9, 1.0) * smoothstep(0.85, 1.0, fract(distance * 0.6 - uTime + hash(float(index)))) * 4.0;' }
 ```
 
 Mistakes to avoid:
@@ -589,6 +618,10 @@ Mistakes to avoid:
   `vec3(0.01, 0.04, 0.42)`. Colour uniforms given as strings are converted for you.
 - **Hooks are statements**, run inside phoria2's `main()`: no functions of your own, no `uniform`
   declarations (use `uniforms`), no `return` in a mesh or points hook. Declare locals as you like.
+  `hash`, the noises and the fbms are there for what you'd otherwise write a function for.
+- **Randomness from `hash()`, not `fract(sin(x) * 43758.5453)`**: the sin trick multiplies a GPU's
+  last bits of `sin` into the answer, so the same scene comes out differently on different GPUs.
+  `hash` is integer arithmetic, exact everywhere.
 - **`index` is an int**: `float(index)` to do sums with it.
 - **Bend the normal when you move vertices**, or the light shades the shape as it was: change `n`
   (meshes) to match, and keep it normalised. Waves on a flat plane need `segments` to bend at all.

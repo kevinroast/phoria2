@@ -16,7 +16,10 @@ import { Texture } from './Texture.js'
 /**
  * Small pieces of GLSL run inside phoria2's own shader, so lighting, shadows, fog, clipping,
  * picking and outlines keep working. Every hook can read `uTime` (the View's clock, in seconds)
- * and the uniforms given.
+ * and the uniforms given, and call - p a vec2 or vec3, every result 0-1 - `hash(x)` (the same on every
+ * GPU for the same bits), `vnoise(p)` (value noise), `snoise(p)` (simplex noise; `snoised(p)` with its
+ * gradient), and `vfbm(p)` / `sfbm(p)` / `sfbmd(p)` (octaves of either, five unless given:
+ * `sfbm(p, 8)`).
  * @typedef {object} ShaderHooks
  * @property {string} [vertex] runs on each vertex before it is placed: change `local` (vec3, the
  *   geometry's own space) - and for meshes `n`, its normal; reads `uv` (meshes), `index` (the
@@ -25,7 +28,7 @@ import { Texture } from './Texture.js'
  * @property {string} [fragment] runs on each pixel before lighting: change `base` (vec4: linear
  *   colour and alpha) and, on meshes, `emissive`; `discard` cuts the pixel away - shadows and
  *   picking too. Reads `vUv`, `vWorldPosition`, `vNormal` (meshes), `pointUv` and `index`
- *   (points), `distance` along the line (lines)
+ *   (points), `distance` along the line and `index` the segment (lines)
  * @property {string} [lit] runs after lighting: change `color` (vec3, linear) and `base.a` - glows,
  *   scanlines and fades the light doesn't touch
  * @property {Record<string, ShaderUniform>} [uniforms] values the hooks read, by name; change them on
@@ -129,7 +132,9 @@ const DEFAULTS = {
 const OPTIONS = ['name', ...Object.keys(COLORS), ...MAPS, ...FLAGS, ...Object.keys(NUMBERS), 'blending', 'shader']
 const HOOKS = ['vertex', 'fragment', 'lit', 'uniforms', 'bounds']
 // names the shader keeps for itself
-const RESERVED = /^(gl_|phoria)|^uTime$/
+// the functions hooks can call
+const HELPERS = ['hash', 'vnoise', 'snoise', 'snoised', 'vfbm', 'sfbm', 'sfbmd']
+const RESERVED = new RegExp(`^(gl_|phoria)|^(uTime|${HELPERS.join('|')})$`)
 
 // what agents (and three.js habits) will reach for
 const HINTS = {
@@ -474,7 +479,7 @@ function shaderHooks(v) {
   const own = {}
   for (const [name, value] of Object.entries(uniforms)) {
     if (!/^[A-Za-z_]\w*$/.test(name)) fail('Material', `shader uniform '${name}' isn't a GLSL name - letters, digits and _, not starting with a digit`)
-    if (RESERVED.test(name)) fail('Material', `shader uniform '${name}' is a name phoria2 keeps${name === 'uTime' ? " - uTime is there already, the View's clock in seconds" : ''}`)
+    if (RESERVED.test(name)) fail('Material', `shader uniform '${name}' is a name phoria2 keeps${name === 'uTime' ? " - uTime is there already, the View's clock in seconds" : HELPERS.includes(name) ? ` - ${name}() is a function every hook can call` : ''}`)
     own[name] = uniformValue(name, value)
   }
   const bounds = v.bounds === undefined || v.bounds === null ? null : Math.max(0, checkNumber('Material', 'shader bounds', v.bounds))

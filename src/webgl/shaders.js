@@ -1186,6 +1186,9 @@ out vec3 vColor;
 #if defined(DASHED) || defined(HOOK_FRAGMENT)
 out float vDistance;        // along the chain, in the model's units
 #endif
+#ifdef HOOK_FRAGMENT
+flat out float vSegment;    // which segment, for a fragment hook's index
+#endif
 #ifdef DASHED
 flat out float vArrow;      // 1 on an arrowhead, which is never dashed
 #endif
@@ -1266,6 +1269,9 @@ void main() {
 #if defined(DASHED) || defined(HOOK_FRAGMENT)
   vDistance = segmentInfo.x + length(end - start) * along;
 #endif
+#ifdef HOOK_FRAGMENT
+  vSegment = float(gl_InstanceID);
+#endif
 #ifdef DASHED
   vArrow = arrow;
 #endif
@@ -1288,6 +1294,9 @@ uniform float uOpacity;
 #if defined(DASHED) || defined(HOOK_FRAGMENT)
 in float vDistance;
 #endif
+#ifdef HOOK_FRAGMENT
+flat in float vSegment;
+#endif
 //@hook uniforms
 #ifdef DASHED
 flat in float vArrow;
@@ -1308,6 +1317,7 @@ void main() {
 #ifdef HOOK_FRAGMENT
   {
     float distance = vDistance;
+    int index = int(vSegment + 0.5);
 //@hook fragment
   }
   if (base.a <= 0.0) discard;
@@ -1335,10 +1345,176 @@ const SOURCES = {
  * code run on each vertex, before lighting and after it.
  * @typedef {object} HookSource
  * @property {string} uniforms declarations
+ * @property {string} [helpers] functions every hook can call - hash, noise, fbm
  * @property {string} vertex
  * @property {string} fragment
  * @property {string} lit
  */
+
+// Functions every shader hook can call - hooks are statements, so they can't define their own. All of
+// it is built on an integer bit-mix (lowbias32), which GLSL ES 3.00 defines exactly, so lattice
+// values and gradients are the same on every GPU - fract(sin(x) * 43758.5453) is not. Everything 0-1:
+// - hash(x): a float or vector's exact bits, mixed
+// - vnoise(p): value noise - random values at whole-number points, eased between (quintic); cheap,
+//   blocky-looking at low frequencies
+// - snoise(p): simplex noise - gradients on a simplex grid; smoother, less grid-bound, the better
+//   default; snoised(p) also gives its gradient, for normals
+// - vfbm / sfbm (p[, octaves]): octaves of either added up, each turned and scaled by 2.03 so their
+//   grids never line up; sfbmd adds the gradient. Five octaves unless told; 1-12
+// Every int highp: a fragment shader's ints are mediump unless they say so.
+export const HOOK_HELPERS = /* glsl */ `
+highp uint phoriaMix(highp uint h) {
+  h ^= h >> 16u; h *= 0x7feb352du; h ^= h >> 15u; h *= 0x846ca68bu; h ^= h >> 16u;
+  return h;
+}
+float phoriaUnit(highp uint h) { return float(h >> 8u) * (1.0 / 16777216.0); }
+float hash(float x) { return phoriaUnit(phoriaMix(floatBitsToUint(x))); }
+float hash(vec2 p) { highp uvec2 u = floatBitsToUint(p); return phoriaUnit(phoriaMix(u.x ^ phoriaMix(u.y + 0x9e3779b9u))); }
+float hash(vec3 p) { highp uvec3 u = floatBitsToUint(p); return phoriaUnit(phoriaMix(u.x ^ phoriaMix(u.y ^ phoriaMix(u.z + 0x9e3779b9u)))); }
+// a lattice point's bits: each coordinate times its own large odd number, mixed once
+highp uint phoriaCell(highp ivec3 c) {
+  highp uvec3 u = uvec3(c) * uvec3(0x8da6b343u, 0xd8163841u, 0xcb1ab31fu);
+  return phoriaMix(u.x ^ u.y ^ u.z);
+}
+
+float vnoise(vec3 p) {
+  vec3 i = floor(p), f = p - i;
+  vec3 s = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  highp ivec3 c = ivec3(i);
+  float a = mix(phoriaUnit(phoriaCell(c)), phoriaUnit(phoriaCell(c + ivec3(1, 0, 0))), s.x);
+  float b = mix(phoriaUnit(phoriaCell(c + ivec3(0, 1, 0))), phoriaUnit(phoriaCell(c + ivec3(1, 1, 0))), s.x);
+  float d = mix(phoriaUnit(phoriaCell(c + ivec3(0, 0, 1))), phoriaUnit(phoriaCell(c + ivec3(1, 0, 1))), s.x);
+  float e = mix(phoriaUnit(phoriaCell(c + ivec3(0, 1, 1))), phoriaUnit(phoriaCell(c + ivec3(1, 1, 1))), s.x);
+  return mix(mix(a, b, s.y), mix(d, e, s.y), s.z);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = p - i;
+  vec2 s = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  highp ivec3 c = ivec3(ivec2(i), 0);
+  return mix(mix(phoriaUnit(phoriaCell(c)), phoriaUnit(phoriaCell(c + ivec3(1, 0, 0))), s.x),
+    mix(phoriaUnit(phoriaCell(c + ivec3(0, 1, 0))), phoriaUnit(phoriaCell(c + ivec3(1, 1, 0))), s.x), s.y);
+}
+
+// simplex: a corner's share of the value and the gradient - t^4 times the gradient's ramp, falling
+// to nothing at the corner's reach
+vec2 phoriaGrad2(highp ivec2 c) {
+  float a = phoriaUnit(phoriaCell(ivec3(c, 7))) * 6.28318530718;
+  return vec2(cos(a), sin(a));
+}
+void phoriaCorner2(vec2 x, highp ivec2 c, inout float n, inout vec2 d) {
+  float t = 0.5 - dot(x, x);
+  if (t <= 0.0) return;
+  vec2 g = phoriaGrad2(c);
+  float t2 = t * t, gx = dot(g, x);
+  n += t2 * t2 * gx;
+  d += t2 * t2 * g - 8.0 * t2 * t * gx * x;
+}
+vec3 snoised(vec2 p) {
+  const float F = 0.366025403784, G = 0.211324865405;
+  vec2 i = floor(p + (p.x + p.y) * F);
+  vec2 x0 = p - i + (i.x + i.y) * G;
+  vec2 o = x0.x > x0.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  highp ivec2 c = ivec2(i);
+  float n = 0.0;
+  vec2 d = vec2(0.0);
+  phoriaCorner2(x0, c, n, d);
+  phoriaCorner2(x0 - o + G, c + ivec2(o), n, d);
+  phoriaCorner2(x0 - 1.0 + 2.0 * G, c + 1, n, d);
+  // unit gradients peak near 1/70: scaled to -1-1, then to 0-1
+  return vec3(0.5 + 35.0 * n, 35.0 * d);
+}
+float snoise(vec2 p) { return snoised(p).x; }
+
+const vec3 PHORIA_EDGES[12] = vec3[12](vec3(1, 1, 0), vec3(-1, 1, 0), vec3(1, -1, 0), vec3(-1, -1, 0),
+  vec3(1, 0, 1), vec3(-1, 0, 1), vec3(1, 0, -1), vec3(-1, 0, -1), vec3(0, 1, 1), vec3(0, -1, 1), vec3(0, 1, -1), vec3(0, -1, -1));
+void phoriaCorner3(vec3 x, highp ivec3 c, inout float n, inout vec3 d) {
+  float t = 0.6 - dot(x, x);
+  if (t <= 0.0) return;
+  vec3 g = PHORIA_EDGES[phoriaCell(c) % 12u];
+  float t2 = t * t, gx = dot(g, x);
+  n += t2 * t2 * gx;
+  d += t2 * t2 * g - 8.0 * t2 * t * gx * x;
+}
+vec4 snoised(vec3 p) {
+  const float F = 1.0 / 3.0, G = 1.0 / 6.0;
+  vec3 i = floor(p + dot(p, vec3(F)));
+  vec3 x0 = p - i + dot(i, vec3(G));
+  vec3 g = step(x0.yzx, x0.xyz), l = 1.0 - g;
+  vec3 i1 = min(g, l.zxy), i2 = max(g, l.zxy);
+  highp ivec3 c = ivec3(i);
+  float n = 0.0;
+  vec3 d = vec3(0.0);
+  phoriaCorner3(x0, c, n, d);
+  phoriaCorner3(x0 - i1 + G, c + ivec3(i1), n, d);
+  phoriaCorner3(x0 - i2 + 2.0 * G, c + ivec3(i2), n, d);
+  phoriaCorner3(x0 - 1.0 + 3.0 * G, c + 1, n, d);
+  // edge gradients peak near 1/32: scaled to -1-1, then to 0-1
+  return vec4(0.5 + 16.0 * n, 16.0 * d);
+}
+float snoise(vec3 p) { return snoised(p).x; }
+
+// fbm: each octave turned (so grids don't line up into a visible lattice), scaled by 2.03 and moved
+// on, its amplitude halved; the sum divided by the amplitudes, so 0-1 like the noise
+const mat2 PHORIA_TURN2 = mat2(0.8, 0.6, -0.6, 0.8);
+const mat3 PHORIA_TURN3 = mat3(0.00, 0.80, 0.60, -0.80, 0.36, -0.48, -0.60, -0.48, 0.64);
+float vfbm(vec2 p, int octaves) {
+  float v = 0.0, a = 0.5, sum = 0.0;
+  for (int i = 0; i < clamp(octaves, 1, 12); i++) { v += a * vnoise(p); sum += a; p = PHORIA_TURN2 * p * 2.03 + 17.0; a *= 0.5; }
+  return v / sum;
+}
+float vfbm(vec3 p, int octaves) {
+  float v = 0.0, a = 0.5, sum = 0.0;
+  for (int i = 0; i < clamp(octaves, 1, 12); i++) { v += a * vnoise(p); sum += a; p = PHORIA_TURN3 * p * 2.03 + 17.0; a *= 0.5; }
+  return v / sum;
+}
+float sfbm(vec2 p, int octaves) {
+  float v = 0.0, a = 0.5, sum = 0.0;
+  for (int i = 0; i < clamp(octaves, 1, 12); i++) { v += a * snoise(p); sum += a; p = PHORIA_TURN2 * p * 2.03 + 17.0; a *= 0.5; }
+  return v / sum;
+}
+float sfbm(vec3 p, int octaves) {
+  float v = 0.0, a = 0.5, sum = 0.0;
+  for (int i = 0; i < clamp(octaves, 1, 12); i++) { v += a * snoise(p); sum += a; p = PHORIA_TURN3 * p * 2.03 + 17.0; a *= 0.5; }
+  return v / sum;
+}
+// with the gradient: each octave's, carried back through the turns and scalings so far
+vec3 sfbmd(vec2 p, int octaves) {
+  float v = 0.0, a = 0.5, sum = 0.0;
+  vec2 d = vec2(0.0);
+  mat2 m = mat2(1.0);
+  for (int i = 0; i < clamp(octaves, 1, 12); i++) {
+    vec3 n = snoised(p);
+    v += a * n.x;
+    d += a * (transpose(m) * n.yz);
+    sum += a;
+    p = PHORIA_TURN2 * p * 2.03 + 17.0;
+    m = PHORIA_TURN2 * m * 2.03;
+    a *= 0.5;
+  }
+  return vec3(v, d) / sum;
+}
+vec4 sfbmd(vec3 p, int octaves) {
+  float v = 0.0, a = 0.5, sum = 0.0;
+  vec3 d = vec3(0.0);
+  mat3 m = mat3(1.0);
+  for (int i = 0; i < clamp(octaves, 1, 12); i++) {
+    vec4 n = snoised(p);
+    v += a * n.x;
+    d += a * (transpose(m) * n.yzw);
+    sum += a;
+    p = PHORIA_TURN3 * p * 2.03 + 17.0;
+    m = PHORIA_TURN3 * m * 2.03;
+    a *= 0.5;
+  }
+  return vec4(v, d) / sum;
+}
+float vfbm(vec2 p) { return vfbm(p, 5); }
+float vfbm(vec3 p) { return vfbm(p, 5); }
+float sfbm(vec2 p) { return sfbm(p, 5); }
+float sfbm(vec3 p) { return sfbm(p, 5); }
+vec3 sfbmd(vec2 p) { return sfbmd(p, 5); }
+vec4 sfbmd(vec3 p) { return sfbmd(p, 5); }
+`
 
 // a hook's own lines are numbered from 1 in a source string of their own, so compile errors point
 // at the line of the hook, not of the generated shader
@@ -1368,7 +1544,7 @@ function splice(source, hooks, first) {
     const part = /** @type {keyof HookSource} */ (at[1])
     // the shader's own numbering carries on after the hook as if it weren't there
     const resume = `#line ${first + i + 1} 0`
-    if (part === 'uniforms') return `${hooks.uniforms}\n${resume}`
+    if (part === 'uniforms') return `${hooks.uniforms}\n${hooks.helpers ?? ''}\n${resume}`
     return `#line 1 ${HOOK_SOURCE_NUMBERS[part]}\n${hooks[part]}\n${resume}`
   }).join('\n')
 }
