@@ -90,6 +90,8 @@ Before a big release, a release candidate (`-rc.N`) lets people try it with
   Delete the tag and tag the right commit (below).
 - *A lint, typecheck, test or build step failed* - fix it, commit, then make the next version
   (the failed one was never published, but the tag exists): `npm version prerelease --preid rc`.
+  The build ends with `scripts/check-dist.mjs`, which fails when the built shaders have lost
+  their `//@hook` lines (1.4.0 shipped like that, with shader hooks doing nothing).
 - *An authentication error (E401, E403, ENEEDAUTH)* - check trusted publishing on npmjs.com: the
   package's *Settings* > *Trusted publisher* should be GitHub Actions, owner `kevinroast`,
   repository `phoria2`, workflow `publish.yml`.

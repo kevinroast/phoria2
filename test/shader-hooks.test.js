@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Color, DirectionalLight, Geometry, Lines, Material, Mesh, PerspectiveCamera, Points, Scene, Texture, WebGLRenderer, box, plane } from '../src/index.js'
 import { collect } from '../src/frame.js'
 import { ChangeWatch } from '../src/watch.js'
-import { CLIP_ONLY_FRAGMENT, HOOK_HELPERS, MESH_VERTEX, shaderSource } from '../src/webgl/shaders.js'
+import { CLIP_ONLY_FRAGMENT, HOOK_HELPERS, MESH_VERTEX, checkMarkers, shaderSource } from '../src/webgl/shaders.js'
 import { hookFor } from '../src/webgl/hooks.js'
 import { fakeCanvas, fakeGL } from './fakes.js'
 
@@ -252,9 +252,13 @@ describe('the build', () => {
   // the build strips GLSL comments: the hook lines must survive it, or no hook is ever spliced in
   // (1.4.0 shipped that way - its tests ran on the source, not the build)
   it("keeps every shader's //@hook lines when it minifies the GLSL", async () => {
-    const { readFileSync } = await import('node:fs')
+    const { readdirSync, readFileSync } = await import('node:fs')
     const { minifyGlslSource } = await import('../vite.config.js')
-    for (const file of ['src/webgl/shaders.js', 'src/webgl/picking.js']) {
+    // every source file with hook lines, found rather than listed, so a new one is checked too
+    const files = readdirSync('src', { recursive: true, encoding: 'utf8' }).filter((p) => p.endsWith('.js'))
+      .map((p) => `src/${p.replaceAll('\\', '/')}`).filter((p) => /^\s*\/\/@hook \w+$/m.test(readFileSync(p, 'utf8')))
+    expect(files).toEqual(expect.arrayContaining(['src/webgl/shaders.js', 'src/webgl/picking.js']))
+    for (const file of files) {
       const source = readFileSync(file, 'utf8')
       const built = minifyGlslSource(source)
       const marks = (s) => s.match(/^\/\/@hook (uniforms|vertex|fragment|lit)$/gm) ?? []
@@ -263,5 +267,29 @@ describe('the build', () => {
       // and the ordinary comments still go
       expect(built.length).toBeLessThan(source.length)
     }
+  })
+
+  it('says so, once, when a shader has lost the lines its hooks go in', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const hooks = { uniforms: 'uniform float uAmp;', vertex: 'local.y += uAmp;', fragment: '', lit: 'color *= 0.5;' }
+    // the real shaders: no warning
+    for (const kind of /** @type {const} */ (['mesh', 'points', 'lines'])) shaderSource(kind, [], hooks)
+    expect(warn).not.toHaveBeenCalled()
+    // shaders stripped of them, as 1.4.0's build was: named, once
+    const stripped = 'void main() {}'
+    checkMarkers('mesh', stripped, stripped, hooks)
+    checkMarkers('mesh', stripped, stripped, hooks)
+    // another material with other parts: still the one warning for the kind
+    checkMarkers('mesh', stripped, stripped, { ...hooks, fragment: 'base.rgb *= 0.5;' })
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][0]).toContain('no //@hook line for uniforms, vertex, lit')
+  })
+
+  it('leaves out the parts a material has no hook for', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const vertexOnly = 'void main() {\n//@hook uniforms\n//@hook vertex\n}'
+    const fragment = 'void main() {\n//@hook uniforms\n}'
+    checkMarkers('points', vertexOnly, fragment, { uniforms: '', vertex: 'size *= 2.0;', fragment: '', lit: '' })
+    expect(warn).not.toHaveBeenCalled()
   })
 })

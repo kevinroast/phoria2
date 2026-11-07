@@ -1,6 +1,7 @@
 // GLSL ES 3.00 shaders. One source per kind of drawable; features are switched with #defines so each
 // material variant compiles only what it uses. Attribute locations are fixed (see ATTRIBUTES) so
 // vertex arrays work with any program.
+import { warnOnce } from '../validate.js'
 
 /** Fixed attribute locations shared by every program. */
 export const ATTRIBUTES = {
@@ -1622,9 +1623,31 @@ export function shaderSource(kind, defines, hooks = null) {
   const header = `#version 300 es\n${defines.map((d) => `#define ${d}\n`).join('')}`
   const [vs, fs] = typeof kind === 'string' ? SOURCES[kind] : kind
   if (!hooks) return [header + vs, header + fs]
+  if (typeof kind === 'string') checkMarkers(kind, vs, fs, hooks)
   const first = 2 + defines.length
   return [header + splice(vs, hooks, first), header + splice(fs, hooks, first)]
 }
+
+/**
+ * Says so, once, when a drawable's shaders lack a line a hook needs - without it the hook is left
+ * out without a sound (1.4.0 shipped like that: its build stripped the lines as comments). Passes'
+ * own pairs aren't checked: they take only some hooks, by design. Exported for the tests.
+ * @param {ShaderKind} kind @param {string} vs @param {string} fs @param {HookSource} hooks
+ */
+export function checkMarkers(kind, vs, fs, hooks) {
+  const has = (source, /** @type {string} */ part) => new RegExp(`^\\s*//@hook ${part}$`, 'm').test(source)
+  const missing = [
+    ...(!has(vs, 'uniforms') || !has(fs, 'uniforms') ? ['uniforms'] : []),
+    ...(hooks.vertex && !has(vs, 'vertex') ? ['vertex'] : []),
+    ...(hooks.fragment && !has(fs, 'fragment') ? ['fragment'] : []),
+    ...(hooks.lit && !has(fs, 'lit') ? ['lit'] : []),
+  ]
+  if (!missing.length || markersWarned.has(kind)) return
+  markersWarned.add(kind)
+  warnOnce(SOURCES, `the ${kind} shader has no //@hook line for ${missing.join(', ')}, so shader hooks there are left out - is this build stripping GLSL comments?`)
+}
+/** The kinds already warned about: once each, whatever parts each material's hooks have. @type {Set<string>} */
+const markersWarned = new Set()
 
 /** @param {string} source @param {HookSource} hooks @param {number} first the line number of the source's first line */
 function splice(source, hooks, first) {

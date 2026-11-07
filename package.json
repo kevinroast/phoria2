@@ -71,8 +71,8 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build && tsc -p tsconfig.json",
-    "build:demos": "vite build --mode demos",
+    "build": "vite build && tsc -p tsconfig.json && node scripts/check-dist.mjs",
+    "build:demos": "vite build --mode demos && node scripts/check-dist.mjs dist-demos/assets",
     "preview": "vite preview --outDir dist-demos",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.demos.json",
