@@ -115,7 +115,7 @@ export function hookFailed(material, hook, log) {
     ? own.map((m) => `shader.${names[m[1]]} line ${m[2]}: ${m[3]}`).join('; ')
     : `in phoria2's shader around the hook: ${lines[0]?.[3] ?? log.trim().split('\n')[0]}`
   const uniforms = Object.keys(/** @type {NonNullable<Material['shader']>} */ (material.shader).uniforms)
-  warnOnce(material, `a shader hook doesn't compile - ${where}. Hooks can use ${HOOK_NAMES}, uTime${uniforms.length ? `, ${uniforms.join(', ')}` : ''}, cameraPosition, and call hash, vnoise, snoise, snoised, vfbm, sfbm, sfbmd, srgb, hsv2rgb, palette, fresnel, rotate2, rotate3, remap and saturate. The material is drawn without its hooks`)
+  warnOnce(material, `a shader hook doesn't compile - ${where}. Hooks can use ${HOOK_NAMES}, uTime${uniforms.length ? `, ${uniforms.join(', ')}` : ''}, cameraPosition, and call hash, vnoise, snoise, snoised, vfbm, sfbm, sfbmd, voronoi, srgb, hsv2rgb, palette, fresnel, rotate2, rotate3, remap and saturate. The material is drawn without its hooks`)
 }
 
-const HOOK_NAMES = 'local, n, uv, index, size, along (vertex); base, emissive, vUv, vWorldPosition, vNormal, vColor, pointUv, distance (fragment); color, base (lit)'
+const HOOK_NAMES = 'local, n, uv, index, size, along (vertex); base, emissive, normal, vUv, vWorldPosition, vNormal, vColor, pointUv, distance (fragment); color, base (lit)'

@@ -44,6 +44,7 @@ void main() {
   {
     vec4 base = vec4(vColor, 1.0);
     vec3 emissive = vec3(0.0);
+    vec3 normal = normalize(vNormal);
 //@hook fragment
     if (base.a <= 0.0) discard;
   }

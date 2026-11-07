@@ -141,6 +141,7 @@ void main() {
   {
     vec4 base = vec4(vColor, 1.0);
     vec3 emissive = vec3(0.0);
+    vec3 normal = normalize(vNormal);
 //@hook fragment
     if (base.a <= 0.0) discard;
   }
@@ -771,6 +772,16 @@ void main() {
   emissive *= uEmissiveMapTexel.rgb;
 #endif
 #ifdef HOOK_FRAGMENT
+  // the shading normal in world space, facing the viewer - a fragment hook can bend it, for relief
+  // lit per pixel (bumps from noise) whatever the mesh's resolution
+#ifdef FLAT_SHADING
+  vec3 normal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
+#else
+  vec3 normal = normalize(vNormal);
+#ifdef DOUBLE_SIDED
+  if (!gl_FrontFacing) normal = -normal;
+#endif
+#endif
   {
 //@hook fragment
   }
@@ -783,13 +794,16 @@ void main() {
   float coverage = base.a;
 
 #ifdef LIT
-#ifdef FLAT_SHADING
+#ifdef HOOK_FRAGMENT
+  // the fragment hook's normal, facing the viewer already
+  vec3 n = normalize(normal);
+#elif defined(FLAT_SHADING)
   // from the screen-space slope: it faces the camera whichever side of the face is seen
   vec3 n = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
 #else
   vec3 n = normalize(vNormal);
 #endif
-#if defined(DOUBLE_SIDED) && !defined(FLAT_SHADING)
+#if defined(DOUBLE_SIDED) && !defined(FLAT_SHADING) && !defined(HOOK_FRAGMENT)
   if (!gl_FrontFacing) n = -n;
 #endif
   vec3 surfaceNormal = n;
@@ -1361,6 +1375,8 @@ const SOURCES = {
 //   default; snoised(p) also gives its gradient, for normals
 // - vfbm / sfbm (p[, octaves]): octaves of either added up, each turned and scaled by 2.03 so their
 //   grids never line up; sfbmd adds the gradient. Five octaves unless told; 1-12
+// - voronoi(p): cellular (Worley) noise - a random point in every unit cell; returns the distance to
+//   the nearest (F1) and the second nearest (F2), in cells, and a random 0-1 for the nearest's cell
 // And the everyday ones people (and agents) reach for: srgb() to turn a colour as picked into the
 // linear one hooks work in, hsv2rgb() and palette() (Quilez's cosine palette) - both giving linear
 // colour - fresnel() for rim light, rotate2() / rotate3() matrices, remap() and saturate().
@@ -1517,6 +1533,43 @@ float sfbm(vec2 p) { return sfbm(p, 5); }
 float sfbm(vec3 p) { return sfbm(p, 5); }
 vec3 sfbmd(vec2 p) { return sfbmd(p, 5); }
 vec4 sfbmd(vec3 p) { return sfbmd(p, 5); }
+
+// cellular noise: each unit cell's own point, from its hash; the nearest and second nearest of the
+// 3 x 3 (or 3 x 3 x 3) cells round p - F1, F2 - and the nearest cell's own random number
+vec3 voronoi(vec2 p) {
+  vec2 i = floor(p), f = p - i;
+  highp ivec2 c = ivec2(i);
+  float f1 = 8.0, f2 = 8.0, id = 0.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      highp uint h = phoriaCell(ivec3(c + ivec2(x, y), 11));
+      vec2 o = vec2(float(x), float(y)) + vec2(phoriaUnit(h), phoriaUnit(phoriaMix(h ^ 0x68e31da4u))) - f;
+      float d = dot(o, o);
+      if (d < f1) { f2 = f1; f1 = d; id = phoriaUnit(phoriaMix(h + 0x1b56c4e9u)); }
+      else if (d < f2) f2 = d;
+    }
+  }
+  return vec3(sqrt(f1), sqrt(f2), id);
+}
+vec3 voronoi(vec3 p) {
+  vec3 i = floor(p), f = p - i;
+  highp ivec3 c = ivec3(i);
+  float f1 = 8.0, f2 = 8.0, id = 0.0;
+  for (int z = -1; z <= 1; z++) {
+    for (int y = -1; y <= 1; y++) {
+      for (int x = -1; x <= 1; x++) {
+        highp uint h = phoriaCell(c + ivec3(x, y, z)) ^ 0x2545f491u;
+        h = phoriaMix(h);
+        vec3 o = vec3(float(x), float(y), float(z)) - f
+          + vec3(phoriaUnit(h), phoriaUnit(phoriaMix(h ^ 0x68e31da4u)), phoriaUnit(phoriaMix(h ^ 0xb5297a4du)));
+        float d = dot(o, o);
+        if (d < f1) { f2 = f1; f1 = d; id = phoriaUnit(phoriaMix(h + 0x1b56c4e9u)); }
+        else if (d < f2) f2 = d;
+      }
+    }
+  }
+  return vec3(sqrt(f1), sqrt(f2), id);
+}
 
 // a colour as picked (sRGB) to the linear colour hooks work in
 vec3 srgb(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }

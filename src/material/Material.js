@@ -19,7 +19,8 @@ import { Texture } from './Texture.js'
  * and the uniforms given, and call - p a vec2 or vec3, every result 0-1 - `hash(x)` (the same on every
  * GPU for the same bits), `vnoise(p)` (value noise), `snoise(p)` (simplex noise; `snoised(p)` with its
  * gradient), and `vfbm(p)` / `sfbm(p)` / `sfbmd(p)` (octaves of either, five unless given:
- * `sfbm(p, 8)`); and `srgb(c)` (a colour as picked to linear), `hsv2rgb`, `palette` (cosine
+ * `sfbm(p, 8)`), `voronoi(p)` (cellular noise: vec3 of the nearest and second nearest distances and
+ * a random 0-1 for the nearest cell); and `srgb(c)` (a colour as picked to linear), `hsv2rgb`, `palette` (cosine
  * palettes, linear), `fresnel(normal, position, power)` (rim light - `cameraPosition` is there too),
  * `rotate2(a)` / `rotate3(axis, a)` matrices, `remap` and `saturate`.
  * @typedef {object} ShaderHooks
@@ -28,7 +29,8 @@ import { Texture } from './Texture.js'
  *   instance, point or segment), `size` (points: change it too) and `along` (lines: 0 at a
  *   segment's start, 1 at its end)
  * @property {string} [fragment] runs on each pixel before lighting: change `base` (vec4: linear
- *   colour and alpha) and, on meshes, `emissive`; `discard` cuts the pixel away - shadows and
+ *   colour and alpha) and, on meshes, `emissive` and `normal` (the shading normal, world space - bend it for
+ *   relief lit per pixel); `discard` cuts the pixel away - shadows and
  *   picking too. Reads `vUv`, `vWorldPosition`, `vNormal` (meshes), `pointUv` and `index`
  *   (points), `distance` along the line and `index` the segment (lines)
  * @property {string} [lit] runs after lighting: change `color` (vec3, linear) and `base.a` - glows,
@@ -135,7 +137,7 @@ const OPTIONS = ['name', ...Object.keys(COLORS), ...MAPS, ...FLAGS, ...Object.ke
 const HOOKS = ['vertex', 'fragment', 'lit', 'uniforms', 'bounds']
 // names the shader keeps for itself
 // the functions hooks can call
-const HELPERS = ['hash', 'vnoise', 'snoise', 'snoised', 'vfbm', 'sfbm', 'sfbmd', 'srgb', 'hsv2rgb', 'palette', 'fresnel', 'rotate2', 'rotate3', 'remap', 'saturate']
+const HELPERS = ['hash', 'vnoise', 'snoise', 'snoised', 'vfbm', 'sfbm', 'sfbmd', 'voronoi', 'srgb', 'hsv2rgb', 'palette', 'fresnel', 'rotate2', 'rotate3', 'remap', 'saturate']
 const RESERVED = new RegExp(`^(gl_|phoria)|^(uTime|cameraPosition|${HELPERS.join('|')})$`)
 
 // what agents (and three.js habits) will reach for

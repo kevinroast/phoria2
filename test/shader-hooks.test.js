@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Color, DirectionalLight, Geometry, Lines, Material, Mesh, PerspectiveCamera, Points, Scene, Texture, WebGLRenderer, box, plane } from '../src/index.js'
 import { collect } from '../src/frame.js'
 import { ChangeWatch } from '../src/watch.js'
-import { HOOK_HELPERS, shaderSource } from '../src/webgl/shaders.js'
+import { CLIP_ONLY_FRAGMENT, HOOK_HELPERS, MESH_VERTEX, shaderSource } from '../src/webgl/shaders.js'
 import { hookFor } from '../src/webgl/hooks.js'
 import { fakeCanvas, fakeGL } from './fakes.js'
 
@@ -80,7 +80,7 @@ describe('splicing hooks into the shaders', () => {
     for (const s of [vs, fs]) {
       for (const fn of ['float hash(float x)', 'float hash(vec3 p)', 'float vnoise(vec2 p)', 'float vnoise(vec3 p)', 'float snoise(vec2 p)', 'vec4 snoised(vec3 p)',
         'float vfbm(vec2 p, int octaves)', 'float sfbm(vec3 p, int octaves)', 'vec3 sfbmd(vec2 p, int octaves)', 'float sfbm(vec2 p) {',
-        'vec3 srgb(vec3 c)', 'vec3 hsv2rgb(vec3 hsv)', 'vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d)', 'float fresnel(vec3 normal, vec3 position, float power)',
+        'vec3 voronoi(vec2 p)', 'vec3 voronoi(vec3 p)', 'vec3 srgb(vec3 c)', 'vec3 hsv2rgb(vec3 hsv)', 'vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d)', 'float fresnel(vec3 normal, vec3 position, float power)',
         'mat2 rotate2(float a)', 'mat3 rotate3(vec3 axis, float a)', 'float remap(float x, float a, float b, float c, float d)', 'vec4 saturate(vec4 x)']) expect(s).toContain(fn)
     }
     // built from integer bit-mixing, which GLSL ES 3.00 defines exactly - never fract(sin())
@@ -93,6 +93,17 @@ describe('splicing hooks into the shaders', () => {
     const [vs] = shaderSource('mesh', [])
     expect(vs).not.toContain('#line')
     expect(vs).toContain('//@hook vertex')
+  })
+
+  it("gives a mesh's fragment hook the shading normal to bend - in the colour pass, and in its shadow and pick", () => {
+    const [, colour] = shaderSource('mesh', ['HOOK_FRAGMENT', 'LIT'], source)
+    // declared before the hook, and the light reads it after
+    expect(colour.indexOf('vec3 normal = normalize(vNormal);')).toBeGreaterThan(0)
+    expect(colour.indexOf('vec3 normal = normalize(vNormal);')).toBeLessThan(colour.indexOf('#line 1 102'))
+    expect(colour).toContain('vec3 n = normalize(normal);')
+    // the depth pass runs the same code for its discards: it has a normal to read too
+    const [, depth] = shaderSource(/** @type {any} */ ([MESH_VERTEX, CLIP_ONLY_FRAGMENT]), ['HOOK_FRAGMENT'], source)
+    expect(depth).toContain('vec3 normal = normalize(vNormal);')
   })
 
   it('splices a points and a lines hook too - the lines one a function run on each end', () => {

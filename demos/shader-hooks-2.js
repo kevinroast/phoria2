@@ -5,8 +5,11 @@ import { Box3, DirectionalLight, HemisphereLight, InstancedMesh, Mesh, View, box
 // its height (rotate2, its normals turned too) in a hue that climbs it (hsv2rgb), a blob of simplex
 // fbm in a cosine palette whose noise turns in 3D (rotate3, palette - lit by flatShading, the
 // screen's slope, since its normals don't move), bars rising and falling from one sine, each its
-// index's phase (remap, saturate), and a floor whose stripes spin (rotate2 on the uvs, srgb for
-// colours as picked). Everything reads uTime: no frame loop. Click a piece to see its hooks.
+// index's phase (remap, saturate), a floor whose stripes spin (rotate2 on the uvs, srgb for colours
+// as picked), and a slab of lava: cellular noise (voronoi) in 3D, its third axis time, so the crust
+// breaks into plates that drift and re-form, raised by the same cells, glowing in the cracks between
+// them (F2 - F1, the distance to the cell edge). Everything reads uTime: no frame loop. Click a
+// piece to see its hooks.
 
 const HOLOGRAM = {
   uniforms: { uGlow: 2.2 },
@@ -46,6 +49,26 @@ local.y = (local.y + 0.5) * h - 0.5;`,
   // green to amber to red with height, as a meter
   fragment: `float t = saturate(remap(vWorldPosition.y, 0.0, 2.6, 0.0, 1.0));
 base.rgb = hsv2rgb(0.33 - t * 0.33, 0.85, 1.0);`,
+}
+const LAVA = {
+  uniforms: { uCells: 7, uFlow: 0.18, uRelief: 0.25 },
+  // crust plates raised a little by the cells, sloping gently down to the cracks - the crisp bevel is
+  // the fragment hook's, lit per pixel, as a steep slope here would step with the mesh's resolution
+  vertex: `vec3 v = voronoi(vec3(uv * vec2(uCells * 3.0, uCells), uTime * uFlow));
+local.y += smoothstep(0.0, 0.4, v.y - v.x) * 0.035;`,
+  // the plates' bevel lit per pixel: their height, and its slope from two more samples a hair away,
+  // bend the normal - smooth edges at any mesh resolution. Dark crust, each plate its own shade,
+  // molten where it cracks, the glow breathing
+  fragment: `vec2 q = vUv * vec2(uCells * 3.0, uCells);
+float t = uTime * uFlow, e = 0.01;
+vec3 v = voronoi(vec3(q, t));
+vec3 vu = voronoi(vec3(q + vec2(e, 0.0), t)), vv = voronoi(vec3(q + vec2(0.0, e), t));
+float h = smoothstep(0.0, 0.2, v.y - v.x);
+vec2 slope = vec2(smoothstep(0.0, 0.2, vu.y - vu.x) - h, smoothstep(0.0, 0.2, vv.y - vv.x) - h) / e;
+normal = normalize(normal - vec3(slope.x, 0.0, slope.y) * uRelief);
+float crack = 1.0 - smoothstep(0.0, 0.12, v.y - v.x);
+base.rgb = srgb(vec3(0.16, 0.12, 0.11)) * (0.5 + 0.9 * v.z);
+emissive += mix(vec3(1.0, 0.08, 0.0), vec3(1.0, 0.55, 0.05), crack) * crack * (3.0 + sin(uTime * 2.0 + v.z * 6.28));`,
 }
 const FLOOR = {
   uniforms: { uSpin: 0.25 },
@@ -96,8 +119,15 @@ export default function run({ canvas, gui }) {
   }))
   for (let i = 0; i < 9; i++) bars.setInstance(i, { position: [4.2 + i * 0.42, 1.3, 0] })
 
+  // a slab of lava along the front, its top one plane that its hooks crack and raise
+  const lava = scene.add(new Mesh({
+    name: 'lava', geometry: plane({ width: 9, depth: 3, segments: 200 }), position: [0.8, 0.42, 3.4],
+    material: { roughness: 0.75, shader: { ...LAVA, bounds: 0.1 } }, receiveShadow: true,
+  }))
+  scene.add(new Mesh({ geometry: box({ width: 9, height: 0.4, depth: 3 }), position: [0.8, 0.2, 3.4], material: { color: '#1d1714', roughness: 0.9 }, castShadow: true, receiveShadow: true, pickable: false }))
+
   // ---- the hooks of the piece picked, shown bottom left - the pieces run off to the right
-  const pieces = { hologram, twister, blob, bars, floor }
+  const pieces = { hologram, twister, blob, bars, lava, floor }
   const panel = document.createElement('div')
   panel.className = 'code-panel'
   Object.assign(panel.style, { bottom: '16px', maxWidth: 'min(460px, calc(100vw - 32px))', maxHeight: '40vh', overflow: 'auto' })
@@ -126,9 +156,11 @@ export default function run({ canvas, gui }) {
   f.add(twister.material.shader.uniforms, 'uTwist', 0, 3, 0.05).name('twist')
   f.add(blob.material.shader.uniforms, 'uSwell', 0, 1.2, 0.05).name('blob swell')
   f.add(bars.material.shader.uniforms, 'uSpeed', 0, 5, 0.1).name('meter speed')
+  f.add(lava.material.shader.uniforms, 'uCells', 2, 14, 0.5).name('lava cells')
+  f.add(lava.material.shader.uniforms, 'uFlow', 0, 1, 0.02).name('lava flow')
   f.add(floor.material.shader.uniforms, 'uSpin', -1, 1, 0.05).name('floor spin')
   show('hologram')
 
-  view.frame(new Box3([-6.4, 0, -1.4], [8.1, 3.6, 1.4]), { padding: 0.08 })
+  view.frame(new Box3([-6.4, 0, -1.4], [8.1, 3.6, 4.9]), { padding: 0.08 })
   return view.start()
 }
