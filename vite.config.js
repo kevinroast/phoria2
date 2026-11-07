@@ -19,6 +19,7 @@ const ENTRIES = {
 /**
  * Shaders ship as source text, which the JS minifier leaves alone: strip their comments and
  * indentation in builds (strings tagged \/* glsl *\/). Lines stay lines, for the preprocessor.
+ * `//@hook` lines are kept: they are where shader hooks are spliced in, not comments.
  * @returns {import('vite').Plugin}
  */
 export function minifyGlsl() {
@@ -27,10 +28,18 @@ export function minifyGlsl() {
     apply: 'build',
     transform(code, id) {
       if (!/[\\/]src[\\/].*\.js$/.test(id) || !code.includes('/* glsl */')) return null
-      return code.replace(/\/\* glsl \*\/ `([\s\S]*?)`/g, (_, body) =>
-        `/* glsl */ \`${body.split('\n').map((line) => line.replace(/\/\/.*$/, '').trim()).filter(Boolean).join('\n')}\n\``)
+      return minifyGlslSource(code)
     },
   }
+}
+
+/**
+ * The plugin's transform, on a module's source (exported for the tests).
+ * @param {string} code
+ */
+export function minifyGlslSource(code) {
+  return code.replace(/\/\* glsl \*\/ `([\s\S]*?)`/g, (_, body) =>
+    `/* glsl */ \`${body.split('\n').map((line) => (/^\s*\/\/@hook /.test(line) ? line : line.replace(/\/\/.*$/, '')).trim()).filter(Boolean).join('\n')}\n\``)
 }
 
 // The agent reference (llms.txt, and llms-full.txt with the whole API) lives at the package root, so

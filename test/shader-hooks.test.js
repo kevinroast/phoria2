@@ -247,3 +247,21 @@ describe('redrawing', () => {
     expect(watch.changed(scene, cam, 3)).toBe(false)
   })
 })
+
+describe('the build', () => {
+  // the build strips GLSL comments: the hook lines must survive it, or no hook is ever spliced in
+  // (1.4.0 shipped that way - its tests ran on the source, not the build)
+  it("keeps every shader's //@hook lines when it minifies the GLSL", async () => {
+    const { readFileSync } = await import('node:fs')
+    const { minifyGlslSource } = await import('../vite.config.js')
+    for (const file of ['src/webgl/shaders.js', 'src/webgl/picking.js']) {
+      const source = readFileSync(file, 'utf8')
+      const built = minifyGlslSource(source)
+      const marks = (s) => s.match(/^\/\/@hook (uniforms|vertex|fragment|lit)$/gm) ?? []
+      expect(marks(source).length).toBeGreaterThan(0)
+      expect(marks(built)).toEqual(marks(source))
+      // and the ordinary comments still go
+      expect(built.length).toBeLessThan(source.length)
+    }
+  })
+})
