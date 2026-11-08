@@ -38,7 +38,7 @@ export const DEMOS = [
   { name: 'fog shadows', title: 'a harbour on a foggy night - lamps and a lighthouse beam casting shadows through mist' },
   { name: 'point lights', title: "a jack-o'-lantern - candle inside casting shadows, light escaping through the carved face" },
   { name: 'viewer', title: 'a glTF product viewer - full material maps, baked occlusion, an HDR studio, shadows, animation' },
-  { name: 'viewer passes', title: 'product viewer passes - ambient occlusion in the creases, a soft ground shadow, FXAA - each on a switch' },
+  { name: 'viewer passes', title: 'product viewer passes - ambient occlusion, soft ground shadows, FXAA' },
   { name: 'models', title: 'hand-made models from raw points and polygons - drawn solid, as edges and as points' },
   { name: 'guided tour', title: 'a guided tour of a data centre - cards pinned beside each stop, clickable pins, followable inspection robot', hint: 'Next and Back, the arrow keys or a numbered pin · drag to look around' },
   

@@ -21,10 +21,11 @@ export default function run({ canvas, gui }) {
 
   const solid = (geometry, color, position, extra = {}) => scene.add(new Mesh({ geometry, position, material: { color, roughness: 0.45, ...extra } }))
 
-  // a teapot, glazed
+  // a teapot, glazed - both sides drawn: the Utah teapot's body is a shell open at the top, so over
+  // the rim the inside of the far wall shows, and that is its back
   const pot = fromPolygons({ ...teapot, smooth: true })
   const b = pot.bounds, s = 1.5 / (b.getRadius() || 1), c = b.getCenter()
-  scene.add(new Mesh({ geometry: pot, material: { color: '#f3efe8', roughness: 0.18 }, scale: s, position: [-c[0] * s - 0.6, -b.min[1] * s, -c[2] * s - 0.4] }))
+  scene.add(new Mesh({ geometry: pot, material: { color: '#f3efe8', roughness: 0.18, doubleSided: true }, scale: s, position: [-c[0] * s - 0.6, -b.min[1] * s, -c[2] * s - 0.4] }))
 
   // a ball in a bowl
   solid(lathe({ points: [[0, 0], [0.55, 0], [0.62, 0.05], [0.9, 0.45], [0.86, 0.47], [0.58, 0.1], [0, 0.1]], segments: 64 }), '#3f6fa3', [2.1, 0, 1.1])

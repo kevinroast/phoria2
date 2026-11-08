@@ -9,7 +9,8 @@ import { teapot } from './data/teapot.js'
 // be drawn three ways at once: solid (a Mesh), as its edges (Lines of edges()) and as its vertices
 // (Points) - each shown, hidden or made see-through on its own.
 const MODELS = {
-  teapot: { data: teapot, smooth: true, material: { color: '#f2ede4', roughness: 0.15 } },
+  // both sides drawn: the teapot's body is a shell open under its lid, its inside the back of it
+  teapot: { data: teapot, smooth: true, material: { color: '#f2ede4', roughness: 0.15, doubleSided: true } },
   head: { data: head, smooth: false, material: { color: '#d8a47f', roughness: 0.6 } },
   cobra: { data: cobra, smooth: false, material: { color: '#c8cad2', roughness: 0.3, metalness: 0.75 } },
 }
@@ -38,7 +39,8 @@ export default function run({ canvas, gui }) {
     const box = geometry.bounds, s = 2 / (box.getRadius() || 1), c = box.getCenter()
     const model = turntable.add(new Group({ scale: s, position: [-c.x * s, -box.min[1] * s, -c.z * s] }))
     const finish = FINISHES[settings.finish] ?? material
-    model.add(new Mesh({ geometry, material: { ...finish, opacity: settings.opacity }, visible: settings.solid, castShadow: true }))
+    // a model open somewhere (the teapot) keeps both sides drawn whatever its finish
+    model.add(new Mesh({ geometry, material: { ...finish, doubleSided: !!material.doubleSided, opacity: settings.opacity }, visible: settings.solid, castShadow: true }))
     model.add(new Lines({ geometry: edges(geometry), material: { color: settings.solid ? '#000000' : '#7fd1ff', opacity: settings.solid ? 0.35 : 1 }, visible: settings.edges }))
     model.add(new Points({ geometry, material: { color: '#ffb347', size: 4, sizeAttenuation: false }, visible: settings.points }))
   }

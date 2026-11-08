@@ -39,7 +39,8 @@ export default function run({ canvas, gui }) {
   scene.add(new Mesh({ geometry: cylinder({ radius: 1.3, height: 0.5, segments: 64 }), material: { color: '#d9d4cc', roughness: 0.5 }, position: [0, 0.25, 0], castShadow: true, receiveShadow: true }))
   const geometry = fromPolygons({ ...teapot, smooth: true })
   const box = geometry.bounds, s = 1.8 / (box.getRadius() || 1), c = box.getCenter()
-  scene.add(new Mesh({ geometry, material: { color: '#f2ede4', roughness: 0.2 }, scale: s, position: [-c[0] * s, 0.5 - box.min[1] * s, -c[2] * s], castShadow: true, receiveShadow: true }))
+  // both sides drawn: the teapot's body is a shell open under its lid, its inside the back of it
+  scene.add(new Mesh({ geometry, material: { color: '#f2ede4', roughness: 0.2, doubleSided: true }, scale: s, position: [-c[0] * s, 0.5 - box.min[1] * s, -c[2] * s], castShadow: true, receiveShadow: true }))
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2 + 0.3
     scene.add(new Mesh({ geometry: cylinder({ radius: 0.28, height: 3.2, segments: 32 }), material: { color: '#c9c4bb', roughness: 0.6 }, position: [Math.cos(a) * 4.2, 1.6, Math.sin(a) * 4.2], castShadow: true, receiveShadow: true }))
