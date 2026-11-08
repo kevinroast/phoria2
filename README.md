@@ -172,7 +172,7 @@ The gallery's Integrations section has four, each with its source: a brick tower
 [Manifold](https://github.com/elalish/manifold), and people finding their way round an office with
 [recast-navigation](https://github.com/isaac-mason/recast-navigation-js).
 
-## Accessibility *(1.2)*
+## Accessibility
 
 ```js
 const view = new View({ canvas: '#c', keyboard: true })
