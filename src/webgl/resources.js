@@ -3,10 +3,19 @@
 // dropped geometry's entry goes with it; dispose() frees the GL objects straight away.
 import { ATTRIBUTES } from './shaders.js'
 import { isVideo } from '../material/Texture.js'
+import { freeTarget, makeTarget } from './targets.js'
+import { isInstanced } from '../scene/kinds.js'
 
 /** @import { Geometry } from '../geometry/Geometry.js' */
 /** @import { Texture, DataImage } from '../material/Texture.js' */
 /** @import { Scene } from '../scene/Scene.js' */
+/** @import { RenderTexture } from '../material/RenderTexture.js' */
+/** @import { Target } from './targets.js' */
+/**
+ * A render texture's targets: the texture materials sample, and what its frames are drawn into (the
+ * same target, or a multisampled one resolved into it).
+ * @typedef {{ width: number, height: number, samples: number, levels: number, picture: Target, draw: Target }} RenderTargets
+ */
 
 // uploads bind textures here, out of the way of the units programs sample from
 const UPLOAD_UNIT = 15
@@ -107,6 +116,12 @@ export function uvMatrix(t) {
   m[0] = c * sx; m[1] = -s * sx; m[2] = 0
   m[3] = s * sy; m[4] = c * sy; m[5] = 0
   m[6] = cx - c * cx - s * cy + t.offset[0]; m[7] = cy + s * cx - c * cy + t.offset[1]; m[8] = 1
+  // a render texture's first row is its picture's bottom: v turned over, so it reads as an image does
+  if (/** @type {any} */ (t).isRenderTexture) {
+    m[1] = -m[1]
+    m[4] = -m[4]
+    m[7] = 1 - m[7]
+  }
   return m
 }
 
@@ -126,6 +141,7 @@ export class Resources {
   /** @type {WeakMap<object, MeshBuffers>} */ #lines = new WeakMap()
   /** Points drawn as squares: an instance a point. @type {WeakMap<object, MeshBuffers & { capacity: number, sorted: boolean, data: Float32Array }>} */ #sprites = new WeakMap()
   /** The GPU copy of each texture: the version it holds, and the storage it was made with. @type {WeakMap<Texture, { texture: WebGLTexture, version: number, width: number, height: number, internal: number }>} */ #textures = new WeakMap()
+  /** Each render texture's targets. @type {WeakMap<RenderTexture, RenderTargets>} */ #renderTargets = new WeakMap()
   /** @type {WebGLTexture | null} */ #white = null
   /** @type {WebGLBuffer | null} */ #corners = null
   /** Counts for renderer.info. */
@@ -371,6 +387,11 @@ export class Resources {
    * @returns {WebGLTexture}
    */
   texture(texture) {
+    // a render texture is drawn on the GPU: what it was last drawn as (white before its first frame)
+    if (/** @type {any} */ (texture).isRenderTexture) {
+      this.#mark(texture)
+      return this.#renderTargets.get(/** @type {RenderTexture} */ (texture))?.picture.texture ?? this.#whiteTexture()
+    }
     if (!texture.image) return this.#whiteTexture()
     this.#mark(texture)
     const gl = this.gl
@@ -454,7 +475,7 @@ export class Resources {
       const d = /** @type {any} */ (n)
       if (!d.isDrawable) return
       keys.add(d.geometry)
-      if ('instanceMatrices' in d) keys.add(d)
+      if (isInstanced(d)) keys.add(d)
       for (const [, t] of d.material.allTextures) keys.add(t)
     })
     for (const key of keys) {
@@ -539,7 +560,53 @@ export class Resources {
   }
 
   /** @param {Texture} texture */
+  /**
+   * A render texture's targets at its size, made again when that changes: the texture materials
+   * sample - sRGB, so it is drawn in linear light and read back as linear, with mip levels for
+   * reading it smaller - and, multisampled, the buffer its frames are drawn into and resolved from.
+   * @param {RenderTexture} rt @param {number} samples
+   * @returns {RenderTargets}
+   */
+  renderTexture(rt, samples) {
+    this.#mark(rt)
+    const gl = this.gl
+    const levels = rt.mipmaps ? Math.floor(Math.log2(Math.max(rt.width, rt.height))) + 1 : 1
+    let entry = this.#renderTargets.get(rt)
+    if (entry && (entry.width !== rt.width || entry.height !== rt.height || entry.samples !== samples || entry.levels !== levels)) {
+      this.#freeRenderTexture(rt)
+      entry = undefined
+    }
+    if (entry) return entry
+    const { width, height } = rt
+    const picture = makeTarget(gl, { width, height, color: gl.SRGB8_ALPHA8, depth: samples ? null : 'stencil', levels, filter: rt.filter })
+    const draw = samples ? makeTarget(gl, { width, height, color: gl.SRGB8_ALPHA8, depth: 'stencil', samples }) : picture
+    // how it repeats, and - sharp at glancing angles - its anisotropy, as an image's would be
+    gl.activeTexture(gl.TEXTURE0 + UPLOAD_UNIT)
+    gl.bindTexture(gl.TEXTURE_2D, picture.texture)
+    const wrap = { repeat: gl.REPEAT, clamp: gl.CLAMP_TO_EDGE, mirror: gl.MIRRORED_REPEAT }[rt.wrap]
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap)
+    const aniso = this.#anisotropic()
+    if (aniso && levels > 1 && rt.filter !== 'nearest') gl.texParameterf(gl.TEXTURE_2D, aniso.ext.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(rt.anisotropy, aniso.max))
+    entry = { width, height, samples, levels, picture, draw }
+    this.#renderTargets.set(rt, entry)
+    this.counts.textures++
+    rt.onDispose(() => this.#freeRenderTexture(rt))
+    return entry
+  }
+
+  /** @param {RenderTexture} rt */
+  #freeRenderTexture(rt) {
+    const entry = this.#renderTargets.get(rt)
+    if (!entry) return
+    freeTarget(this.gl, entry.picture)
+    if (entry.draw !== entry.picture) freeTarget(this.gl, entry.draw)
+    this.#renderTargets.delete(rt)
+    this.counts.textures--
+  }
+
   #freeTexture(texture) {
+    if (/** @type {any} */ (texture).isRenderTexture) return this.#freeRenderTexture(/** @type {RenderTexture} */ (texture))
     const entry = this.#textures.get(texture)
     if (!entry) return
     this.gl.deleteTexture(entry.texture)
@@ -554,6 +621,7 @@ export class Resources {
     this.#lines = new WeakMap()
     this.#sprites = new WeakMap()
     this.#textures = new WeakMap()
+    this.#renderTargets = new WeakMap()
     this.#usedBy = new WeakMap()
     this.#white = null
     this.#corners = null

@@ -2,6 +2,7 @@
 // picture is wrong. A coding agent can't see the canvas; this lets it debug without screenshots.
 
 import { Box3 } from './value/Box3.js'
+import { drawKind } from './scene/kinds.js'
 
 /** @import { FrameDescription } from './frame.js' */
 /** @import { LabelStats } from './labels.js' */
@@ -61,7 +62,7 @@ export function explain(info) {
   const items = [...frame.opaque, ...frame.transparent]
   const kinds = new Map(['mesh', 'instanced mesh', 'points', 'lines'].map((k) => [k, { n: 0, items: 0 }]))
   for (const { node, instances } of items) {
-    const kind = instances ? 'instanced mesh' : /** @type {any} */ (node).drawMode === 'points' ? 'points' : /** @type {any} */ (node).drawMode === 'lines' ? 'lines' : 'mesh'
+    const kind = instances ? 'instanced mesh' : drawKind(node)
     const k = kinds.get(kind) ?? { n: 0, items: 0 }
     k.n++
     k.items += instances ? instances.count : kind === 'points' ? node.geometry.drawnVertices : 0
@@ -151,6 +152,16 @@ export function explain(info) {
   if (bounds.isEmpty()) warnings.unshift('the scene has nothing to draw - add a Mesh, InstancedMesh, Points or Lines')
   else if (!frame.stats.drawn && frame.stats.culled) {
     warnings.unshift(`nothing is in view: ${plural(frame.stats.culled, 'object')} are outside the camera's view - call view.frame() to fit the camera to the scene`)
+  }
+
+  // render textures the frame shows: each drawn from its own camera before the frame
+  /** @type {Set<any>} */
+  const renderTextures = new Set()
+  for (const { material } of items) for (const [, t] of material.allTextures) if (/** @type {any} */ (t).isRenderTexture) renderTextures.add(t)
+  if (renderTextures.size) {
+    const every = (/** @type {any} */ rt) => (rt.update === 'frame' ? 'each frame' : rt.update === 'manual' ? 'when asked (needsUpdate)' : `every ${rt.update} frames`)
+    const kind = (/** @type {any} */ rt) => (rt.camera.constructor.type === 'orthographic-camera' ? 'orthographic' : 'perspective')
+    lines.push(`Render textures: ${[...renderTextures].map((rt) => `${rt.width} x ${rt.height} from a ${kind(rt)} camera, drawn ${every(rt)}${rt.scene ? ' (its own scene)' : ''}`).join('; ')}`)
   }
 
   // the picture's effects, with their settings - and why one that is on might show nothing

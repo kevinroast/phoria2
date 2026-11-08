@@ -26,6 +26,8 @@ product viewers. The [demo gallery](https://kevs3d.co.uk/phoria2/).
 - **Product viewer polish as options**: `ambientOcclusion` shades the creases, `groundShadow` sets
   a soft shadow under the model with no light needed, and `fxaa` smooths edges - each one option,
   loaded only when turned on.
+- **Render textures**: a `RenderTexture` is what a camera sees, as any material's map - live camera
+  feeds on monitors, a minimap, a second view beside a product - drawn by the view as it draws.
 - **Accessible**: `keyboard: true` lets people step through bars, points and parts with the
   arrow keys while a screen reader says what each one is; motion follows the system's
   reduced-motion setting.
@@ -217,7 +219,7 @@ A full example, with a chart that follows its data, is in
 
 | Import | |
 |---|---|
-| `phoria2` | the view, scene graph, cameras, lights, materials, geometry, curves, textures, picking, labels, bloom, ambient occlusion, ground shadows, FXAA, `create()` from JSON |
+| `phoria2` | the view, scene graph, cameras, lights, materials, geometry, curves, textures, picking, labels, bloom, ambient occlusion, ground shadows, FXAA, render textures, `create()` from JSON |
 | `phoria2/charts` | `chart()` - charts from a spec of mark, data and channels, and the scales they use |
 | `phoria2/particles` | `Emitter` and `Body` |
 | `phoria2/gltf` | `loadGLTF()` - glTF 2.0 models with their materials and animations |

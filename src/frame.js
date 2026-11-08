@@ -8,6 +8,7 @@ import { fitPointShadow, fitShadow, fitSpotShadow, SPOT_TILES } from './shadow.j
 import { worldPlane } from './clip.js'
 import { hiddenInstance } from './scene/drawables.js'
 import { variantOf } from './material/features.js'
+import { drawKind, isInstanced } from './scene/kinds.js'
 
 /** @import { Scene } from './scene/Scene.js' */
 /** @import { Camera } from './scene/cameras.js' */
@@ -159,6 +160,7 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  * @property {boolean} draggable some node has an onDrag handler
  * @property {FrameOutline[]} outlines subtrees to draw an outline round, last of all
  * @property {boolean} tooltips some node has its own tooltip
+ * @property {Scene} scene what was collected - for render textures that draw the view's own scene
  * @property {[any, FrameClip | null][]} solids opaque meshes that cast a ground shadow, seen or not - all but
  *   those that only receive shadows (floors); made into draw items by solidItems() when wanted
  */
@@ -166,12 +168,14 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
 /**
  * What to draw: everything visible, culled to the camera's view, sorted for drawing. Expects world
  * matrices to be current (scene.update() or scene.updateWorld()); the camera is brought up to date
- * here, since it often isn't in the scene.
+ * here, since it often isn't in the scene. A frame drawn off screen - into a render texture - takes
+ * `display: false`: no labels, overlays, outlines or interaction, only what is drawn.
  * @param {Scene} scene
  * @param {Camera} camera
+ * @param {{ display?: boolean }} [options]
  * @returns {FrameDescription}
  */
-export function collect(scene, camera) {
+export function collect(scene, camera, { display = true } = {}) {
   camera.updateWorld()
   const view = camera.viewMatrix
   const projection = camera.projectionMatrix
@@ -203,6 +207,7 @@ export function collect(scene, camera) {
     outlines: [],
     tooltips: false,
     solids: [],
+    scene,
   }
   let punctual = 0, directional = 0
   // shadows: what casts (seen or not - a shadow can fall into view from off screen) and what
@@ -224,15 +229,18 @@ export function collect(scene, camera) {
     if (!node.shownTo(camera)) return
     // the nearest clip cuts this subtree
     if (node.clip) clip = { plane: worldPlane(node), cap: node.clip.cap }
-    // an outline goes round everything under the node that asks for it
-    if (node.outline) {
-      outline = { color: node.outline.color, width: node.outline.width, items: [] }
-      frame.outlines.push(outline)
+    // what the view shows on top of the picture - outlines, overlays, interaction - only on screen
+    if (display) {
+      // an outline goes round everything under the node that asks for it
+      if (node.outline) {
+        outline = { color: node.outline.color, width: node.outline.width, items: [] }
+        frame.outlines.push(outline)
+      }
+      if (node.overlay) frame.overlays.push(node.overlay)
+      if (node.onDrag) frame.interactive = frame.draggable = true
+      if (node.tooltip) frame.interactive = frame.tooltips = true
+      else if (node.highlight || node.handlersFor('hover').length || node.handlersFor('click').length) frame.interactive = true
     }
-    if (node.overlay) frame.overlays.push(node.overlay)
-    if (node.onDrag) frame.interactive = frame.draggable = true
-    if (node.tooltip) frame.interactive = frame.tooltips = true
-    else if (node.highlight || node.handlersFor('hover').length || node.handlersFor('click').length) frame.interactive = true
     if (node.isDrawable) {
       if (node.castShadow && node.drawMode !== 'points' && node.drawMode !== 'lines') casters.push([node, clip])
       // what a ground shadow is of: solid meshes, not floors that only receive shadows
@@ -250,11 +258,12 @@ export function collect(scene, camera) {
           else capped.set(item.clip, [item])
         }
         frame.stats.drawn++
-        if (node.labels) instanceLabels(node, viewProjection, view, projection[5], frame.labels)
+        if (display && node.labels) instanceLabels(node, viewProjection, view, projection[5], frame.labels)
       } else {
         frame.stats.culled++
       }
     } else if (node.isLabel) {
+      if (!display) return
       const position = node.worldPosition
       frame.labels.push({ key: node, node, index: null, text: node.text, style: node, position, ...project(position, viewProjection, view, projection[5]) })
     } else if (node.lightKind) {
@@ -355,7 +364,7 @@ export function collect(scene, camera) {
 }
 
 /** A drawable's kind of program. @param {any} node @returns {'mesh' | 'points' | 'lines'} */
-const kindOf = (node) => (node.drawMode === 'points' ? 'points' : node.drawMode === 'lines' ? 'lines' : 'mesh')
+const kindOf = drawKind
 
 /**
  * A frame's solids as draw items, none culled - for passes that see more than the camera does.
@@ -373,7 +382,7 @@ export function solidItems(frame) {
  */
 function drawItem(node, view, planes, clip) {
   const { geometry, material, worldMatrix } = node
-  const instances = 'instanceMatrices' in node ? /** @type {InstancedMesh} */ (node) : null
+  const instances = isInstanced(node) ? /** @type {InstancedMesh} */ (node) : null
   if (instances && instances.count === 0) return null
   if (!geometry.vertexCount) return null
 
@@ -438,7 +447,7 @@ function instanceLabelSet(node, labels, layer, viewProjection, view, yScale, out
   const { worldMatrix: w } = node
   let id = ids.get(node)
   if (id === undefined) ids.set(node, id = nextId++)
-  const instanced = 'instanceMatrices' in node
+  const instanced = isInstanced(node)
   const n = instanced ? node.count : node.geometry.drawnVertices
   let px = 0, py = 0, pz = 0
   if (instanced) {

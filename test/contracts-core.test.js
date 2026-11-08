@@ -2,7 +2,7 @@
 import { expect, it } from 'vitest'
 import {
   AmbientLight, DirectionalLight, Geometry, Group, HemisphereLight, InstancedMesh, Label, Lines, Material, Mesh,
-  Camera, OrthographicCamera, PerspectiveCamera, PointLight, Points, Scene, SpotLight, Texture, box, create, curve, cylinder,
+  Camera, OrthographicCamera, PerspectiveCamera, PointLight, Points, RenderTexture, Scene, SpotLight, Texture, box, create, curve, cylinder,
   ellipse, extrude, grid, icosphere, lathe, outline, plane, sphere, torus, axes,
 } from '../src/index.js'
 import { NODE_HINTS, NODE_OPTIONS } from '../src/scene/Node.js'
@@ -236,6 +236,28 @@ contract('Texture', {
     mipmaps: { value: false, read: (t) => t.mipmaps, default: true },
     anisotropy: { value: 4, read: (t) => t.anisotropy, default: 8, bad: 0.5, error: 'anisotropy' },
     flipY: { value: true, read: (t) => t.flipY, default: false },
+  },
+})
+
+contract('RenderTexture', {
+  options: RenderTexture.OPTIONS, hints: RenderTexture.HINTS, make: (o) => new RenderTexture({ ...(o.camera === undefined ? { camera: new PerspectiveCamera() } : {}), ...o }),
+  watch: (t) => watchMaterial(new Material({ map: t })),
+  change: (t, key, v) => { t[key] = v; t.needsUpdate() },
+  rows: {
+    camera: { fresh: () => new PerspectiveCamera(), check: (t, c) => { if (t.camera !== c) throw new Error('not the camera given') }, bad: 'front', error: "'camera' must be a camera" },
+    scene: { fresh: () => new Scene(), check: (t, s) => { if (t.scene !== s) throw new Error('not the scene given') }, bad: {}, error: "'scene' must be a Scene" },
+    width: { value: 256, read: (t) => t.width, default: 512, bad: 0.5, error: 'width' },
+    height: { value: 128, read: (t) => t.height, default: 512, bad: -1, error: 'height' },
+    update: { value: 3, read: (t) => t.update, default: 'frame', bad: 'often', error: 'update' },
+    wrap: { value: 'repeat', read: (t) => t.wrap, default: 'clamp', bad: 'tile', error: 'wrap' },
+    repeat: { value: [2, 3], read: (t) => t.repeat, default: [1, 1], bad: [2], error: 'repeat' },
+    offset: { value: [0.5, 0.25], read: (t) => t.offset, default: [0, 0], bad: 'left', error: 'offset' },
+    rotation: { value: Math.PI / 4, read: (t) => t.rotation, default: 0, bad: 'diagonal', error: 'rotation' },
+    center: { value: [0.5, 0.5], read: (t) => t.center, default: [0, 0], bad: [0.5], error: 'center' },
+    uvSet: { value: 1, read: (t) => t.uvSet, default: 0, bad: 2, error: 'uvSet' },
+    filter: { value: 'nearest', read: (t) => t.filter, default: 'linear', bad: 'blurry', error: 'filter' },
+    mipmaps: { value: false, read: (t) => t.mipmaps, default: true },
+    anisotropy: { value: 4, read: (t) => t.anisotropy, default: 8, bad: 0.5, error: 'anisotropy' },
   },
 })
 

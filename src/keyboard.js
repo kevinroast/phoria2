@@ -5,6 +5,7 @@
 // Loaded when a View is given keyboard: true, so apps without it don't carry it.
 import { hiddenInstance } from './scene/drawables.js'
 import { Vec3 } from './value/Vec3.js'
+import { isInstanced } from './scene/kinds.js'
 
 /** @import { Hit } from './Raycaster.js' */
 /** @import { TooltipContent } from './tooltip.js' */
@@ -194,7 +195,7 @@ export class Keyboard {
             wholes.add(whole)
             items.push({ node: n, index: null, whole })
           }
-        } else if ('instanceMatrices' in n) {
+        } else if (isInstanced(n)) {
           for (let i = 0; i < n.count; i++) {
             if (!hiddenInstance(n.instanceMatrices, i) && (own || (viewWide && n.datumAt(i) !== null))) items.push({ node: n, index: i, whole: null })
           }
@@ -226,7 +227,7 @@ export class Keyboard {
 const same = (a, b) => a.node === b.node && a.index === b.index
 
 /** A surface: a mesh of triangles with a row of data for each vertex. @param {any} n */
-const perVertex = (n) => n.drawMode === 'triangles' && !('instanceMatrices' in n) && Array.isArray(n.data) && n.data.length === n.geometry.vertexCount
+const perVertex = (n) => n.drawMode === 'triangles' && !isInstanced(n) && Array.isArray(n.data) && n.data.length === n.geometry.vertexCount
 
 /**
  * A hit on an item, as the pointer would make over its middle.
@@ -239,7 +240,7 @@ function hitOf({ node, index, whole }) {
   /** @type {Vec3} */
   let point
   if (whole) point = whole.bounds.getCenter()
-  else if (index !== null && 'instanceMatrices' in d) {
+  else if (index !== null && isInstanced(d)) {
     // the middle of the geometry, through the instance's matrix and then the mesh's
     node.updateWorld()
     const local = d.geometry.bounds.getCenter()

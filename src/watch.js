@@ -1,3 +1,4 @@
+import { isInstanced } from './scene/kinds.js'
 // Change detection for on-demand rendering. Each frame the View lays out a flat signature of
 // everything that affects the picture - transforms, visibility, geometry and instance versions,
 // material values, lights, labels, the camera - and draws only when it differs from the last one.
@@ -27,6 +28,7 @@ export class ChangeWatch {
   /** @type {string[]} */ #strings = []
   /** @type {string[]} */ #previousStrings = []
   #time = 0
+  /** Render textures' own scenes being walked now - two scenes showing each other's are walked once each. @type {Set<object>} */ #walking = new Set()
 
   /**
    * Has anything that affects the picture changed since the last call? The first call says yes.
@@ -160,7 +162,7 @@ export class ChangeWatch {
     // per-instance labels come from these, so swapping either redraws
     this.#push(node.labels ? idOf(node.labels) : 0)
     this.#push(node.data && typeof node.data === 'object' ? idOf(node.data) : 0)
-    if ('instanceMatrices' in node) {
+    if (isInstanced(node)) {
       this.#push(node.count)
       this.#push(node.version)
     }
@@ -222,6 +224,26 @@ export class ChangeWatch {
     this.#pushAll(texture.center)
     this.#push(texture.uvSet)
     this.#pushAll(texture.offset)
+    if (texture.isRenderTexture) this.#renderTexture(texture)
+  }
+
+  /**
+   * What a render texture shows: its camera moving changes the picture, as does its own scene - the
+   * view's own is walked already.
+   * @param {any} rt
+   */
+  #renderTexture(rt) {
+    this.#push(rt.width)
+    this.#push(rt.height)
+    this.#push(rt.update === 'frame' ? -1 : rt.update === 'manual' ? -2 : rt.update)
+    rt.camera.updateWorld()
+    this.#camera(rt.camera)
+    this.#pushAll(rt.camera.worldMatrix)
+    const scene = rt.scene
+    if (!scene || this.#walking.has(scene)) return
+    this.#walking.add(scene)
+    this.#scene(scene, rt.camera)
+    this.#walking.delete(scene)
   }
 
   /** @param {any} label */

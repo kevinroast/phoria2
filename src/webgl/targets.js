@@ -15,6 +15,8 @@
  * @property {number} [samples] multisampling: colour and depth are then buffers, read by resolving
  *   into a target with textures (blit) - 0 for none (default)
  * @property {'linear' | 'nearest'} [filter] how its colour textures are read (default 'linear')
+ * @property {number} [levels] mip levels of its colour textures, for reading it smaller than it is -
+ *   filled with generateMipmap() after drawing (default 1)
  */
 
 /**
@@ -34,7 +36,7 @@
  * @returns {Target}
  */
 export function makeTarget(gl, spec) {
-  const { width, height, depth = null, samples = 0, filter = 'linear' } = spec
+  const { width, height, depth = null, samples = 0, filter = 'linear', levels = 1 } = spec
   const colors = spec.color === null ? [] : Array.isArray(spec.color) ? spec.color : [spec.color ?? gl.RGBA8]
   const framebuffer = /** @type {WebGLFramebuffer} */ (gl.createFramebuffer())
   gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
@@ -48,13 +50,14 @@ export function makeTarget(gl, spec) {
     gl.framebufferRenderbuffer(gl.FRAMEBUFFER, attachment, gl.RENDERBUFFER, b)
     target.renderbuffers.push(b)
   }
-  const texture = (/** @type {number} */ format, /** @type {number} */ attachment, /** @type {number} */ glFilter) => {
+  const texture = (/** @type {number} */ format, /** @type {number} */ attachment, /** @type {number} */ glFilter, mips = 1) => {
     const t = /** @type {WebGLTexture} */ (gl.createTexture())
     // unit 15 is kept for making and uploading, so no draw's sampler is disturbed
     gl.activeTexture(gl.TEXTURE15)
     gl.bindTexture(gl.TEXTURE_2D, t)
-    gl.texStorage2D(gl.TEXTURE_2D, 1, format, width, height)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, glFilter)
+    gl.texStorage2D(gl.TEXTURE_2D, mips, format, width, height)
+    const minify = mips > 1 ? (glFilter === gl.NEAREST ? gl.NEAREST_MIPMAP_NEAREST : gl.LINEAR_MIPMAP_LINEAR) : glFilter
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, minify)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, glFilter)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
@@ -63,7 +66,7 @@ export function makeTarget(gl, spec) {
   }
   colors.forEach((format, i) => {
     if (samples > 0) buffer(format, gl.COLOR_ATTACHMENT0 + i)
-    else target.textures.push(texture(format, gl.COLOR_ATTACHMENT0 + i, filter === 'nearest' ? gl.NEAREST : gl.LINEAR))
+    else target.textures.push(texture(format, gl.COLOR_ATTACHMENT0 + i, filter === 'nearest' ? gl.NEAREST : gl.LINEAR, levels))
   })
   target.texture = target.textures[0] ?? null
   if (colors.length > 1) gl.drawBuffers(colors.map((_, i) => gl.COLOR_ATTACHMENT0 + i))
@@ -106,7 +109,7 @@ export function blit(gl, from, to, attachment = 0) {
 const KEEP_FRAMES = 30
 
 /** A spec as a key: the same description is the same target. @param {TargetSpec} spec */
-const keyOf = (spec) => `${spec.width}x${spec.height}|${spec.color === undefined ? '' : String(spec.color)}|${spec.depth ?? ''}|${spec.samples ?? 0}|${spec.filter ?? ''}`
+const keyOf = (spec) => `${spec.width}x${spec.height}|${spec.color === undefined ? '' : String(spec.color)}|${spec.depth ?? ''}|${spec.samples ?? 0}|${spec.filter ?? ''}|${spec.levels ?? 1}`
 
 /** A context's render targets, by name and description. */
 export class TargetPool {

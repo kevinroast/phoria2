@@ -12,6 +12,7 @@ import { checkNumber, checkOneOf, checkOptions, checkRange, describe, fail, warn
 import { GLContext } from './context.js'
 import { uvMatrix } from './resources.js'
 import { blit } from './targets.js'
+import { drawKind } from '../scene/kinds.js'
 
 /** @import { FrameDescription, DrawItem, FrameLight, FrameCap } from '../frame.js' */
 /** @import { Scene } from '../scene/Scene.js' */
@@ -22,6 +23,7 @@ import { blit } from './targets.js'
 /** @import { ShadowMap } from './passes.js' */
 /** @import { Occlusion } from './effects.js' */
 /** @import { Target } from './targets.js' */
+/** @import { RenderTexture } from '../material/RenderTexture.js' */
 
 /**
  * What one frame is drawn with - worked out at its start and passed down, not kept on the renderer,
@@ -39,8 +41,9 @@ import { blit } from './targets.js'
  */
 
 /**
- * Where a frame is drawn instead of the canvas: a framebuffer, and its size.
- * @typedef {{ framebuffer: WebGLFramebuffer, width: number, height: number }} RenderTarget
+ * Where a frame is drawn instead of the canvas: a framebuffer, and its size. An `srgb` target encodes
+ * what is written into it itself (SRGB8_ALPHA8), so the frame is drawn in linear light into it.
+ * @typedef {{ framebuffer: WebGLFramebuffer, width: number, height: number, srgb?: boolean }} RenderTarget
  */
 
 /**
@@ -220,8 +223,8 @@ export class WebGLRenderer {
   /** @type {Required<BloomOptions> | null} */ #bloom = null
   /** @type {typeof AMBIENT_OCCLUSION | null} */ #ambientOcclusion = null
   /** @type {typeof GROUND_SHADOW | null} */ #groundShadow = null
-  /** Counts from the last frame and the GPU caches. */
-  info = { drawCalls: 0, triangles: 0, programs: 0, geometries: 0, textures: 0, compiling: 0 }
+  /** Counts from the last frame and the GPU caches; renderTextures is how many were drawn for it. */
+  info = { drawCalls: 0, triangles: 0, programs: 0, geometries: 0, textures: 0, compiling: 0, renderTextures: 0 }
   /**
    * Called when something the last frame couldn't draw yet is ready - the code for HDR
    * environments, backgrounds and shadows, which loads the first time a scene has one. The View
@@ -403,24 +406,102 @@ export class WebGLRenderer {
   renderFrame(frame, { wait = false, target = null, linear = false } = {}) {
     const gpu = this.#gpu
     if (gpu.lost) return frame
-    const gl = gpu.gl
-    gpu.frame++
     // what this frame touches counts as this renderer's, for freeing a shared context's copies
     gpu.resources.owner = this
     this.info.drawCalls = 0
     this.info.triangles = 0
     this.info.compiling = 0
+    this.info.renderTextures = 0
+    // the render textures the frame shows, each drawn from its own camera first
+    this.#renderTextures(frame, wait)
+    this.#drawFrame(frame, { wait, target, linear, plain: false })
+
+    if (this.info.compiling) gpu.whenCompiled()
+    if (this.#copy && !target) {
+      // the picture is the buffer's bottom-left corner; as an image, y runs down from the top
+      const copy = this.#copy, source = gpu.canvas, width = this.canvas.width, height = this.canvas.height
+      copy.globalCompositeOperation = 'copy'
+      copy.drawImage(source, 0, source.height - height, width, height, 0, 0, width, height)
+    }
+    // targets no frame has used lately go
+    gpu.targets.sweep(gpu.users.size)
+
+    this.info.programs = gpu.programs.count
+    this.info.geometries = gpu.resources.counts.geometries
+    this.info.textures = gpu.resources.counts.textures
+    return frame
+  }
+
+  /**
+   * Draw the render textures a frame shows that are due, each from its camera into its own target:
+   * a frame of its own (no labels or overlays, none of the view's effects), leaving out whatever
+   * shows the texture, so a monitor never films itself.
+   * @param {FrameDescription} frame @param {boolean} wait
+   */
+  #renderTextures(frame, wait) {
+    /** @type {Set<RenderTexture>} */
+    const shown = new Set()
+    for (const item of frame.opaque) for (const [, t] of item.material.allTextures) if (/** @type {any} */ (t).isRenderTexture) shown.add(/** @type {RenderTexture} */ (t))
+    for (const item of frame.transparent) for (const [, t] of item.material.allTextures) if (/** @type {any} */ (t).isRenderTexture) shown.add(/** @type {RenderTexture} */ (t))
+    if (!shown.size) return
+    const gl = this.gl
+    const samples = gl.getContextAttributes()?.antialias ? Math.min(4, gl.getParameter(gl.MAX_SAMPLES) || 4) : 0
+    for (const rt of shown) {
+      // when it is due: each frame, every nth, or once and after each needsUpdate()
+      const due = rt.drawn.version < 0 || (rt.update === 'frame' ? true : rt.update === 'manual' ? rt.drawn.version !== rt.version : rt.drawn.frames + 1 >= rt.update)
+      rt.drawn.frames++
+      if (!due) continue
+      const scene = rt.scene ?? frame.scene
+      if (rt.scene) scene.updateWorldTree()
+      const camera = /** @type {any} */ (rt.camera)
+      camera.aspect = rt.width / rt.height
+      const sub = collect(scene, rt.camera, { display: false })
+      // what shows this texture isn't drawn into it
+      const shows = (/** @type {DrawItem} */ item) => item.material.allTextures.some(([, t]) => t === rt)
+      sub.opaque = sub.opaque.filter((item) => !shows(item))
+      sub.transparent = sub.transparent.filter((item) => !shows(item))
+      sub.solids = sub.solids.filter(([node]) => !node.material.allTextures.some(([, t]) => t === rt))
+      // the view's own scene lit as the view lights it - its automatic lights, when it has none
+      if (scene === frame.scene && !sub.lights.length) sub.lights = frame.lights
+      sub.time = frame.time
+      const targets = this.#gpu.resources.renderTexture(rt, samples)
+      this.#drawFrame(sub, { wait, target: { framebuffer: targets.draw.framebuffer, width: rt.width, height: rt.height, srgb: true }, linear: false, plain: true })
+      // resolved into the texture materials sample, its smaller levels made from it
+      if (targets.draw !== targets.picture) blit(gl, targets.draw, targets.picture)
+      if (targets.levels > 1) {
+        gl.activeTexture(gl.TEXTURE15)
+        gl.bindTexture(gl.TEXTURE_2D, targets.picture.texture)
+        gl.generateMipmap(gl.TEXTURE_2D)
+      }
+      rt.drawn.frames = 0
+      rt.drawn.version = rt.version
+      this.info.renderTextures++
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+  }
+
+  /**
+   * Draw one frame - the view's, or a render texture's - into the canvas or `target`. `plain`: none
+   * of the view's effects (a render texture's frame).
+   * @param {FrameDescription} frame
+   * @param {{ wait: boolean, target: RenderTarget | null, linear: boolean, plain: boolean }} options
+   */
+  #drawFrame(frame, { wait, target, linear, plain }) {
+    const gpu = this.#gpu
+    const gl = gpu.gl
+    // a frame of its own, for programs' once-a-frame uniforms (each frame has its own camera)
+    gpu.frame++
     const width = target ? target.width : this.canvas.width, height = target ? target.height : this.canvas.height
     // a shared context draws into the bottom-left corner of its buffer, then copies that out
     if (!target && gpu.isShared) gpu.fit(width, height)
 
     const env = frame.environment
     const bg = frame.background
-    const occlusion = this.#ambientOcclusion, groundShadow = this.#groundShadow
+    const occlusion = plain ? null : this.#ambientOcclusion, groundShadow = plain ? null : this.#groundShadow
     const passes = gpu.loadPasses(!!frame.shadow || frame.spotShadows.length > 0 || !!frame.pointShadow || frame.outlines.length > 0 || (typeof env === 'object' && !!env.image) || (!!bg && !('getHex' in bg) && !!bg.image) || !!occlusion || !!groundShadow)
     // ambient occlusion, the ground shadow and FXAA: their code loads the first time one is on (their
     // targets, like every pass's, are freed by the pool once no frame uses them)
-    const effects = occlusion || groundShadow || this.fxaa ? gpu.loadEffects() : null
+    const effects = occlusion || groundShadow || (this.fxaa && !plain) ? gpu.loadEffects() : null
     // shader hooks that read the clock read it in the shadow maps and outlines too
     if (passes) {
       passes.time = frame.time ?? 0
@@ -428,7 +509,8 @@ export class WebGLRenderer {
     }
     /** @type {FrameState} */
     const state = {
-      wait, linear: linear && !!gl.getExtension('EXT_color_buffer_float'), width, height,
+      // in linear light: into float targets encoded at the end, or into a target that encodes itself
+      wait, linear: (linear && !!gl.getExtension('EXT_color_buffer_float')) || !!target?.srgb, width, height,
       environment: passes && typeof env === 'object' ? passes.environment(env) : null, shadows: [], occlusion: null, ...this.#lightsOf(frame),
     }
     if (passes && typeof env === 'object' && env.image && !state.environment) {
@@ -454,13 +536,14 @@ export class WebGLRenderer {
 
     // the post chain, always in this order: bloom (drawn plainly while its code loads), the encode
     // out of linear light, FXAA. With any step, the scene is drawn into a picture of its own first
-    const bloom = this.#bloom ? gpu.loadBloom() : null
-    const fxaa = this.fxaa ? effects : null
+    const bloom = this.#bloom && !plain ? gpu.loadBloom() : null
+    const fxaa = this.fxaa && !plain ? effects : null
     /** @type {PostStep[]} */
     const steps = []
     const bloomSettings = this.#bloom
     if (bloom && bloomSettings) steps.push({ run: (picture, output) => bloom.apply(picture, output, width, height, bloomSettings, state.linear), linear: state.linear })
-    if (state.linear) steps.push({ run: (picture, output) => this.#encode(picture, output, width, height), linear: false })
+    // (a target that encodes itself needs no step for it)
+    if (state.linear && !target?.srgb) steps.push({ run: (picture, output) => this.#encode(picture, output, width, height), linear: false })
     if (fxaa) steps.push({ run: (picture, output) => fxaa.fxaa(picture, output, width, height), linear: false })
     const output = target ? target.framebuffer : null
     const scene = steps.length ? this.#sceneTargets(width, height, state.linear) : null
@@ -501,21 +584,6 @@ export class WebGLRenderer {
     gl.disable(gl.BLEND)
     gl.bindVertexArray(null)
     if (scene) this.#post(scene, steps, output, width, height)
-
-    if (this.info.compiling) gpu.whenCompiled()
-    if (this.#copy && !target) {
-      // the picture is the buffer's bottom-left corner; as an image, y runs down from the top
-      const copy = this.#copy, source = gpu.canvas
-      copy.globalCompositeOperation = 'copy'
-      copy.drawImage(source, 0, source.height - height, width, height, 0, 0, width, height)
-    }
-    // targets no frame has used lately go
-    gpu.targets.sweep(gpu.users.size)
-
-    this.info.programs = gpu.programs.count
-    this.info.geometries = gpu.resources.counts.geometries
-    this.info.textures = gpu.resources.counts.textures
-    return frame
   }
 
   /**
@@ -684,8 +752,7 @@ export class WebGLRenderer {
   #draw(item, frame, transparent, state) {
     const gl = this.gl
     const { node, geometry, material, worldMatrix, instances } = item
-    const mode = /** @type {any} */ (node).drawMode
-    const kind = mode === 'points' ? 'points' : mode === 'lines' ? 'lines' : 'mesh'
+    const kind = drawKind(node)
     const receives = kind === 'mesh' && node.receiveShadow && !material.unlit
     const shadows = receives ? state.shadows : NO_SHADOWS
 
@@ -736,9 +803,9 @@ export class WebGLRenderer {
       program.set('uCameraPosition', frame.camera.position)
       program.set('uExposure', this.exposure)
       program.set('uToneMapping', TONE_MAPPING[this.toneMapping])
-      program.set('uResolution', [this.canvas.width, this.canvas.height])
+      program.set('uResolution', [state.width, state.height])
       program.set('uNear', frame.camera.near)
-      program.set('uScale', frame.camera.projection[5] * this.canvas.height / 2)
+      program.set('uScale', frame.camera.projection[5] * state.height / 2)
       if (kind === 'mesh' && !material.unlit) {
         for (const [name, value] of Object.entries(state.lights)) program.set(name, value)
         const env = state.environment
@@ -828,7 +895,7 @@ export class WebGLRenderer {
       if (/** @type {any} */ (node).drawsSprites) {
         // each point a square, any size and turned - drawn back to front when the points ask, for
         // smoke and other soft things that hide what is behind them
-        program.set('uResolution', [this.canvas.width, this.canvas.height])
+        program.set('uResolution', [state.width, state.height])
         const modelView = /** @type {any} */ (node).sort ? mat4.multiply(this.#modelView, frame.camera.view, worldMatrix) : null
         const buffers = this.#gpu.resources.sprites(geometry, modelView)
         gl.bindVertexArray(buffers.vao)

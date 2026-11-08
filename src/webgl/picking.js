@@ -7,6 +7,7 @@ import { hookFor, passDefines, setHookUniforms } from './hooks.js'
 import { setShapeUniforms, shapeDefines } from './shape.js'
 import { makeTarget } from './targets.js'
 import * as mat4 from '../math/mat4.js'
+import { drawKind } from '../scene/kinds.js'
 
 /** @import { Programs } from './programs.js' */
 /** @import { Resources } from './resources.js' */
@@ -243,8 +244,7 @@ export class Picker {
   #draw(item, id, frame, height, pixelRatio) {
     const gl = this.gl
     const { node, geometry, material, worldMatrix, instances } = item
-    const mode = /** @type {any} */ (node).drawMode
-    const kind = mode === 'points' ? 'points' : mode === 'lines' ? 'lines' : 'mesh'
+    const kind = drawKind(node)
     // a mesh as the picture draws its shape - instanced, clipped, cut out, moved by its hooks
     const shape = kind === 'mesh' ? shapeDefines(item, true) : null
     const defines = ['PICK', ...(shape ? shape.defines : instances ? ['INSTANCED'] : [])]

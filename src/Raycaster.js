@@ -4,6 +4,7 @@ import { Ray } from './value/Ray.js'
 import { Vec3 } from './value/Vec3.js'
 import { clipOwner, worldPlane } from './clip.js'
 import { BVH_MIN_TRIANGLES, bvhOf, walk } from './geometry/bvh.js'
+import { isInstanced } from './scene/kinds.js'
 
 /** @import { Camera } from './scene/cameras.js' */
 /** @import { Node } from './scene/Node.js' */
@@ -190,7 +191,7 @@ export class Raycaster {
     /** @type {Hit[]} */
     const hits = []
     const cut = cutBy(clipOwner(node))
-    if (n.drawMode === 'triangles' && n.instanceMatrices) {
+    if (n.drawMode === 'triangles' && isInstanced(n)) {
       if (element >= n.count) return null
       mat4.multiply(instanceWorld, n.worldMatrix, n.instanceMatrices.subarray(element * 16, element * 16 + 16))
       this.#mesh(n, instanceWorld, element, hits, cut)
@@ -218,7 +219,7 @@ export class Raycaster {
     if (!(this.camera ? node.shownTo(this.camera) : node.visible) || !node.pickable) return
     if (node.clip) cut = cutBy(node)
     const n = /** @type {any} */ (node)
-    if (n.drawMode === 'triangles' && n.instanceMatrices) {
+    if (n.drawMode === 'triangles' && isInstanced(n)) {
       for (let i = 0; i < n.count; i++) {
         mat4.multiply(instanceWorld, n.worldMatrix, n.instanceMatrices.subarray(i * 16, i * 16 + 16))
         this.#mesh(n, instanceWorld, i, hits, cut)

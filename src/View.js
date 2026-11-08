@@ -16,6 +16,7 @@ import { DirectionalLight, HemisphereLight } from './scene/lights.js'
 import { WebGLRenderer } from './webgl/WebGLRenderer.js'
 import { checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from './validate.js'
 import { lazy } from './lazy.js'
+import { isInstanced } from './scene/kinds.js'
 
 /** @import { OrbitOptions } from './OrbitControl.js' */
 /** @import { CameraPreset, FramingKeep } from './presets.js' */
@@ -879,7 +880,7 @@ export class View {
     const seenThrough = hit && node.material.alphaTest > 0 && hit.distance < point.distanceTo(raycaster.ray.origin) * 0.999
     if (hit && !seenThrough) return hit
     // the ray grazed an edge the GPU drew: place the hit at the depth the GPU found
-    const instanced = 'instanceMatrices' in node, element = found.element
+    const instanced = isInstanced(node), element = found.element
     const indexed = instanced || node.drawMode !== 'triangles'
     return { node, point, distance: point.distanceTo(raycaster.ray.origin), normal: null, face: indexed && !instanced ? element : null,
       instance: instanced ? element : null, uv: null, datum: node.datumAt(indexed ? element : null) }
@@ -1526,7 +1527,7 @@ function drawnPoints(node, camera) {
   const points = []
   node.eachShownTo(camera, (n) => {
     const d = /** @type {any} */ (n)
-    if ('instanceMatrices' in d && d.count <= FIT_DETAIL) {
+    if (isInstanced(d) && d.count <= FIT_DETAIL) {
       d.eachInstanceBox((x0, y0, z0, x1, y1, z1) => { points.push(...corners(new Box3([x0, y0, z0], [x1, y1, z1]))) })
     } else if ((d.drawMode === 'lines' || d.drawMode === 'points') && d.geometry.vertexCount <= FIT_DETAIL) {
       // the vertices drawn - every one, when indices pick them

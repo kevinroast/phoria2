@@ -6,6 +6,7 @@ import { Vec3 } from '../value/Vec3.js'
 import { checkNumber, checkOneOf, describe, fail } from '../validate.js'
 import { resolveGeometry, resolveMaterial } from '../resolve.js'
 import { NODE_OPTIONS, Node } from './Node.js'
+import { isInstanced } from './kinds.js'
 
 /** @import { Box3 } from '../value/Box3.js' */
 /** @import { Geometry } from '../geometry/Geometry.js' */
@@ -195,7 +196,7 @@ export class Drawable extends Node {
    * @returns {any}
    */
   datumAt(index) {
-    const many = 'instanceMatrices' in this || this.drawMode !== 'triangles'
+    const many = isInstanced(this) || this.drawMode !== 'triangles'
     if (many && Array.isArray(this.data)) return index === null ? null : this.data[index] ?? null
     return this.data ?? null
   }

@@ -847,6 +847,14 @@ body.gallery {
   line-height: 1.25;
 }
 
+/* render textures: a monitor's feed, in the style of a control room's captions */
+.demo-label.feed-title {
+  font: 600 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.06em;
+  color: #9fe870;
+  background: rgba(10, 12, 14, 0.85);
+}
+
 .demo-tick {
   color: var(--text-dim);
   font-size: 12px;

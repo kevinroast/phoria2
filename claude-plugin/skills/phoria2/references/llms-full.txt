@@ -420,6 +420,30 @@ until `texture.image.play()` from a click. Video textures make no mipmaps (they 
 every frame) unless `mipmaps: true`. Put one on an unlit plane for a screen:
 `{ map: new Texture({ url: 'promo.mp4', wrap: 'clamp' }), unlit: true }`.
 
+**Render textures** - what a camera sees, as a map: a camera feed on a monitor, a minimap on a
+panel, a product from a second angle beside it.
+
+```js
+const cctv = scene.add(new PerspectiveCamera({ position: [8, 4, 6], target: [0, 0, 0], fov: 60 }))
+const feed = new RenderTexture({ camera: cctv, width: 512, height: 320 })
+scene.add(new Mesh({ geometry: plane({ width: 3.2, depth: 2 }), rotation: [Math.PI / 2, 0, 0], material: { map: feed, unlit: true } }))
+```
+
+- A `RenderTexture` is a Texture, so it goes in any map slot. Give it a camera of its own - placed in
+  the scene, or a child of something that moves (a camera riding on a robot goes where it goes). The
+  camera's aspect follows `width / height`.
+- The view showing it draws it first, before each frame: `update: 'frame'` (the default) each frame
+  the view draws, `update: n` every nth (a map needn't be drawn as often), `'manual'` once and then
+  after each `feed.needsUpdate()`. A view only draws when something changed - moving the texture's
+  camera counts.
+- It draws the view's scene, or `scene` for another. Plainly: lights, shadows, fog and background,
+  none of the view's effects (bloom, ambient occlusion, ground shadow, FXAA), no labels. Whatever
+  shows the texture is left out of it, so a monitor never films itself.
+- Its colours are the main view's, read the right way up. `mipmaps` (default true) keeps it smooth
+  seen small or at an angle; `wrap` defaults to 'clamp'. `renderer.info.renderTextures` and
+  `view.explain()` say how many were drawn. It can't be saved with `toJSON()` (its camera is a live
+  object). `feed.dispose()` frees it.
+
 **Placing a texture**: `repeat` ([u, v] times across), `offset`, and `rotation` (radians, about
 `center`: [0, 0], the corner, by default - [0.5, 0.5] for the middle) - applied in that order, as glTF's
 `KHR_texture_transform` does, and each map keeps its own: a fabric's colour can repeat 7 times while
