@@ -163,4 +163,29 @@ describe('bloom settings', () => {
     expect(() => bloomSettings('View', /** @type {any} */ ('on'))).toThrow('bloom is true, false or { strength, radius, threshold }')
     expect(() => bloomSettings('View', /** @type {any} */ ({ radius: 'wide' }))).toThrow('radius')
   })
+
+  it('says - but still takes - a number out of its range, which it has always clamped when drawing', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(bloomSettings('View', { radius: 1.5, strength: -1 })).toEqual({ strength: -1, radius: 1.5, threshold: 0.6 })
+    expect(warn.mock.calls.map((c) => c[0])).toEqual([
+      "phoria2: View bloom: 'strength' is 0 or more, got -1 - drawn as the nearest that is",
+      "phoria2: View bloom: 'radius' is from 0 to 1, got 1.5 - drawn as the nearest that is",
+    ])
+    warn.mockRestore()
+  })
+})
+
+describe('renderer settings', () => {
+  it('checks tone mapping, exposure and pixel ratio when set later, as when given at the start', () => {
+    const renderer = new WebGLRenderer({ canvas: fakeCanvas(fakeGL().gl) })
+    expect(() => { renderer.toneMapping = /** @type {any} */ ('filmic') }).toThrow("'toneMapping'")
+    expect(renderer.toneMapping).toBe('neutral')
+    renderer.toneMapping = 'aces'
+    expect(() => { renderer.exposure = -1 }).toThrow('exposure')
+    expect(() => { renderer.pixelRatio = 0 }).toThrow('pixelRatio')
+    expect(() => renderer.setSize(10, 10, /** @type {any} */ ('retina'))).toThrow('pixelRatio')
+    renderer.exposure = 1.5
+    renderer.fxaa = /** @type {any} */ (1)
+    expect([renderer.toneMapping, renderer.exposure, renderer.fxaa]).toEqual(['aces', 1.5, true])
+  })
 })

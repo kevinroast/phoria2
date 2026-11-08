@@ -78,11 +78,10 @@ describe('outlines', () => {
 
   /** Draw an outlined box twice (the passes load after the first), recording shaders and GL calls. @param {object} [options] */
   const drawOutlined = async (options = {}) => {
-    const { gl, count } = fakeGL()
-    const sources = [], calls = []
+    const { gl, count, sources } = fakeGL()
+    const calls = []
     const recording = new Proxy(gl, {
-      get: (t, k) => (k === 'shaderSource' ? (_s, src) => sources.push(src)
-        : k === 'blitFramebuffer' || k === 'renderbufferStorageMultisample' ? () => calls.push(k) : t[k]),
+      get: (t, k) => (k === 'blitFramebuffer' || k === 'renderbufferStorageMultisample' ? () => calls.push(k) : t[k]),
     })
     const renderer = new WebGLRenderer({ canvas: fakeCanvas(recording), ...options })
     renderer.setSize(10, 10)

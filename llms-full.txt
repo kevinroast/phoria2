@@ -109,7 +109,7 @@ const view = new View({ canvas: '#c', orbit: true })
 | `tooltip` | none | `(hit) => content` - see Interaction |
 | `framing` | `'height'` | what stays in view as the canvas changes shape: `'height'`, `'width'`, or `'both'` (nothing framed is ever cut off - good for tiles). Also `{ keep, aspect }` |
 | `renderMode` | `'auto'` | `'auto'` draws only when something changed (idle views cost nothing); `'always'`; `'manual'` |
-| `toneMapping`, `exposure` | `'neutral'`, `1` | `'neutral'` \| `'aces'` \| `'none'` |
+| `toneMapping`, `exposure` | `'neutral'`, `1` | `'neutral'` \| `'aces'` \| `'none'`; also `view.toneMapping`, `view.exposure` |
 | `bloom` | off | glow round bright parts (emissive, additive points and lines): `true` or `{ strength, radius, threshold }`; also `view.bloom` |
 | `ambientOcclusion` | off | shading in the creases: `true` or `{ strength, radius }`; also `view.ambientOcclusion` - see Product viewer passes |
 | `groundShadow` | off | a soft shadow on the ground under the solids, no light needed: `true` or `{ opacity, softness, height, y, size }`; also `view.groundShadow` |

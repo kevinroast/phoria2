@@ -62,15 +62,8 @@ const HINTS = { alpha: 'the canvas is always transparent where the scene has no 
  * @returns {Required<BloomOptions> | null}
  */
 export function bloomSettings(owner, value) {
-  if (value === undefined || value === null || value === false) return null
-  if (value === true) return { ...BLOOM }
-  if (typeof value !== 'object') fail(owner, `bloom is true, false or { strength, radius, threshold }, got ${describe(value)}`)
-  checkOptions(`${owner} bloom`, value, BLOOM_OPTIONS, BLOOM_HINTS)
-  const settings = { ...BLOOM }
-  for (const key of /** @type {(keyof BloomOptions)[]} */ (Object.keys(BLOOM))) {
-    if (value[key] !== undefined) settings[key] = checkNumber(`${owner} bloom`, key, value[key])
-  }
-  return settings
+  // bloom has always taken any number and clamped it when drawing: out of range is said, not thrown
+  return effectSettings(owner, 'bloom', value, BLOOM, BLOOM_HINTS, { strength: [0, Infinity], radius: [0, 1], threshold: [0, 1] }, true)
 }
 /**
  * Shading in the creases: ambient and environment light dimmed where surfaces close in on each other
@@ -109,9 +102,11 @@ export const GROUND_SHADOW_HINTS = { intensity: "use 'opacity'", strength: "use 
  * @template {Record<string, number | null>} T
  * @param {string} owner @param {string} name @param {unknown} value @param {T} defaults
  * @param {Record<string, string>} hints @param {Record<string, [number, number]>} ranges
+ * @param {boolean} [warnOutOfRange] say a number out of its range rather than throw - for settings
+ *   that took any number before their ranges were checked
  * @returns {T | null}
  */
-function effectSettings(owner, name, value, defaults, hints, ranges) {
+function effectSettings(owner, name, value, defaults, hints, ranges, warnOutOfRange = false) {
   if (value === undefined || value === null || value === false) return null
   if (value === true) return { ...defaults }
   const keys = Object.keys(defaults)
@@ -122,7 +117,9 @@ function effectSettings(owner, name, value, defaults, hints, ranges) {
     const v = /** @type {Record<string, unknown>} */ (value)[key]
     if (v === undefined || (v === null && defaults[key] === null)) continue
     const [min, max] = ranges[key] ?? [-Infinity, Infinity]
-    settings[key] = checkRange(`${owner} ${name}`, key, v, min, max)
+    const n = checkNumber(`${owner} ${name}`, key, v)
+    if (warnOutOfRange && (n < min || n > max)) warnOnce(value, `${owner} ${name}: '${key}' is ${max === Infinity ? `${min} or more` : `from ${min} to ${max}`}, got ${n} - drawn as the nearest that is`)
+    settings[key] = warnOutOfRange ? n : checkRange(`${owner} ${name}`, key, n, min, max)
   }
   return /** @type {T} */ (settings)
 }
@@ -186,16 +183,14 @@ export class WebGLRenderer {
   static OPTIONS = OPTIONS
   static HINTS = HINTS
   /** The canvas the picture ends up on. @type {HTMLCanvasElement | OffscreenCanvas} */ canvas
-  /** @type {ToneMapping} */ toneMapping = 'neutral'
-  exposure = 1
-  pixelRatio = 1
-  /** Outlines with soft edges and round corners, or hard pixel steps; takes effect on the next frame. */
-  outlineAntialias = true
+  /** @type {ToneMapping} */ #toneMapping = 'neutral'
+  #exposure = 1
+  #pixelRatio = 1
+  #outlineAntialias = true
+  #fxaa = false
   /** @type {Required<BloomOptions> | null} */ #bloom = null
   /** @type {typeof AMBIENT_OCCLUSION | null} */ #ambientOcclusion = null
   /** @type {typeof GROUND_SHADOW | null} */ #groundShadow = null
-  /** Smoothing jagged edges with a pass over the finished picture; takes effect on the next frame. */
-  fxaa = false
   /** Counts from the last frame and the GPU caches. */
   info = { drawCalls: 0, triangles: 0, programs: 0, geometries: 0, textures: 0, compiling: 0 }
   /**
@@ -227,9 +222,9 @@ export class WebGLRenderer {
     checkOptions('WebGLRenderer', options, OPTIONS, HINTS)
     if (!options?.canvas) fail('WebGLRenderer', "'canvas' is required")
     this.canvas = options.canvas
-    if (options.toneMapping !== undefined) this.toneMapping = checkOneOf('WebGLRenderer', 'toneMapping', options.toneMapping, ['aces', 'neutral', 'none'])
-    if (options.exposure !== undefined) this.exposure = checkRange('WebGLRenderer', 'exposure', options.exposure, 0)
-    if (options.pixelRatio !== undefined) this.pixelRatio = checkRange('WebGLRenderer', 'pixelRatio', options.pixelRatio, 0, Infinity, { above: true })
+    if (options.toneMapping !== undefined) this.toneMapping = options.toneMapping
+    if (options.exposure !== undefined) this.exposure = options.exposure
+    if (options.pixelRatio !== undefined) this.pixelRatio = options.pixelRatio
     this.#bloom = bloomSettings('WebGLRenderer', options.bloom)
     this.#ambientOcclusion = ambientOcclusionSettings('WebGLRenderer', options.ambientOcclusion)
     this.#groundShadow = groundShadowSettings('WebGLRenderer', options.groundShadow)
@@ -260,6 +255,56 @@ export class WebGLRenderer {
   /** @param {boolean | BloomOptions | null} value */
   set bloom(value) {
     this.#bloom = bloomSettings('WebGLRenderer', value)
+  }
+
+  /** How lit colours are mapped to the screen: 'neutral' (the default), 'aces' or 'none'. @returns {ToneMapping} */
+  get toneMapping() {
+    return this.#toneMapping
+  }
+
+  /** @param {ToneMapping} value */
+  set toneMapping(value) {
+    this.#toneMapping = checkOneOf('WebGLRenderer', 'toneMapping', value, ['aces', 'neutral', 'none'])
+  }
+
+  /** How bright lit colours are made before they are mapped to the screen (default 1). @returns {number} */
+  get exposure() {
+    return this.#exposure
+  }
+
+  /** @param {number} value */
+  set exposure(value) {
+    this.#exposure = checkRange('WebGLRenderer', 'exposure', value, 0)
+  }
+
+  /** Drawing buffer pixels per CSS pixel - setSize() sets it too. @returns {number} */
+  get pixelRatio() {
+    return this.#pixelRatio
+  }
+
+  /** @param {number} value */
+  set pixelRatio(value) {
+    this.#pixelRatio = checkRange('WebGLRenderer', 'pixelRatio', value, 0, Infinity, { above: true })
+  }
+
+  /** Outlines with soft edges and round corners, or hard pixel steps; takes effect on the next frame. @returns {boolean} */
+  get outlineAntialias() {
+    return this.#outlineAntialias
+  }
+
+  /** @param {boolean} value */
+  set outlineAntialias(value) {
+    this.#outlineAntialias = !!value
+  }
+
+  /** Smoothing jagged edges with a pass over the finished picture; takes effect on the next frame. @returns {boolean} */
+  get fxaa() {
+    return this.#fxaa
+  }
+
+  /** @param {boolean} value */
+  set fxaa(value) {
+    this.#fxaa = !!value
   }
 
   /**

@@ -4,6 +4,10 @@
 // draws again when they are done. Nothing waits on a status check until a program is used.
 import { shaderSource } from './shaders.js'
 
+// textures a program can sample: WebGL 2 guarantees 16 units, and the last is kept for uploads and
+// making targets (resources.js, TEXTURE15), so a draw's samplers never have it taken from under them
+export const SAMPLER_UNITS = 15
+
 /** @import { HookSource, ShaderKind } from './shaders.js' */
 
 /**
@@ -163,7 +167,8 @@ export class Programs {
     }
     for (const s of shaders) gl.deleteShader(s)
 
-    // every active uniform, with a setter for its type; arrays are set from flat typed arrays
+    // every active uniform, with a setter for its type; arrays are set from flat typed arrays, and
+    // each sampler gets a texture unit of its own
     /** @type {Map<string, (value: any) => void>} */
     const setters = new Map()
     const n = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS)
@@ -172,39 +177,91 @@ export class Programs {
       const info = /** @type {WebGLActiveInfo} */ (gl.getActiveUniform(program, i))
       const name = info.name.replace(/\[0\]$/, '')
       const loc = gl.getUniformLocation(program, info.name)
-      const sampler = info.type === gl.SAMPLER_2D || info.type === gl.SAMPLER_2D_SHADOW || info.type === gl.SAMPLER_CUBE_SHADOW
-      setters.set(name, setterFor(gl, info.type, loc, sampler ? unit++ : 0))
+      const target = samplerTarget(gl, info.type)
+      if (target && info.size > 1) throw new Error(`phoria2: shader '${key}' has an array of samplers ('${name}'), which nothing binds`)
+      const setter = target ? bindTo(gl, target, loc, unit++) : setterFor(gl, info.type, loc)
+      if (!setter) throw new Error(`phoria2: shader '${key}' has uniform '${name}' of a type nothing sets (0x${info.type.toString(16)})`)
+      setters.set(name, setter)
+    }
+    // more textures than the device has units: a material's own (its hooks') is reported and drawn
+    // without them, as a hook that doesn't compile is; one of phoria2's own is a bug, said at once
+    if (unit > SAMPLER_UNITS) {
+      const why = `shader '${key}' samples ${unit} textures, more than the ${SAMPLER_UNITS} a draw can have`
+      if (!p.hooked) throw new Error(`phoria2: ${why}`)
+      p.failed = `${why} - give its hooks fewer texture uniforms`
     }
     p.set = (name, value) => setters.get(name)?.(value)
     p.ready = true
   }
 }
 
-/** @param {WebGL2RenderingContext} gl @param {number} type @param {WebGLUniformLocation | null} loc @param {number} unit */
-function setterFor(gl, type, loc, unit) {
+/**
+ * A setter for a uniform of a type that isn't a sampler, or null for a type nothing sets. A single
+ * number sets a scalar; an array or typed array sets a vector, a matrix, or an array of them.
+ * @param {WebGL2RenderingContext} gl @param {number} type @param {WebGLUniformLocation | null} loc
+ * @returns {((value: any) => void) | null}
+ */
+function setterFor(gl, type, loc) {
   switch (type) {
     case gl.FLOAT: return (v) => typeof v === 'number' ? gl.uniform1f(loc, v) : gl.uniform1fv(loc, v)
     case gl.FLOAT_VEC2: return (v) => gl.uniform2fv(loc, v)
     case gl.FLOAT_VEC3: return (v) => gl.uniform3fv(loc, v)
     case gl.FLOAT_VEC4: return (v) => gl.uniform4fv(loc, v)
     case gl.INT:
-    case gl.BOOL: return (v) => gl.uniform1i(loc, v)
-    case gl.INT_VEC2: return (v) => gl.uniform2iv(loc, v)
-    case gl.UNSIGNED_INT: return (v) => gl.uniform1ui(loc, v)
+    case gl.BOOL: return (v) => typeof v === 'number' || typeof v === 'boolean' ? gl.uniform1i(loc, +v) : gl.uniform1iv(loc, v)
+    case gl.INT_VEC2:
+    case gl.BOOL_VEC2: return (v) => gl.uniform2iv(loc, v)
+    case gl.INT_VEC3:
+    case gl.BOOL_VEC3: return (v) => gl.uniform3iv(loc, v)
+    case gl.INT_VEC4:
+    case gl.BOOL_VEC4: return (v) => gl.uniform4iv(loc, v)
+    case gl.UNSIGNED_INT: return (v) => typeof v === 'number' ? gl.uniform1ui(loc, v) : gl.uniform1uiv(loc, v)
+    case gl.UNSIGNED_INT_VEC2: return (v) => gl.uniform2uiv(loc, v)
+    case gl.UNSIGNED_INT_VEC3: return (v) => gl.uniform3uiv(loc, v)
+    case gl.UNSIGNED_INT_VEC4: return (v) => gl.uniform4uiv(loc, v)
+    case gl.FLOAT_MAT2: return (v) => gl.uniformMatrix2fv(loc, false, v)
     case gl.FLOAT_MAT3: return (v) => gl.uniformMatrix3fv(loc, false, v)
     case gl.FLOAT_MAT4: return (v) => gl.uniformMatrix4fv(loc, false, v)
+    default: return null
+  }
+}
+
+/**
+ * The texture target a sampler type reads, or null when the type isn't a sampler.
+ * @param {WebGL2RenderingContext} gl @param {number} type
+ * @returns {number | null}
+ */
+function samplerTarget(gl, type) {
+  switch (type) {
     case gl.SAMPLER_2D:
-    case gl.SAMPLER_2D_SHADOW: return (texture) => {
-      gl.activeTexture(gl.TEXTURE0 + unit)
-      gl.bindTexture(gl.TEXTURE_2D, texture)
-      gl.uniform1i(loc, unit)
-    }
-    case gl.SAMPLER_CUBE_SHADOW: return (texture) => {
-      gl.activeTexture(gl.TEXTURE0 + unit)
-      gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture)
-      gl.uniform1i(loc, unit)
-    }
-    default: return () => {}
+    case gl.SAMPLER_2D_SHADOW:
+    case gl.INT_SAMPLER_2D:
+    case gl.UNSIGNED_INT_SAMPLER_2D: return gl.TEXTURE_2D
+    case gl.SAMPLER_CUBE:
+    case gl.SAMPLER_CUBE_SHADOW:
+    case gl.INT_SAMPLER_CUBE:
+    case gl.UNSIGNED_INT_SAMPLER_CUBE: return gl.TEXTURE_CUBE_MAP
+    case gl.SAMPLER_3D:
+    case gl.INT_SAMPLER_3D:
+    case gl.UNSIGNED_INT_SAMPLER_3D: return gl.TEXTURE_3D
+    case gl.SAMPLER_2D_ARRAY:
+    case gl.SAMPLER_2D_ARRAY_SHADOW:
+    case gl.INT_SAMPLER_2D_ARRAY:
+    case gl.UNSIGNED_INT_SAMPLER_2D_ARRAY: return gl.TEXTURE_2D_ARRAY
+    default: return null
+  }
+}
+
+/**
+ * A sampler's setter: binds the texture to the sampler's own unit, on its target.
+ * @param {WebGL2RenderingContext} gl @param {number} target @param {WebGLUniformLocation | null} loc @param {number} unit
+ * @returns {(texture: WebGLTexture) => void}
+ */
+function bindTo(gl, target, loc, unit) {
+  return (texture) => {
+    gl.activeTexture(gl.TEXTURE0 + unit)
+    gl.bindTexture(target, texture)
+    gl.uniform1i(loc, unit)
   }
 }
 

@@ -8,15 +8,8 @@ const camera = () => new PerspectiveCamera({ position: [0, 2, 6], target: [0, 0,
 
 /** A renderer on a stand-in context that keeps the shader sources it is given. */
 function recording() {
-  const { gl } = fakeGL()
-  const sources = []
-  const proxy = new Proxy(gl, {
-    get(target, key) {
-      if (key === 'shaderSource') return (_shader, source) => sources.push(source)
-      return target[key]
-    },
-  })
-  const renderer = new WebGLRenderer({ canvas: fakeCanvas(proxy) })
+  const { gl, sources } = fakeGL()
+  const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
   renderer.setSize(10, 10)
   const take = () => sources.splice(0)
   return { renderer, take }

@@ -15,6 +15,7 @@ import { Camera, PerspectiveCamera } from './scene/cameras.js'
 import { DirectionalLight, HemisphereLight } from './scene/lights.js'
 import { WebGLRenderer } from './webgl/WebGLRenderer.js'
 import { checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from './validate.js'
+import { lazy } from './lazy.js'
 
 /** @import { OrbitOptions } from './OrbitControl.js' */
 /** @import { CameraPreset, FramingKeep } from './presets.js' */
@@ -187,7 +188,6 @@ export class View {
   /** @type {Tooltip | null} */ #tooltip = null
   /** @type {((hit: Hit) => TooltipContent) | null} */ #tooltipContent = null
   #tooltipClass = ''
-  #tooltipLoading = false
   /** @type {Color | null} */ #highlight = null
   /** @type {'auto' | boolean} */ #motion = 'auto'
   // keyboard use: its code loads when asked for; the thing it has stepped to shows as hovered
@@ -197,7 +197,12 @@ export class View {
   // debug drawing: its code loads when turned on; the helpers are added to each frame, then taken out
   /** @type {Required<DebugOptions> | null} */ #debug = null
   /** @type {DebugDraw | null} */ #debugDraw = null
-  #debugLoading = false
+  // the code of the tooltip, keyboard use and debug drawing, each loaded the first time it is wanted
+  #load = {
+    tooltip: lazy('tooltips', () => import('./tooltip.js')),
+    keyboard: lazy('keyboard use', () => import('./keyboard.js')),
+    debug: lazy('debug drawing', () => import('./debug.js')),
+  }
   #drawnAt = 0
   #frameMs = 0
   // the canvas had no role, so describing it gave it one - taken away again with the description
@@ -360,6 +365,22 @@ export class View {
     this.invalidate()
   }
 
+  /** How lit colours are mapped to the screen: 'neutral' keeps colours true (default), 'aces' is filmic, 'none' clips. @returns {ToneMapping} */
+  get toneMapping() { return this.renderer.toneMapping }
+  /** @param {ToneMapping} v */
+  set toneMapping(v) {
+    this.renderer.toneMapping = v
+    this.invalidate()
+  }
+
+  /** How bright lit colours are made before tone mapping (default 1). @returns {number} */
+  get exposure() { return this.renderer.exposure }
+  /** @param {number} v */
+  set exposure(v) {
+    this.renderer.exposure = v
+    this.invalidate()
+  }
+
   /**
    * Shading in the creases: null for none, or its settings. Set true, false or { strength, radius }.
    * (After changing its numbers in place, call invalidate().)
@@ -431,10 +452,8 @@ export class View {
   /** @param {boolean | DebugOptions} v */
   set debug(v) {
     this.#debug = debugOptions(v)
-    if (this.#debug && !this.#debugDraw && !this.#debugLoading) {
-      this.#debugLoading = true
-      import('./debug.js').then(({ DebugDraw }) => {
-        this.#debugLoading = false
+    if (this.#debug && !this.#debugDraw) {
+      this.#load.debug(({ DebugDraw }) => {
         if (this.#disposed) return
         this.#debugDraw = new DebugDraw(this.#labels.root)
         this.invalidate()
@@ -991,9 +1010,7 @@ export class View {
 
   // the tooltip's code loads when first needed, so apps without one don't carry it
   #loadTooltip() {
-    if (this.#tooltipLoading) return
-    this.#tooltipLoading = true
-    import('./tooltip.js').then(({ Tooltip }) => {
+    this.#load.tooltip(({ Tooltip }) => {
       if (this.#disposed) return
       this.#tooltip = new Tooltip((hit) => this.#tooltipFor(hit)?.(hit), this.#tooltipClass)
       this.#pickPending = true
@@ -1009,7 +1026,7 @@ export class View {
     const o = options === true ? {} : options
     checkOptions('View', o, ['label'], { describe: "use 'label: (hit) => text'", text: "use 'label: (hit) => text'" }, 'keyboard')
     if (o.label !== undefined && typeof o.label !== 'function') fail('View', `keyboard.label is a function (hit) => text, got ${describe(o.label)}`)
-    import('./keyboard.js').then(({ Keyboard }) => {
+    this.#load.keyboard(({ Keyboard }) => {
       if (this.#disposed) return
       this.#keyboard = new Keyboard(this, {
         focus: (hit) => {

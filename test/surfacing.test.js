@@ -10,11 +10,10 @@ const ANISO = { TEXTURE_MAX_ANISOTROPY_EXT: 0x84fe, MAX_TEXTURE_MAX_ANISOTROPY_E
 
 /** A renderer on a stand-in context that keeps shader sources and float texture parameters, with anisotropic filtering up to 4. */
 function recording({ aniso = true } = {}) {
-  const { gl } = fakeGL()
-  const sources = [], params = []
+  const { gl, sources } = fakeGL()
+  const params = []
   const proxy = new Proxy(gl, {
     get(target, key) {
-      if (key === 'shaderSource') return (_shader, source) => sources.push(source)
       if (key === 'getExtension') return (name) => (name === 'EXT_texture_filter_anisotropic' ? (aniso ? ANISO : null) : target.getExtension(name))
       if (key === 'getParameter') return (p) => (p === ANISO.MAX_TEXTURE_MAX_ANISOTROPY_EXT ? 4 : 0)
       if (key === 'texParameterf') return (_t, p, v) => params.push([p, v])

@@ -408,3 +408,17 @@ describe('View picking and events', () => {
     expect(() => { view.camera = /** @type {any} */ ('sideways') }).toThrow('sideways')
   })
 })
+
+describe('tone mapping and exposure, changed after the start', () => {
+  it('go to the renderer, checked, and draw again', () => {
+    const view = viewOf({ toneMapping: 'aces', exposure: 2 })
+    expect([view.toneMapping, view.exposure]).toEqual(['aces', 2])
+    const render = vi.spyOn(view, 'invalidate')
+    view.toneMapping = 'none'
+    view.exposure = 0.5
+    expect([view.renderer.toneMapping, view.renderer.exposure]).toEqual(['none', 0.5])
+    expect(render).toHaveBeenCalledTimes(2)
+    expect(() => { view.toneMapping = /** @type {any} */ ('filmic') }).toThrow("'toneMapping'")
+    expect(() => { view.exposure = /** @type {any} */ ('bright') }).toThrow('exposure')
+  })
+})

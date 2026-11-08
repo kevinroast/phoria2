@@ -3,6 +3,7 @@
 // draw into it and copy the picture to their own canvas, so a dashboard of 30 tiles stays well
 // under the browser's limit of about 16 live contexts).
 import { fail } from '../validate.js'
+import { lazy } from '../lazy.js'
 import { Programs } from './programs.js'
 import { Resources } from './resources.js'
 
@@ -36,11 +37,14 @@ export class GLContext {
   /** @type {Set<ContextUser>} */ users = new Set()
   /** Shared by several renderers, each copying its picture out. */
   isShared
-  #passesLoading = false
   #watchingCompiles = false
-  #pickerLoading = false
-  #bloomLoading = false
-  #effectsLoading = false
+  // each module's code, loaded the first time it is wanted
+  #load = {
+    passes: lazy('HDR environments, backgrounds, shadows and outlines', () => import('./passes.js')),
+    picker: lazy('GPU picking', () => import('./picking.js')),
+    bloom: lazy('bloom', () => import('./bloom.js')),
+    effects: lazy('ambient occlusion, ground shadows and FXAA', () => import('./effects.js')),
+  }
   /** @type {() => void} */ #removeListeners
 
   /**
@@ -73,10 +77,7 @@ export class GLContext {
       this.lost = false
       this.programs.reset()
       this.resources.reset()
-      this.passes?.reset()
-      this.picker?.reset()
-      this.bloom?.reset()
-      this.effects?.reset()
+      for (const module of this.#loaded()) module.reset()
       for (const user of this.users) user.onReady?.()
     }
     canvas.addEventListener('webglcontextlost', lost)
@@ -122,13 +123,22 @@ export class GLContext {
    * @returns {Passes | null}
    */
   loadPasses(needed) {
-    if (this.passes || !needed || this.#passesLoading) return this.passes
-    this.#passesLoading = true
-    import('./passes.js').then(({ Passes }) => {
+    if (this.passes || !needed) return this.passes
+    this.#load.passes(({ Passes }) => {
       this.passes = new Passes(this.gl, this.programs, this.resources)
-      for (const user of this.users) user.onReady?.()
+      this.#ready()
     })
     return null
+  }
+
+  /** Every renderer on this context draws again - a module it was waiting for has arrived. */
+  #ready() {
+    for (const user of this.users) user.onReady?.()
+  }
+
+  /** The modules loaded so far, for resetting after a lost context and freeing at the end. */
+  #loaded() {
+    return [this.passes, this.picker, this.bloom, this.effects].filter((m) => m !== null)
   }
 
   /**
@@ -159,11 +169,10 @@ export class GLContext {
    * @returns {Picker | null}
    */
   loadPicker() {
-    if (this.picker || this.#pickerLoading) return this.picker
-    this.#pickerLoading = true
-    import('./picking.js').then(({ Picker }) => {
+    if (this.picker) return this.picker
+    this.#load.picker(({ Picker }) => {
       this.picker = new Picker(this.gl, this.programs, this.resources)
-      for (const user of this.users) user.onReady?.()
+      this.#ready()
     })
     return null
   }
@@ -174,11 +183,10 @@ export class GLContext {
    * @returns {Bloom | null}
    */
   loadBloom() {
-    if (this.bloom || this.#bloomLoading) return this.bloom
-    this.#bloomLoading = true
-    import('./bloom.js').then(({ Bloom }) => {
+    if (this.bloom) return this.bloom
+    this.#load.bloom(({ Bloom }) => {
       this.bloom = new Bloom(this.gl, this.programs)
-      for (const user of this.users) user.onReady?.()
+      this.#ready()
     })
     return null
   }
@@ -189,11 +197,10 @@ export class GLContext {
    * @returns {Effects | null}
    */
   loadEffects() {
-    if (this.effects || this.#effectsLoading) return this.effects
-    this.#effectsLoading = true
-    import('./effects.js').then(({ Effects }) => {
+    if (this.effects) return this.effects
+    this.#load.effects(({ Effects }) => {
       this.effects = new Effects(this.gl, this.programs)
-      for (const user of this.users) user.onReady?.()
+      this.#ready()
     })
     return null
   }
@@ -213,9 +220,11 @@ export class GLContext {
     if (this.users.size) return
     this.programs.dispose()
     this.resources.reset()
-    this.passes?.reset()
-    this.bloom?.dispose()
-    this.effects?.dispose()
+    // what frees its own buffers does; the rest go with the context
+    for (const module of this.#loaded()) {
+      if ('dispose' in module) module.dispose()
+      else module.reset()
+    }
     this.#removeListeners()
     const lose = this.gl.getExtension('WEBGL_lose_context')
     if (this === shared) {

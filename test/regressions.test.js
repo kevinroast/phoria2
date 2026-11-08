@@ -498,12 +498,10 @@ describe('glTF triangle strips', () => {
 describe('rendering', () => {
   /** A renderer on a stand-in context that keeps its shader sources, and counts deleted renderbuffers. */
   const recording = () => {
-    const { gl: base } = fakeGL()
-    const sources = []
+    const { gl: base, sources } = fakeGL()
     let freed = 0
     const gl = new Proxy(base, {
       get(target, key) {
-        if (key === 'shaderSource') return (_shader, source) => sources.push(source)
         if (key === 'deleteRenderbuffer') return () => { freed++ }
         return target[key]
       },
@@ -960,10 +958,8 @@ describe('before the 1.0 freeze', () => {
 describe('glass and clearcoat', () => {
   /** The fragment shaders a renderer compiles for a box in this material. @param {object} material */
   const shadersFor = async (material) => {
-    const { gl } = fakeGL()
-    const sources = []
-    const recording = new Proxy(gl, { get: (t, k) => (k === 'shaderSource' ? (_s, src) => sources.push(src) : t[k]) })
-    const renderer = new WebGLRenderer({ canvas: fakeCanvas(recording) })
+    const { gl, sources } = fakeGL()
+    const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
     renderer.setSize(10, 10)
     const scene = new Scene()
     scene.add(new Mesh({ geometry: box(), material }))
@@ -1015,10 +1011,8 @@ describe('glass and clearcoat', () => {
     const both = new Geometry({ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], uvs: [0, 0, 1, 0, 0, 1], uvs2: [0, 0, 1, 0, 0, 1] })
     const one = new Geometry({ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], uvs: [0, 0, 1, 0, 0, 1] })
     const sourcesFor = (geometry) => {
-      const { gl } = fakeGL()
-      const sources = []
-      const recording = new Proxy(gl, { get: (t, k) => (k === 'shaderSource' ? (_s, src) => sources.push(src) : t[k]) })
-      const renderer = new WebGLRenderer({ canvas: fakeCanvas(recording) })
+      const { gl, sources } = fakeGL()
+      const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
       renderer.setSize(10, 10)
       const scene = new Scene()
       scene.add(new Mesh({ geometry, material: { aoMap: ao } }))

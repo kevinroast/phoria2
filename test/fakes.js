@@ -1,15 +1,100 @@
 // Stand-ins for the browser, so code that needs a WebGL context or a page can run in tests.
 
-// A stand-in WebGL 2 context that does nothing but count the GPU objects made and freed, and the
-// draws, so leaks show without a GPU. Constants are stable made-up numbers; every other call is a
-// no-op. With `parallel`, it offers background shader compiling, finished when compiled.done is set.
-// `sources` keeps every shader's source, in the order given.
+// GLSL type names as WebGL's uniform type constants, for the fake's active uniforms
+const UNIFORM_TYPES = {
+  float: 'FLOAT', vec2: 'FLOAT_VEC2', vec3: 'FLOAT_VEC3', vec4: 'FLOAT_VEC4',
+  int: 'INT', ivec2: 'INT_VEC2', ivec3: 'INT_VEC3', ivec4: 'INT_VEC4',
+  uint: 'UNSIGNED_INT', uvec2: 'UNSIGNED_INT_VEC2', uvec3: 'UNSIGNED_INT_VEC3', uvec4: 'UNSIGNED_INT_VEC4',
+  bool: 'BOOL', bvec2: 'BOOL_VEC2', bvec3: 'BOOL_VEC3', bvec4: 'BOOL_VEC4',
+  mat2: 'FLOAT_MAT2', mat3: 'FLOAT_MAT3', mat4: 'FLOAT_MAT4',
+  sampler2D: 'SAMPLER_2D', sampler2DShadow: 'SAMPLER_2D_SHADOW', samplerCube: 'SAMPLER_CUBE', samplerCubeShadow: 'SAMPLER_CUBE_SHADOW',
+  sampler3D: 'SAMPLER_3D', sampler2DArray: 'SAMPLER_2D_ARRAY', isampler2D: 'INT_SAMPLER_2D', usampler2D: 'UNSIGNED_INT_SAMPLER_2D',
+}
+
+/**
+ * A shader's source with its preprocessor run, as far as phoria2's shaders use it: #define,
+ * #ifdef / #ifndef / #if / #elif / #else / #endif over defined(), !, &&, || and comparisons of
+ * defined numbers. Returns the lines that survive and the defines.
+ * @param {string} source
+ */
+export function preprocess(source) {
+  /** @type {Map<string, string>} */
+  const defines = new Map()
+  const value = (expr) => {
+    const js = expr.replace(/defined\s*\(\s*(\w+)\s*\)/g, (_, n) => (defines.has(n) ? '1' : '0'))
+      .replace(/\b[A-Za-z_]\w*\b/g, (n) => (defines.has(n) ? (Number(defines.get(n)) || 0).toString() : '0'))
+    if (!/^[\d\s()!&|<>=+-]*$/.test(js)) throw new Error(`fake preprocessor: can't evaluate '#if ${expr}'`)
+    return !!Function(`return (${js})`)()
+  }
+  /** each open #if: is its branch taken, has any branch been taken, was the enclosing one live */
+  const stack = /** @type {{ on: boolean, done: boolean, outer: boolean }[]} */ ([])
+  const live = () => stack.every((b) => b.on)
+  const lines = []
+  for (const line of source.split('\n')) {
+    const d = /^\s*#\s*(\w+)\s*(.*)$/.exec(line)
+    if (!d) {
+      if (live()) lines.push(line)
+      continue
+    }
+    const [, word, rest] = d
+    if (word === 'ifdef' || word === 'ifndef' || word === 'if') {
+      const outer = live()
+      const on = outer && (word === 'if' ? value(rest) : (word === 'ifdef') === defines.has(rest.trim()))
+      stack.push({ on, done: on, outer })
+    } else if (word === 'elif' || word === 'else') {
+      const b = /** @type {{ on: boolean, done: boolean, outer: boolean }} */ (stack.at(-1))
+      b.on = b.outer && !b.done && (word === 'else' || value(rest))
+      b.done ||= b.on
+    } else if (word === 'endif') {
+      stack.pop()
+    } else if (live() && word === 'define') {
+      const m = /^(\w+)\s*(.*)$/.exec(rest)
+      if (m) defines.set(m[1], m[2].trim())
+    }
+  }
+  return { lines, defines }
+}
+
+/**
+ * The uniforms a linked program has, from its shaders' preprocessed sources: name, GLSL type and
+ * array size, each once.
+ * @param {string[]} shaderSources
+ */
+export function declaredUniforms(shaderSources) {
+  /** @type {Map<string, { type: string, size: number }>} */
+  const uniforms = new Map()
+  for (const source of shaderSources) {
+    const { lines, defines } = preprocess(source)
+    for (const line of lines) {
+      const m = /^\s*uniform\s+(?:(?:highp|mediump|lowp)\s+)?(\w+)\s+(\w+)\s*(?:\[\s*(\w+)\s*\])?\s*;/.exec(line)
+      if (!m) continue
+      const size = m[3] === undefined ? 1 : Number(/^\d+$/.test(m[3]) ? m[3] : defines.get(m[3]))
+      uniforms.set(m[2], { type: m[1], size })
+    }
+  }
+  return uniforms
+}
+
+// A stand-in WebGL 2 context that counts the GPU objects made and freed, and the draws, so leaks
+// show without a GPU. Constants are stable made-up numbers; calls it doesn't model are no-ops. With
+// `parallel`, it offers background shader compiling, finished when compiled.done is set.
+// - `sources` keeps every shader's source, in the order given;
+// - a linked program reports the uniforms its shaders declare once preprocessed - so the code that
+//   finds a program's uniforms runs as with a GPU - and keeps the last value each was set to
+//   (`program.values`, by name);
+// - `drawLog` has each draw: the program, the framebuffer drawn into (null: the canvas) and the viewport.
 export function fakeGL({ parallel = false } = {}) {
   const compiled = { done: false }
   // draws made, and how many vertices each drawArrays drew
   const draws = { count: 0, /** @type {number[]} */ sizes: [] }
   const live = new Set()
   const sources = /** @type {string[]} */ ([])
+  /** @type {{ call: string, count: number, program: any, framebuffer: any, viewport: number[] }[]} */
+  const drawLog = []
+  const bound = { program: /** @type {any} */ (null), framebuffer: /** @type {any} */ (null), viewport: [0, 0, 0, 0] }
+  const logDraw = (call, count) => drawLog.push({ call, count, program: bound.program, framebuffer: bound.framebuffer, viewport: [...bound.viewport] })
+  // a uniform's value, kept on its program
+  const setUniform = (loc, v) => { if (loc) loc.program.values[loc.name] = typeof v === 'object' && v !== null && 'length' in v ? Array.from(v) : v }
   const lost = { count: 0, now: false, restores: 0 }
   const consts = new Map()
   const constant = (name) => {
@@ -24,28 +109,59 @@ export function fakeGL({ parallel = false } = {}) {
   const free = (o) => live.delete(o)
   const gl = {
     createBuffer: make('buffer'), createTexture: make('texture'), createVertexArray: make('vertex array'),
-    createFramebuffer: make('framebuffer'), createRenderbuffer: make('renderbuffer'), createProgram: make('program'),
-    createShader: () => ({}),
-    shaderSource: (_shader, source) => { sources.push(source) },
+    createFramebuffer: make('framebuffer'), createRenderbuffer: make('renderbuffer'),
+    createProgram: () => {
+      const p = { kind: 'program', shaders: /** @type {any[]} */ ([]), uniforms: /** @type {{ name: string, type: number, size: number }[]} */ ([]), values: /** @type {Record<string, any>} */ ({}) }
+      live.add(p)
+      return p
+    },
+    createShader: () => ({ source: '' }),
+    shaderSource: (shader, source) => {
+      sources.push(source)
+      if (shader) shader.source = source
+    },
+    attachShader: (program, shader) => program?.shaders.push(shader),
+    linkProgram: (program) => {
+      if (!program) return
+      program.uniforms = [...declaredUniforms(program.shaders.map((sh) => sh.source))]
+        .map(([name, u]) => ({ name: u.size > 1 ? `${name}[0]` : name, type: constant(UNIFORM_TYPES[u.type] ?? `UNKNOWN_TYPE_${u.type}`), size: u.size }))
+    },
+    getActiveUniform: (program, i) => program.uniforms[i],
+    getUniformLocation: (program, name) => ({ program, name: name.replace(/\[0\]$/, '') }),
+    useProgram: (program) => { bound.program = program },
+    bindFramebuffer: (target, framebuffer) => {
+      if (target !== constant('READ_FRAMEBUFFER')) bound.framebuffer = framebuffer
+    },
+    viewport: (x, y, w, h) => { bound.viewport = [x, y, w, h] },
     deleteBuffer: free, deleteTexture: free, deleteVertexArray: free, deleteFramebuffer: free, deleteRenderbuffer: free,
     deleteProgram: free, deleteShader() {},
     getShaderParameter: () => true,
     // 0x91b1 is COMPLETION_STATUS_KHR: is a program compiled yet?
-    getProgramParameter: (_p, name) => (name === constant('ACTIVE_UNIFORMS') ? 0 : name === 0x91b1 ? compiled.done : true),
+    getProgramParameter: (p, name) => (name === constant('ACTIVE_UNIFORMS') ? p.uniforms.length : name === 0x91b1 ? compiled.done : true),
     getExtension: (name) => (name === 'WEBGL_lose_context' ? { loseContext: () => { lost.count++; lost.now = true; live.clear() }, restoreContext: () => { lost.restores++; lost.now = false } }
       : name === 'KHR_parallel_shader_compile' && parallel ? {} : null),
-    drawElements: () => draws.count++,
+    drawElements: (_mode, n) => {
+      draws.count++
+      logDraw('drawElements', n)
+    },
     drawArrays: (_mode, _first, n) => {
       draws.count++
       draws.sizes.push(n)
+      logDraw('drawArrays', n)
     },
+    drawElementsInstanced: (_mode, n) => logDraw('drawElementsInstanced', n),
+    drawArraysInstanced: (_mode, _first, n) => logDraw('drawArraysInstanced', n),
     isContextLost: () => lost.now,
   }
+  // every uniform* call keeps its value on the program
+  for (const name of ['uniform1f', 'uniform1fv', 'uniform2fv', 'uniform3fv', 'uniform4fv', 'uniform1i', 'uniform1iv', 'uniform2iv', 'uniform3iv', 'uniform4iv',
+    'uniform1ui', 'uniform1uiv', 'uniform2uiv', 'uniform3uiv', 'uniform4uiv']) gl[name] = (loc, v) => setUniform(loc, v)
+  for (const name of ['uniformMatrix2fv', 'uniformMatrix3fv', 'uniformMatrix4fv']) gl[name] = (loc, _t, v) => setUniform(loc, v)
   const proxy = new Proxy(gl, {
     get: (target, key) => (key in target ? target[key] : typeof key === 'string' && /^[A-Z0-9_]+$/.test(key) ? constant(key) : () => {}),
   })
   const count = (kind) => [...live].filter((o) => o.kind === kind).length
-  return { gl: proxy, live, lost, count, compiled, draws, sources }
+  return { gl: proxy, live, lost, count, compiled, draws, sources, drawLog }
 }
 
 export const fakeCanvas = (gl) => ({
