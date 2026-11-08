@@ -158,6 +158,8 @@ export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
  * @property {boolean} draggable some node has an onDrag handler
  * @property {FrameOutline[]} outlines subtrees to draw an outline round, last of all
  * @property {boolean} tooltips some node has its own tooltip
+ * @property {[any, FrameClip | null][]} solids opaque meshes that cast a ground shadow, seen or not - all but
+ *   those that only receive shadows (floors); made into draw items by solidItems() when wanted
  */
 
 /**
@@ -199,6 +201,7 @@ export function collect(scene, camera) {
     draggable: false,
     outlines: [],
     tooltips: false,
+    solids: [],
   }
   let punctual = 0, directional = 0
   // shadows: what casts (seen or not - a shadow can fall into view from off screen) and what
@@ -231,6 +234,8 @@ export function collect(scene, camera) {
     else if (node.highlight || node.handlersFor('hover').length || node.handlersFor('click').length) frame.interactive = true
     if (node.isDrawable) {
       if (node.castShadow && node.drawMode !== 'points' && node.drawMode !== 'lines') casters.push([node, clip])
+      // what a ground shadow is of: solid meshes, not floors that only receive shadows
+      if (node.drawMode === 'triangles' && !node.material.transparent && (node.castShadow || !node.receiveShadow)) frame.solids.push([node, clip])
       if (node.receiveShadow) receivers.push(node)
       const item = drawItem(node, view, planes, clip)
       if (item) {
@@ -344,6 +349,15 @@ export function collect(scene, camera) {
   // transparent: back to front so blending composes correctly
   frame.transparent.sort((x, y) => x.node.renderOrder - y.node.renderOrder || y.depth - x.depth)
   return frame
+}
+
+/**
+ * A frame's solids as draw items, none culled - for passes that see more than the camera does.
+ * @param {FrameDescription} frame
+ * @returns {DrawItem[]}
+ */
+export function solidItems(frame) {
+  return /** @type {DrawItem[]} */ (frame.solids.map(([node, clip]) => drawItem(node, frame.camera.view, null, clip)).filter(Boolean))
 }
 
 /**

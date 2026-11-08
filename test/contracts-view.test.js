@@ -2,7 +2,7 @@
 // context, so what's checked is that each option is taken and lands where it acts, not the pixels.
 import { afterAll, describe, expect, it } from 'vitest'
 import { OrbitControl, PerspectiveCamera, Scene, View, WebGLRenderer } from '../src/index.js'
-import { BLOOM_HINTS, BLOOM_OPTIONS, bloomSettings } from '../src/webgl/WebGLRenderer.js'
+import { AMBIENT_OCCLUSION_HINTS, AMBIENT_OCCLUSION_OPTIONS, BLOOM_HINTS, BLOOM_OPTIONS, GROUND_SHADOW_HINTS, GROUND_SHADOW_OPTIONS, ambientOcclusionSettings, bloomSettings, groundShadowSettings } from '../src/webgl/WebGLRenderer.js'
 import { contract } from './contract.js'
 import { fakeCanvas, fakeElement, fakeGL, fakePage } from './fakes.js'
 
@@ -34,6 +34,9 @@ contract('View', {
     toneMapping: { value: 'aces', read: (v) => v.renderer.toneMapping, default: 'neutral', bad: 'filmic', error: 'toneMapping' },
     exposure: { value: 2, read: (v) => v.renderer.exposure, default: 1, bad: 'bright', error: 'exposure' },
     bloom: { value: { strength: 2 }, read: (v) => v.bloom?.strength, expect: 2, bad: 'on', error: 'bloom' },
+    ambientOcclusion: { value: { strength: 2 }, read: (v) => v.ambientOcclusion?.strength, expect: 2, bad: 'on', error: 'ambientOcclusion' },
+    groundShadow: { value: { opacity: 0.3 }, read: (v) => v.groundShadow?.opacity, expect: 0.3, bad: 'on', error: 'groundShadow' },
+    fxaa: { value: true, read: (v) => v.fxaa, default: false },
     autoLight: { value: false, read: (v) => v.autoLight, default: true },
     maxDelta: { value: 0.05, read: (v) => v.maxDelta, default: 0.1, bad: 'slow', error: 'maxDelta' },
     reducedMotion: { value: true, read: (v) => v.reducedMotion, default: false, bad: 'yes', error: 'reducedMotion' },
@@ -63,6 +66,28 @@ contract('WebGLRenderer', {
     exposure: { value: 2, read: (r) => r.exposure, default: 1, bad: 'bright', error: 'exposure' },
     pixelRatio: { value: 2, read: (r) => r.pixelRatio, default: 1, bad: 'retina', error: 'pixelRatio' },
     bloom: { value: true, read: (r) => r.bloom, expect: { strength: 1, radius: 0.6, threshold: 0.6 }, default: null, bad: 'on', error: 'bloom' },
+    ambientOcclusion: { value: true, read: (r) => r.ambientOcclusion, expect: { strength: 1, radius: null }, default: null, bad: 'on', error: 'ambientOcclusion' },
+    groundShadow: { value: true, read: (r) => r.groundShadow, expect: { opacity: 0.6, softness: 0.5, height: null, y: null, size: null }, default: null, bad: 'on', error: 'groundShadow' },
+    fxaa: { value: true, read: (r) => r.fxaa, default: false },
+  },
+})
+
+contract('ambientOcclusion', {
+  options: AMBIENT_OCCLUSION_OPTIONS, hints: AMBIENT_OCCLUSION_HINTS, make: (o) => ambientOcclusionSettings('View', o),
+  rows: {
+    strength: { value: 2, read: (a) => a.strength, default: 1, bad: -1, error: 'strength' },
+    radius: { value: 0.3, read: (a) => a.radius, default: null, bad: 'wide', error: 'radius' },
+  },
+})
+
+contract('groundShadow', {
+  options: GROUND_SHADOW_OPTIONS, hints: GROUND_SHADOW_HINTS, make: (o) => groundShadowSettings('View', o),
+  rows: {
+    opacity: { value: 0.3, read: (g) => g.opacity, default: 0.6, bad: 2, error: 'opacity' },
+    softness: { value: 0.9, read: (g) => g.softness, default: 0.5, bad: 'soft', error: 'softness' },
+    height: { value: 2, read: (g) => g.height, default: null, bad: -1, error: 'height' },
+    y: { value: -1, read: (g) => g.y, default: null, bad: 'floor', error: "'y'" },
+    size: { value: 8, read: (g) => g.size, default: null, bad: 'big', error: 'size' },
   },
 })
 

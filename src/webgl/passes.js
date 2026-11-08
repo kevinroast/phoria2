@@ -1,6 +1,7 @@
 // The renderer's extra passes: HDR environments (prefiltered once into a mip chain of blurrier
 // reflections, plus spherical harmonics for diffuse light), panorama backgrounds, and the
 // directional shadow map. Each keeps its GL objects and frees them on reset() after a lost context.
+import * as mat3 from '../math/mat3.js'
 import * as mat4 from '../math/mat4.js'
 import { irradianceSH } from '../irradiance.js'
 import { POINT_SHADOW_SIZE, SHADOW_MAP_SIZE, SPOT_ATLAS_SIZE } from '../shadow.js'
@@ -417,7 +418,7 @@ export class Passes {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.#shadow.framebuffer)
     gl.viewport(0, 0, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE)
     this.#beginDepth()
-    this.#drawDepth(shadow.casters, shadow.viewProjection)
+    this.drawDepth(shadow.casters, shadow.viewProjection)
     this.#endDepth()
     // clip space to [0, 1] texture coordinates and depth
     const toTexture = new Float32Array([0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 0.5, 0, 0.5, 0.5, 0.5, 1])
@@ -449,7 +450,7 @@ export class Passes {
     for (const spot of spots) {
       const x = spot.tile % 2, y = Math.floor(spot.tile / 2)
       gl.viewport(x * half, y * half, half, half)
-      this.#drawDepth(spot.casters, spot.viewProjection)
+      this.drawDepth(spot.casters, spot.viewProjection)
       // clip space to this tile's part of the map, and depth to [0, 1]
       const toTile = new Float32Array([0.25, 0, 0, 0, 0, 0.25, 0, 0, 0, 0, 0.5, 0, x * 0.5 + 0.25, y * 0.5 + 0.25, 0.5, 1])
       matrices.set(mat4.multiply(new Float32Array(16), toTile, spot.viewProjection), spot.tile * 16)
@@ -475,7 +476,7 @@ export class Passes {
       gl.bindFramebuffer(gl.FRAMEBUFFER, /** @type {{ framebuffers: WebGLFramebuffer[] }} */ (this.#pointShadow).framebuffers[i])
       gl.viewport(0, 0, POINT_SHADOW_SIZE, POINT_SHADOW_SIZE)
       this.#beginDepth()
-      this.#drawDepth(face.casters, face.viewProjection)
+      this.drawDepth(face.casters, face.viewProjection)
     })
     this.#endDepth()
     return {
@@ -503,12 +504,24 @@ export class Passes {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
   }
 
-  /** @param {DrawItem[]} casters @param {ArrayLike<number>} viewProjection */
-  #drawDepth(casters, viewProjection) {
+  /**
+   * Draw things' depth from a view - shadow casters from a light, or, with `normals`, the solids
+   * from the camera for ambient occlusion: each pixel's view-space normal too, culled as the
+   * picture culls them so the depths match.
+   * @param {DrawItem[]} casters @param {ArrayLike<number>} viewProjection
+   * @param {{ normals?: ArrayLike<number> | null }} [options] normals: the view matrix
+   */
+  drawDepth(casters, viewProjection, { normals = null } = {}) {
     const gl = this.gl
+    const normalMatrix = normals ? new Float32Array(9) : null
     for (const item of casters) {
       const instances = item.instances
       const defines = instances ? ['INSTANCED'] : []
+      if (normals) {
+        defines.push('NORMALS')
+        if (item.material.flatShading) defines.push('FLAT_SHADING')
+        if (item.material.doubleSided) defines.push('DOUBLE_SIDED')
+      }
       if (item.clip) defines.push('CLIP')
       // a cut-out's shadow has its holes: the map's alpha against the material's threshold
       const material = item.material, cutout = material.alphaTest > 0
@@ -526,6 +539,18 @@ export class Passes {
       if (hook) setHookUniforms(program, material, this.time, this.cameraPosition, (t) => this.resources.texture(t))
       program.set('uViewProjection', viewProjection)
       program.set('uModel', item.worldMatrix)
+      if (normals && normalMatrix) {
+        program.set('uView', normals)
+        if (!mat3.normalFromMat4(normalMatrix, item.worldMatrix)) mat3.identity(normalMatrix)
+        program.set('uNormalMatrix', normalMatrix)
+        // the picture's culling, so a back face never stands in front of what is drawn
+        gl.frontFace(mat4.determinant(item.worldMatrix) < 0 ? gl.CW : gl.CCW)
+        if (item.material.doubleSided) gl.disable(gl.CULL_FACE)
+        else {
+          gl.enable(gl.CULL_FACE)
+          gl.cullFace(gl.BACK)
+        }
+      }
       if (item.clip) program.set('uClipPlane', item.clip.plane)
       if (cutout) {
         program.set('uOpacity', material.opacity)

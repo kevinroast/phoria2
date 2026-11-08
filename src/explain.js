@@ -25,6 +25,8 @@ import { Box3 } from './value/Box3.js'
  * @property {{ hover: number, click: number, tooltip: boolean, highlight: boolean, keyboard?: boolean, reducedMotion?: boolean, description?: string | null }} interaction
  * @property {string[]} [notes] lines from nodes that describe themselves, such as charts
  * @property {Record<string, unknown> | null} [debug] what debug drawing shows, when it is on
+ * @property {{ bloom: Record<string, number> | null, ambientOcclusion: Record<string, number | null> | null,
+ *   groundShadow: Record<string, number | null> | null, fxaa: boolean }} [effects] the picture's effects, on or off
  */
 
 const fmt = (n) => (Math.abs(n) >= 1e4 || (n !== 0 && Math.abs(n) < 1e-3) ? n.toExponential(2) : String(+n.toFixed(2)))
@@ -149,6 +151,27 @@ export function explain(info) {
   if (bounds.isEmpty()) warnings.unshift('the scene has nothing to draw - add a Mesh, InstancedMesh, Points or Lines')
   else if (!frame.stats.drawn && frame.stats.culled) {
     warnings.unshift(`nothing is in view: ${plural(frame.stats.culled, 'object')} are outside the camera's view - call view.frame() to fit the camera to the scene`)
+  }
+
+  // the picture's effects, with their settings - and why one that is on might show nothing
+  const fx = info.effects
+  if (fx && (fx.bloom || fx.ambientOcclusion || fx.groundShadow || fx.fxaa)) {
+    const settings = (/** @type {Record<string, number | null>} */ o, /** @type {Record<string, string>} */ auto = {}) =>
+      Object.entries(o).filter(([k, v]) => v !== null || auto[k]).map(([k, v]) => `${k} ${v === null ? auto[k] : fmt(v)}`).join(', ')
+    const solids = frame.solids.length
+    lines.push(`Effects: ${[
+      fx.bloom && `bloom (${settings(fx.bloom)})`,
+      fx.ambientOcclusion && `ambient occlusion (${settings(fx.ambientOcclusion, { radius: 'auto' })})`,
+      fx.groundShadow && `ground shadow under ${plural(solids, 'solid')} (${settings(fx.groundShadow, { height: 'auto', y: 'auto', size: 'auto' })})`,
+      fx.fxaa && 'FXAA',
+    ].filter(Boolean).join(', ')}`)
+    if (fx.groundShadow && !solids) {
+      warnings.push("groundShadow is on but nothing casts it - every mesh only receives shadows (receiveShadow on, castShadow off), or is see-through; set castShadow: true on what should cast")
+    }
+    const fromAllRound = frame.environment !== 'none' || frame.lights.some((l) => l.kind === 'ambient' || l.kind === 'hemisphere')
+    if (fx.ambientOcclusion && !fromAllRound) {
+      warnings.push("ambientOcclusion is on but there is no light from all round for it to dim - it leaves direct light alone; add a HemisphereLight or AmbientLight, or set scene.environment")
+    }
   }
 
   // debug drawing on: said, so a picture full of lines isn't a mystery

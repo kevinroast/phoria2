@@ -23,6 +23,9 @@ product viewers. The [demo gallery](https://kevs3d.co.uk/phoria2/).
 - **Small shader hooks, not full shaders**: a line or two of GLSL in `material.shader` waves a flag,
   dissolves a part or pulses a line, and lighting, shadows, picking and outlines keep working - the
   hook runs inside phoria2's own shader. A hook that doesn't compile says which of its lines is wrong.
+- **Product viewer polish as options**: `ambientOcclusion` shades the creases, `groundShadow` sets
+  a soft shadow under the model with no light needed, and `fxaa` smooths edges - each one option,
+  loaded only when turned on.
 - **Accessible**: `keyboard: true` lets people step through bars, points and parts with the
   arrow keys while a screen reader says what each one is; motion follows the system's
   reduced-motion setting.
@@ -214,7 +217,7 @@ A full example, with a chart that follows its data, is in
 
 | Import | |
 |---|---|
-| `phoria2` | the view, scene graph, cameras, lights, materials, geometry, curves, textures, picking, labels, bloom, `create()` from JSON |
+| `phoria2` | the view, scene graph, cameras, lights, materials, geometry, curves, textures, picking, labels, bloom, ambient occlusion, ground shadows, FXAA, `create()` from JSON |
 | `phoria2/charts` | `chart()` - charts from a spec of mark, data and channels, and the scales they use |
 | `phoria2/particles` | `Emitter` and `Body` |
 | `phoria2/gltf` | `loadGLTF()` - glTF 2.0 models with their materials and animations |

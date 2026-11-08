@@ -9,6 +9,7 @@ import { Resources } from './resources.js'
 /** @import { Passes } from './passes.js' */
 /** @import { Picker } from './picking.js' */
 /** @import { Bloom } from './bloom.js' */
+/** @import { Effects } from './effects.js' */
 /** @import { Scene } from '../scene/Scene.js' */
 
 /** @typedef {{ onReady: (() => void) | null }} ContextUser */
@@ -27,6 +28,8 @@ export class GLContext {
   picker = null
   /** Bloom - loaded the first time a renderer asks for it. @type {Bloom | null} */
   bloom = null
+  /** Ambient occlusion, ground shadows and FXAA - loaded the first time a renderer asks for one. @type {Effects | null} */
+  effects = null
   lost = false
   /** Counts frames across every renderer, so programs know when their per-frame uniforms are stale. */
   frame = 0
@@ -37,6 +40,7 @@ export class GLContext {
   #watchingCompiles = false
   #pickerLoading = false
   #bloomLoading = false
+  #effectsLoading = false
   /** @type {() => void} */ #removeListeners
 
   /**
@@ -72,6 +76,7 @@ export class GLContext {
       this.passes?.reset()
       this.picker?.reset()
       this.bloom?.reset()
+      this.effects?.reset()
       for (const user of this.users) user.onReady?.()
     }
     canvas.addEventListener('webglcontextlost', lost)
@@ -179,6 +184,21 @@ export class GLContext {
   }
 
   /**
+   * Ambient occlusion, ground shadows and FXAA, once loaded; the first call starts loading them, and
+   * every renderer on this context is told when they arrive.
+   * @returns {Effects | null}
+   */
+  loadEffects() {
+    if (this.effects || this.#effectsLoading) return this.effects
+    this.#effectsLoading = true
+    import('./effects.js').then(({ Effects }) => {
+      this.effects = new Effects(this.gl, this.programs)
+      for (const user of this.users) user.onReady?.()
+    })
+    return null
+  }
+
+  /**
    * A renderer is done with this context. Its scene's GPU copies are freed unless another renderer
    * still draws them; the last user frees everything, losing the context on purpose so the
    * browser reclaims it. A canvas's own context is lost a moment later rather than at once: a new
@@ -195,6 +215,7 @@ export class GLContext {
     this.resources.reset()
     this.passes?.reset()
     this.bloom?.dispose()
+    this.effects?.dispose()
     this.#removeListeners()
     const lose = this.gl.getExtension('WEBGL_lose_context')
     if (this === shared) {

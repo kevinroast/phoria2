@@ -131,10 +131,11 @@ export class Bloom {
   }
 
   /**
-   * Finish a frame: blur the bright parts and draw the picture with its glow onto the canvas.
-   * @param {BloomSettings} settings
+   * Finish a frame: blur the bright parts and draw the picture with its glow onto the canvas - or
+   * into `output`, for a pass after it (FXAA).
+   * @param {BloomSettings} settings @param {WebGLFramebuffer | null} [output]
    */
-  end(settings) {
+  end(settings, output = null) {
     const gl = this.gl
     const target = /** @type {Target} */ (this.#target)
     const { width, height, levels } = target
@@ -184,7 +185,7 @@ export class Bloom {
     gl.disable(gl.BLEND)
 
     // onto the canvas
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, output)
     gl.viewport(0, 0, width, height)
     const composite = this.programs.ready('bloom-composite', [], COMPOSITE)
     gl.useProgram(composite.program)

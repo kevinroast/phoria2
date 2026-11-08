@@ -111,6 +111,9 @@ const view = new View({ canvas: '#c', orbit: true })
 | `renderMode` | `'auto'` | `'auto'` draws only when something changed (idle views cost nothing); `'always'`; `'manual'` |
 | `toneMapping`, `exposure` | `'neutral'`, `1` | `'neutral'` \| `'aces'` \| `'none'` |
 | `bloom` | off | glow round bright parts (emissive, additive points and lines): `true` or `{ strength, radius, threshold }`; also `view.bloom` |
+| `ambientOcclusion` | off | shading in the creases: `true` or `{ strength, radius }`; also `view.ambientOcclusion` - see Product viewer passes |
+| `groundShadow` | off | a soft shadow on the ground under the solids, no light needed: `true` or `{ opacity, softness, height, y, size }`; also `view.groundShadow` |
+| `fxaa` | `false` | smooth jagged edges with a pass over the finished picture; also `view.fxaa` |
 | `autoLight` | `true` | light a scene that has no lights (a chart needs none of its own); `false` to leave it dark |
 | `pixelRatio` | `min(devicePixelRatio, 2)` | |
 | `context` | `'auto'` | WebGL context: own for the first four views on a page, then one shared context - so a page can hold any number of views |
@@ -726,6 +729,31 @@ the world area that gets shadows - so the map stays sharp there.
 ```js
 scene.add(new PointLight({ position: [0, 0.1, 0], intensity: 0.5, range: 4, castShadow: true }))  // a candle in a jack-o'-lantern
 ```
+
+**Product viewer passes** - three View options, each loading its code the first time it's on:
+
+```js
+const view = new View({ canvas, ambientOcclusion: true, groundShadow: true, fxaa: true })
+scene.environment = 'studio'   // ambient occlusion dims light from all round: give the scene some
+view.groundShadow = { opacity: 0.5, softness: 0.8 }   // change any time; false turns it off
+```
+
+- **`ambientOcclusion`** shades the creases - corners, gaps, under a lid, where things meet - from
+  the picture's depth (screen-space, at half size). It dims only light from all round (ambient,
+  hemisphere, environment), never the lights' direct light, and leaves unlit materials, points, lines
+  and see-through things alone - so chart colours stay true. `strength` (default 1; an inside corner
+  is about half in shade), `radius` in world units (default: a twentieth of the solids' size).
+- **`groundShadow`** is the product viewer's soft floor shadow: the solids seen from below the
+  ground, darkest where they touch it, blurred - no light or shadow map needed, and it shows with or
+  without a floor mesh. Every opaque mesh casts it except floors that only receive shadows
+  (`receiveShadow` on, `castShadow` off). `opacity` (0.6), `softness` (0-1, 0.5), `height` (how far up
+  things still cast; default half the solids' size), `y` (the ground; default the solids' bottom),
+  `size` (the shadow's square; default from the solids).
+- **`fxaa`** smooths edges multisampling misses - cut-outs, shader detail - or all of them when
+  `antialias: false` (cheaper on phones). Runs last, after bloom.
+- Mistakes: a floor mesh that doesn't set `receiveShadow: true` casts a dark square of ground shadow
+  - mark floors as receivers. Ambient occlusion with only directional lights shows nothing (there is
+  no light from all round to dim). `view.explain()` names the effects on and warns about both.
 
 Cameras: `new PerspectiveCamera({ fov, near, far, position, target })`,
 `new OrthographicCamera({ height, near, far, position, target })` (width follows the aspect). Or

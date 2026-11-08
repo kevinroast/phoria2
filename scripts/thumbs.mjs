@@ -13,7 +13,7 @@ import { DEMOS, slug } from '../demos/registry.js'
 
 const WIDTH = 960, HEIGHT = 600, SCALE = 0.5
 // seconds to let a demo run first - longer for those that load models or build up to something
-const WAIT = { viewer: 7, 'guided-tour': 4, 'point-lights': 7, 'fog-shadows': 5, fireworks: 6, paint: 7, particles: 5, textures: 5, lights: 5, artemis: 4, cpu: 4, volcano: 5, engine: 4.5, skull: 5, 'advanced-materials': 5 }
+const WAIT = { viewer: 7, 'guided-tour': 4, 'point-lights': 7, 'fog-shadows': 5, fireworks: 6, paint: 7, particles: 5, textures: 5, lights: 5, artemis: 4, cpu: 4, volcano: 5, engine: 4.5, skull: 5, 'advanced-materials': 5, 'viewer-passes': 5 }
 // several views on one page: captured from the page, not one view's toImage() - for cells, the
 // whole poster: both cells, their titles and the paper behind them
 const PAGE = ['dashboard', 'chartlab', 'cells', 'colour', 'cad', 'schematic']
@@ -139,6 +139,9 @@ const PREPARE = {
   // the second hooks demo at a moment the column is well twisted and the meter part way up
   'shader-hooks-2': `view.stop()
     while (view.time < 8.4) view.step(1 / 60)`,
+  // the passes demo with FXAA on: the demo starts without it - and without multisampling - so the
+  // switch shows; the card wants smooth edges
+  'viewer-passes': 'view.fxaa = true',
   // the office with its navigation mesh showing, the people part way along their walks
   'path-finding': `(async () => {
     document.querySelector('[data-mesh]').click()

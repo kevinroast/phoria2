@@ -120,9 +120,15 @@ out vec4 fragColor;
 #if defined(ALPHA_TEST) || defined(HOOK_FRAGMENT)
 in vec2 vUv;
 #endif
+#if defined(HOOK_FRAGMENT) || defined(NORMALS)
+in vec3 vNormal;
+#endif
+#ifdef NORMALS
+// ambient occlusion's prepass: each pixel's normal in view space, as the picture shades it
+uniform mat4 uView;
+#endif
 #ifdef HOOK_FRAGMENT
 // a fragment hook's discards cut the shadow too - a dissolving thing casts what is left of it
-in vec3 vNormal;
 in vec3 vColor;
 //@hook uniforms
 #endif
@@ -138,11 +144,18 @@ ${SAMPLING}
 ${CLIP}
 void main() {
   clipAway(vWorldPosition);
+#if defined(NORMALS) && defined(FLAT_SHADING)
+  vec3 normal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
+#elif defined(HOOK_FRAGMENT) || defined(NORMALS)
+  vec3 normal = normalize(vNormal);
+#if defined(NORMALS) && defined(DOUBLE_SIDED)
+  if (!gl_FrontFacing) normal = -normal;
+#endif
+#endif
 #ifdef HOOK_FRAGMENT
   {
     vec4 base = vec4(vColor, 1.0);
     vec3 emissive = vec3(0.0);
-    vec3 normal = normalize(vNormal);
 //@hook fragment
     if (base.a <= 0.0) discard;
   }
@@ -154,7 +167,11 @@ void main() {
 #endif
   if (alpha < uAlphaTest) discard;
 #endif
+#ifdef NORMALS
+  fragColor = vec4(normalize(mat3(uView) * normal) * 0.5 + 0.5, 1.0);
+#else
   fragColor = vec4(1.0);
+#endif
 }
 `
 
@@ -374,6 +391,37 @@ uniform float uBumpScale;
 #ifdef AO_MAP
 uniform sampler2D uAoMap;
 uniform float uAoMapIntensity;
+#endif
+#ifdef SSAO
+// ambient occlusion worked out from the picture's depth, at half its size: each pixel's share of
+// light from all round that reaches it (r), and - with float targets - the depth it was found at (g)
+uniform sampler2D uSsao;
+uniform vec2 uSsaoScale;     // gl_FragCoord to the occlusion's coordinates
+uniform vec4 uSsaoViewZ;     // the view matrix's third row: a world position's depth in front of the camera
+float screenOcclusion() {
+  vec2 uv = gl_FragCoord.xy * uSsaoScale;
+#ifdef SSAO_DEPTH
+  // the four texels round this pixel, each counting less the further its depth is from this
+  // pixel's own - so the shading of a surface behind doesn't bleed over an edge in front of it
+  vec2 size = vec2(textureSize(uSsao, 0));
+  vec2 p = uv * size - 0.5;
+  ivec2 i0 = ivec2(floor(p));
+  vec2 f = fract(p);
+  float z = -dot(uSsaoViewZ, vec4(vWorldPosition, 1.0));
+  float sum = 0.0, total = 0.0;
+  for (int k = 0; k < 4; k++) {
+    ivec2 o = ivec2(k & 1, k >> 1);
+    vec2 t = texelFetch(uSsao, clamp(i0 + o, ivec2(0), ivec2(size) - 1), 0).rg;
+    float w = (o.x == 1 ? f.x : 1.0 - f.x) * (o.y == 1 ? f.y : 1.0 - f.y) + 1e-3;
+    w /= 1e-3 + abs(t.g - z) / max(z, 1e-4);
+    sum += t.r * w;
+    total += w;
+  }
+  return sum / total;
+#else
+  return texture(uSsao, uv).r;
+#endif
+}
 #endif
 #ifdef LIGHT_MAP
 uniform sampler2D uLightMap;
@@ -973,6 +1021,9 @@ void main() {
 #endif
 #ifdef AO_MAP
   indirect *= mix(1.0, uAoMapTexel.r, uAoMapIntensity);
+#endif
+#ifdef SSAO
+  indirect *= screenOcclusion();
 #endif
   color += indirect + emissive;
 #ifdef SHEEN

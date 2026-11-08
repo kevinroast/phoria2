@@ -4,7 +4,8 @@ import { Geometry } from '../geometry/Geometry.js'
 import { Material } from '../material/Material.js'
 import { CLIP_ONLY_FRAGMENT, MESH_VERTEX } from './shaders.js'
 import { hookFailed, hookFor, setHookUniforms } from './hooks.js'
-import { collect } from '../frame.js'
+import { collect, solidItems } from '../frame.js'
+import { Box3 } from '../value/Box3.js'
 import { checkNumber, checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '../validate.js'
 import { GLContext } from './context.js'
 import { uvMatrix } from './resources.js'
@@ -40,9 +41,15 @@ import { uvMatrix } from './resources.js'
  * @property {number} [exposure] (default 1)
  * @property {number} [pixelRatio] drawing buffer pixels per CSS pixel (default 1; View sets it)
  * @property {boolean | BloomOptions} [bloom] glow round bright parts (default off); loads its code the first time
+ * @property {boolean | AmbientOcclusionOptions} [ambientOcclusion] shading in the creases (default off);
+ *   loads its code the first time
+ * @property {boolean | GroundShadowOptions} [groundShadow] a soft shadow on the ground under the solids
+ *   (default off); loads its code the first time
+ * @property {boolean} [fxaa] smooth jagged edges with a pass over the finished picture - for edges
+ *   multisampling misses (cut-outs, thin lines, shader detail) or when antialias is off (default off)
  */
 
-const OPTIONS = ['canvas', 'shared', 'antialias', 'outlineAntialias', 'toneMapping', 'exposure', 'pixelRatio', 'bloom']
+const OPTIONS = ['canvas', 'shared', 'antialias', 'outlineAntialias', 'toneMapping', 'exposure', 'pixelRatio', 'bloom', 'ambientOcclusion', 'groundShadow', 'fxaa']
 const BLOOM = { strength: 1, radius: 0.6, threshold: 0.6 }
 /** What bloom: { ... } takes, and hints for names people reach for instead. */
 export const BLOOM_OPTIONS = Object.keys(BLOOM)
@@ -65,6 +72,79 @@ export function bloomSettings(owner, value) {
   }
   return settings
 }
+/**
+ * Shading in the creases: ambient and environment light dimmed where surfaces close in on each other
+ * - corners, gaps, where things meet the ground - worked out from the depth of the picture.
+ * Direct light from the lights is left alone, and so are unlit materials, points and lines.
+ * @typedef {object} AmbientOcclusionOptions
+ * @property {number} [strength] how dark the creases get (default 1)
+ * @property {number} [radius] how far round each point to look for what hides it, in world units
+ *   (default: about a twentieth of the size of the scene's solids)
+ */
+
+/**
+ * A soft shadow on the ground under the scene's solids, darkest where they touch it - the product
+ * viewer's floor shadow, with no light needed. Every opaque mesh casts it but those that only
+ * receive shadows (`receiveShadow` on, `castShadow` off - floors).
+ * @typedef {object} GroundShadowOptions
+ * @property {number} [opacity] 0 - 1: how dark it is where things touch the ground (default 0.6)
+ * @property {number} [softness] 0 - 1: how blurred it is (default 0.5)
+ * @property {number} [height] how far above the ground something still casts, in world units
+ *   (default: half the size of the solids)
+ * @property {number} [y] the ground's height (default: the bottom of the solids)
+ * @property {number} [size] how wide the shadow's square is, in world units (default: from the solids)
+ */
+
+const AMBIENT_OCCLUSION = { strength: 1, radius: /** @type {number | null} */ (null) }
+const GROUND_SHADOW = { opacity: 0.6, softness: 0.5, height: /** @type {number | null} */ (null), y: /** @type {number | null} */ (null), size: /** @type {number | null} */ (null) }
+/** What ambientOcclusion: { ... } takes, and hints for names people reach for instead. */
+export const AMBIENT_OCCLUSION_OPTIONS = Object.keys(AMBIENT_OCCLUSION)
+export const AMBIENT_OCCLUSION_HINTS = { intensity: "use 'strength'", amount: "use 'strength'", distance: "use 'radius'", size: "use 'radius'" }
+/** What groundShadow: { ... } takes, and hints for names people reach for instead. */
+export const GROUND_SHADOW_OPTIONS = Object.keys(GROUND_SHADOW)
+export const GROUND_SHADOW_HINTS = { intensity: "use 'opacity'", strength: "use 'opacity'", darkness: "use 'opacity'", blur: "use 'softness'", far: "use 'height'", distance: "use 'height'", width: "use 'size'" }
+
+/**
+ * An effect's options as settings: true for the defaults, false or null for none.
+ * @template {Record<string, number | null>} T
+ * @param {string} owner @param {string} name @param {unknown} value @param {T} defaults
+ * @param {Record<string, string>} hints @param {Record<string, [number, number]>} ranges
+ * @returns {T | null}
+ */
+function effectSettings(owner, name, value, defaults, hints, ranges) {
+  if (value === undefined || value === null || value === false) return null
+  if (value === true) return { ...defaults }
+  const keys = Object.keys(defaults)
+  if (typeof value !== 'object' || Array.isArray(value)) fail(owner, `${name} is true, false or { ${keys.join(', ')} }, got ${describe(value)}`)
+  checkOptions(`${owner} ${name}`, value, keys, hints)
+  const settings = /** @type {Record<string, number | null>} */ ({ ...defaults })
+  for (const key of keys) {
+    const v = /** @type {Record<string, unknown>} */ (value)[key]
+    if (v === undefined || (v === null && defaults[key] === null)) continue
+    const [min, max] = ranges[key] ?? [-Infinity, Infinity]
+    settings[key] = checkRange(`${owner} ${name}`, key, v, min, max)
+  }
+  return /** @type {T} */ (settings)
+}
+
+/**
+ * Ambient occlusion options as settings: true for the defaults, false or null for none.
+ * @param {string} owner @param {boolean | AmbientOcclusionOptions | null | undefined} value
+ * @returns {typeof AMBIENT_OCCLUSION | null}
+ */
+export function ambientOcclusionSettings(owner, value) {
+  return effectSettings(owner, 'ambientOcclusion', value, AMBIENT_OCCLUSION, AMBIENT_OCCLUSION_HINTS, { strength: [0, Infinity], radius: [0, Infinity] })
+}
+
+/**
+ * Ground shadow options as settings: true for the defaults, false or null for none.
+ * @param {string} owner @param {boolean | GroundShadowOptions | null | undefined} value
+ * @returns {typeof GROUND_SHADOW | null}
+ */
+export function groundShadowSettings(owner, value) {
+  return effectSettings(owner, 'groundShadow', value, GROUND_SHADOW, GROUND_SHADOW_HINTS, { opacity: [0, 1], softness: [0, 1], height: [0, Infinity], size: [0, Infinity] })
+}
+
 const TONE_MAPPING = { none: 0, aces: 1, neutral: 2 }
 // material maps and the shader feature each one switches on (all but emissive need lighting)
 /** @type {import('./passes.js').ShadowMap[]} */
@@ -82,6 +162,16 @@ const CAP_SQUARE = new Geometry({
 })
 // what a cap is drawn as - a plain node, never in a scene
 const CAP_NODE = /** @type {any} */ ({ drawMode: 'triangles', receiveShadow: true, castShadow: false, renderOrder: 0 })
+
+/**
+ * The world bounds of a frame's solids - what the effects' default sizes come from.
+ * @param {FrameDescription} frame
+ */
+function solidsBox(frame) {
+  const box = new Box3()
+  for (const [node] of frame.solids) node.expandBounds(box)
+  return box
+}
 
 /**
  * Draws a scene with WebGL 2. The View creates one; use it directly to drive your own loop:
@@ -102,6 +192,10 @@ export class WebGLRenderer {
   /** Outlines with soft edges and round corners, or hard pixel steps; takes effect on the next frame. */
   outlineAntialias = true
   /** @type {Required<BloomOptions> | null} */ #bloom = null
+  /** @type {typeof AMBIENT_OCCLUSION | null} */ #ambientOcclusion = null
+  /** @type {typeof GROUND_SHADOW | null} */ #groundShadow = null
+  /** Smoothing jagged edges with a pass over the finished picture; takes effect on the next frame. */
+  fxaa = false
   /** Counts from the last frame and the GPU caches. */
   info = { drawCalls: 0, triangles: 0, programs: 0, geometries: 0, textures: 0, compiling: 0 }
   /**
@@ -125,6 +219,7 @@ export class WebGLRenderer {
   #wait = false
   /** This frame's light counts and environment, compiled into the lit programs. @type {string[]} */ #lightDefines = []
   #studio = false
+  /** This frame's ambient occlusion, for the lit opaque meshes. @type {import('./effects.js').Occlusion | null} */ #occlusion = null
   /** A cap's material, by colour, so each colour compiles and uploads once. @type {Map<number, Material>} */ #capMaterials = new Map()
 
   /** @param {WebGLRendererOptions} options */
@@ -136,6 +231,9 @@ export class WebGLRenderer {
     if (options.exposure !== undefined) this.exposure = checkRange('WebGLRenderer', 'exposure', options.exposure, 0)
     if (options.pixelRatio !== undefined) this.pixelRatio = checkRange('WebGLRenderer', 'pixelRatio', options.pixelRatio, 0, Infinity, { above: true })
     this.#bloom = bloomSettings('WebGLRenderer', options.bloom)
+    this.#ambientOcclusion = ambientOcclusionSettings('WebGLRenderer', options.ambientOcclusion)
+    this.#groundShadow = groundShadowSettings('WebGLRenderer', options.groundShadow)
+    this.fxaa = !!options.fxaa
     // outlines follow the picture's antialiasing unless told otherwise (a shared context always has it)
     this.outlineAntialias = options.outlineAntialias !== undefined ? !!options.outlineAntialias : options.shared || options.antialias !== false
 
@@ -162,6 +260,34 @@ export class WebGLRenderer {
   /** @param {boolean | BloomOptions | null} value */
   set bloom(value) {
     this.#bloom = bloomSettings('WebGLRenderer', value)
+  }
+
+  /**
+   * Shading in the creases: null for none, or its settings. Set true, false or { strength, radius };
+   * change its numbers in place to tune it.
+   * @returns {typeof AMBIENT_OCCLUSION | null}
+   */
+  get ambientOcclusion() {
+    return this.#ambientOcclusion
+  }
+
+  /** @param {boolean | AmbientOcclusionOptions | null} value */
+  set ambientOcclusion(value) {
+    this.#ambientOcclusion = ambientOcclusionSettings('WebGLRenderer', value)
+  }
+
+  /**
+   * A soft shadow on the ground under the solids: null for none, or its settings. Set true, false or
+   * { opacity, softness, height, y, size }; change its numbers in place to tune it.
+   * @returns {typeof GROUND_SHADOW | null}
+   */
+  get groundShadow() {
+    return this.#groundShadow
+  }
+
+  /** @param {boolean | GroundShadowOptions | null} value */
+  set groundShadow(value) {
+    this.#groundShadow = groundShadowSettings('WebGLRenderer', value)
   }
 
   /** The WebGL 2 context drawn with - shared with other renderers when `shared` is set. @returns {WebGL2RenderingContext} */
@@ -223,7 +349,12 @@ export class WebGLRenderer {
 
     const env = frame.environment
     const bg = frame.background
-    const passes = gpu.loadPasses(!!frame.shadow || frame.spotShadows.length > 0 || !!frame.pointShadow || frame.outlines.length > 0 || (typeof env === 'object' && !!env.image) || (!!bg && !('getHex' in bg) && !!bg.image))
+    const occlusion = this.#ambientOcclusion, groundShadow = this.#groundShadow
+    const passes = gpu.loadPasses(!!frame.shadow || frame.spotShadows.length > 0 || !!frame.pointShadow || frame.outlines.length > 0 || (typeof env === 'object' && !!env.image) || (!!bg && !('getHex' in bg) && !!bg.image) || !!occlusion || !!groundShadow)
+    // ambient occlusion, the ground shadow and FXAA: their code loads the first time one is on, and
+    // their buffers go once no view on this context wants any of them
+    const effects = occlusion || groundShadow || this.fxaa ? gpu.loadEffects() : null
+    if (!effects && gpu.effects && ![...gpu.users].some((u) => /** @type {any} */ (u).ambientOcclusion || /** @type {any} */ (u).groundShadow || /** @type {any} */ (u).fxaa)) gpu.effects.dispose()
     // shader hooks that read the clock read it in the shadow maps and outlines too
     if (passes) {
       passes.time = frame.time ?? 0
@@ -243,6 +374,11 @@ export class WebGLRenderer {
       frame.spotShadows.length > 0 && passes.spotShadowMaps(frame.spotShadows),
       frame.pointShadow && passes.pointShadowMap(frame.pointShadow),
     ].filter((s) => !!s)
+    // the solids' size, for the effects' defaults
+    const solids = effects && passes && (groundShadow || (occlusion && occlusion.radius === null)) ? solidsBox(frame) : null
+    // ambient occlusion and the ground shadow, each drawn into targets of its own before the scene
+    this.#occlusion = effects && passes && occlusion ? effects.occlusion(frame, passes, occlusion, width, height, solids ? solids.getRadius() * 2 : 1) : null
+    const ground = effects && passes && groundShadow && solids ? effects.groundShadow(solidItems(frame), solids, passes, groundShadow) : null
     // outlines' mask, drawn before the scene, so the scene's own target need not be left
     const outline = passes && frame.outlines.length ? passes.outlineMask(frame.outlines, frame, width, height, this.pixelRatio, this.outlineAntialias) : null
 
@@ -250,7 +386,10 @@ export class WebGLRenderer {
     const bloom = this.#bloom ? gpu.loadBloom() : null
     // its buffers are big: once no view on this context wants bloom, they go (and come back if one does)
     if (!bloom && gpu.bloom && ![...gpu.users].some((u) => /** @type {any} */ (u).bloom)) gpu.bloom.dispose()
+    // with FXAA, into a buffer of its own too - or bloom's picture goes into it
+    const fxaa = this.fxaa && effects ? effects : null
     if (bloom) bloom.begin(width, height)
+    else if (fxaa) fxaa.beginFxaa(width, height, true)
     else {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null)
       gl.viewport(0, 0, width, height)
@@ -279,6 +418,9 @@ export class WebGLRenderer {
     for (const item of frame.opaque) this.#draw(item, frame, false)
     // section planes' caps fill the cut faces of the solids just drawn, before anything see-through
     for (const cap of frame.caps) this.#cap(cap, frame, width, height)
+    // the ground shadow over the opaque things - a floor among them - and under anything see-through;
+    // not while some are still compiling, or it shows before what casts it
+    if (ground && effects && !this.info.compiling) effects.drawGround(ground, frame)
     gl.enable(gl.BLEND)
     for (const item of frame.transparent) this.#draw(item, frame, true)
     // outlines over everything
@@ -286,7 +428,8 @@ export class WebGLRenderer {
     gl.depthMask(true)
     gl.disable(gl.BLEND)
     gl.bindVertexArray(null)
-    if (bloom && this.#bloom) bloom.end(this.#bloom)
+    if (bloom && this.#bloom) bloom.end(this.#bloom, fxaa ? fxaa.beginFxaa(width, height, false) : null)
+    if (fxaa) fxaa.fxaa(!bloom)
 
     if (this.info.compiling) gpu.whenCompiled()
     if (this.#copy) {
@@ -425,6 +568,10 @@ export class WebGLRenderer {
       else if (material.blending === 'multiply') defines.push('FOG_MULTIPLY')
     }
     if (clip) defines.push('CLIP')
+    // ambient occlusion dims the light from all round on lit solids; see-through things show what is
+    // behind them, so the occlusion found there isn't theirs
+    const ssao = kind === 'mesh' && !transparent && !material.unlit ? this.#occlusion : null
+    if (ssao) defines.push('SSAO', ...(ssao.depth ? ['SSAO_DEPTH'] : []))
     // a material's own GLSL, spliced into this program
     const hook = hookFor(material)
     if (hook) defines.push(...hook.defines)
@@ -476,6 +623,11 @@ export class WebGLRenderer {
     if (kind === 'mesh' && !material.unlit) {
       if (this.#environment) program.set('uEnvMap', this.#environment.prefiltered)
       for (const shadow of shadows) program.set(shadow.sampler, shadow.texture)
+    }
+    if (ssao) {
+      program.set('uSsao', ssao.texture)
+      program.set('uSsaoScale', ssao.scale)
+      program.set('uSsaoViewZ', ssao.viewZ)
     }
 
     program.set('uModel', worldMatrix)

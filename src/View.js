@@ -24,7 +24,7 @@ import { checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '
 /** @import { LabelStats } from './labels.js' */
 /** @import { ImageOptions } from './snapshot.js' */
 /** @import { Tooltip, TooltipContent } from './tooltip.js' */
-/** @import { ToneMapping, BloomOptions } from './webgl/WebGLRenderer.js' */
+/** @import { ToneMapping, BloomOptions, AmbientOcclusionOptions, GroundShadowOptions } from './webgl/WebGLRenderer.js' */
 /** @import { CameraOptions } from './scene/cameras.js' */
 /** @import { ColorInput, Vec3Input } from './types.js' */
 /** @import { Node } from './scene/Node.js' */
@@ -66,6 +66,12 @@ import { checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '
  * @property {number} [exposure] (default 1)
  * @property {boolean | BloomOptions} [bloom] glow round the bright parts of the picture - emissive materials,
  *   additive points and lines (default off). true for the defaults, or { strength, radius, threshold }
+ * @property {boolean | AmbientOcclusionOptions} [ambientOcclusion] shading in the creases - ambient and
+ *   environment light dimmed where surfaces close in (default off). true, or { strength, radius }
+ * @property {boolean | GroundShadowOptions} [groundShadow] a soft shadow on the ground under the solids,
+ *   with no light needed - the product viewer's floor shadow (default off). true, or
+ *   { opacity, softness, height, y, size }
+ * @property {boolean} [fxaa] smooth jagged edges with a pass over the finished picture (default off)
  * @property {boolean} [autoLight] light a scene that has no lights, with one console note (default true)
  * @property {number} [maxDelta] longest frame step in seconds, so a background tab doesn't jump (default 0.1)
  * @property {'auto' | boolean} [reducedMotion] cut motion short, for people it makes unwell: frame() jumps rather
@@ -85,7 +91,7 @@ import { checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '
 /** @typedef {(hit: Hit | null, event: PointerEvent | MouseEvent | null) => void} ViewHandler */
 
 const OPTIONS = ['canvas', 'scene', 'camera', 'orbit', 'background', 'renderMode', 'framing', 'highlight', 'tooltip', 'pixelRatio',
-  'antialias', 'outlineAntialias', 'context', 'toneMapping', 'exposure', 'bloom', 'autoLight', 'maxDelta', 'reducedMotion',
+  'antialias', 'outlineAntialias', 'context', 'toneMapping', 'exposure', 'bloom', 'ambientOcclusion', 'groundShadow', 'fxaa', 'autoLight', 'maxDelta', 'reducedMotion',
   'keyboard', 'description', 'debug']
 // what debug: true shows - everything but normals, which bristle on a big model
 /** @type {Required<DebugOptions>} */
@@ -252,7 +258,8 @@ export class View {
     // the renderer checks these too; checked here, the error names the View
     if (options.exposure !== undefined) checkRange('View', 'exposure', options.exposure, 0)
     const shared = context === 'shared' || (context === 'auto' && ownContexts >= OWN_CONTEXTS)
-    this.renderer = new WebGLRenderer({ canvas: this.canvas, shared, antialias: options.antialias, outlineAntialias: options.outlineAntialias, toneMapping: options.toneMapping, exposure: options.exposure, bloom: options.bloom })
+    this.renderer = new WebGLRenderer({ canvas: this.canvas, shared, antialias: options.antialias, outlineAntialias: options.outlineAntialias, toneMapping: options.toneMapping, exposure: options.exposure, bloom: options.bloom,
+      ambientOcclusion: options.ambientOcclusion, groundShadow: options.groundShadow, fxaa: options.fxaa })
     if (!shared) {
       this.#ownContext = true
       ownContexts++
@@ -350,6 +357,38 @@ export class View {
   /** @param {boolean | BloomOptions | null} v */
   set bloom(v) {
     this.renderer.bloom = v
+    this.invalidate()
+  }
+
+  /**
+   * Shading in the creases: null for none, or its settings. Set true, false or { strength, radius }.
+   * (After changing its numbers in place, call invalidate().)
+   * @returns {{ strength: number, radius: number | null } | null}
+   */
+  get ambientOcclusion() { return this.renderer.ambientOcclusion }
+  /** @param {boolean | AmbientOcclusionOptions | null} v */
+  set ambientOcclusion(v) {
+    this.renderer.ambientOcclusion = v
+    this.invalidate()
+  }
+
+  /**
+   * A soft shadow on the ground under the solids: null for none, or its settings. Set true, false or
+   * { opacity, softness, height, y, size }. (After changing its numbers in place, call invalidate().)
+   * @returns {{ opacity: number, softness: number, height: number | null, y: number | null, size: number | null } | null}
+   */
+  get groundShadow() { return this.renderer.groundShadow }
+  /** @param {boolean | GroundShadowOptions | null} v */
+  set groundShadow(v) {
+    this.renderer.groundShadow = v
+    this.invalidate()
+  }
+
+  /** Smoothing jagged edges with a pass over the finished picture. @returns {boolean} */
+  get fxaa() { return this.renderer.fxaa }
+  /** @param {boolean} v */
+  set fxaa(v) {
+    this.renderer.fxaa = !!v
     this.invalidate()
   }
 
@@ -1041,6 +1080,7 @@ export class View {
       interaction: { hover: this.#handlers.hover.size, click: this.#handlers.click.size, tooltip: !!this.#tooltipContent, highlight: !!this.#highlight,
         keyboard: !!this.#keyboard, reducedMotion: this.reducedMotion, description: this.canvas.getAttribute?.('aria-label') ?? this.#description },
       debug: this.#debug,
+      effects: { bloom: this.bloom, ambientOcclusion: this.ambientOcclusion, groundShadow: this.groundShadow, fxaa: this.fxaa },
     })
   }
 
