@@ -3,11 +3,13 @@
 // A stand-in WebGL 2 context that does nothing but count the GPU objects made and freed, and the
 // draws, so leaks show without a GPU. Constants are stable made-up numbers; every other call is a
 // no-op. With `parallel`, it offers background shader compiling, finished when compiled.done is set.
+// `sources` keeps every shader's source, in the order given.
 export function fakeGL({ parallel = false } = {}) {
   const compiled = { done: false }
   // draws made, and how many vertices each drawArrays drew
   const draws = { count: 0, /** @type {number[]} */ sizes: [] }
   const live = new Set()
+  const sources = /** @type {string[]} */ ([])
   const lost = { count: 0, now: false, restores: 0 }
   const consts = new Map()
   const constant = (name) => {
@@ -24,6 +26,7 @@ export function fakeGL({ parallel = false } = {}) {
     createBuffer: make('buffer'), createTexture: make('texture'), createVertexArray: make('vertex array'),
     createFramebuffer: make('framebuffer'), createRenderbuffer: make('renderbuffer'), createProgram: make('program'),
     createShader: () => ({}),
+    shaderSource: (_shader, source) => { sources.push(source) },
     deleteBuffer: free, deleteTexture: free, deleteVertexArray: free, deleteFramebuffer: free, deleteRenderbuffer: free,
     deleteProgram: free, deleteShader() {},
     getShaderParameter: () => true,
@@ -42,7 +45,7 @@ export function fakeGL({ parallel = false } = {}) {
     get: (target, key) => (key in target ? target[key] : typeof key === 'string' && /^[A-Z0-9_]+$/.test(key) ? constant(key) : () => {}),
   })
   const count = (kind) => [...live].filter((o) => o.kind === kind).length
-  return { gl: proxy, live, lost, count, compiled, draws }
+  return { gl: proxy, live, lost, count, compiled, draws, sources }
 }
 
 export const fakeCanvas = (gl) => ({

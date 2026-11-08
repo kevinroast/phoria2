@@ -9,17 +9,14 @@ import { fakeCanvas, fakeGL, fakePage } from './fakes.js'
 
 const camera = () => new PerspectiveCamera({ position: [0, 3, 10], target: [0, 0, 0], aspect: 1 })
 
-/** A fake context that also keeps every shader's source, and counts the framebuffers made. */
+/** A fake context that also counts the framebuffers made. */
 function watchedGL() {
   const fake = fakeGL()
-  const sources = /** @type {string[]} */ ([])
   const made = { framebuffers: 0 }
   const gl = new Proxy(fake.gl, {
-    get: (target, key) => key === 'shaderSource' ? (/** @type {any} */ _s, /** @type {string} */ src) => { sources.push(src) }
-      : key === 'createFramebuffer' ? () => { made.framebuffers++; return target.createFramebuffer() }
-      : target[key],
+    get: (target, key) => key === 'createFramebuffer' ? () => { made.framebuffers++; return target.createFramebuffer() } : target[key],
   })
-  return { ...fake, gl, sources, made }
+  return { ...fake, gl, made }
 }
 
 /** The defines a program was compiled with, for each program whose fragment source has `marker`. */

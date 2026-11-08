@@ -2,8 +2,9 @@
 // number, the instance, point or segment, and the depth - and read it back. One pass however many
 // instances there are, where testing rays against 100,000 instances on the CPU takes milliseconds.
 // Loaded the first time a View picks.
-import { CLIP, COMMON, LINES_VERTEX, MESH_VERTEX, POINTS_VERTEX } from './shaders.js'
+import { CLIP, COMMON, CUTOUT, LINES_VERTEX, MESH_VERTEX, POINTS_VERTEX } from './shaders.js'
 import { hookFor, passDefines, setHookUniforms } from './hooks.js'
+import { setShapeUniforms, shapeDefines } from './shape.js'
 import * as mat4 from '../math/mat4.js'
 
 /** @import { Programs } from './programs.js' */
@@ -19,7 +20,7 @@ const PICK_FRAGMENT = /* glsl */ `
 precision highp float;
 precision highp int;
 flat in uint vPickElement;
-#ifdef SPRITES
+#if defined(SPRITES) || defined(HOOK_FRAGMENT) || defined(ALPHA_TEST)
 in vec2 vUv;
 #endif
 #if defined(CLIP) || defined(HOOK_FRAGMENT)
@@ -28,7 +29,6 @@ in vec3 vWorldPosition;
 #ifdef HOOK_FRAGMENT
 // a mesh's fragment hook: what it cuts away can't be picked
 in vec3 vNormal;
-in vec2 vUv;
 in vec3 vColor;
 #endif
 //@hook uniforms
@@ -36,6 +36,8 @@ uniform uint uPickId;
 layout(location = 0) out uvec4 pickOut;
 ${COMMON}
 ${CLIP}
+// a cut-out's holes can't be picked: the pointer goes through to what is behind
+${CUTOUT}
 void main() {
 #ifdef CLIP
   clipAway(vWorldPosition);
@@ -49,6 +51,7 @@ void main() {
     if (base.a <= 0.0) discard;
   }
 #endif
+  cutOut();
 #ifdef ROUND
 #ifdef SPRITES
   vec2 p = vUv * 2.0 - 1.0;
@@ -241,17 +244,17 @@ export class Picker {
     const { node, geometry, material, worldMatrix, instances } = item
     const mode = /** @type {any} */ (node).drawMode
     const kind = mode === 'points' ? 'points' : mode === 'lines' ? 'lines' : 'mesh'
-    const defines = ['PICK']
-    if (instances) defines.push('INSTANCED')
+    // a mesh as the picture draws its shape - instanced, clipped, cut out, moved by its hooks
+    const shape = kind === 'mesh' ? shapeDefines(item, true) : null
+    const defines = ['PICK', ...(shape ? shape.defines : instances ? ['INSTANCED'] : [])]
     const sprites = kind === 'points' && /** @type {any} */ (node).drawsSprites
     if (kind === 'points') {
       if (material.sizeAttenuation) defines.push('SIZE_ATTENUATION')
       if (!material.map) defines.push('ROUND')
       if (sprites) defines.push('SPRITES')
     }
-    if (kind === 'mesh' && item.clip) defines.push('CLIP')
-    const hook = hookFor(material)
-    if (hook) defines.push(...passDefines(hook, kind === 'mesh'))
+    const hook = shape ? shape.hook : hookFor(material)
+    if (hook && !shape) defines.push(...passDefines(hook, false))
     const program = this.programs.ready(`pick-${kind}`, defines, SOURCES[kind], hook?.source)
     if (program.failed) return
     gl.useProgram(program.program)
@@ -261,7 +264,7 @@ export class Picker {
     program.set('uModel', worldMatrix)
     program.set('uPickId', id)
     program.set('uHighlightIndex', -2)
-    if (item.clip) program.set('uClipPlane', item.clip.plane)
+    if (shape) setShapeUniforms(program, item, shape.cutout, (t) => this.resources.texture(t))
     if (hook) setHookUniforms(program, material, frame.time ?? 0, frame.camera.position, (t) => this.resources.texture(t))
 
     if (kind === 'lines') {

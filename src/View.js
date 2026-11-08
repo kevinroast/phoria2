@@ -832,8 +832,9 @@ export class View {
     if (!frame) return null
     let work = 0
     for (const { node, geometry, instances, material } of [...frame.opaque, ...frame.transparent]) {
-      // a shader hook moves vertices where only the GPU knows: picked there, however small the scene
-      if (material.shader?.vertex) return frame
+      // a shader hook moves vertices where only the GPU knows, and a cut-out's holes are in its
+      // texture, which the CPU can't read: picked there, however small the scene
+      if (material.shader?.vertex || material.alphaTest > 0) return frame
       const mode = /** @type {any} */ (node).drawMode
       work += instances ? instances.count : mode === 'points' ? geometry.drawnVertices : mode === 'lines' ? geometry.drawnCount / 2 : geometry.drawnCount / 3
     }
@@ -851,10 +852,14 @@ export class View {
     const raycaster = new Raycaster().setFromCamera(found.ndc, this.camera)
     // moved by a shader hook, the CPU's copy isn't where it was drawn: the GPU's depth is the hit
     const hit = node.material.shader?.vertex ? null : raycaster.intersectElement(node, found.element)
-    if (hit) return hit
-    // the ray grazed an edge the GPU drew: place the hit at the depth the GPU found
+    // where the GPU found it
     const inverse = new Mat4().copy(frame.camera.viewProjection).invert()
     const point = new Vec3(found.ndc[0], found.ndc[1], found.ndc[2]).applyMatrix4(inverse)
+    // a cut-out's ray can meet one of its own holes first - a nearer leaf card's empty corner - which
+    // the GPU saw through: the CPU's hit stands only if it is where the GPU found the surface
+    const seenThrough = hit && node.material.alphaTest > 0 && hit.distance < point.distanceTo(raycaster.ray.origin) * 0.999
+    if (hit && !seenThrough) return hit
+    // the ray grazed an edge the GPU drew: place the hit at the depth the GPU found
     const instanced = 'instanceMatrices' in node, element = found.element
     const indexed = instanced || node.drawMode !== 'triangles'
     return { node, point, distance: point.distanceTo(raycaster.ray.origin), normal: null, face: indexed && !instanced ? element : null,

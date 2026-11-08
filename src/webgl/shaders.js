@@ -113,6 +113,31 @@ ${MAP_SAMPLERS.map((m) => `#define ${m}Texel texture(${m}, ${m}Coord)`).join('\n
 #endif
 `
 
+/**
+ * A cut-out's alpha test - its opacity and its map's alpha against its threshold - for the passes
+ * that draw only a mesh's shape (shadows, the depth prepass, picking, outlines), so each has the
+ * holes the picture has. cutOut() discards what the picture leaves out. Needs vUv declared first.
+ */
+export const CUTOUT = /* glsl */ `
+#ifdef ALPHA_TEST
+uniform float uOpacity;
+uniform float uAlphaTest;
+#ifdef MAP
+uniform sampler2D uMap;
+${SAMPLING}
+#endif
+void cutOut() {
+  float alpha = uOpacity;
+#ifdef MAP
+  alpha *= uMapTexel.a;
+#endif
+  if (alpha < uAlphaTest) discard;
+}
+#else
+void cutOut() {}
+#endif
+`
+
 export const CLIP_ONLY_FRAGMENT = /* glsl */ `
 precision highp float;
 in vec3 vWorldPosition;
@@ -132,15 +157,8 @@ uniform mat4 uView;
 in vec3 vColor;
 //@hook uniforms
 #endif
-#ifdef ALPHA_TEST
 // a cut-out casts the shadow of what is left of it - leaves, fences, grilles - not of its rectangle
-uniform float uOpacity;
-uniform float uAlphaTest;
-#ifdef MAP
-uniform sampler2D uMap;
-${SAMPLING}
-#endif
-#endif
+${CUTOUT}
 ${CLIP}
 void main() {
   clipAway(vWorldPosition);
@@ -160,13 +178,7 @@ void main() {
     if (base.a <= 0.0) discard;
   }
 #endif
-#ifdef ALPHA_TEST
-  float alpha = uOpacity;
-#ifdef MAP
-  alpha *= uMapTexel.a;
-#endif
-  if (alpha < uAlphaTest) discard;
-#endif
+  cutOut();
 #ifdef NORMALS
   fragColor = vec4(normalize(mat3(uView) * normal) * 0.5 + 0.5, 1.0);
 #else

@@ -401,7 +401,10 @@ filter does: cyan over magenta is blue), `alphaTest` (cut-outs: drop pixels with
 A **bump map** is a height texture (red channel) shown as bumps - no normal map to make, so it suits
 heights drawn in code. `bumpScale` is how high a height of 1 stands, in the mesh's units. Textures
 take `anisotropy` (default 8, up to the GPU's limit, 1 for off), which keeps floors and roads sharp
-into the distance. A cut-out (`alphaTest`) casts the shadow of what is left of it. A Texture given to a
+into the distance. A cut-out (`alphaTest`) is what is left of it everywhere: its shadow, its outline, ambient
+occlusion, and picking - hover, click and tooltips go through its holes to what is behind (picked on
+the GPU, which reads the texture). `pickAll`, `pickArea` and `Raycaster` see only geometry, so to them a
+cut-out is its whole shape. A Texture given to a
 data map (`normalMap`, `bumpMap`, `roughnessMap`, `metalnessMap`, `aoMap`) is read as data, not colour,
 unless its `colorSpace` was set on purpose - `normalMap: await loadTexture('n.png')` just works.
 

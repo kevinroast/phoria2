@@ -5,9 +5,9 @@ import * as mat3 from '../math/mat3.js'
 import * as mat4 from '../math/mat4.js'
 import { irradianceSH } from '../irradiance.js'
 import { POINT_SHADOW_SIZE, SHADOW_MAP_SIZE, SPOT_ATLAS_SIZE } from '../shadow.js'
-import { CLIP, CLIP_ONLY_FRAGMENT, COMMON, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
-import { hookFor, passDefines, setHookUniforms } from './hooks.js'
-import { uvMatrix } from './resources.js'
+import { CLIP, CLIP_ONLY_FRAGMENT, COMMON, CUTOUT, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
+import { setHookUniforms } from './hooks.js'
+import { setShapeUniforms, shapeDefines } from './shape.js'
 
 /** @import { Programs } from './programs.js' */
 /** @import { Resources } from './resources.js' */
@@ -101,11 +101,16 @@ void main() {
 const OUTLINE_MASK_FRAGMENT = /* glsl */ `
 precision highp float;
 in vec3 vWorldPosition;
+#ifdef ALPHA_TEST
+in vec2 vUv;
+#endif
 uniform vec4 uMask;
 out vec4 fragColor;
 ${CLIP}
+${CUTOUT}
 void main() {
   clipAway(vWorldPosition);
+  cutOut();
   fragColor = uMask;
 }
 `
@@ -165,12 +170,17 @@ void main() {
 const OUTLINE_COVER_FRAGMENT = /* glsl */ `
 precision highp float;
 in vec3 vWorldPosition;
+#ifdef ALPHA_TEST
+in vec2 vUv;
+#endif
 uniform vec4 uMask;
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec4 fragCoverage;
 ${CLIP}
+${CUTOUT}
 void main() {
   clipAway(vWorldPosition);
+  cutOut();
   fragColor = uMask;
   fragCoverage = vec4(1.0);
 }
@@ -515,24 +525,15 @@ export class Passes {
     const gl = this.gl
     const normalMatrix = normals ? new Float32Array(9) : null
     for (const item of casters) {
-      const instances = item.instances
-      const defines = instances ? ['INSTANCED'] : []
+      // the shape as the picture draws it: a cut-out's holes, the shape a hook moves and its
+      // fragment hook's holes
+      const material = item.material
+      const { defines, hook, cutout } = shapeDefines(item, true)
       if (normals) {
         defines.push('NORMALS')
-        if (item.material.flatShading) defines.push('FLAT_SHADING')
-        if (item.material.doubleSided) defines.push('DOUBLE_SIDED')
+        if (material.flatShading) defines.push('FLAT_SHADING')
+        if (material.doubleSided) defines.push('DOUBLE_SIDED')
       }
-      if (item.clip) defines.push('CLIP')
-      // a cut-out's shadow has its holes: the map's alpha against the material's threshold
-      const material = item.material, cutout = material.alphaTest > 0
-      // read the map as the drawn surface reads it - projected, for a triplanar one
-      const triplanar = cutout && !!material.map && material.triplanar > 0
-      if (cutout) defines.push('ALPHA_TEST', ...(material.map ? ['MAP'] : []), ...(triplanar ? ['TRIPLANAR'] : []))
-      // a map on the second UV set reads it here too
-      if (cutout && material.map?.uvSet === 1 && item.geometry.uvs2) defines.push('UV2', 'uMapSet vUv2')
-      // shader hooks: the shadow of the moved shape, with a fragment hook's holes in it
-      const hook = hookFor(material)
-      if (hook) defines.push(...passDefines(hook, true))
       const program = this.programs.ready('depth', defines, DEPTH, hook?.source)
       if (program.failed) continue
       gl.useProgram(program.program)
@@ -551,18 +552,8 @@ export class Passes {
           gl.cullFace(gl.BACK)
         }
       }
-      if (item.clip) program.set('uClipPlane', item.clip.plane)
-      if (cutout) {
-        program.set('uOpacity', material.opacity)
-        program.set('uAlphaTest', material.alphaTest)
-        const map = material.map
-        if (map) {
-          program.set('uMapUv', uvMatrix(map))
-          program.set('uMap', this.resources.texture(map))
-        }
-        if (triplanar) program.set('uTriplanar', material.triplanar)
-      }
-      this.resources.drawTriangles(item.geometry, instances)
+      setShapeUniforms(program, item, cutout, (t) => this.resources.texture(t))
+      this.resources.drawTriangles(item.geometry, item.instances)
     }
   }
 
@@ -595,11 +586,8 @@ export class Passes {
       const px = Math.min(OUTLINE_MAX, Math.max(1, Math.round(outline.width * pixelRatio)))
       radius = Math.max(radius, px)
       for (const item of outline.items) {
-        const defines = item.instances ? ['INSTANCED'] : []
-        if (item.clip) defines.push('CLIP')
-        // round the moved shape
-        const hook = hookFor(item.material)
-        if (hook) defines.push(...passDefines(hook, false))
+        // round the shape as drawn: moved by its hooks, with a cut-out's holes
+        const { defines, hook, cutout } = shapeDefines(item, false)
         const program = smooth ? this.programs.ready('outline-cover', defines, OUTLINE_COVER, hook?.source) : this.programs.ready('outline-mask', defines, OUTLINE_MASK, hook?.source)
         if (program.failed) continue
         gl.useProgram(program.program)
@@ -607,7 +595,7 @@ export class Passes {
         program.set('uViewProjection', frame.camera.viewProjection)
         program.set('uModel', item.worldMatrix)
         program.set('uMask', [outline.color[0], outline.color[1], outline.color[2], px / OUTLINE_MAX])
-        if (item.clip) program.set('uClipPlane', item.clip.plane)
+        setShapeUniforms(program, item, cutout, (t) => this.resources.texture(t))
         this.resources.drawTriangles(item.geometry, item.instances)
       }
     }
