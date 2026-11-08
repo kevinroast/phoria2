@@ -120,7 +120,7 @@ describe('outlines', () => {
     // switching remakes the outline's buffers: the multisampled ones go, and come back
     const { renderer, scene, count } = await drawOutlined()
     renderer.outlineAntialias = false
-    renderer.render(scene, camera())
+    for (let i = 0; i < 31; i++) renderer.render(scene, camera())
     expect(count('renderbuffer')).toBe(0)
     renderer.outlineAntialias = true
     renderer.render(scene, camera())

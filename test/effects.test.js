@@ -88,7 +88,7 @@ describe('the effects in a frame', () => {
     expect(definesOf(sources, 'uView;').some((d) => d.includes('NORMALS'))).toBe(true)
   })
 
-  it('loads its code once, draws into buffers of its own, and frees them once no view wants any', async () => {
+  it('loads its code once, draws into buffers of its own, and frees them once frames go by without them', async () => {
     const { gl, count } = watchedGL()
     const scene = new Scene()
     scene.add(new Mesh({ geometry: box(1) }))
@@ -101,18 +101,22 @@ describe('the effects in a frame', () => {
     expect(count('framebuffer')).toBe(0)
     await vi.waitFor(() => expect(ready).toBeGreaterThan(0))
     renderer.render(scene, camera())
-    // occlusion: normals (with depth), occlusion, blurred; ground: depth, darkness, blurred; FXAA: picture, multisampled
+    // occlusion: normals (with depth), occlusion, blurred; ground: depth, darkness, blurred; the
+    // scene's picture for FXAA, and the multisampled buffer it is drawn into
     expect(count('framebuffer')).toBe(8)
     renderer.ambientOcclusion = false
     renderer.groundShadow = false
     renderer.fxaa = false
     renderer.render(scene, camera())
+    // kept a while - an effect turned back on finds them - then freed
+    expect(count('framebuffer')).toBe(8)
+    for (let i = 0; i < 31; i++) renderer.render(scene, camera())
     expect(count('framebuffer')).toBe(0)
     renderer.dispose(scene)
   })
 
-  it('with bloom, FXAA smooths what bloom draws, and the scene goes into bloom\'s buffer only', async () => {
-    const { gl, count } = watchedGL()
+  it('with bloom, FXAA smooths what bloom draws: one scene picture, bloom into a picture between, FXAA onto the canvas', async () => {
+    const { gl, count, drawLog } = watchedGL()
     const scene = new Scene()
     scene.add(new Mesh({ geometry: box(1) }))
     const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl), bloom: true, fxaa: true })
@@ -122,8 +126,14 @@ describe('the effects in a frame', () => {
     renderer.render(scene, camera())
     await vi.waitFor(() => expect(ready).toBe(2))
     renderer.render(scene, camera())
-    // bloom's five, and FXAA's picture - not its multisampled buffer, nor any renderbuffers but bloom's
+    // the scene (multisampled, and its picture), bloom's three levels, and the picture between bloom and FXAA
     expect([count('framebuffer'), count('renderbuffer')]).toEqual([6, 2])
+    drawLog.length = 0
+    renderer.render(scene, camera())
+    // bloom's last draw - its composite - into the picture between; FXAA's last of all, onto the canvas
+    const full = drawLog.filter((d) => d.call === 'drawArrays' && d.viewport[2] === 64)
+    expect(full.at(-1)?.framebuffer).toBeNull()
+    expect(full.at(-2)?.framebuffer).not.toBeNull()
     renderer.dispose(scene)
   })
 

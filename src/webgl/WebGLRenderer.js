@@ -2,13 +2,14 @@ import * as mat3 from '../math/mat3.js'
 import * as mat4 from '../math/mat4.js'
 import { Geometry } from '../geometry/Geometry.js'
 import { Material } from '../material/Material.js'
-import { CLIP_ONLY_FRAGMENT, MESH_VERTEX } from './shaders.js'
+import { CLIP_ONLY_FRAGMENT, ENCODE_FRAGMENT, FULLSCREEN_VERTEX, MESH_VERTEX } from './shaders.js'
 import { hookFailed, hookFor, setHookUniforms } from './hooks.js'
 import { collect, solidItems } from '../frame.js'
 import { Box3 } from '../value/Box3.js'
 import { checkNumber, checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '../validate.js'
 import { GLContext } from './context.js'
 import { uvMatrix } from './resources.js'
+import { blit } from './targets.js'
 
 /** @import { FrameDescription, DrawItem, FrameLight, FrameCap } from '../frame.js' */
 /** @import { Scene } from '../scene/Scene.js' */
@@ -16,6 +17,35 @@ import { uvMatrix } from './resources.js'
 /** @import { Texture } from '../material/Texture.js' */
 /** @import { Environment } from './passes.js' */
 /** @import { GPUHit } from './picking.js' */
+/** @import { ShadowMap } from './passes.js' */
+/** @import { Occlusion } from './effects.js' */
+/** @import { Target } from './targets.js' */
+
+/**
+ * What one frame is drawn with - worked out at its start and passed down, not kept on the renderer,
+ * so a frame can be drawn inside another (into a texture) without either overwriting the other.
+ * @typedef {object} FrameState
+ * @property {boolean} wait complete: wait for shaders rather than leave what is compiling out
+ * @property {boolean} linear drawn in linear light into float targets, encoded to sRGB at the end
+ * @property {number} width @property {number} height the pixels drawn
+ * @property {Environment | null} environment the prefiltered environment, when it is an HDR image
+ * @property {ShadowMap[]} shadows directional, spot and point, for the meshes that receive them
+ * @property {Record<string, any>} lights the lights' uniforms
+ * @property {string[]} lightDefines the light counts and environment, compiled into lit programs
+ * @property {boolean} studio lit by the built-in studio environment
+ * @property {Occlusion | null} occlusion ambient occlusion, for the lit opaque meshes
+ */
+
+/**
+ * Where a frame is drawn instead of the canvas: a framebuffer, and its size.
+ * @typedef {{ framebuffer: WebGLFramebuffer, width: number, height: number }} RenderTarget
+ */
+
+/**
+ * A step of the picture's post chain: it reads the picture so far and draws into `output`.
+ * @typedef {{ run: (picture: WebGLTexture, output: WebGLFramebuffer | null) => void, linear: boolean }} PostStep
+ *   linear: what it draws is still in linear light (so the target between it and the next is float)
+ */
 
 /** @typedef {'aces' | 'neutral' | 'none'} ToneMapping */
 
@@ -150,6 +180,8 @@ const MAP_DEFINES = { roughnessMap: 'ROUGHNESS_MAP', metalnessMap: 'METALNESS_MA
 // every map a mesh can sample - triplanar projection is only worth its varyings when there is one
 const MAP_SLOTS = ['map', 'emissiveMap', ...Object.keys(MAP_DEFINES)]
 const MAP_UNIFORMS = { matcap: 'uMatcap', map: 'uMap', roughnessMap: 'uRoughnessMap', metalnessMap: 'uMetalnessMap', normalMap: 'uNormalMap', bumpMap: 'uBumpMap', aoMap: 'uAoMap', emissiveMap: 'uEmissiveMap', lightMap: 'uLightMap' }
+// the step out of linear light, at the end of a linear frame's chain
+const ENCODE = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, ENCODE_FRAGMENT])
 // counting a cap's faces into the stencil: the solids' surfaces, colour and depth left alone
 const CLIP_MASK = /** @type {[string, string]} */ ([MESH_VERTEX, CLIP_ONLY_FRAGMENT])
 // a cap: a square on the plane, two units across, facing +Y until it is placed
@@ -204,17 +236,9 @@ export class WebGLRenderer {
   #gpu
   /** With a shared context: the canvas's 2D context, which the picture is copied into. @type {CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null} */
   #copy = null
-  /** This frame's prefiltered environment, when it is an HDR image. @type {Environment | null} */ #environment = null
-  /** This frame's shadows - directional, spot, point - for the meshes that receive them. @type {import('./passes.js').ShadowMap[]} */ #shadows = []
   /** @type {Float32Array} */ #normalMatrix = new Float32Array(9)
   /** Model-view for sorting points back to front. */
   #modelView = new Float32Array(16)
-  /** @type {Record<string, any>} */ #lights = {}
-  /** This frame waits for shaders to compile rather than leaving things out. */
-  #wait = false
-  /** This frame's light counts and environment, compiled into the lit programs. @type {string[]} */ #lightDefines = []
-  #studio = false
-  /** This frame's ambient occlusion, for the lit opaque meshes. @type {import('./effects.js').Occlusion | null} */ #occlusion = null
   /** A cap's material, by colour, so each colour compiles and uploads once. @type {Map<number, Material>} */ #capMaterials = new Map()
 
   /** @param {WebGLRendererOptions} options */
@@ -372,41 +396,45 @@ export class WebGLRenderer {
   /** @internal
    * Draw a frame. Shaders compile in the background where the browser allows, and what is still
    * compiling is left out (info.compiling counts it; onReady fires when it's done) - unless `wait`
-   * is set, for a frame that must be complete, such as an image export.
+   * is set, for a frame that must be complete, such as an image export. Drawn onto the canvas, or
+   * into `target`; with `linear`, in linear light into float targets and encoded to sRGB at the end
+   * (where float targets can be drawn to) - the same picture, but blending in linear light.
    * @param {FrameDescription} frame
-   * @param {{ wait?: boolean }} [options]
+   * @param {{ wait?: boolean, target?: RenderTarget | null, linear?: boolean }} [options]
    * @returns {FrameDescription}
    */
-  renderFrame(frame, { wait = false } = {}) {
+  renderFrame(frame, { wait = false, target = null, linear = false } = {}) {
     const gpu = this.#gpu
     if (gpu.lost) return frame
     const gl = gpu.gl
     gpu.frame++
     // what this frame touches counts as this renderer's, for freeing a shared context's copies
     gpu.resources.owner = this
-    this.#wait = wait
     this.info.drawCalls = 0
     this.info.triangles = 0
     this.info.compiling = 0
-    const width = this.canvas.width, height = this.canvas.height
+    const width = target ? target.width : this.canvas.width, height = target ? target.height : this.canvas.height
     // a shared context draws into the bottom-left corner of its buffer, then copies that out
-    if (gpu.isShared) gpu.fit(width, height)
+    if (!target && gpu.isShared) gpu.fit(width, height)
 
     const env = frame.environment
     const bg = frame.background
     const occlusion = this.#ambientOcclusion, groundShadow = this.#groundShadow
     const passes = gpu.loadPasses(!!frame.shadow || frame.spotShadows.length > 0 || !!frame.pointShadow || frame.outlines.length > 0 || (typeof env === 'object' && !!env.image) || (!!bg && !('getHex' in bg) && !!bg.image) || !!occlusion || !!groundShadow)
-    // ambient occlusion, the ground shadow and FXAA: their code loads the first time one is on, and
-    // their buffers go once no view on this context wants any of them
+    // ambient occlusion, the ground shadow and FXAA: their code loads the first time one is on (their
+    // targets, like every pass's, are freed by the pool once no frame uses them)
     const effects = occlusion || groundShadow || this.fxaa ? gpu.loadEffects() : null
-    if (!effects && gpu.effects && ![...gpu.users].some((u) => /** @type {any} */ (u).ambientOcclusion || /** @type {any} */ (u).groundShadow || /** @type {any} */ (u).fxaa)) gpu.effects.dispose()
     // shader hooks that read the clock read it in the shadow maps and outlines too
     if (passes) {
       passes.time = frame.time ?? 0
       passes.cameraPosition = frame.camera.position
     }
-    this.#environment = passes && typeof env === 'object' ? passes.environment(env) : null
-    if (passes && typeof env === 'object' && env.image && !this.#environment) {
+    /** @type {FrameState} */
+    const state = {
+      wait, linear: linear && !!gl.getExtension('EXT_color_buffer_float'), width, height,
+      environment: passes && typeof env === 'object' ? passes.environment(env) : null, shadows: [], occlusion: null, ...this.#lightsOf(frame),
+    }
+    if (passes && typeof env === 'object' && env.image && !state.environment) {
       warnOnce(env, env.isHDR ? "this device can't render to float textures, which HDR environments need - lighting without it"
         : "'environment' needs an HDR image (a .hdr file) - lighting without it")
     }
@@ -414,7 +442,7 @@ export class WebGLRenderer {
     // draws into targets of its own and leaves the framebuffer and viewport behind it
     if (passes && bg && !('getHex' in bg) && bg.isHDR) passes.environment(bg)
     // the lights' views first, each into its own depth texture
-    this.#shadows = !passes ? [] : [
+    state.shadows = !passes ? [] : [
       frame.shadow && passes.shadowMap(frame.shadow),
       frame.spotShadows.length > 0 && passes.spotShadowMaps(frame.spotShadows),
       frame.pointShadow && passes.pointShadowMap(frame.pointShadow),
@@ -422,25 +450,29 @@ export class WebGLRenderer {
     // the solids' size, for the effects' defaults
     const solids = effects && passes && (groundShadow || (occlusion && occlusion.radius === null)) ? solidsBox(frame) : null
     // ambient occlusion and the ground shadow, each drawn into targets of its own before the scene
-    this.#occlusion = effects && passes && occlusion ? effects.occlusion(frame, passes, occlusion, width, height, solids ? solids.getRadius() * 2 : 1) : null
+    state.occlusion = effects && passes && occlusion ? effects.occlusion(frame, passes, occlusion, width, height, solids ? solids.getRadius() * 2 : 1) : null
     const ground = effects && passes && groundShadow && solids ? effects.groundShadow(solidItems(frame), solids, passes, groundShadow) : null
     // outlines' mask, drawn before the scene, so the scene's own target need not be left
     const outline = passes && frame.outlines.length ? passes.outlineMask(frame.outlines, frame, width, height, this.pixelRatio, this.outlineAntialias) : null
 
-    // with bloom, the scene is drawn into a buffer of its own first (drawn plainly while its code loads)
+    // the post chain, always in this order: bloom (drawn plainly while its code loads), the encode
+    // out of linear light, FXAA. With any step, the scene is drawn into a picture of its own first
     const bloom = this.#bloom ? gpu.loadBloom() : null
-    // its buffers are big: once no view on this context wants bloom, they go (and come back if one does)
-    if (!bloom && gpu.bloom && ![...gpu.users].some((u) => /** @type {any} */ (u).bloom)) gpu.bloom.dispose()
-    // with FXAA, into a buffer of its own too - or bloom's picture goes into it
-    const fxaa = this.fxaa && effects ? effects : null
-    if (bloom) bloom.begin(width, height)
-    else if (fxaa) fxaa.beginFxaa(width, height, true)
-    else {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-      gl.viewport(0, 0, width, height)
-    }
+    const fxaa = this.fxaa ? effects : null
+    /** @type {PostStep[]} */
+    const steps = []
+    const bloomSettings = this.#bloom
+    if (bloom && bloomSettings) steps.push({ run: (picture, output) => bloom.apply(picture, output, width, height, bloomSettings, state.linear), linear: state.linear })
+    if (state.linear) steps.push({ run: (picture, output) => this.#encode(picture, output, width, height), linear: false })
+    if (fxaa) steps.push({ run: (picture, output) => fxaa.fxaa(picture, output, width, height), linear: false })
+    const output = target ? target.framebuffer : null
+    const scene = steps.length ? this.#sceneTargets(width, height, state.linear) : null
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, scene ? scene.draw.framebuffer : output)
+    gl.viewport(0, 0, width, height)
     if (bg && 'getHex' in bg) {
-      const [r, g, b] = bg.toSRGB()
+      // in linear light, the background's own linear colour
+      const [r, g, b] = state.linear ? bg : bg.toSRGB()
       gl.clearColor(r, g, b, 1)
     } else {
       gl.clearColor(0, 0, 0, 0)
@@ -452,42 +484,97 @@ export class WebGLRenderer {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     gl.disable(gl.SCISSOR_TEST)
     if (passes && bg && !('getHex' in bg) && bg.image) {
-      passes.background(frame, /** @type {Texture} */ (bg), { exposure: this.exposure, toneMapping: TONE_MAPPING[this.toneMapping] })
+      passes.background(frame, /** @type {Texture} */ (bg), { exposure: this.exposure, toneMapping: TONE_MAPPING[this.toneMapping], linear: state.linear })
     }
     gl.enable(gl.DEPTH_TEST)
     gl.depthFunc(gl.LEQUAL)
 
-    this.#gatherLights(frame)
-
     gl.disable(gl.BLEND)
-    for (const item of frame.opaque) this.#draw(item, frame, false)
+    for (const item of frame.opaque) this.#draw(item, frame, false, state)
     // section planes' caps fill the cut faces of the solids just drawn, before anything see-through
-    for (const cap of frame.caps) this.#cap(cap, frame, width, height)
+    for (const cap of frame.caps) this.#cap(cap, frame, state)
     // the ground shadow over the opaque things - a floor among them - and under anything see-through;
     // not while some are still compiling, or it shows before what casts it
     if (ground && effects && !this.info.compiling) effects.drawGround(ground, frame)
     gl.enable(gl.BLEND)
-    for (const item of frame.transparent) this.#draw(item, frame, true)
+    for (const item of frame.transparent) this.#draw(item, frame, true, state)
     // outlines over everything
-    if (outline && passes) passes.outlineComposite(outline)
+    if (outline && passes) passes.outlineComposite(outline, state.linear)
     gl.depthMask(true)
     gl.disable(gl.BLEND)
     gl.bindVertexArray(null)
-    if (bloom && this.#bloom) bloom.end(this.#bloom, fxaa ? fxaa.beginFxaa(width, height, false) : null)
-    if (fxaa) fxaa.fxaa(!bloom)
+    if (scene) this.#post(scene, steps, output, width, height)
 
     if (this.info.compiling) gpu.whenCompiled()
-    if (this.#copy) {
+    if (this.#copy && !target) {
       // the picture is the buffer's bottom-left corner; as an image, y runs down from the top
       const copy = this.#copy, source = gpu.canvas
       copy.globalCompositeOperation = 'copy'
       copy.drawImage(source, 0, source.height - height, width, height, 0, 0, width, height)
     }
+    // targets no frame has used lately go
+    gpu.targets.sweep(gpu.users.size)
 
     this.info.programs = gpu.programs.count
     this.info.geometries = gpu.resources.counts.geometries
     this.info.textures = gpu.resources.counts.textures
     return frame
+  }
+
+  /**
+   * The scene's own picture, for a post chain to read: drawn multisampled (as the canvas would be)
+   * and resolved into a texture, or - with no multisampling - drawn into the texture itself. Depth
+   * and stencil (for section planes' caps) go with what is drawn into.
+   * @param {number} width @param {number} height @param {boolean} linear float, for linear light
+   * @returns {{ draw: Target, picture: Target }}
+   */
+  #sceneTargets(width, height, linear) {
+    const gl = this.gl, pool = this.#gpu.targets
+    const color = linear ? gl.RGBA16F : gl.RGBA8
+    const samples = gl.getContextAttributes()?.antialias ? Math.min(4, gl.getParameter(gl.MAX_SAMPLES) || 4) : 0
+    const picture = pool.get('scene', { width, height, color, depth: samples ? null : 'stencil' })
+    const draw = samples ? pool.get('scene-multisampled', { width, height, color, depth: 'stencil', samples }) : picture
+    return { draw, picture }
+  }
+
+  /**
+   * Run the post chain over the scene's picture: each step reads the last one's picture and draws
+   * into a target of its own - float while still in linear light - and the last into `output`.
+   * @param {{ draw: Target, picture: Target }} scene @param {PostStep[]} steps
+   * @param {WebGLFramebuffer | null} output @param {number} width @param {number} height
+   */
+  #post(scene, steps, output, width, height) {
+    const gl = this.gl, pool = this.#gpu.targets
+    if (scene.draw !== scene.picture) blit(gl, scene.draw, scene.picture)
+    let picture = /** @type {WebGLTexture} */ (scene.picture.texture)
+    steps.forEach((step, i) => {
+      if (i === steps.length - 1) return step.run(picture, output)
+      // two pictures between steps, taken in turn
+      const between = pool.get(`post-${i % 2}`, { width, height, color: step.linear ? gl.RGBA16F : gl.RGBA8 })
+      step.run(picture, between.framebuffer)
+      picture = /** @type {WebGLTexture} */ (between.texture)
+    })
+  }
+
+  /**
+   * The step out of linear light: the picture encoded as sRGB, into `output`.
+   * @param {WebGLTexture} picture @param {WebGLFramebuffer | null} output @param {number} width @param {number} height
+   */
+  #encode(picture, output, width, height) {
+    const gl = this.gl
+    gl.bindFramebuffer(gl.FRAMEBUFFER, output)
+    gl.viewport(0, 0, width, height)
+    gl.disable(gl.DEPTH_TEST)
+    gl.disable(gl.BLEND)
+    gl.disable(gl.CULL_FACE)
+    gl.depthMask(false)
+    const program = this.#gpu.programs.ready('encode', [], ENCODE)
+    gl.useProgram(program.program)
+    program.set('uSource', picture)
+    this.#gpu.programs.drawFullscreen()
+    gl.depthMask(true)
+    gl.enable(gl.DEPTH_TEST)
+    gl.bindVertexArray(null)
   }
 
   /**
@@ -535,8 +622,13 @@ export class WebGLRenderer {
     this.#gpu.release(this, scene)
   }
 
-  /** @param {FrameDescription} frame */
-  #gatherLights(frame) {
+  /**
+   * The frame's lights as the lit shaders take them: their uniforms, the defines that size their
+   * arrays, and whether the built-in studio lights the scene.
+   * @param {FrameDescription} frame
+   * @returns {{ lights: Record<string, any>, lightDefines: string[], studio: boolean }}
+   */
+  #lightsOf(frame) {
     const ambient = [0, 0, 0], sky = [0, 0, 0], ground = [0, 0, 0]
     // sized to the lights there are: the programs are compiled for exactly that many
     const directional = frame.lights.filter((l) => l.kind === 'directional').length
@@ -582,27 +674,26 @@ export class WebGLRenderer {
         }
       }
     }
-    this.#lightDefines = [`NUM_DIRECTIONAL ${dirCount}`, `NUM_PUNCTUAL ${punctualCount}`]
-    this.#studio = frame.environment === 'studio'
-    this.#lights = {
+    const lights = {
       uAmbient: ambient, uHemisphereSky: sky, uHemisphereGround: ground,
       uDirectionalDirection: dirDirection, uDirectionalColor: dirColor,
       uPunctualPosition: pos, uPunctualColor: color, uPunctualRange: range,
       uPunctualDirection: direction, uPunctualCone: cone, uPunctualShadow: shadowTile, uPointShadowIndex: pointShadowIndex,
     }
+    return { lights, lightDefines: [`NUM_DIRECTIONAL ${dirCount}`, `NUM_PUNCTUAL ${punctualCount}`], studio: frame.environment === 'studio' }
   }
 
-  /** @param {DrawItem} item @param {FrameDescription} frame @param {boolean} transparent */
-  #draw(item, frame, transparent) {
+  /** @param {DrawItem} item @param {FrameDescription} frame @param {boolean} transparent @param {FrameState} state */
+  #draw(item, frame, transparent, state) {
     const gl = this.gl
     const { node, geometry, material, worldMatrix, instances } = item
     const mode = /** @type {any} */ (node).drawMode
     const kind = mode === 'points' ? 'points' : mode === 'lines' ? 'lines' : 'mesh'
     const receives = kind === 'mesh' && node.receiveShadow && !material.unlit
-    const shadows = receives ? this.#shadows : NO_SHADOWS
+    const shadows = receives ? state.shadows : NO_SHADOWS
 
     const clip = kind === 'mesh' ? item.clip : null
-    const defines = this.#defines(kind, material, geometry.colors !== null, !!instances, geometry.uvs2 !== null)
+    const defines = this.#defines(kind, material, geometry.colors !== null, !!instances, geometry.uvs2 !== null, state)
     if (kind === 'points' && /** @type {any} */ (node).drawsSprites) defines.push('SPRITES')
     for (const shadow of shadows) defines.push(shadow.define)
     const fog = material.fog ? frame.fog : null
@@ -615,7 +706,7 @@ export class WebGLRenderer {
     if (clip) defines.push('CLIP')
     // ambient occlusion dims the light from all round on lit solids; see-through things show what is
     // behind them, so the occlusion found there isn't theirs
-    const ssao = kind === 'mesh' && !transparent && !material.unlit ? this.#occlusion : null
+    const ssao = kind === 'mesh' && !transparent && !material.unlit ? state.occlusion : null
     if (ssao) defines.push('SSAO', ...(ssao.depth ? ['SSAO_DEPTH'] : []))
     // a material's own GLSL, spliced into this program
     const hook = hookFor(material)
@@ -623,7 +714,7 @@ export class WebGLRenderer {
     const programs = this.#gpu.programs
     const program = programs.get(kind, defines, undefined, hook?.source)
     if (!programs.isReady(program)) {
-      if (!this.#wait) {
+      if (!state.wait) {
         // still compiling: drawn once it's done, rather than holding up everything else
         this.info.compiling++
         return
@@ -652,8 +743,8 @@ export class WebGLRenderer {
       program.set('uNear', frame.camera.near)
       program.set('uScale', frame.camera.projection[5] * this.canvas.height / 2)
       if (kind === 'mesh' && !material.unlit) {
-        for (const [name, value] of Object.entries(this.#lights)) program.set(name, value)
-        const env = this.#environment
+        for (const [name, value] of Object.entries(state.lights)) program.set(name, value)
+        const env = state.environment
         if (env) {
           program.set('uEnvMaxLod', env.maxLod)
           program.set('uEnvSH', env.sh)
@@ -666,7 +757,7 @@ export class WebGLRenderer {
     // between bind their maps to the same texture units, and a shadow sampler left reading an
     // ordinary texture makes the draw fail
     if (kind === 'mesh' && !material.unlit) {
-      if (this.#environment) program.set('uEnvMap', this.#environment.prefiltered)
+      if (state.environment) program.set('uEnvMap', state.environment.prefiltered)
       for (const shadow of shadows) program.set(shadow.sampler, shadow.texture)
     }
     if (ssao) {
@@ -818,15 +909,15 @@ export class WebGLRenderer {
    * into the stencil - in through a front face, out through a back one - so where the count isn't
    * zero, the plane there is inside a solid. A square on the plane, lit like any surface, is then
    * drawn over just those pixels: at the plane's own depth, so faces lying in it can't fight it.
-   * @param {FrameCap} cap @param {FrameDescription} frame @param {number} width @param {number} height
+   * @param {FrameCap} cap @param {FrameDescription} frame @param {FrameState} state
    */
-  #cap(cap, frame, width, height) {
+  #cap(cap, frame, state) {
     const gl = this.gl
     const programs = this.#gpu.programs
     // the counting program, for plain and instanced solids
     const masks = [false, true].map((instanced) => programs.get('clip-mask', instanced ? ['INSTANCED', 'CLIP'] : ['CLIP'], CLIP_MASK))
     if (!masks.every((p) => programs.isReady(p))) {
-      if (!this.#wait) {
+      if (!state.wait) {
         this.info.compiling++
         return
       }
@@ -834,7 +925,7 @@ export class WebGLRenderer {
     }
     gl.enable(gl.STENCIL_TEST)
     gl.enable(gl.SCISSOR_TEST)
-    gl.scissor(0, 0, width, height)
+    gl.scissor(0, 0, state.width, state.height)
     gl.clearStencil(0)
     gl.clear(gl.STENCIL_BUFFER_BIT)
     gl.disable(gl.SCISSOR_TEST)
@@ -860,7 +951,7 @@ export class WebGLRenderer {
     // then the plane, just where the count says
     gl.stencilFunc(gl.NOTEQUAL, 0, 0xff)
     gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP)
-    this.#draw(this.#capItem(cap), frame, false)
+    this.#draw(this.#capItem(cap), frame, false, state)
     gl.disable(gl.STENCIL_TEST)
   }
 
@@ -886,19 +977,20 @@ export class WebGLRenderer {
 
   /**
    * @param {'mesh' | 'points' | 'lines'} kind @param {Material} material
-   * @param {boolean} hasColors @param {boolean} instanced @param {boolean} hasUvs2
+   * @param {boolean} hasColors @param {boolean} instanced @param {boolean} hasUvs2 @param {FrameState} state
    * @returns {string[]}
    */
-  #defines(kind, material, hasColors, instanced, hasUvs2) {
-    const d = []
+  #defines(kind, material, hasColors, instanced, hasUvs2, state) {
+    // drawn in linear light, for a chain that encodes the picture at its end
+    const d = state.linear ? ['LINEAR_OUTPUT'] : []
     if (material.vertexColors && hasColors) d.push('VERTEX_COLORS')
     if (kind === 'mesh') {
       if (!material.unlit) {
         d.push('LIT')
         for (const [slot, define] of Object.entries(MAP_DEFINES)) if (material[slot]) d.push(define)
-        d.push(...this.#lightDefines)
-        if (this.#environment) d.push('ENV_MAP')
-        else if (this.#studio) d.push('STUDIO')
+        d.push(...state.lightDefines)
+        if (state.environment) d.push('ENV_MAP')
+        else if (state.studio) d.push('STUDIO')
         if (material.transmission > 0) d.push('TRANSMISSION')
         if (material.clearcoat > 0) d.push('CLEARCOAT')
         if (material.sheen > 0) d.push('SHEEN')

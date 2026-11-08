@@ -1,10 +1,12 @@
 // Bloom: the bright parts of the picture glow, light spilling round them as it does through a lens.
-// The scene is drawn into a buffer of its own (multisampled, as the canvas is), its bright parts
-// picked out and halved in size again and again, blurring as they go, then added back up the chain
-// and laid over the picture on the canvas. Loaded the first time a view asks for bloom.
+// A step of the picture's post chain: it reads the scene's picture, picks out its bright parts and
+// halves them in size again and again, blurring as they go, adds them back up the chain, and draws
+// the picture with its glow wherever the chain says - the canvas, or the next step's target. Loaded
+// the first time a view asks for bloom.
 import { COMMON, FULLSCREEN_VERTEX } from './shaders.js'
 
 /** @import { Programs } from './programs.js' */
+/** @import { TargetPool } from './targets.js' */
 
 /**
  * @typedef {object} BloomSettings
@@ -14,7 +16,8 @@ import { COMMON, FULLSCREEN_VERTEX } from './shaders.js'
  */
 
 // halve the picture, sampling a 4 x 4 block round each texel - the first time picking out what is
-// bright enough to glow, with a soft knee so it doesn't switch on at a hard edge
+// bright enough to glow, with a soft knee so it doesn't switch on at a hard edge. The picture is
+// sRGB, or with LINEAR_INPUT already in linear light
 const DOWN_FRAGMENT = /* glsl */ `
 precision highp float;
 in vec2 vUv;
@@ -25,7 +28,11 @@ out vec4 fragColor;
 ${COMMON}
 vec3 tap(vec2 uv) {
   vec3 c = texture(uSource, uv).rgb;
+#ifdef LINEAR_INPUT
+  return c;
+#else
   return uThreshold < 0.0 ? c : srgbToLinear(c);
+#endif
 }
 void main() {
   vec3 c = (tap(vUv + uTexel * vec2(-1.0, -1.0)) + tap(vUv + uTexel * vec2(1.0, -1.0)) +
@@ -59,7 +66,8 @@ void main() {
 }
 `
 
-// the picture with its glow added, in linear light, back out as premultiplied sRGB
+// the picture with its glow added, in linear light - back out as premultiplied sRGB, or with
+// LINEAR_INPUT left linear for the chain to encode at its end
 const COMPOSITE_FRAGMENT = /* glsl */ `
 precision highp float;
 in vec2 vUv;
@@ -71,10 +79,13 @@ ${COMMON}
 void main() {
   vec4 scene = texture(uScene, vUv);
   vec3 glow = texture(uBloom, vUv).rgb * uStrength;
-  vec3 c = srgbToLinear(scene.rgb) + glow;
   // where the canvas is see-through, the glow brings its own cover
   float a = clamp(scene.a + max(glow.r, max(glow.g, glow.b)), 0.0, 1.0);
-  fragColor = vec4(linearToSrgb(c), a);
+#ifdef LINEAR_INPUT
+  fragColor = vec4(scene.rgb + glow, a);
+#else
+  fragColor = vec4(linearToSrgb(srgbToLinear(scene.rgb) + glow), a);
+#endif
 }
 `
 
@@ -84,77 +95,53 @@ const COMPOSITE = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, COMPOSITE
 // levels down the chain: the last is 1/64 of the picture across, or as small as is still 8 pixels
 const LEVELS = 6
 
-/**
- * @typedef {object} Target
- * @property {number} width
- * @property {number} height
- * @property {WebGLFramebuffer} multisampled drawn into
- * @property {WebGLRenderbuffer[]} buffers its colour and depth
- * @property {WebGLFramebuffer} resolved the picture, as a texture
- * @property {WebGLTexture} picture
- * @property {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer, width: number, height: number }[]} levels
- */
-
 export class Bloom {
-  /** @type {Target | null} */ #target = null
   #float = false
 
-  /** @param {WebGL2RenderingContext} gl @param {Programs} programs */
-  constructor(gl, programs) {
+  /** @param {WebGL2RenderingContext} gl @param {Programs} programs @param {TargetPool} targets */
+  constructor(gl, programs, targets) {
     this.gl = gl
     this.programs = programs
+    this.targets = targets
     this.reset()
   }
 
-  /** Forget every GL object - after a lost context, when they are already gone. */
+  /** After a lost context: what it can render to, asked again. */
   reset() {
-    this.#target = null
     // half floats keep the glow smooth as the levels are added up; 8 bits if they can't be drawn to
     this.#float = !!this.gl.getExtension('EXT_color_buffer_float')
   }
 
-  /** Free the buffers, as a view stops using bloom. */
-  dispose() {
-    this.#free()
-    this.#target = null
-  }
-
   /**
-   * Start a frame: the scene is drawn into the bloom buffer instead of the canvas.
-   * @param {number} width @param {number} height drawing buffer pixels
+   * The picture with its glow, drawn into `output`.
+   * @param {WebGLTexture} picture the scene, as drawn
+   * @param {WebGLFramebuffer | null} output null: the canvas
+   * @param {number} width @param {number} height
+   * @param {BloomSettings} settings
+   * @param {boolean} linear the picture is in linear light, and the glow stays so
    */
-  begin(width, height) {
+  apply(picture, output, width, height, settings, linear) {
     const gl = this.gl
-    const target = this.#targetFor(width, height)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, target.multisampled)
-    gl.viewport(0, 0, width, height)
-  }
-
-  /**
-   * Finish a frame: blur the bright parts and draw the picture with its glow onto the canvas - or
-   * into `output`, for a pass after it (FXAA).
-   * @param {BloomSettings} settings @param {WebGLFramebuffer | null} [output]
-   */
-  end(settings, output = null) {
-    const gl = this.gl
-    const target = /** @type {Target} */ (this.#target)
-    const { width, height, levels } = target
-    // the multisampled picture into a texture
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, target.multisampled)
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, target.resolved)
-    gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST)
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null)
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null)
-
+    const defines = linear ? ['LINEAR_INPUT'] : []
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.CULL_FACE)
     gl.disable(gl.BLEND)
     gl.depthMask(false)
 
+    // the levels: each half the one before, as long as it is still 8 pixels
+    const levels = []
+    let w = width, h = height
+    for (let i = 0; i < LEVELS; i++) {
+      w = Math.max(1, w >> 1)
+      h = Math.max(1, h >> 1)
+      if (i > 1 && Math.min(w, h) < 8) break
+      levels.push(this.targets.get(`bloom-${i}`, { width: w, height: h, color: this.#float ? gl.RGBA16F : gl.RGBA8 }))
+    }
+
     // down: each level half the one before, the first keeping only what is bright
-    const down = this.programs.ready('bloom-down', [], DOWN)
+    const down = this.programs.ready('bloom-down', defines, DOWN)
     gl.useProgram(down.program)
-    let source = target.picture, sw = width, sh = height
+    let source = picture, sw = width, sh = height
     levels.forEach((level, i) => {
       gl.bindFramebuffer(gl.FRAMEBUFFER, level.framebuffer)
       gl.viewport(0, 0, level.width, level.height)
@@ -162,7 +149,7 @@ export class Bloom {
       down.set('uTexel', [1 / sw, 1 / sh])
       down.set('uThreshold', i === 0 ? Math.max(0, settings.threshold) : -1)
       this.programs.drawFullscreen()
-      source = level.texture
+      source = /** @type {WebGLTexture} */ (level.texture)
       sw = level.width
       sh = level.height
     })
@@ -184,12 +171,12 @@ export class Bloom {
     }
     gl.disable(gl.BLEND)
 
-    // onto the canvas
+    // the picture with its glow
     gl.bindFramebuffer(gl.FRAMEBUFFER, output)
     gl.viewport(0, 0, width, height)
-    const composite = this.programs.ready('bloom-composite', [], COMPOSITE)
+    const composite = this.programs.ready('bloom-composite', defines, COMPOSITE)
     gl.useProgram(composite.program)
-    composite.set('uScene', target.picture)
+    composite.set('uScene', picture)
     composite.set('uBloom', levels[0].texture)
     composite.set('uStrength', Math.max(0, settings.strength))
     this.programs.drawFullscreen()
@@ -198,66 +185,4 @@ export class Bloom {
     gl.enable(gl.DEPTH_TEST)
     gl.bindVertexArray(null)
   }
-
-  /** The buffers for this size, made again when it changes. @param {number} width @param {number} height */
-  #targetFor(width, height) {
-    if (this.#target && this.#target.width === width && this.#target.height === height) return this.#target
-    this.#free()
-    const gl = this.gl
-    const samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES))
-    const multisampled = /** @type {WebGLFramebuffer} */ (gl.createFramebuffer())
-    gl.bindFramebuffer(gl.FRAMEBUFFER, multisampled)
-    const color = /** @type {WebGLRenderbuffer} */ (gl.createRenderbuffer())
-    gl.bindRenderbuffer(gl.RENDERBUFFER, color)
-    gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.RGBA8, width, height)
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, color)
-    const depth = /** @type {WebGLRenderbuffer} */ (gl.createRenderbuffer())
-    gl.bindRenderbuffer(gl.RENDERBUFFER, depth)
-    // with stencil, for section planes' caps
-    gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.DEPTH24_STENCIL8, width, height)
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, depth)
-
-    const texture = (w, h, format) => {
-      const t = /** @type {WebGLTexture} */ (gl.createTexture())
-      gl.activeTexture(gl.TEXTURE15)
-      gl.bindTexture(gl.TEXTURE_2D, t)
-      gl.texStorage2D(gl.TEXTURE_2D, 1, format, w, h)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-      const framebuffer = /** @type {WebGLFramebuffer} */ (gl.createFramebuffer())
-      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0)
-      return { texture: t, framebuffer, width: w, height: h }
-    }
-    const picture = texture(width, height, gl.RGBA8)
-    const levels = []
-    let w = width, h = height
-    for (let i = 0; i < LEVELS; i++) {
-      w = Math.max(1, w >> 1)
-      h = Math.max(1, h >> 1)
-      if (i > 1 && Math.min(w, h) < 8) break
-      levels.push(texture(w, h, this.#float ? gl.RGBA16F : gl.RGBA8))
-    }
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-    gl.bindRenderbuffer(gl.RENDERBUFFER, null)
-    this.#target = { width, height, multisampled, buffers: [color, depth], resolved: picture.framebuffer, picture: picture.texture, levels }
-    return this.#target
-  }
-
-  #free() {
-    const target = this.#target
-    if (!target) return
-    const gl = this.gl
-    gl.deleteFramebuffer(target.multisampled)
-    for (const b of target.buffers) gl.deleteRenderbuffer(b)
-    gl.deleteFramebuffer(target.resolved)
-    gl.deleteTexture(target.picture)
-    for (const level of target.levels) {
-      gl.deleteFramebuffer(level.framebuffer)
-      gl.deleteTexture(level.texture)
-    }
-  }
-
 }

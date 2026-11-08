@@ -5,6 +5,7 @@
 import { CLIP, COMMON, CUTOUT, LINES_VERTEX, MESH_VERTEX, POINTS_VERTEX } from './shaders.js'
 import { hookFor, passDefines, setHookUniforms } from './hooks.js'
 import { setShapeUniforms, shapeDefines } from './shape.js'
+import { makeTarget } from './targets.js'
 import * as mat4 from '../math/mat4.js'
 
 /** @import { Programs } from './programs.js' */
@@ -77,7 +78,7 @@ const SOURCES = {
  */
 
 export class Picker {
-  /** @type {{ framebuffer: WebGLFramebuffer, color: WebGLTexture, depth: WebGLRenderbuffer } | null} */ #target = null
+  /** @type {import('./targets.js').Target | null} */ #target = null
   #pixels = new Uint32Array(REGION * REGION * 4)
   #projection = new Float32Array(16)
   #viewProjection = new Float32Array(16)
@@ -314,21 +315,8 @@ export class Picker {
   }
 
   #ensureTarget() {
-    if (this.#target) return this.#target
-    const gl = this.gl
-    const color = /** @type {WebGLTexture} */ (gl.createTexture())
-    gl.activeTexture(gl.TEXTURE15)
-    gl.bindTexture(gl.TEXTURE_2D, color)
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32UI, REGION, REGION)
-    const depth = /** @type {WebGLRenderbuffer} */ (gl.createRenderbuffer())
-    gl.bindRenderbuffer(gl.RENDERBUFFER, depth)
-    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, REGION, REGION)
-    const framebuffer = /** @type {WebGLFramebuffer} */ (gl.createFramebuffer())
-    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, color, 0)
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-    this.#target = { framebuffer, color, depth }
+    // what is under the pointer, as integers: the drawable, its element, the depth - with a depth test
+    this.#target ??= makeTarget(this.gl, { width: REGION, height: REGION, color: this.gl.RGBA32UI, filter: 'nearest', depth: 'buffer' })
     return this.#target
   }
 }

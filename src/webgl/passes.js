@@ -8,8 +8,10 @@ import { POINT_SHADOW_SIZE, SHADOW_MAP_SIZE, SPOT_ATLAS_SIZE } from '../shadow.j
 import { CLIP, CLIP_ONLY_FRAGMENT, COMMON, CUTOUT, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
 import { setHookUniforms } from './hooks.js'
 import { setShapeUniforms, shapeDefines } from './shape.js'
+import { blit } from './targets.js'
 
 /** @import { Programs } from './programs.js' */
+/** @import { Target, TargetPool } from './targets.js' */
 /** @import { Resources } from './resources.js' */
 /** @import { Texture, DataImage } from '../material/Texture.js' */
 /** @import { FrameDescription, ShadowFrame, SpotShadowFrame, PointShadowFrame, DrawItem, FrameOutline } from '../frame.js' */
@@ -35,7 +37,7 @@ void main() {
   vec3 d = normalize(far.xyz / far.w - uCameraPosition);
   vec3 c = textureLod(uBackground, equirectUv(d), uLod).rgb * uIntensity;
   if (uHdr == 1) c = toneMap(c);
-  fragColor = vec4(linearToSrgb(c), 1.0);
+  fragColor = outputColor(c, 1.0, 1.0);
 }
 `
 
@@ -159,7 +161,7 @@ void main() {
   if (texture(uMask, vUv).a > 0.0) discard;
   vec4 ring = widened(vUv);
   if (ring.a <= 0.0) discard;
-  fragColor = vec4(linearToSrgb(ring.rgb), 1.0);
+  fragColor = outputColor(ring.rgb, 1.0, 1.0);
 }
 `
 // Antialiased outlines. The mask is drawn multisampled, with a second target saying how much of
@@ -250,7 +252,7 @@ void main() {
   }
   float alpha = clamp(ring.a - nearest + 0.5, 0.0, 1.0) * (1.0 - here);
   if (alpha <= 0.0) discard;
-  fragColor = vec4(linearToSrgb(ring.rgb) * alpha, alpha);
+  fragColor = outputColor(ring.rgb, alpha, alpha);
 }
 `
 const OUTLINE_MASK = /** @type {[string, string]} */ ([MESH_VERTEX, OUTLINE_MASK_FRAGMENT])
@@ -286,9 +288,8 @@ const ENV_LEVELS = 6
  */
 
 /**
- * @typedef {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer }} Target
  * @typedef {{ width: number, height: number, smooth: boolean, mask: Target, wide: Target, coverage: Target | null,
- *   msaa: { framebuffer: WebGLFramebuffer, renderbuffers: WebGLRenderbuffer[] } | null }} OutlineTargets
+ *   msaa: Target | null }} OutlineTargets
  * @typedef {{ mask: WebGLTexture, wide: WebGLTexture, coverage: WebGLTexture | null, radius: number, width: number, height: number }} OutlineMask
  */
 
@@ -301,15 +302,15 @@ export class Passes {
   /** @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #shadow = null
   /** Spot lights' shadows, a tile each. @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #spotShadow = null
   /** A point light's shadow: a depth cube, a framebuffer a face. @type {{ texture: WebGLTexture, framebuffers: WebGLFramebuffer[] } | null} */ #pointShadow = null
-  /** Outlines' mask and its widened copy. @type {OutlineTargets | null} */ #outline = null
   /** Rendering to float textures, which environments need. */
   floatTargets = false
 
-  /** @param {WebGL2RenderingContext} gl @param {Programs} programs @param {Resources} resources */
-  constructor(gl, programs, resources) {
+  /** @param {WebGL2RenderingContext} gl @param {Programs} programs @param {Resources} resources @param {TargetPool} targets */
+  constructor(gl, programs, resources, targets) {
     this.gl = gl
     this.programs = programs
     this.resources = resources
+    this.targets = targets
     this.reset()
   }
 
@@ -319,7 +320,6 @@ export class Passes {
     this.#shadow = null
     this.#spotShadow = null
     this.#pointShadow = null
-    this.#outline = null
     this.floatTargets = !!this.gl.getExtension('EXT_color_buffer_float')
   }
 
@@ -383,14 +383,14 @@ export class Passes {
   /**
    * Draw a panorama background: an HDR image (tone mapped like the scene) or an ordinary picture.
    * @param {FrameDescription} frame @param {Texture} texture
-   * @param {{ exposure: number, toneMapping: number }} tone
+   * @param {{ exposure: number, toneMapping: number, linear?: boolean }} tone linear: written in linear light, for a chain that encodes it later
    */
   background(frame, texture, tone) {
     const gl = this.gl
     const hdr = texture.isHDR
     const env = hdr ? this.environment(texture) : null
     if (hdr && !env) return
-    const program = this.programs.ready('background', [], BACKGROUND)
+    const program = this.programs.ready('background', tone.linear ? ['LINEAR_OUTPUT'] : [], BACKGROUND)
     gl.useProgram(program.program)
     const blur = Math.min(Math.max(frame.backgroundBlur, 0), 1)
     if (env) {
@@ -601,12 +601,8 @@ export class Passes {
     }
     // the samples resolved: the mask into its texture, the coverage into its own
     if (targets.msaa && targets.coverage) {
-      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, targets.msaa.framebuffer)
-      for (const [attachment, target] of /** @type {[number, Target][]} */ ([[gl.COLOR_ATTACHMENT0, targets.mask], [gl.COLOR_ATTACHMENT1, targets.coverage]])) {
-        gl.readBuffer(attachment)
-        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, target.framebuffer)
-        gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST)
-      }
+      blit(gl, targets.msaa, targets.mask, 0)
+      blit(gl, targets.msaa, targets.coverage, 1)
     }
     // widened sideways
     gl.bindFramebuffer(gl.FRAMEBUFFER, targets.wide.framebuffer)
@@ -635,12 +631,13 @@ export class Passes {
   /**
    * Draw the outlines over the finished scene, into whatever is bound: the sideways-widened mask
    * widened up and down too, less the mask itself, so a ring is left round each subtree.
-   * @param {OutlineMask} outline
+   * @param {OutlineMask} outline @param {boolean} [linear] written in linear light, for a chain that encodes it later
    */
-  outlineComposite(outline) {
+  outlineComposite(outline, linear = false) {
     const gl = this.gl
+    const defines = linear ? ['LINEAR_OUTPUT'] : []
     if (outline.coverage) {
-      const program = this.programs.ready('outline-smooth-composite', [], OUTLINE_SMOOTH_COMPOSITE)
+      const program = this.programs.ready('outline-smooth-composite', defines, OUTLINE_SMOOTH_COMPOSITE)
       gl.useProgram(program.program)
       program.set('uNearest', outline.wide)
       program.set('uMask', outline.mask)
@@ -648,7 +645,7 @@ export class Passes {
       program.set('uTexel', [1 / outline.width, 1 / outline.height])
       program.set('uRadius', outline.radius)
     } else {
-      const program = this.programs.ready('outline-composite', [], OUTLINE_COMPOSITE)
+      const program = this.programs.ready('outline-composite', defines, OUTLINE_COMPOSITE)
       gl.useProgram(program.program)
       program.set('uSource', outline.wide)
       program.set('uMask', outline.mask)
@@ -672,54 +669,17 @@ export class Passes {
    * @returns {OutlineTargets}
    */
   #outlineTargets(width, height, smooth) {
-    const t = this.#outline
-    if (t && t.width === width && t.height === height && t.smooth === smooth) return t
     const gl = this.gl
-    if (t) {
-      for (const target of [t.mask, t.wide, t.coverage]) {
-        if (!target) continue
-        gl.deleteTexture(target.texture)
-        gl.deleteFramebuffer(target.framebuffer)
-      }
-      if (t.msaa) {
-        gl.deleteFramebuffer(t.msaa.framebuffer)
-        for (const buffer of t.msaa.renderbuffers) gl.deleteRenderbuffer(buffer)
-      }
-    }
-    const make = (/** @type {number} */ format = gl.RGBA8) => {
-      const texture = /** @type {WebGLTexture} */ (gl.createTexture())
-      gl.activeTexture(gl.TEXTURE15)
-      gl.bindTexture(gl.TEXTURE_2D, texture)
-      gl.texStorage2D(gl.TEXTURE_2D, 1, format, width, height)
-      // read texel for texel: no blending between neighbours
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-      const framebuffer = /** @type {WebGLFramebuffer} */ (gl.createFramebuffer())
-      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0)
-      return { texture, framebuffer }
-    }
-    /** @type {OutlineTargets['msaa']} */
-    let msaa = null
-    if (smooth) {
+    // read texel for texel: no blending between neighbours
+    const flat = /** @type {const} */ ({ width, height, filter: 'nearest' })
+    return {
+      width, height, smooth,
+      mask: this.targets.get('outline-mask', flat),
+      wide: this.targets.get('outline-wide', flat),
+      coverage: smooth ? this.targets.get('outline-coverage', { ...flat, color: gl.R8 }) : null,
       // two multisampled targets drawn at once: the mask, and its coverage
-      const samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES))
-      const framebuffer = /** @type {WebGLFramebuffer} */ (gl.createFramebuffer())
-      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
-      const renderbuffers = [gl.RGBA8, gl.R8].map((format, i) => {
-        const buffer = /** @type {WebGLRenderbuffer} */ (gl.createRenderbuffer())
-        gl.bindRenderbuffer(gl.RENDERBUFFER, buffer)
-        gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, format, width, height)
-        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.RENDERBUFFER, buffer)
-        return buffer
-      })
-      msaa = { framebuffer, renderbuffers }
+      msaa: smooth ? this.targets.get('outline-msaa', { width, height, color: [gl.RGBA8, gl.R8], samples: Math.min(4, gl.getParameter(gl.MAX_SAMPLES) || 4) }) : null,
     }
-    this.#outline = { width, height, smooth, mask: make(), wide: make(), coverage: smooth ? make(gl.R8) : null, msaa }
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-    return this.#outline
   }
 
   /** A depth texture to draw shadows into and compare against. @param {number} size */

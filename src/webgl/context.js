@@ -6,6 +6,7 @@ import { fail } from '../validate.js'
 import { lazy } from '../lazy.js'
 import { Programs } from './programs.js'
 import { Resources } from './resources.js'
+import { TargetPool } from './targets.js'
 
 /** @import { Passes } from './passes.js' */
 /** @import { Picker } from './picking.js' */
@@ -23,6 +24,8 @@ export class GLContext {
   /** @type {WebGL2RenderingContext} */ gl
   programs
   resources
+  /** The render targets passes draw into, kept by name and size, freed when unused. @type {TargetPool} */
+  targets
   /** HDR environments, panorama backgrounds and shadows - loaded the first time a frame has one. @type {Passes | null} */
   passes = null
   /** GPU picking - loaded the first time something is picked. @type {Picker | null} */
@@ -66,6 +69,7 @@ export class GLContext {
     this.gl = /** @type {WebGL2RenderingContext} */ (gl)
     this.programs = new Programs(this.gl)
     this.resources = new Resources(this.gl)
+    this.targets = new TargetPool(this.gl)
 
     // a lost context (GPU reset, too many contexts) is restored by the browser; every GPU object
     // is then recreated from the CPU-side data, and every renderer drawn again
@@ -77,6 +81,7 @@ export class GLContext {
       this.lost = false
       this.programs.reset()
       this.resources.reset()
+      this.targets.reset()
       for (const module of this.#loaded()) module.reset()
       for (const user of this.users) user.onReady?.()
     }
@@ -125,7 +130,7 @@ export class GLContext {
   loadPasses(needed) {
     if (this.passes || !needed) return this.passes
     this.#load.passes(({ Passes }) => {
-      this.passes = new Passes(this.gl, this.programs, this.resources)
+      this.passes = new Passes(this.gl, this.programs, this.resources, this.targets)
       this.#ready()
     })
     return null
@@ -185,7 +190,7 @@ export class GLContext {
   loadBloom() {
     if (this.bloom) return this.bloom
     this.#load.bloom(({ Bloom }) => {
-      this.bloom = new Bloom(this.gl, this.programs)
+      this.bloom = new Bloom(this.gl, this.programs, this.targets)
       this.#ready()
     })
     return null
@@ -199,7 +204,7 @@ export class GLContext {
   loadEffects() {
     if (this.effects) return this.effects
     this.#load.effects(({ Effects }) => {
-      this.effects = new Effects(this.gl, this.programs)
+      this.effects = new Effects(this.gl, this.programs, this.targets)
       this.#ready()
     })
     return null
@@ -220,11 +225,8 @@ export class GLContext {
     if (this.users.size) return
     this.programs.dispose()
     this.resources.reset()
-    // what frees its own buffers does; the rest go with the context
-    for (const module of this.#loaded()) {
-      if ('dispose' in module) module.dispose()
-      else module.reset()
-    }
+    this.targets.dispose()
+    for (const module of this.#loaded()) module.reset()
     this.#removeListeners()
     const lose = this.gl.getExtension('WEBGL_lose_context')
     if (this === shared) {

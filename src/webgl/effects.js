@@ -4,7 +4,8 @@
 //   round (ambient, hemisphere, environment), never the lights' direct light;
 // - a ground shadow: the solids' depth seen from below the ground, darker the nearer they are to it,
 //   blurred and laid on the ground as a soft shadow - no light needed;
-// - FXAA: the finished picture smoothed where its edges are jagged, as a last pass onto the canvas.
+// - FXAA: the finished picture smoothed where its edges are jagged - a step of the post chain, after
+//   bloom and the encode out of linear light.
 import * as mat4 from '../math/mat4.js'
 import { FULLSCREEN_VERTEX } from './shaders.js'
 
@@ -12,6 +13,7 @@ import { FULLSCREEN_VERTEX } from './shaders.js'
 /** @import { Passes } from './passes.js' */
 /** @import { FrameDescription, DrawItem } from '../frame.js' */
 /** @import { Box3 } from '../value/Box3.js' */
+/** @import { TargetPool } from './targets.js' */
 
 /**
  * @typedef {object} Occlusion what the lit shader reads: the occlusion and how to look it up
@@ -28,9 +30,6 @@ import { FULLSCREEN_VERTEX } from './shaders.js'
  * @property {number} opacity
  */
 
-/** @typedef {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer, width: number, height: number }} Target */
-/** @typedef {{ width: number, height: number, picture: Target, multisampled: WebGLFramebuffer | null, buffers: WebGLRenderbuffer[] }} FxaaTargets */
-/** @typedef {{ width: number, height: number, normals: Target, depth: WebGLTexture, occlusion: Target, blurred: Target }} OcclusionTargets */
 
 // ambient occlusion: samples round each pixel in a spiral (as scalable ambient obscurance, McGuire
 // et al.), its start turned from pixel to pixel - an integer hash, as fract(sin()) differs from GPU to
@@ -221,9 +220,6 @@ const GROUND_BLUR = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, GROUND_
 const GROUND = /** @type {[string, string]} */ ([GROUND_VERTEX, GROUND_FRAGMENT])
 const FXAA = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, FXAA_FRAGMENT])
 const GROUND_SIZE = 512
-// buffers kept for this many picture sizes: views of different sizes sharing a context (a dashboard)
-// each find theirs, rather than every view remaking them every frame
-const SIZES = 4
 // the darkness, and its blur, at half that
 const GROUND_BLUR_SIZE = GROUND_SIZE / 2
 // the widest blur, in texels of that
@@ -232,37 +228,22 @@ const GROUND_BLUR_RADIUS = 32
 export class Effects {
   /** Rendering to float textures: occlusion keeps its depth, for an upsample that keeps edges. */
   floatTargets = false
-  /** By picture size. @type {Map<string, OcclusionTargets>} */ #occlusion = new Map()
-  /** @type {{ depth: { texture: WebGLTexture, framebuffer: WebGLFramebuffer }, a: Target, b: Target } | null} */ #ground = null
-  /** By picture size. @type {Map<string, FxaaTargets>} */ #fxaaTargetsBySize = new Map()
-  /** This frame's, from beginFxaa(). @type {FxaaTargets | null} */ #fxaa = null
   /** Where the solids were last: the ground shadow keeps its square until they move well out of it. @type {[number, number, number] | null} */ #square = null
   /** @type {WebGLVertexArrayObject | null} */ #empty = null
 
-  /** @param {WebGL2RenderingContext} gl @param {Programs} programs */
-  constructor(gl, programs) {
+  /** @param {WebGL2RenderingContext} gl @param {Programs} programs @param {TargetPool} targets */
+  constructor(gl, programs, targets) {
     this.gl = gl
     this.programs = programs
+    this.targets = targets
     this.reset()
   }
 
-  /** Forget every GL object - after a lost context, when they are already gone. */
+  /** Forget its GL objects - after a lost context, when they are already gone. */
   reset() {
-    this.#occlusion = new Map()
-    this.#ground = null
-    this.#fxaaTargetsBySize = new Map()
-    this.#fxaa = null
     this.#empty = null
+    this.#square = null
     this.floatTargets = !!this.gl.getExtension('EXT_color_buffer_float')
-  }
-
-  /** Free the buffers, as the last view using these effects stops. */
-  dispose() {
-    for (const t of this.#occlusion.values()) this.#freeOcclusion(t)
-    this.#freeGround()
-    for (const t of this.#fxaaTargetsBySize.values()) this.#freeFxaa(t)
-    if (this.#empty) this.gl.deleteVertexArray(this.#empty)
-    this.reset()
   }
 
   /**
@@ -277,11 +258,14 @@ export class Effects {
   occlusion(frame, passes, settings, width, height, sceneSize) {
     const gl = this.gl
     const w = Math.max(1, Math.ceil(width / 2)), h = Math.max(1, Math.ceil(height / 2))
-    const t = this.#occlusionTargets(w, h)
+    const format = this.floatTargets ? gl.RG16F : gl.RGBA8
+    const normals = this.targets.get('ao-normals', { width: w, height: h, filter: 'nearest', depth: 'texture' })
+    const found = this.targets.get('ao', { width: w, height: h, color: format })
+    const blurred = this.targets.get('ao-blurred', { width: w, height: h, color: format })
     const { view, projection, viewProjection } = frame.camera
 
     // the solids' depth and view-space normals
-    gl.bindFramebuffer(gl.FRAMEBUFFER, t.normals.framebuffer)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, normals.framebuffer)
     gl.viewport(0, 0, w, h)
     gl.clearColor(0.5, 0.5, 1, 0)
     gl.depthMask(true)
@@ -299,9 +283,9 @@ export class Effects {
     const radius = settings.radius ?? Math.max(sceneSize, 1e-6) / 20
     const occlusion = this.programs.ready('ssao', [], OCCLUSION)
     gl.useProgram(occlusion.program)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, t.occlusion.framebuffer)
-    occlusion.set('uDepth', t.depth)
-    occlusion.set('uNormals', t.normals.texture)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, found.framebuffer)
+    occlusion.set('uDepth', normals.depthTexture)
+    occlusion.set('uNormals', normals.texture)
     occlusion.set('uInverseProjection', mat4.invert(new Float32Array(16), projection) ?? mat4.identity(new Float32Array(16)))
     occlusion.set('uSize', [w, h])
     occlusion.set('uRadius', radius)
@@ -314,12 +298,12 @@ export class Effects {
     const defines = this.floatTargets ? ['DEPTH'] : []
     const blur = this.programs.ready('ssao-blur', defines, OCCLUSION_BLUR)
     gl.useProgram(blur.program)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, t.blurred.framebuffer)
-    blur.set('uSource', t.occlusion.texture)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, blurred.framebuffer)
+    blur.set('uSource', found.texture)
     blur.set('uStep', [1, 0])
     this.programs.drawFullscreen()
-    gl.bindFramebuffer(gl.FRAMEBUFFER, t.occlusion.framebuffer)
-    blur.set('uSource', t.blurred.texture)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, found.framebuffer)
+    blur.set('uSource', blurred.texture)
     blur.set('uStep', [0, 1])
     this.programs.drawFullscreen()
 
@@ -327,7 +311,7 @@ export class Effects {
     gl.enable(gl.DEPTH_TEST)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     return {
-      texture: t.occlusion.texture, depth: this.floatTargets, scale: [1 / width, 1 / height],
+      texture: /** @type {WebGLTexture} */ (found.texture), depth: this.floatTargets, scale: [1 / width, 1 / height],
       viewZ: [view[2], view[6], view[10], view[14]],
     }
   }
@@ -348,11 +332,13 @@ export class Effects {
     const height = settings.height ?? extent / 2
     const half = this.#squareFor((x0 + x1) / 2, (z0 + z1) / 2, settings.size !== null ? settings.size / 2 : Math.max(x1 - x0, z1 - z0) * 0.5 + height * 0.75)
     const [cx, cz, h] = half
-    const t = this.#groundTargets()
+    const depth = this.targets.get('ground-depth', { width: GROUND_SIZE, height: GROUND_SIZE, color: null, depth: 'texture' })
+    const a = this.targets.get('ground-a', { width: GROUND_BLUR_SIZE, height: GROUND_BLUR_SIZE })
+    const b = this.targets.get('ground-b', { width: GROUND_BLUR_SIZE, height: GROUND_BLUR_SIZE })
 
-    // depth up from the ground: x and z across the square, height up to \`height\`
+    // depth up from the ground: x and z across the square, height up to `height`
     const viewProjection = new Float32Array([1 / h, 0, 0, 0, 0, 0, 2 / height, 0, 0, 1 / h, 0, 0, -cx / h, -cz / h, (-2 * ground) / height - 1, 1])
-    gl.bindFramebuffer(gl.FRAMEBUFFER, t.depth.framebuffer)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, depth.framebuffer)
     gl.viewport(0, 0, GROUND_SIZE, GROUND_SIZE)
     gl.depthMask(true)
     gl.enable(gl.DEPTH_TEST)
@@ -368,24 +354,24 @@ export class Effects {
     gl.viewport(0, 0, GROUND_BLUR_SIZE, GROUND_BLUR_SIZE)
     const darkness = this.programs.ready('ground-darkness', [], GROUND_DARKNESS)
     gl.useProgram(darkness.program)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, t.a.framebuffer)
-    darkness.set('uDepth', t.depth.texture)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, a.framebuffer)
+    darkness.set('uDepth', depth.depthTexture)
     this.programs.drawFullscreen()
     const blur = this.programs.ready('ground-blur', [], GROUND_BLUR)
     gl.useProgram(blur.program)
     blur.set('uRadius', Math.round(1 + settings.softness * (GROUND_BLUR_RADIUS - 1)))
-    gl.bindFramebuffer(gl.FRAMEBUFFER, t.b.framebuffer)
-    blur.set('uSource', t.a.texture)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, b.framebuffer)
+    blur.set('uSource', a.texture)
     blur.set('uStep', [1, 0])
     this.programs.drawFullscreen()
-    gl.bindFramebuffer(gl.FRAMEBUFFER, t.a.framebuffer)
-    blur.set('uSource', t.b.texture)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, a.framebuffer)
+    blur.set('uSource', b.texture)
     blur.set('uStep', [0, 1])
     this.programs.drawFullscreen()
     gl.depthMask(true)
     gl.enable(gl.DEPTH_TEST)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-    return { texture: t.a.texture, rect: [cx, cz, h, ground], opacity: settings.opacity }
+    return { texture: /** @type {WebGLTexture} */ (a.texture), rect: [cx, cz, h, ground], opacity: settings.opacity }
   }
 
   /**
@@ -418,40 +404,13 @@ export class Effects {
   }
 
   /**
-   * Where the picture goes before FXAA: bound and returned, to draw the scene into (multisampled,
-   * resolved by fxaa()), or - after bloom, which draws its own picture - a plain texture's
-   * framebuffer for bloom to put its result in.
-   * @param {number} width @param {number} height @param {boolean} multisampled
-   * @returns {WebGLFramebuffer}
+   * FXAA, a step of the picture's post chain: the picture smoothed into `output`.
+   * @param {WebGLTexture} picture @param {WebGLFramebuffer | null} output null: the canvas
+   * @param {number} width @param {number} height
    */
-  beginFxaa(width, height, multisampled) {
+  fxaa(picture, output, width, height) {
     const gl = this.gl
-    const t = this.#fxaaTargets(width, height)
-    this.#fxaa = t
-    if (!multisampled) return t.picture.framebuffer
-    const target = t.multisampled ?? this.#multisample(t)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, target)
-    gl.viewport(0, 0, width, height)
-    return target
-  }
-
-  /**
-   * Smooth the picture onto the canvas.
-   * @param {boolean} multisampled the scene was drawn into the multisampled buffer, to resolve first
-   */
-  fxaa(multisampled) {
-    const gl = this.gl
-    const t = this.#fxaa
-    if (!t) return
-    const { width, height } = t
-    if (multisampled && t.multisampled) {
-      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, t.multisampled)
-      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, t.picture.framebuffer)
-      gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST)
-      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null)
-      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null)
-    }
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, output)
     gl.viewport(0, 0, width, height)
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.BLEND)
@@ -459,7 +418,7 @@ export class Effects {
     gl.depthMask(false)
     const program = this.programs.ready('fxaa', [], FXAA)
     gl.useProgram(program.program)
-    program.set('uSource', t.picture.texture)
+    program.set('uSource', picture)
     program.set('uTexel', [1 / width, 1 / height])
     this.programs.drawFullscreen()
     gl.depthMask(true)
@@ -480,156 +439,5 @@ export class Effects {
     const grid = h / 16
     this.#square = [Math.round(x / grid) * grid, Math.round(z / grid) * grid, h]
     return this.#square
-  }
-
-  /** A colour texture and its framebuffer. @param {number} width @param {number} height @param {number} format @param {number} filter */
-  #target(width, height, format, filter) {
-    const gl = this.gl
-    const texture = /** @type {WebGLTexture} */ (gl.createTexture())
-    gl.activeTexture(gl.TEXTURE15)
-    gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.texStorage2D(gl.TEXTURE_2D, 1, format, width, height)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-    const framebuffer = /** @type {WebGLFramebuffer} */ (gl.createFramebuffer())
-    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0)
-    return { texture, framebuffer, width, height }
-  }
-
-  /** A depth texture read as a plain value, not compared. @param {number} width @param {number} height */
-  #depthTexture(width, height) {
-    const gl = this.gl
-    const texture = /** @type {WebGLTexture} */ (gl.createTexture())
-    gl.activeTexture(gl.TEXTURE15)
-    gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, width, height)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-    return texture
-  }
-
-  /**
-   * A size's buffers from a cache of the last few sizes, made when missing - the least recently
-   * used freed to make room.
-   * @template T
-   * @param {Map<string, T>} cache @param {number} width @param {number} height
-   * @param {() => T} make @param {(t: T) => void} free
-   * @returns {T}
-   */
-  #sized(cache, width, height, make, free) {
-    const key = `${width}x${height}`
-    let t = cache.get(key)
-    if (t) cache.delete(key)
-    else t = make()
-    cache.set(key, t)
-    if (cache.size > SIZES) {
-      const [oldest, old] = /** @type {[string, T]} */ (cache.entries().next().value)
-      cache.delete(oldest)
-      free(old)
-    }
-    return t
-  }
-
-  /** @param {number} w @param {number} h @returns {OcclusionTargets} */
-  #occlusionTargets(w, h) {
-    return this.#sized(this.#occlusion, w, h, () => this.#makeOcclusion(w, h), (t) => this.#freeOcclusion(t))
-  }
-
-  /** @param {number} w @param {number} h @returns {OcclusionTargets} */
-  #makeOcclusion(w, h) {
-    const gl = this.gl
-    const normals = this.#target(w, h, gl.RGBA8, gl.NEAREST)
-    const depth = this.#depthTexture(w, h)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, normals.framebuffer)
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, depth, 0)
-    const format = this.floatTargets ? gl.RG16F : gl.RGBA8
-    const occlusion = this.#target(w, h, format, gl.LINEAR)
-    const blurred = this.#target(w, h, format, gl.LINEAR)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-    return { width: w, height: h, normals, depth, occlusion, blurred }
-  }
-
-  #groundTargets() {
-    if (this.#ground) return this.#ground
-    const gl = this.gl
-    const texture = this.#depthTexture(GROUND_SIZE, GROUND_SIZE)
-    const framebuffer = /** @type {WebGLFramebuffer} */ (gl.createFramebuffer())
-    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, texture, 0)
-    gl.drawBuffers([gl.NONE])
-    gl.readBuffer(gl.NONE)
-    const a = this.#target(GROUND_BLUR_SIZE, GROUND_BLUR_SIZE, gl.RGBA8, gl.LINEAR)
-    const b = this.#target(GROUND_BLUR_SIZE, GROUND_BLUR_SIZE, gl.RGBA8, gl.LINEAR)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-    this.#ground = { depth: { texture, framebuffer }, a, b }
-    return this.#ground
-  }
-
-  /** @param {number} width @param {number} height @returns {FxaaTargets} */
-  #fxaaTargets(width, height) {
-    return this.#sized(this.#fxaaTargetsBySize, width, height, () => {
-      const picture = this.#target(width, height, this.gl.RGBA8, this.gl.LINEAR)
-      this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null)
-      return { width, height, picture, multisampled: null, buffers: [] }
-    }, (t) => this.#freeFxaa(t))
-  }
-
-  /**
-   * The buffer the scene is drawn into before FXAA, made when first wanted (bloom draws its own):
-   * multisampled as the canvas is - or not, when the canvas isn't - with stencil for section planes' caps.
-   * @param {FxaaTargets} t
-   */
-  #multisample(t) {
-    const gl = this.gl
-    const samples = gl.getContextAttributes()?.antialias ? Math.min(4, gl.getParameter(gl.MAX_SAMPLES)) : 0
-    const framebuffer = /** @type {WebGLFramebuffer} */ (gl.createFramebuffer())
-    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
-    t.buffers = [[gl.RGBA8, gl.COLOR_ATTACHMENT0], [gl.DEPTH24_STENCIL8, gl.DEPTH_STENCIL_ATTACHMENT]].map(([format, attachment]) => {
-      const b = /** @type {WebGLRenderbuffer} */ (gl.createRenderbuffer())
-      gl.bindRenderbuffer(gl.RENDERBUFFER, b)
-      gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, format, t.width, t.height)
-      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, attachment, gl.RENDERBUFFER, b)
-      return b
-    })
-    gl.bindRenderbuffer(gl.RENDERBUFFER, null)
-    t.multisampled = framebuffer
-    return framebuffer
-  }
-
-  /** @param {OcclusionTargets} t */
-  #freeOcclusion(t) {
-    const gl = this.gl
-    for (const target of [t.normals, t.occlusion, t.blurred]) {
-      gl.deleteFramebuffer(target.framebuffer)
-      gl.deleteTexture(target.texture)
-    }
-    gl.deleteTexture(t.depth)
-  }
-
-  #freeGround() {
-    const t = this.#ground
-    if (!t) return
-    const gl = this.gl
-    for (const target of [t.depth, t.a, t.b]) {
-      gl.deleteFramebuffer(target.framebuffer)
-      gl.deleteTexture(target.texture)
-    }
-    this.#ground = null
-    this.#square = null
-  }
-
-  /** @param {FxaaTargets} t */
-  #freeFxaa(t) {
-    const gl = this.gl
-    gl.deleteFramebuffer(t.picture.framebuffer)
-    gl.deleteTexture(t.picture.texture)
-    if (t.multisampled) gl.deleteFramebuffer(t.multisampled)
-    for (const b of t.buffers) gl.deleteRenderbuffer(b)
-    if (this.#fxaa === t) this.#fxaa = null
   }
 }

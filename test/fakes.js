@@ -152,6 +152,8 @@ export function fakeGL({ parallel = false } = {}) {
     drawElementsInstanced: (_mode, n) => logDraw('drawElementsInstanced', n),
     drawArraysInstanced: (_mode, _first, n) => logDraw('drawArraysInstanced', n),
     isContextLost: () => lost.now,
+    // as a browser's context, multisampled unless asked not to be
+    getContextAttributes: () => ({ antialias: true }),
   }
   // every uniform* call keeps its value on the program
   for (const name of ['uniform1f', 'uniform1fv', 'uniform2fv', 'uniform3fv', 'uniform4fv', 'uniform1i', 'uniform1iv', 'uniform2iv', 'uniform3iv', 'uniform4iv',

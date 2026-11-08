@@ -523,7 +523,7 @@ describe('rendering', () => {
     scene.add(new DirectionalLight())
     scene.add(new Mesh({ geometry: box(), material: { flatShading: true, doubleSided: true } }))
     renderer.render(scene, camera())
-    const mesh = sources.find((s) => s.includes('#define FLAT_SHADING') && s.includes('#define DOUBLE_SIDED') && s.includes('fragColor = vec4(linearToSrgb'))
+    const mesh = sources.find((s) => s.includes('#define FLAT_SHADING') && s.includes('#define DOUBLE_SIDED') && s.includes('fragColor = outputColor(color, base.a, coverage)'))
     // the screen-space normal already faces the camera, so the back-face flip is skipped for it
     expect(mesh).toContain('#if defined(DOUBLE_SIDED) && !defined(FLAT_SHADING)')
   })
@@ -552,7 +552,7 @@ describe('rendering', () => {
     renderer.render(scene, camera())
     expect(freed()).toBe(0)
     renderer.bloom = false
-    renderer.render(scene, camera())
+    for (let i = 0; i < 31; i++) renderer.render(scene, camera())
     expect(freed()).toBeGreaterThan(0)
   })
 })

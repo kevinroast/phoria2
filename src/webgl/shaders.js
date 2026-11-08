@@ -195,6 +195,16 @@ vec3 linearToSrgb(vec3 c) {
   c = clamp(c, 0.0, 1.0);
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
 }
+// what a shader writes: premultiplied - the colour faded by its opacity, and how much of what is
+// behind it hides - as sRGB for a picture shown as it is, or with LINEAR_OUTPUT as linear light,
+// unclamped, into a float target that a later pass encodes once (ENCODE_FRAGMENT)
+vec4 outputColor(vec3 color, float alpha, float coverage) {
+#ifdef LINEAR_OUTPUT
+  return vec4(color * alpha, coverage);
+#else
+  return vec4(linearToSrgb(color) * alpha, coverage);
+#endif
+}
 `
 
 // a direction to equirectangular UVs: around from +x towards +z, and down from straight up (the
@@ -206,6 +216,21 @@ vec2 equirectUv(vec3 d) {
 vec3 equirectDirection(vec2 uv) {
   float phi = (uv.x - 0.5) * 6.28318531, theta = uv.y * 3.14159265;
   return vec3(cos(phi) * sin(theta), cos(theta), sin(phi) * sin(theta));
+}
+`
+
+// a picture drawn in linear light (LINEAR_OUTPUT) encoded as the sRGB the screen shows - once, at
+// the end of a chain that worked in linear light. Premultiplied in, premultiplied out: the colour is
+// taken out of its alpha, encoded, and put back
+export const ENCODE_FRAGMENT = /* glsl */ `
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uSource;
+out vec4 fragColor;
+${COMMON}
+void main() {
+  vec4 c = texture(uSource, vUv);
+  fragColor = c.a > 0.0 ? vec4(linearToSrgb(c.rgb / c.a) * c.a, c.a) : vec4(0.0);
 }
 `
 
@@ -1074,7 +1099,7 @@ void main() {
 
   // premultiplied alpha, so the canvas composites correctly over the page. The colour is the light
   // the surface sends back - faded with its opacity; coverage is how much of what is behind it hides
-  fragColor = vec4(linearToSrgb(color) * base.a, coverage);
+  fragColor = outputColor(color, base.a, coverage);
 }
 `
 
@@ -1233,7 +1258,7 @@ void main() {
 //@hook lit
   }
 #endif
-  fragColor = vec4(linearToSrgb(color) * base.a, base.a);
+  fragColor = outputColor(color, base.a, base.a);
 }
 `
 
@@ -1406,7 +1431,7 @@ void main() {
 //@hook lit
   }
 #endif
-  fragColor = vec4(linearToSrgb(color) * base.a, base.a);
+  fragColor = outputColor(color, base.a, base.a);
 }
 `
 

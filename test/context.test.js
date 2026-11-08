@@ -60,10 +60,12 @@ describe('GPU resources', () => {
     expect([count('framebuffer'), count('renderbuffer')]).toEqual([5, 2])
     renderer.setSize(128, 128)
     renderer.render(scene, camera())
-    // the old ones go; a level more at this size
+    // the old ones go once frames have gone by without them; a level more at this size
+    for (let i = 0; i < 31; i++) renderer.render(scene, camera())
     expect([count('framebuffer'), count('renderbuffer')]).toEqual([6, 2])
     renderer.bloom = false
-    renderer.render(scene, camera())
+    for (let i = 0; i < 31; i++) renderer.render(scene, camera())
+    expect([count('framebuffer'), count('renderbuffer')]).toEqual([0, 0])
     renderer.dispose(scene)
     expect([count('framebuffer'), count('renderbuffer')]).toEqual([0, 0])
   })
