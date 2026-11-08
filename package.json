@@ -81,6 +81,7 @@
     "perf": "node perf/run.mjs",
     "thumbs": "node scripts/thumbs.mjs",
     "colours": "node scripts/colours.mjs",
+    "shaders": "node scripts/shaders.mjs",
     "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run build",
     "plugin": "node scripts/plugin.mjs"
   },

@@ -20,6 +20,14 @@ commit and its tag, and GitHub publishes it.** Nothing is published from your ma
 
 - Everything you want in the release is committed and pushed, and the **CI** run for it on GitHub
   is green: <https://github.com/kevinroast/phoria2/actions>
+- The **shader check** passes on your machine. It compiles every shader variant the renderer can
+  build - each material feature and pair, hooks, instancing, every pass - on your GPU, in headless
+  Chrome, about a minute. The tests can't compile GLSL, so this is what catches a shader that would
+  stop a user's frame:
+
+  ```sh
+  npm run shaders
+  ```
 - You're in the phoria2 folder, with nothing uncommitted (`npm version` refuses to run otherwise):
 
   ```sh

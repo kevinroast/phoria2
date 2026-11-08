@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>phoria2 shader check</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; padding: 16px; background: #16161a; color: #e6e6ea; font: 14px/1.5 system-ui, sans-serif; }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      p { margin: 0 0 12px; color: #9a9aa6; }
+      canvas { width: 160px; height: 120px; display: block; margin-bottom: 12px; }
+      pre { font: 12px/1.4 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>phoria2 shader check</h1>
+    <p>Every shader variant the renderer builds - each material feature and pair, hooks, instancing, every pass, in plain, full and linear frames - compiled on this GPU. <code>npm run shaders</code> runs this headless.</p>
+    <canvas id="gl"></canvas>
+    <pre id="log">starting</pre>
+    <script type="module" src="/scripts/shaders-page.js"></script>
+  </body>
+</html>
