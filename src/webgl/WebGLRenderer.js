@@ -192,6 +192,55 @@ const CAP_SQUARE = new Geometry({
 // what a cap is drawn as - a plain node, never in a scene
 const CAP_NODE = /** @type {any} */ ({ drawMode: 'triangles', receiveShadow: true, castShadow: false, renderOrder: 0 })
 
+// The lit shaders' light arrays, by group: each uniform's size a light, and what an unused slot holds.
+// A light's group (scene/lights.js) says which it takes a slot in.
+const LIGHT_ARRAYS = {
+  directional: { uDirectionalDirection: [3, 0], uDirectionalColor: [3, 0] },
+  punctual: { uPunctualPosition: [3, 0], uPunctualColor: [3, 0], uPunctualRange: [1, 0], uPunctualDirection: [3, 0], uPunctualCone: [2, 0], uPunctualShadow: [1, -1] },
+}
+
+/** A light's colour times its intensity, added into `out` at `at`. @param {ArrayLike<number> & { [i: number]: number }} out @param {number} at @param {FrameLight} l @param {ArrayLike<number>} [c] */
+function addColor(out, at, l, c = l.color) {
+  out[at] += c[0] * l.intensity
+  out[at + 1] += c[1] * l.intensity
+  out[at + 2] += c[2] * l.intensity
+}
+
+/**
+ * How each kind of light goes into the lit shaders' uniforms - the sums it adds to, or the slot `i`
+ * of its group's arrays it fills. A new kind is a new entry (and its group's arrays, and its shader
+ * chunk in shaders.js).
+ * @type {Record<FrameLight['kind'], (l: FrameLight, u: Record<string, any>, i: number, frame: FrameDescription) => void>}
+ */
+const LIGHT_PACKING = {
+  ambient: (l, u) => addColor(u.uAmbient, 0, l),
+  hemisphere: (l, u) => {
+    addColor(u.uHemisphereSky, 0, l)
+    addColor(u.uHemisphereGround, 0, l, l.ground)
+  },
+  directional: (l, u, i) => {
+    const d = /** @type {ArrayLike<number>} */ (l.direction)
+    // the shader wants the direction towards the light
+    u.uDirectionalDirection.set([-d[0], -d[1], -d[2]], i * 3)
+    addColor(u.uDirectionalColor, i * 3, l)
+  },
+  point: (l, u, i, frame) => {
+    u.uPunctualPosition.set(/** @type {ArrayLike<number>} */ (l.position), i * 3)
+    addColor(u.uPunctualColor, i * 3, l)
+    u.uPunctualRange[i] = l.range ?? 0
+    if (l === frame.pointShadow?.light) u.uPointShadowIndex = i
+    // a cone wider than any angle: smoothstep(-2, -1, cos) is always 1
+    u.uPunctualCone.set([-2, -1], i * 2)
+  },
+  spot: (l, u, i, frame) => {
+    LIGHT_PACKING.point(l, u, i, frame)
+    u.uPunctualDirection.set(/** @type {ArrayLike<number>} */ (l.direction), i * 3)
+    u.uPunctualShadow[i] = l.shadowTile ?? -1
+    const angle = /** @type {number} */ (l.angle)
+    u.uPunctualCone.set([Math.cos(angle), Math.cos(angle * (1 - (l.penumbra ?? 0)))], i * 2)
+  },
+}
+
 /**
  * The world bounds of a frame's solids - what the effects' default sizes come from.
  * @param {FrameDescription} frame
@@ -689,63 +738,24 @@ export class WebGLRenderer {
 
   /**
    * The frame's lights as the lit shaders take them: their uniforms, the defines that size their
-   * arrays, and whether the built-in studio lights the scene.
+   * arrays, and whether the built-in studio lights the scene. Each group's arrays are sized to the
+   * lights in it - the programs are compiled for exactly that many - and each kind fills its slot
+   * (LIGHT_PACKING); light from all round adds to its sums.
    * @param {FrameDescription} frame
    * @returns {{ lights: Record<string, any>, lightDefines: string[], studio: boolean }}
    */
   #lightsOf(frame) {
-    const ambient = [0, 0, 0], sky = [0, 0, 0], ground = [0, 0, 0]
-    // sized to the lights there are: the programs are compiled for exactly that many
-    const directional = frame.lights.filter((l) => l.kind === 'directional').length
-    const punctual = frame.lights.filter((l) => l.kind === 'point' || l.kind === 'spot').length
-    const dirDirection = new Float32Array(directional * 3), dirColor = new Float32Array(directional * 3)
-    const pos = new Float32Array(punctual * 3), color = new Float32Array(punctual * 3)
-    const range = new Float32Array(punctual), direction = new Float32Array(punctual * 3), shadowTile = new Float32Array(punctual).fill(-1)
-    const cone = new Float32Array(punctual * 2)
-    let dirCount = 0, punctualCount = 0, pointShadowIndex = -1
-    /** @param {number[] | Float32Array} out @param {number} offset @param {FrameLight} l @param {ArrayLike<number>} [c] */
-    const addColor = (out, offset, l, c = l.color) => {
-      out[offset] += c[0] * l.intensity
-      out[offset + 1] += c[1] * l.intensity
-      out[offset + 2] += c[2] * l.intensity
+    /** @type {Record<string, any>} */
+    const lights = { uAmbient: [0, 0, 0], uHemisphereSky: [0, 0, 0], uHemisphereGround: [0, 0, 0], uPointShadowIndex: -1 }
+    const defines = []
+    for (const [group, arrays] of Object.entries(LIGHT_ARRAYS)) {
+      const n = frame.lights.filter((l) => l.group === group).length
+      for (const [name, [size, fill]] of Object.entries(arrays)) lights[name] = new Float32Array(n * size).fill(fill)
+      defines.push(`NUM_${group.toUpperCase()} ${n}`)
     }
-    for (const l of frame.lights) {
-      if (l.kind === 'ambient') addColor(ambient, 0, l)
-      else if (l.kind === 'hemisphere') {
-        addColor(sky, 0, l)
-        addColor(ground, 0, l, l.ground)
-      } else if (l.kind === 'directional') {
-        const d = /** @type {ArrayLike<number>} */ (l.direction)
-        // the shader wants the direction towards the light
-        dirDirection.set([-d[0], -d[1], -d[2]], dirCount * 3)
-        addColor(dirColor, dirCount * 3, l)
-        dirCount++
-      } else {
-        const i = punctualCount++
-        pos.set(/** @type {ArrayLike<number>} */ (l.position), i * 3)
-        addColor(color, i * 3, l)
-        range[i] = l.range ?? 0
-        if (l === frame.pointShadow?.light) pointShadowIndex = i
-        if (l.kind === 'spot') {
-          direction.set(/** @type {ArrayLike<number>} */ (l.direction), i * 3)
-          shadowTile[i] = l.shadowTile ?? -1
-          const angle = /** @type {number} */ (l.angle)
-          cone[i * 2] = Math.cos(angle)
-          cone[i * 2 + 1] = Math.cos(angle * (1 - (l.penumbra ?? 0)))
-        } else {
-          // a cone wider than any angle: smoothstep(-2, -1, cos) is always 1
-          cone[i * 2] = -2
-          cone[i * 2 + 1] = -1
-        }
-      }
-    }
-    const lights = {
-      uAmbient: ambient, uHemisphereSky: sky, uHemisphereGround: ground,
-      uDirectionalDirection: dirDirection, uDirectionalColor: dirColor,
-      uPunctualPosition: pos, uPunctualColor: color, uPunctualRange: range,
-      uPunctualDirection: direction, uPunctualCone: cone, uPunctualShadow: shadowTile, uPointShadowIndex: pointShadowIndex,
-    }
-    return { lights, lightDefines: [`NUM_DIRECTIONAL ${dirCount}`, `NUM_PUNCTUAL ${punctualCount}`], studio: frame.environment === 'studio' }
+    const next = { directional: 0, punctual: 0 }
+    for (const l of frame.lights) LIGHT_PACKING[l.kind](l, lights, l.group ? next[l.group]++ : 0, frame)
+    return { lights, lightDefines: defines, studio: frame.environment === 'studio' }
   }
 
   /** @param {DrawItem} item @param {FrameDescription} frame @param {boolean} transparent @param {FrameState} state */

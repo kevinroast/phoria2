@@ -179,7 +179,7 @@ export function explain(info) {
     if (fx.groundShadow && !solids) {
       warnings.push("groundShadow is on but nothing casts it - every mesh only receives shadows (receiveShadow on, castShadow off), or is see-through; set castShadow: true on what should cast")
     }
-    const fromAllRound = frame.environment !== 'none' || frame.lights.some((l) => l.kind === 'ambient' || l.kind === 'hemisphere')
+    const fromAllRound = frame.environment !== 'none' || frame.lights.some((l) => !l.group)
     if (fx.ambientOcclusion && !fromAllRound) {
       warnings.push("ambientOcclusion is on but there is no light from all round for it to dim - it leaves direct light alone; add a HemisphereLight or AmbientLight, or set scene.environment")
     }

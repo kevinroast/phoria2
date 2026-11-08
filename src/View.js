@@ -1488,10 +1488,7 @@ export class View {
       this.#noted = true
       console.info('phoria2: the scene has no lights, so the View is lighting it (autoLight: false turns this off)')
     }
-    const hemi = this.#autoSky, sun = this.#autoSun
-    frame.lights.push(
-      { kind: 'hemisphere', node: hemi, color: hemi.sky, ground: hemi.ground, intensity: hemi.intensity },
-      { kind: 'directional', node: sun, color: sun.color, intensity: sun.intensity, direction: sun.worldDirection })
+    frame.lights.push(this.#autoSky.toFrameLight(), this.#autoSun.toFrameLight())
   }
 }
 

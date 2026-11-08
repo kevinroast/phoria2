@@ -381,6 +381,108 @@ void main() {
 }
 `
 
+// ---- The lights, a chunk a kind of light: its uniforms, and a loop over its group's array working
+// out each light's direction (l) and the light arriving (radiance), which LIGHT_CONTRIBUTION adds to
+// the surface. Light counts are compiled in (NUM_DIRECTIONAL, NUM_PUNCTUAL), so a simply lit scene
+// runs only the loops it needs. A new kind of light is a chunk here, its uniforms packed by the
+// renderer (LIGHT_ARRAYS, LIGHT_PACKING in WebGLRenderer.js) and its entry made by its class.
+
+// light from all round - ambient and hemisphere, summed by the renderer - read by irradianceAt()
+const ALL_ROUND_UNIFORMS = /* glsl */ `
+uniform vec3 uAmbient;
+uniform vec3 uHemisphereSky;
+uniform vec3 uHemisphereGround;
+`
+const DIRECTIONAL_UNIFORMS = /* glsl */ `
+#if NUM_DIRECTIONAL > 0
+uniform vec3 uDirectionalDirection[NUM_DIRECTIONAL]; // towards the light
+uniform vec3 uDirectionalColor[NUM_DIRECTIONAL];
+#endif
+`
+const PUNCTUAL_UNIFORMS = /* glsl */ `
+#if NUM_PUNCTUAL > 0
+uniform vec3 uPunctualPosition[NUM_PUNCTUAL];
+uniform vec3 uPunctualColor[NUM_PUNCTUAL];
+uniform float uPunctualRange[NUM_PUNCTUAL];
+uniform vec3 uPunctualDirection[NUM_PUNCTUAL];      // spot: the way the light travels
+uniform vec2 uPunctualCone[NUM_PUNCTUAL];           // spot: cos(outer), cos(inner); point: (-2, -1)
+#endif
+`
+
+// what one light adds to the surface, arriving from l with radiance: lit directly, on the coat and
+// the sheen too
+const LIGHT_CONTRIBUTION = /* glsl */ `
+    color += shade(n, v, l, radiance, diffuse, f0, f90, a);
+#ifdef CLEARCOAT
+    coat += coatShade(surfaceNormal, v, l, radiance, coatA);
+#endif
+#ifdef SHEEN
+    sheen += sheenShade(n, v, l, radiance, sheenRoughness * sheenRoughness);
+#endif`
+
+/**
+ * A translucent surface lit from behind by the same light: `light` is what arrives at the far side,
+ * worked out by the code given - shadowed as the far side is, as what lights it comes through.
+ * @param {string} light GLSL declaring vec3 light
+ */
+const throughLight = (light) => /* glsl */ `
+#ifdef TRANSLUCENCY
+    float behind = clamp(-dot(n, l), 0.0, 1.0);
+    if (behind > 0.0) {
+      ${light}
+      color += through * light * behind;
+    }
+#endif`
+
+// directional lights: parallel, from far away; the shadow-casting one always comes first
+const DIRECTIONAL_LIGHTS = /* glsl */ `
+#if NUM_DIRECTIONAL > 0
+  for (int i = 0; i < NUM_DIRECTIONAL; i++) {
+    vec3 l = uDirectionalDirection[i];
+    vec3 radiance = uDirectionalColor[i];
+#ifdef SHADOW
+    if (i == 0) radiance *= shadowAt(surfaceNormal, l);
+#endif
+${LIGHT_CONTRIBUTION}
+${throughLight(`vec3 light = uDirectionalColor[i];
+#ifdef SHADOW
+      if (i == 0) light *= shadowAt(-surfaceNormal, l);
+#endif`)}
+  }
+#endif`
+
+// point and spot lights: from a point, falling off with distance - a spot within its cone
+const PUNCTUAL_LIGHTS = /* glsl */ `
+#if NUM_PUNCTUAL > 0
+  for (int i = 0; i < NUM_PUNCTUAL; i++) {
+    vec3 toLight = uPunctualPosition[i] - vWorldPosition;
+    float d = length(toLight);
+    vec3 l = toLight / max(d, 1e-4);
+    // inverse square, faded to zero at range (KHR_lights_punctual)
+    float falloff = 1.0 / max(d * d, 1e-4);
+    float range = uPunctualRange[i];
+    if (range > 0.0) falloff *= pow(clamp(1.0 - pow(d / range, 4.0), 0.0, 1.0), 2.0);
+    float cosAngle = dot(-l, uPunctualDirection[i]);
+    float cone = smoothstep(uPunctualCone[i].x, uPunctualCone[i].y, cosAngle);
+    vec3 radiance = uPunctualColor[i] * falloff * cone;
+#ifdef SPOT_SHADOWS
+    float tile = uPunctualShadow[i];
+    if (tile >= 0.0 && cone > 0.0) radiance *= spotShadowAt(int(tile), surfaceNormal, d);
+#endif
+#ifdef POINT_SHADOW
+    if (float(i) == uPointShadowIndex) radiance *= pointShadowAt(uPunctualPosition[i], surfaceNormal, d);
+#endif
+${LIGHT_CONTRIBUTION}
+${throughLight(`vec3 light = uPunctualColor[i] * falloff * cone;
+#ifdef SPOT_SHADOWS
+      if (tile >= 0.0 && cone > 0.0) light *= spotShadowAt(int(tile), -surfaceNormal, d);
+#endif
+#ifdef POINT_SHADOW
+      if (float(i) == uPointShadowIndex) light *= pointShadowAt(uPunctualPosition[i], -surfaceNormal, d);
+#endif`)}
+  }
+#endif`
+
 const MESH_FRAGMENT = /* glsl */ `
 precision highp float;
 precision highp sampler2DShadow;
@@ -494,29 +596,15 @@ in vec4 vTangent;
 uniform vec4 uTranslucency;  // the light let through: linear colour with the amount applied, and the amount
 #endif
 
-uniform vec3 uAmbient;
-uniform vec3 uHemisphereSky;
-uniform vec3 uHemisphereGround;
+${ALL_ROUND_UNIFORMS}
 #ifdef ENV_MAP
 uniform sampler2D uEnvMap;   // equirectangular, prefiltered: each mip a step rougher
 uniform float uEnvMaxLod;
 uniform vec3 uEnvSH[9];      // irradiance as spherical harmonics, already divided by PI
 uniform float uEnvIntensity;
 #endif
-
-// light counts are compiled in (NUM_DIRECTIONAL, NUM_PUNCTUAL), so a simply lit scene runs only
-// the loops it needs - no slots for lights that aren't there
-#if NUM_DIRECTIONAL > 0
-uniform vec3 uDirectionalDirection[NUM_DIRECTIONAL]; // towards the light
-uniform vec3 uDirectionalColor[NUM_DIRECTIONAL];
-#endif
-#if NUM_PUNCTUAL > 0
-uniform vec3 uPunctualPosition[NUM_PUNCTUAL];
-uniform vec3 uPunctualColor[NUM_PUNCTUAL];
-uniform float uPunctualRange[NUM_PUNCTUAL];
-uniform vec3 uPunctualDirection[NUM_PUNCTUAL];      // spot: the way the light travels
-uniform vec2 uPunctualCone[NUM_PUNCTUAL];           // spot: cos(outer), cos(inner); point: (-2, -1)
-#endif
+${DIRECTIONAL_UNIFORMS}
+${PUNCTUAL_UNIFORMS}
 
 #ifdef SHADOW
 uniform sampler2DShadow uShadowMap; // the first directional light's depth
@@ -961,74 +1049,8 @@ void main() {
 #endif
 
   vec3 color = vec3(0.0);
-#if NUM_DIRECTIONAL > 0
-  for (int i = 0; i < NUM_DIRECTIONAL; i++) {
-    vec3 radiance = uDirectionalColor[i];
-#ifdef SHADOW
-    // the shadow-casting light always comes first
-    if (i == 0) radiance *= shadowAt(surfaceNormal, uDirectionalDirection[0]);
-#endif
-    color += shade(n, v, uDirectionalDirection[i], radiance, diffuse, f0, f90, a);
-#ifdef CLEARCOAT
-    coat += coatShade(surfaceNormal, v, uDirectionalDirection[i], radiance, coatA);
-#endif
-#ifdef SHEEN
-    sheen += sheenShade(n, v, uDirectionalDirection[i], radiance, sheenRoughness * sheenRoughness);
-#endif
-#ifdef TRANSLUCENCY
-    float behind = clamp(-dot(n, uDirectionalDirection[i]), 0.0, 1.0);
-    if (behind > 0.0) {
-      vec3 light = uDirectionalColor[i];
-#ifdef SHADOW
-      // shadowed as the far side is: what lights it comes through
-      if (i == 0) light *= shadowAt(-surfaceNormal, uDirectionalDirection[0]);
-#endif
-      color += through * light * behind;
-    }
-#endif
-  }
-#endif
-#if NUM_PUNCTUAL > 0
-  for (int i = 0; i < NUM_PUNCTUAL; i++) {
-    vec3 toLight = uPunctualPosition[i] - vWorldPosition;
-    float d = length(toLight);
-    vec3 l = toLight / max(d, 1e-4);
-    // inverse square, faded to zero at range (KHR_lights_punctual)
-    float falloff = 1.0 / max(d * d, 1e-4);
-    float range = uPunctualRange[i];
-    if (range > 0.0) falloff *= pow(clamp(1.0 - pow(d / range, 4.0), 0.0, 1.0), 2.0);
-    float cosAngle = dot(-l, uPunctualDirection[i]);
-    float cone = smoothstep(uPunctualCone[i].x, uPunctualCone[i].y, cosAngle);
-    vec3 radiance = uPunctualColor[i] * falloff * cone;
-#ifdef SPOT_SHADOWS
-    float tile = uPunctualShadow[i];
-    if (tile >= 0.0 && cone > 0.0) radiance *= spotShadowAt(int(tile), surfaceNormal, d);
-#endif
-#ifdef POINT_SHADOW
-    if (float(i) == uPointShadowIndex) radiance *= pointShadowAt(uPunctualPosition[i], surfaceNormal, d);
-#endif
-    color += shade(n, v, l, radiance, diffuse, f0, f90, a);
-#ifdef CLEARCOAT
-    coat += coatShade(surfaceNormal, v, l, radiance, coatA);
-#endif
-#ifdef SHEEN
-    sheen += sheenShade(n, v, l, radiance, sheenRoughness * sheenRoughness);
-#endif
-#ifdef TRANSLUCENCY
-    float behind = clamp(-dot(n, l), 0.0, 1.0);
-    if (behind > 0.0) {
-      vec3 light = uPunctualColor[i] * falloff * cone;
-#ifdef SPOT_SHADOWS
-      if (tile >= 0.0 && cone > 0.0) light *= spotShadowAt(int(tile), -surfaceNormal, d);
-#endif
-#ifdef POINT_SHADOW
-      if (float(i) == uPointShadowIndex) light *= pointShadowAt(uPunctualPosition[i], -surfaceNormal, d);
-#endif
-      color += through * light * behind;
-    }
-#endif
-  }
-#endif
+${DIRECTIONAL_LIGHTS}
+${PUNCTUAL_LIGHTS}
 
   // ambient: flat, hemisphere and environment light
   vec3 irradiance = irradianceAt(n);

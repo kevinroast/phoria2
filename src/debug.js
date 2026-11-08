@@ -12,7 +12,7 @@ import { Box3 } from './value/Box3.js'
 import { Mat4 } from './value/Mat4.js'
 import { Vec3 } from './value/Vec3.js'
 
-/** @import { DrawItem, FrameDescription } from './frame.js' */
+/** @import { DrawItem, FrameDescription, FrameLight } from './frame.js' */
 /** @import { Hit } from './Raycaster.js' */
 /** @import { Camera } from './scene/cameras.js' */
 
@@ -36,6 +36,52 @@ import { Vec3 } from './value/Vec3.js'
 const COLORS = { shadow: [1, 0.8, 0], bounds: [0, 0.9, 1], normal: [1, 0.31, 0.85], camera: [1, 1, 1] }
 // normals, when shown for everything: past these a model would be a hedgehog
 const NORMALS_PER_MESH = 5000, NORMALS_IN_ALL = 40000
+
+/**
+ * What a light's shape is drawn with: line segments and circles, in world space.
+ * @typedef {object} Pen
+ * @property {(a: ArrayLike<number>, b: ArrayLike<number>, c: ArrayLike<number>) => void} segment
+ * @property {(centre: Vec3, u: Vec3, v: Vec3, r: number, c: ArrayLike<number>, segments?: number) => void} circle
+ */
+
+/**
+ * How each kind of light is drawn, in its colour `c`, scaled to the scene's size round its middle.
+ * Light from all round (ambient, hemisphere) has no shape to draw.
+ * @type {Partial<Record<FrameLight['kind'], (l: FrameLight, pen: Pen, c: ArrayLike<number>, size: number, middle: Vec3) => void>>}
+ */
+const LIGHT_SHAPES = {
+  // an arrow coming in over the scene's middle, the way the light travels
+  directional: (l, pen, c, size, middle) => {
+    if (!l.direction) return
+    const d = new Vec3().copy(l.direction).normalize()
+    const from = moved(middle, d, -size * 1.1), to = moved(middle, d, -size * 0.45)
+    pen.segment(from, to, c)
+    const [u, v] = across(d)
+    for (const s of [u, v, u.clone().negate(), v.clone().negate()]) {
+      pen.segment(to, moved(moved(to, d, -size * 0.08), s, size * 0.04), c)
+    }
+  },
+  // a small sphere, and a ring at its range
+  point: (l, pen, c, size) => {
+    if (!l.position) return
+    const p = new Vec3().copy(l.position), r = size * 0.06
+    pen.circle(p, X, Y, r, c, 16)
+    pen.circle(p, X, Z, r, c, 16)
+    pen.circle(p, Y, Z, r, c, 16)
+    if (l.range) pen.circle(p, X, Z, l.range, c, 48)
+  },
+  // the cone out to its range (or the scene's size), with a ring where its edge is
+  spot: (l, pen, c, size) => {
+    if (!l.position || !l.direction) return
+    const p = new Vec3().copy(l.position), d = new Vec3().copy(l.direction).normalize()
+    const length = l.range ? Math.min(l.range, size * 2) : size, r = length * Math.tan(l.angle ?? Math.PI / 4)
+    const end = moved(p, d, length)
+    const [u, v] = across(d)
+    pen.circle(end, u, v, r, c, 32)
+    for (const s of [u, v, u.clone().negate(), v.clone().negate()]) pen.segment(p, moved(end, s, r), c)
+    pen.segment(p, end, c)
+  },
+}
 
 export class DebugDraw {
   #scene = new Scene()
@@ -181,35 +227,13 @@ export class DebugDraw {
     for (const [i, j] of EDGES) this.#segment(corner(i), corner(j), c)
   }
 
-  /** @param {FrameDescription} frame @param {number} size @param {Vec3} middle */
+  /** Each light, drawn as its kind is (LIGHT_SHAPES). @param {FrameDescription} frame @param {number} size @param {Vec3} middle */
   #lights(frame, size, middle) {
+    /** @type {Pen} */
+    const pen = { segment: (a, b, c) => this.#segment(a, b, c), circle: (...args) => this.#circle(...args) }
     for (const l of frame.lights) {
       const c = l.color.toSRGB().map((x) => Math.min(1, x))
-      if (l.kind === 'directional' && l.direction) {
-        // an arrow coming in over the scene's middle, the way the light travels
-        const d = new Vec3().copy(l.direction).normalize()
-        const from = moved(middle, d, -size * 1.1), to = moved(middle, d, -size * 0.45)
-        this.#segment(from, to, c)
-        const [u, v] = across(d)
-        for (const s of [u, v, u.clone().negate(), v.clone().negate()]) {
-          this.#segment(to, moved(moved(to, d, -size * 0.08), s, size * 0.04), c)
-        }
-      } else if (l.kind === 'point' && l.position) {
-        const p = new Vec3().copy(l.position), r = size * 0.06
-        this.#circle(p, X, Y, r, c, 16)
-        this.#circle(p, X, Z, r, c, 16)
-        this.#circle(p, Y, Z, r, c, 16)
-        if (l.range) this.#circle(p, X, Z, l.range, c, 48)
-      } else if (l.kind === 'spot' && l.position && l.direction) {
-        // the cone out to its range (or the scene's size), with a ring where its edge is
-        const p = new Vec3().copy(l.position), d = new Vec3().copy(l.direction).normalize()
-        const length = l.range ? Math.min(l.range, size * 2) : size, r = length * Math.tan(l.angle ?? Math.PI / 4)
-        const end = moved(p, d, length)
-        const [u, v] = across(d)
-        this.#circle(end, u, v, r, c, 32)
-        for (const s of [u, v, u.clone().negate(), v.clone().negate()]) this.#segment(p, moved(end, s, r), c)
-        this.#segment(p, end, c)
-      }
+      LIGHT_SHAPES[l.kind]?.(l, pen, c, size, middle)
     }
   }
 

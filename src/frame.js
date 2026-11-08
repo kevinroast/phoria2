@@ -25,10 +25,17 @@ import { drawKind, isInstanced } from './scene/kinds.js'
 
 /** Per-scene light limits for the WebGL 2 renderer; extras are dropped with a warning. */
 export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
+// what is said when a group is over its limit
+const OVER_LIMIT = {
+  directional: `more than ${LIGHT_LIMITS.directional} directional lights - the extras are ignored; use scene.environment for more light`,
+  punctual: `more than ${LIGHT_LIMITS.punctual} point and spot lights - the extras are ignored`,
+}
 
 /**
  * @typedef {object} FrameLight
  * @property {'ambient' | 'hemisphere' | 'directional' | 'point' | 'spot'} kind
+ * @property {'directional' | 'punctual' | null} group the lit shaders' light array it takes a slot in
+ *   (limited by LIGHT_LIMITS), or null for light from all round
  * @property {Node} node
  * @property {Color} color
  * @property {number} intensity
@@ -209,7 +216,8 @@ export function collect(scene, camera, { display = true } = {}) {
     solids: [],
     scene,
   }
-  let punctual = 0, directional = 0
+  // lights in each limited group so far
+  const inGroup = { directional: 0, punctual: 0 }
   // shadows: what casts (seen or not - a shadow can fall into view from off screen) and what
   // receives; only looked at further when a light casts
   /** @type {[any, FrameClip | null][]} */
@@ -272,29 +280,11 @@ export function collect(scene, camera, { display = true } = {}) {
     for (const child of node.children) visit(child, clip, outline)
   }
 
-  /** @param {any} node */
+  /** A light, as its frame entry - unless its group is full. @param {any} node */
   const addLight = (node) => {
-    const kind = node.lightKind
-    if (kind === 'ambient') {
-      frame.lights.push({ kind: 'ambient', node, color: node.color, intensity: node.intensity })
-    } else if (kind === 'hemisphere') {
-      frame.lights.push({ kind: 'hemisphere', node, color: node.sky, ground: node.ground, intensity: node.intensity })
-    } else if (kind === 'directional') {
-      if (++directional > LIGHT_LIMITS.directional) {
-        warnOnce(scene, `more than ${LIGHT_LIMITS.directional} directional lights - the extras are ignored; use scene.environment for more light`)
-      } else {
-        frame.lights.push({ kind: 'directional', node, color: node.color, intensity: node.intensity, direction: node.worldDirection, castShadow: node.castShadow })
-      }
-    } else {
-      if (++punctual > LIGHT_LIMITS.punctual) {
-        warnOnce(scene, `more than ${LIGHT_LIMITS.punctual} point and spot lights - the extras are ignored`)
-      } else if (kind === 'spot') {
-        frame.lights.push({ kind: 'spot', node, color: node.color, intensity: node.intensity, position: node.worldPosition,
-          direction: node.worldDirection, range: node.range, angle: node.angle, penumbra: node.penumbra, castShadow: node.castShadow, shadowTile: -1 })
-      } else {
-        frame.lights.push({ kind: 'point', node, color: node.color, intensity: node.intensity, position: node.worldPosition, range: node.range, castShadow: node.castShadow })
-      }
-    }
+    const group = /** @type {'directional' | 'punctual' | null} */ (node.lightGroup)
+    if (group && ++inGroup[group] > LIGHT_LIMITS[group]) return warnOnce(scene, OVER_LIMIT[group])
+    frame.lights.push(node.toFrameLight())
   }
   visit(scene, null, null)
   frame.outlines = frame.outlines.filter((o) => o.items.length)

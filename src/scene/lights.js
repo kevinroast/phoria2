@@ -9,6 +9,12 @@ import { NODE_OPTIONS, Node, inParentSpace, setPoint } from './Node.js'
 
 /** @typedef {NodeOptions & { color?: ColorInput, intensity?: number }} LightOptions */
 /** @typedef {'ambient' | 'hemisphere' | 'directional' | 'point' | 'spot'} LightKind */
+/**
+ * Which of the lit shaders' light arrays a kind takes a slot in - each limited (LIGHT_LIMITS) - or
+ * null for light from all round, which adds to one sum.
+ * @typedef {'directional' | 'punctual' | null} LightGroup
+ */
+/** @import { FrameLight } from '../frame.js' */
 
 const LIGHT_OPTIONS = [...NODE_OPTIONS, 'color', 'intensity']
 const LIGHT_HINTS = {
@@ -27,10 +33,26 @@ export class Light extends Node {
   static HINTS = LIGHT_HINTS
   /** @internal What kind of light, for renderers - read without importing every light class. @type {LightKind} */
   static kind = 'ambient'
+  /** @internal Which light array it takes a slot in. @type {LightGroup} */
+  static group = null
 
   /** @internal @returns {LightKind} */
   get lightKind() {
     return /** @type {typeof Light} */ (this.constructor).kind
+  }
+
+  /** @internal @returns {LightGroup} */
+  get lightGroup() {
+    return /** @type {typeof Light} */ (this.constructor).group
+  }
+
+  /**
+   * @internal This light as a frame has it: its kind and group, colour and intensity - and what each
+   * kind adds (where it is, which way it shines, how far, its cone) - in world space, as of now.
+   * @returns {FrameLight}
+   */
+  toFrameLight() {
+    return { kind: this.lightKind, group: this.lightGroup, node: this, color: this.color, intensity: this.intensity }
   }
 
   #color = new Color(0xffffff)
@@ -99,6 +121,11 @@ export class HemisphereLight extends Light {
   get ground() { return this.#ground }
   /** @param {ColorInput} v */
   set ground(v) { this.#ground.set(v, 'HemisphereLight') }
+
+  /** @internal @returns {FrameLight} */
+  toFrameLight() {
+    return { ...super.toFrameLight(), ground: this.#ground }
+  }
 
   /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
@@ -190,6 +217,8 @@ export class DirectionalLight extends AimedLight {
   static type = 'directional-light'
   /** @internal @type {LightKind} */
   static kind = 'directional'
+  /** @internal @type {LightGroup} */
+  static group = 'directional'
   static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'castShadow', 'shadowBounds'] }
 
   castShadow = false
@@ -215,6 +244,11 @@ export class DirectionalLight extends AimedLight {
 
   /** @param {Box3Input | null} v */
   set shadowBounds(v) { this.#setShadowBounds(v) }
+
+  /** @internal @returns {FrameLight} */
+  toFrameLight() {
+    return { ...super.toFrameLight(), direction: this.worldDirection, castShadow: this.castShadow }
+  }
 
   /** @param {Box3Input | null} v */
   #setShadowBounds(v) {
@@ -249,6 +283,8 @@ export class PointLight extends Light {
   static type = 'point-light'
   /** @internal @type {LightKind} */
   static kind = 'point'
+  /** @internal @type {LightGroup} */
+  static group = 'punctual'
   static get OPTIONS() { return [...LIGHT_OPTIONS, 'range', 'castShadow'] }
 
   /** Distance where the light fades to nothing; 0 for unlimited. */
@@ -267,6 +303,11 @@ export class PointLight extends Light {
     if (options.castShadow !== undefined) this.castShadow = !!options.castShadow
   }
 
+  /** @internal @returns {FrameLight} */
+  toFrameLight() {
+    return { ...super.toFrameLight(), position: this.worldPosition, range: this.range, castShadow: this.castShadow }
+  }
+
   /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
     return { ...super.cloneOptions(), range: this.range, castShadow: this.castShadow }
@@ -283,6 +324,8 @@ export class SpotLight extends AimedLight {
   static type = 'spot-light'
   /** @internal @type {LightKind} */
   static kind = 'spot'
+  /** @internal @type {LightGroup} */
+  static group = 'punctual'
   static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'range', 'angle', 'penumbra', 'castShadow'] }
 
   range = 0
@@ -306,6 +349,12 @@ export class SpotLight extends AimedLight {
       this.penumbra = checkNumber('SpotLight', 'penumbra', options.penumbra)
       if (this.penumbra < 0 || this.penumbra > 1) fail('SpotLight', `'penumbra' must be 0-1, got ${this.penumbra}`)
     }
+  }
+
+  /** @internal @returns {FrameLight} */
+  toFrameLight() {
+    return { ...super.toFrameLight(), position: this.worldPosition, direction: this.worldDirection, range: this.range,
+      angle: this.angle, penumbra: this.penumbra, castShadow: this.castShadow, shadowTile: -1 }
   }
 
   /** @internal @returns {Record<string, unknown>} */
