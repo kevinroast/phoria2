@@ -132,5 +132,8 @@ export default defineConfig(({ mode }) => ({
       },
   test: {
     include: ['test/**/*.test.js'],
+    // the console notes and warnings scenes give - autoLight's, option hints - only for a failing
+    // test, where they help; tests that check a warning spy on the console themselves
+    silent: 'passed-only',
   },
 }))
