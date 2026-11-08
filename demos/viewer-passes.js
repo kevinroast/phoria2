@@ -14,7 +14,7 @@ export default function run({ canvas, gui }) {
     canvas, background: '#e7e5e1', camera: { position: [5.2, 3.6, 6.4], target: [0, 0.7, 0], fov: 35 },
     orbit: { autoRotate: false, maxPitch: 1.35 },
     // no multisampling, as on a phone: FXAA stands in for it
-    antialias: false, ambientOcclusion: true, groundShadow: true, fxaa: false, autoLight: false,
+    antialias: false, ambientOcclusion: true, groundShadow: true, fxaa: true, autoLight: false,
   })
   const { scene } = view
   scene.environment = 'hdr/studio_small_09_1k.hdr'
@@ -49,7 +49,7 @@ export default function run({ canvas, gui }) {
   const floor = scene.add(new Mesh({ geometry: cylinder({ radius: 4.5, height: 0.02, segments: 96 }), position: [0, -0.01, 0], material: { color: '#ddd8d1', roughness: 0.8 }, receiveShadow: true, pickable: false }))
 
   // ---- each pass on its own switch, and its settings
-  const settings = { turntable: false, occlusion: true, strength: 1, radius: 0, ground: true, opacity: 0.6, softness: 0.5, height: 0, fxaa: false, floor: true }
+  const settings = { turntable: false, occlusion: true, strength: 1, radius: 0, ground: true, opacity: 0.6, softness: 0.5, height: 0, fxaa: true, floor: true }
   const occlusion = () => { view.ambientOcclusion = settings.occlusion && { strength: settings.strength, ...(settings.radius > 0 ? { radius: settings.radius } : {}) } }
   const ground = () => { view.groundShadow = settings.ground && { opacity: settings.opacity, softness: settings.softness, ...(settings.height > 0 ? { height: settings.height } : {}) } }
   gui.add(settings, 'turntable').onChange((v) => { view.controls.autoRotate = v })
