@@ -3,10 +3,23 @@
 // its shader hooks. One place says how, so a new kind of shape reaches every pass at once.
 import { hookFor, passDefines } from './hooks.js'
 import { uvMatrix } from './resources.js'
+import { secondUvDefines } from '../material/features.js'
 
 /** @import { DrawItem } from '../frame.js' */
 /** @import { Hook } from './hooks.js' */
 /** @import { Texture } from '../material/Texture.js' */
+
+/**
+ * How an item is placed and cut - every pass that draws it, the picture's own included: its
+ * instances, and the clip that cuts it.
+ * @param {DrawItem} item
+ * @returns {string[]}
+ */
+export function placementDefines(item) {
+  const defines = item.instances ? ['INSTANCED'] : []
+  if (item.clip) defines.push('CLIP')
+  return defines
+}
 
 /**
  * The defines for drawing an item's shape, its hooks, and whether it is a cut-out.
@@ -15,9 +28,8 @@ import { uvMatrix } from './resources.js'
  * @returns {{ defines: string[], hook: Hook | null, cutout: boolean }}
  */
 export function shapeDefines(item, fragmentHook) {
-  const { material, instances, clip, geometry } = item
-  const defines = instances ? ['INSTANCED'] : []
-  if (clip) defines.push('CLIP')
+  const { material, geometry } = item
+  const defines = placementDefines(item)
   // a cut-out's holes: the map's alpha against the material's threshold, the map read as the
   // picture reads it - projected, for a triplanar one; from the second UV set, if it is on that
   const cutout = material.alphaTest > 0
@@ -26,7 +38,7 @@ export function shapeDefines(item, fragmentHook) {
     if (material.map) {
       defines.push('MAP')
       if (material.triplanar > 0) defines.push('TRIPLANAR')
-      if (material.map.uvSet === 1 && geometry.uvs2) defines.push('UV2', 'uMapSet vUv2')
+      defines.push(...secondUvDefines(material, geometry, ['map']))
     }
   }
   const hook = hookFor(material)

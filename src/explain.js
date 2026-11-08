@@ -57,9 +57,9 @@ export function explain(info) {
   lines.push(`Camera: ${ortho ? `orthographic, ${fmt(cam.height)} units high` : `perspective, fov ${fmt(cam.fov)}`}, ` +
     `at ${vec(cam.position)}${cam.target ? ` looking at ${vec(cam.target)}` : ''}, near ${fmt(cam.near)}, far ${fmt(cam.far)}`)
 
-  // what was drawn, by kind
+  // what was drawn, by kind - always in this order, whatever order they were drawn in
   const items = [...frame.opaque, ...frame.transparent]
-  const kinds = new Map()
+  const kinds = new Map(['mesh', 'instanced mesh', 'points', 'lines'].map((k) => [k, { n: 0, items: 0 }]))
   for (const { node, instances } of items) {
     const kind = instances ? 'instanced mesh' : /** @type {any} */ (node).drawMode === 'points' ? 'points' : /** @type {any} */ (node).drawMode === 'lines' ? 'lines' : 'mesh'
     const k = kinds.get(kind) ?? { n: 0, items: 0 }
@@ -67,7 +67,7 @@ export function explain(info) {
     k.items += instances ? instances.count : kind === 'points' ? node.geometry.drawnVertices : 0
     kinds.set(kind, k)
   }
-  const drawn = [...kinds].map(([kind, k]) => `${k.n} ${kind}${k.items ? ` (${k.items.toLocaleString('en')} ${kind === 'points' ? 'points' : 'instances'})` : ''}`)
+  const drawn = [...kinds].filter(([, k]) => k.n).map(([kind, k]) => `${k.n} ${kind}${k.items ? ` (${k.items.toLocaleString('en')} ${kind === 'points' ? 'points' : 'instances'})` : ''}`)
   lines.push(`Scene: ${plural(info.nodes, 'node')}; drew ${frame.stats.drawn}${drawn.length ? ` - ${drawn.join(', ')}` : ''}; ` +
     `${frame.stats.culled} outside the view`)
   for (const note of info.notes ?? []) lines.push(note)

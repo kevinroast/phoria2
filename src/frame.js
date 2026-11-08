@@ -7,6 +7,7 @@ import { warnOnce } from './validate.js'
 import { fitPointShadow, fitShadow, fitSpotShadow, SPOT_TILES } from './shadow.js'
 import { worldPlane } from './clip.js'
 import { hiddenInstance } from './scene/drawables.js'
+import { variantOf } from './material/features.js'
 
 /** @import { Scene } from './scene/Scene.js' */
 /** @import { Camera } from './scene/cameras.js' */
@@ -342,14 +343,19 @@ export function collect(scene, camera) {
   }
 
   // opaque: front to back lets the depth test reject hidden pixels early; grouping by material
-  // variant keeps shader switches down
-  frame.opaque.sort((x, y) => x.node.renderOrder - y.node.renderOrder ||
-    (x.material.variant < y.material.variant ? -1 : x.material.variant > y.material.variant ? 1 : 0) ||
-    x.depth - y.depth)
+  // variant - worked out once an item, for its kind - keeps shader switches down
+  const variants = new Map(frame.opaque.map((item) => [item, variantOf(item.material, kindOf(item.node))]))
+  frame.opaque.sort((x, y) => {
+    const a = /** @type {string} */ (variants.get(x)), b = /** @type {string} */ (variants.get(y))
+    return x.node.renderOrder - y.node.renderOrder || (a < b ? -1 : a > b ? 1 : 0) || x.depth - y.depth
+  })
   // transparent: back to front so blending composes correctly
   frame.transparent.sort((x, y) => x.node.renderOrder - y.node.renderOrder || y.depth - x.depth)
   return frame
 }
+
+/** A drawable's kind of program. @param {any} node @returns {'mesh' | 'points' | 'lines'} */
+const kindOf = (node) => (node.drawMode === 'points' ? 'points' : node.drawMode === 'lines' ? 'lines' : 'mesh')
 
 /**
  * A frame's solids as draw items, none culled - for passes that see more than the camera does.

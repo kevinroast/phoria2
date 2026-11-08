@@ -5,6 +5,7 @@ import {
   box, edges, plane, sphere,
 } from '../src/index.js'
 import { collect } from '../src/frame.js'
+import { variantOf } from '../src/material/features.js'
 
 const camera = () => new PerspectiveCamera({ position: [0, 0, 10], target: [0, 0, 0], aspect: 1 })
 
@@ -166,15 +167,15 @@ describe('Material and Texture', () => {
     const m = new Material()
     expect(m.color.getStyle()).toBe('#ffffff')
     expect([m.roughness, m.metalness, m.opacity]).toEqual([0.5, 0, 1])
-    expect(m.variant).toBe('lit')
-    expect(new Material({ unlit: true, flatShading: true }).variant).toBe('unlit+flat')
+    expect(variantOf(m, 'mesh')).toBe('lit')
+    expect(variantOf(new Material({ unlit: true, flatShading: true }), 'mesh')).toBe('unlit+flat')
     expect(() => new Material({ roughness: 2 })).toThrow("'roughness' must be 0-1")
     expect(new Material({ opacity: 0.5 }).transparent).toBe(true)
     // maps with soft alpha edges ask for blending at full opacity; cut-outs stay opaque
     const leaf = new Material({ transparent: true })
     expect([leaf.transparent, leaf.toJSON()]).toEqual([true, { transparent: true }])
     const cutout = new Material({ alphaTest: 0.5, normalScale: -1, aoMapIntensity: 0.5 })
-    expect([cutout.transparent, cutout.variant]).toEqual([false, 'lit+cutout'])
+    expect([cutout.transparent, variantOf(cutout, 'mesh')]).toEqual([false, 'lit+cutout'])
     expect(cutout.toJSON()).toEqual({ alphaTest: 0.5, normalScale: -1, aoMapIntensity: 0.5 })
     expect(() => new Material({ aoMapIntensity: 2 })).toThrow("'aoMapIntensity' must be 0-1")
     m.color = 'red'
@@ -186,7 +187,7 @@ describe('Material and Texture', () => {
     expect(m.map).toBeInstanceOf(Texture)
     expect(m.map.colorSpace).toBe('srgb')
     expect(m.normalMap.colorSpace).toBe('linear')
-    expect(m.variant).toBe('lit+map+normalMap')
+    expect(variantOf(m, 'mesh')).toBe('lit+map+normalMap')
     expect(m.toJSON()).toEqual({ map: { url: 'wood.jpg' }, normalMap: { url: 'wood_n.png', colorSpace: 'linear' } })
   })
 

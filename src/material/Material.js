@@ -371,26 +371,6 @@ export class Material {
   /** @param {boolean} v */
   set transparent(v) { this.#transparent = !!v }
 
-  /** @internal
-   * Which shader features this material needs - renderers compile one program per distinct key.
-   * @returns {string}
-   */
-  get variant() {
-    const parts = [this.unlit ? 'unlit' : 'lit']
-    for (const [slot] of this.textures) parts.push(slot)
-    if (this.alphaTest > 0) parts.push('cutout')
-    if (this.transmission > 0) parts.push('glass')
-    if (this.clearcoat > 0) parts.push('clearcoat')
-    if (this.sheen > 0) parts.push('sheen')
-    if (this.anisotropy > 0) parts.push('brushed')
-    if (this.translucency > 0) parts.push('translucent')
-    if (this.toon > 0) parts.push('toon')
-    if (this.flatShading) parts.push('flat')
-    if (this.vertexColors) parts.push('vcolor')
-    if (this.#shader) parts.push('hooks')
-    return parts.join('+')
-  }
-
   /** Resolves when every texture has loaded. @returns {Promise<void>} */
   async ready() {
     await Promise.all(this.allTextures.map(([, t]) => t.ready))

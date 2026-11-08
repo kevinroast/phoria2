@@ -4,6 +4,8 @@ import { Geometry } from '../geometry/Geometry.js'
 import { Material } from '../material/Material.js'
 import { CLIP_ONLY_FRAGMENT, ENCODE_FRAGMENT, FULLSCREEN_VERTEX, MESH_VERTEX } from './shaders.js'
 import { hookFailed, hookFor, setHookUniforms } from './hooks.js'
+import { placementDefines, setShapeUniforms, shapeDefines } from './shape.js'
+import { featureDefines, secondUvDefines, setFeatureUniforms } from '../material/features.js'
 import { collect, solidItems } from '../frame.js'
 import { Box3 } from '../value/Box3.js'
 import { checkNumber, checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '../validate.js'
@@ -173,13 +175,8 @@ export function groundShadowSettings(owner, value) {
 }
 
 const TONE_MAPPING = { none: 0, aces: 1, neutral: 2 }
-// material maps and the shader feature each one switches on (all but emissive need lighting)
 /** @type {import('./passes.js').ShadowMap[]} */
 const NO_SHADOWS = []
-const MAP_DEFINES = { roughnessMap: 'ROUGHNESS_MAP', metalnessMap: 'METALNESS_MAP', normalMap: 'NORMAL_MAP', bumpMap: 'BUMP_MAP', aoMap: 'AO_MAP', lightMap: 'LIGHT_MAP' }
-// every map a mesh can sample - triplanar projection is only worth its varyings when there is one
-const MAP_SLOTS = ['map', 'emissiveMap', ...Object.keys(MAP_DEFINES)]
-const MAP_UNIFORMS = { matcap: 'uMatcap', map: 'uMap', roughnessMap: 'uRoughnessMap', metalnessMap: 'uMetalnessMap', normalMap: 'uNormalMap', bumpMap: 'uBumpMap', aoMap: 'uAoMap', emissiveMap: 'uEmissiveMap', lightMap: 'uLightMap' }
 // the step out of linear light, at the end of a linear frame's chain
 const ENCODE = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, ENCODE_FRAGMENT])
 // counting a cap's faces into the stencil: the solids' surfaces, colour and depth left alone
@@ -693,7 +690,8 @@ export class WebGLRenderer {
     const shadows = receives ? state.shadows : NO_SHADOWS
 
     const clip = kind === 'mesh' ? item.clip : null
-    const defines = this.#defines(kind, material, geometry.colors !== null, !!instances, geometry.uvs2 !== null, state)
+    // placed and cut as every pass draws it, then the material's features and the frame's lights
+    const defines = [...placementDefines(item), ...this.#defines(kind, material, geometry, state)]
     if (kind === 'points' && /** @type {any} */ (node).drawsSprites) defines.push('SPRITES')
     for (const shadow of shadows) defines.push(shadow.define)
     const fog = material.fog ? frame.fog : null
@@ -703,7 +701,6 @@ export class WebGLRenderer {
       if (material.blending === 'additive') defines.push('FOG_ADD')
       else if (material.blending === 'multiply') defines.push('FOG_MULTIPLY')
     }
-    if (clip) defines.push('CLIP')
     // ambient occlusion dims the light from all round on lit solids; see-through things show what is
     // behind them, so the occlusion found there isn't theirs
     const ssao = kind === 'mesh' && !transparent && !material.unlit ? state.occlusion : null
@@ -774,8 +771,6 @@ export class WebGLRenderer {
     } else {
       program.set('uHighlightIndex', -2)
     }
-    program.set('uColor', material.color)
-    program.set('uOpacity', material.opacity)
     if (hook) setHookUniforms(program, material, frame.time ?? 0, frame.camera.position, (t) => this.#gpu.resources.texture(t))
     if (fog) {
       program.set('uFogColor', fog.color)
@@ -783,46 +778,16 @@ export class WebGLRenderer {
       program.set('uFogDensity', fog.density)
     }
     if (clip) program.set('uClipPlane', clip.plane)
-    const e = material.emissive, k = material.emissiveIntensity
-    program.set('uEmissive', [e[0] * k, e[1] * k, e[2] * k])
-    program.set('uRoughness', material.roughness)
-    program.set('uMetalness', material.metalness)
-    program.set('uNormalScale', material.normalScale)
-    if (material.bumpMap) program.set('uBumpScale', material.bumpScale)
-    if (material.triplanar > 0) program.set('uTriplanar', material.triplanar)
-    program.set('uAoMapIntensity', material.aoMapIntensity)
-    if (material.transmission > 0) program.set('uTransmission', material.transmission)
-    if (material.clearcoat > 0) {
-      program.set('uClearcoat', material.clearcoat)
-      program.set('uClearcoatRoughness', material.clearcoatRoughness)
-    }
-    // a non-metal's reflectance face on, from its ior and specular settings, and at grazing angles
-    const ior = (material.ior - 1) / (material.ior + 1), sc = material.specularColor, si = material.specularIntensity
-    program.set('uSpecular', [Math.min(ior * ior * sc[0], 1) * si, Math.min(ior * ior * sc[1], 1) * si, Math.min(ior * ior * sc[2], 1) * si, si])
-    if (material.sheen > 0) {
-      const c = material.sheenColor, k = material.sheen
-      program.set('uSheenColor', [c[0] * k, c[1] * k, c[2] * k])
-      program.set('uSheenRoughness', material.sheenRoughness)
-    }
-    if (material.anisotropy > 0) {
-      program.set('uAnisotropy', material.anisotropy)
-      program.set('uAnisotropyDirection', [Math.cos(material.anisotropyRotation), Math.sin(material.anisotropyRotation)])
-    }
-    if (material.translucency > 0) {
-      const c = material.translucencyColor, k = material.translucency
-      program.set('uTranslucency', [c[0] * k, c[1] * k, c[2] * k, k])
-    }
-    if (material.toon > 0) program.set('uToon', Math.max(2, Math.round(material.toon)))
-    program.set('uAlphaTest', material.alphaTest)
-    /** @type {[string, Texture][]} */
-    const maps = kind === 'mesh' ? material.textures : material.map ? [['map', material.map]] : []
-    // GL textures first (uploads use a unit of their own), then bind them to the samplers
-    const bound = maps.map(([slot, texture]) => [MAP_UNIFORMS[slot], this.#gpu.resources.texture(texture)])
-    for (const [name, texture] of bound) program.set(name, texture)
-    // each map's own repeat, rotation and offset (a matcap takes no UVs)
-    for (const [slot, texture] of maps) if (slot !== 'matcap') program.set(`${MAP_UNIFORMS[slot]}Uv`, uvMatrix(texture))
-    if (material.lightMap) program.set('uLightMapIntensity', material.lightMapIntensity)
-    program.set('uEnvStrength', material.environmentIntensity)
+    // the material's own: each of its features' uniforms - its colour, its surface, its maps (each bound
+    // to its sampler, with its repeat, rotation and offset)
+    const resources = this.#gpu.resources
+    setFeatureUniforms(material, kind, {
+      set: (name, value) => program.set(name, value),
+      map: (uniform, texture, transform) => {
+        program.set(uniform, resources.texture(texture))
+        if (transform) program.set(`${uniform}Uv`, uvMatrix(texture))
+      },
+    })
 
     // render state
     gl.depthMask(!transparent && material.depthWrite)
@@ -842,11 +807,6 @@ export class WebGLRenderer {
       const arrows = /** @type {any} */ (node).arrowBits ?? 0
       program.set('uArrows', arrows)
       program.set('uArrowSize', /** @type {any} */ (node).arrowPixels?.(material.width) * this.pixelRatio || 0)
-      if (material.dash > 0) {
-        program.set('uDash', material.dash)
-        program.set('uGap', material.gap || material.dash)
-        program.set('uDashOffset', material.dashOffset)
-      }
       const buffers = this.#gpu.resources.lines(geometry)
       gl.bindVertexArray(buffers.vao)
       // a quad a segment, and two arrowheads where there are any
@@ -914,14 +874,15 @@ export class WebGLRenderer {
   #cap(cap, frame, state) {
     const gl = this.gl
     const programs = this.#gpu.programs
-    // the counting program, for plain and instanced solids
-    const masks = [false, true].map((instanced) => programs.get('clip-mask', instanced ? ['INSTANCED', 'CLIP'] : ['CLIP'], CLIP_MASK))
+    // each solid's counting program: placed, moved by its hooks and cut out as the picture draws it
+    const shapes = cap.items.map((item) => shapeDefines(item, true))
+    const masks = shapes.map(({ defines, hook }) => programs.get('clip-mask', defines, CLIP_MASK, hook?.source))
     if (!masks.every((p) => programs.isReady(p))) {
       if (!state.wait) {
         this.info.compiling++
         return
       }
-      for (const instanced of [false, true]) programs.ready('clip-mask', instanced ? ['INSTANCED', 'CLIP'] : ['CLIP'], CLIP_MASK)
+      shapes.forEach(({ defines, hook }) => programs.ready('clip-mask', defines, CLIP_MASK, hook?.source))
     }
     gl.enable(gl.STENCIL_TEST)
     gl.enable(gl.SCISSOR_TEST)
@@ -937,16 +898,19 @@ export class WebGLRenderer {
     gl.stencilFunc(gl.ALWAYS, 0, 0xff)
     gl.stencilOpSeparate(gl.BACK, gl.KEEP, gl.KEEP, gl.INCR_WRAP)
     gl.stencilOpSeparate(gl.FRONT, gl.KEEP, gl.KEEP, gl.DECR_WRAP)
-    for (const item of cap.items) {
-      const program = masks[item.instances ? 1 : 0]
+    cap.items.forEach((item, i) => {
+      const program = masks[i], { hook, cutout } = shapes[i]
+      if (program.failed) return
       gl.useProgram(program.program)
       program.set('uViewProjection', frame.camera.viewProjection)
       program.set('uModel', item.worldMatrix)
+      setShapeUniforms(program, item, cutout, (t) => this.#gpu.resources.texture(t))
       program.set('uClipPlane', cap.plane)
+      if (hook) setHookUniforms(program, item.material, frame.time ?? 0, frame.camera.position, (t) => this.#gpu.resources.texture(t))
       gl.frontFace(mat4.determinant(item.worldMatrix) < 0 ? gl.CW : gl.CCW)
       this.#gpu.resources.drawTriangles(item.geometry, item.instances)
       this.info.drawCalls++
-    }
+    })
     gl.colorMask(true, true, true, true)
     // then the plane, just where the count says
     gl.stencilFunc(gl.NOTEQUAL, 0, 0xff)
@@ -976,43 +940,24 @@ export class WebGLRenderer {
   }
 
   /**
-   * @param {'mesh' | 'points' | 'lines'} kind @param {Material} material
-   * @param {boolean} hasColors @param {boolean} instanced @param {boolean} hasUvs2 @param {FrameState} state
+   * A drawable's defines but its placement: the material's features (features.js), and - for a lit
+   * mesh - the frame's lights and environment.
+   * @param {'mesh' | 'points' | 'lines'} kind @param {Material} material @param {Geometry} geometry @param {FrameState} state
    * @returns {string[]}
    */
-  #defines(kind, material, hasColors, instanced, hasUvs2, state) {
+  #defines(kind, material, geometry, state) {
     // drawn in linear light, for a chain that encodes the picture at its end
     const d = state.linear ? ['LINEAR_OUTPUT'] : []
-    if (material.vertexColors && hasColors) d.push('VERTEX_COLORS')
+    d.push(...featureDefines(material, kind, geometry))
     if (kind === 'mesh') {
       if (!material.unlit) {
-        d.push('LIT')
-        for (const [slot, define] of Object.entries(MAP_DEFINES)) if (material[slot]) d.push(define)
         d.push(...state.lightDefines)
         if (state.environment) d.push('ENV_MAP')
         else if (state.studio) d.push('STUDIO')
-        if (material.transmission > 0) d.push('TRANSMISSION')
-        if (material.clearcoat > 0) d.push('CLEARCOAT')
-        if (material.sheen > 0) d.push('SHEEN')
-        if (material.anisotropy > 0) d.push('ANISOTROPY')
-        if (material.translucency > 0) d.push('TRANSLUCENCY')
-        if (material.matcap) d.push('MATCAP')
-        if (material.toon > 0) d.push('TOON')
       }
-      if (material.map) d.push('MAP')
-      if (material.emissiveMap) d.push('EMISSIVE_MAP')
-      if (material.alphaTest > 0) d.push('ALPHA_TEST')
-      if (material.flatShading) d.push('FLAT_SHADING')
-      if (material.doubleSided) d.push('DOUBLE_SIDED')
-      if (material.triplanar > 0 && MAP_SLOTS.some((slot) => material[slot])) d.push('TRIPLANAR')
       // maps on the second UV set read it - where the geometry has one
-      const second = hasUvs2 ? material.textures.filter(([slot, t]) => t.uvSet === 1 && slot !== 'matcap') : []
-      if (second.length) d.push('UV2', ...second.map(([slot]) => `${MAP_UNIFORMS[slot]}Set vUv2`))
-      if (instanced) d.push('INSTANCED')
-    } else if (kind === 'points') {
-      if (material.map) d.push('MAP')
-      if (material.sizeAttenuation) d.push('SIZE_ATTENUATION')
-    } else if (material.dash > 0) d.push('DASHED')
+      d.push(...secondUvDefines(material, geometry, material.textures.map(([slot]) => slot)))
+    }
     // (points drawn as squares add SPRITES - see #draw, which knows the node)
     return d
   }

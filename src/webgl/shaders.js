@@ -2,6 +2,7 @@
 // material variant compiles only what it uses. Attribute locations are fixed (see ATTRIBUTES) so
 // vertex arrays work with any program.
 import { warnOnce } from '../validate.js'
+import { MAPS } from '../material/features.js'
 
 /** Fixed attribute locations shared by every program. */
 export const ATTRIBUTES = {
@@ -72,7 +73,7 @@ vec3 fogged(vec3 c) { return c; }
 // How a map is read: by UV, or projected from the mesh's three axes (triplanar) - the same in every pass
 // that reads one, so a cut-out's shadow has the holes it is drawn with. Needs vUv declared first.
 // the samplers a mesh's maps are read through
-const MAP_SAMPLERS = ['uMap', 'uRoughnessMap', 'uMetalnessMap', 'uNormalMap', 'uBumpMap', 'uAoMap', 'uEmissiveMap', 'uLightMap']
+const MAP_SAMPLERS = MAPS.filter((m) => m.slot !== 'matcap').map((m) => m.uniform)
 
 const SAMPLING = /* glsl */ `
 #ifdef UV2

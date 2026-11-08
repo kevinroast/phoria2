@@ -8,6 +8,7 @@ import { ChangeWatch } from '../src/watch.js'
 import { CLIP_ONLY_FRAGMENT, HOOK_HELPERS, MESH_VERTEX, checkMarkers, shaderSource } from '../src/webgl/shaders.js'
 import { hookFor } from '../src/webgl/hooks.js'
 import { fakeCanvas, fakeGL } from './fakes.js'
+import { variantOf } from '../src/material/features.js'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -26,7 +27,7 @@ describe('material.shader', () => {
     expect(s.uniforms.uTint).toBeInstanceOf(Color)
     expect(Array.from(s.uniforms.uTint)).toEqual([1, 0, 0])
     expect(m.allTextures).toEqual([['shader.uNoise', noise]])
-    expect(m.variant).toContain('hooks')
+    expect(variantOf(m, 'mesh')).toContain('hooks')
     expect(new Material().shader).toBe(null)
   })
 

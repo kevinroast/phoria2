@@ -9,6 +9,7 @@ import { Animation, Model, parseGLTF } from '../src/gltf/index.js'
 import { Vec3 } from '../src/value/Vec3.js'
 import { uvMatrix } from '../src/webgl/resources.js'
 import { fakeCanvas, fakeElement, fakeGL, fakePage } from './fakes.js'
+import { variantOf } from '../src/material/features.js'
 
 const page = fakePage()
 afterAll(async () => {
@@ -993,7 +994,7 @@ describe('glass and clearcoat', () => {
     expect(which(await shadersFor({ sheen: 1, sheenColor: 'pink' }))).toEqual(['SHEEN'])
     expect(which(await shadersFor({ metalness: 1, anisotropy: 0.8 }))).toEqual(['ANISOTROPY'])
     expect(which(await shadersFor({ translucency: 0.5 }))).toEqual(['TRANSLUCENCY'])
-    expect(new Material({ ior: 2.4 }).variant).toBe(new Material().variant)
+    expect(variantOf(new Material({ ior: 2.4 }), 'mesh')).toBe(variantOf(new Material(), 'mesh'))
   })
 
   it('the new colours round-trip, and are left out at their defaults', () => {
