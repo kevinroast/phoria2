@@ -13,10 +13,10 @@ import { DEMOS, slug } from '../demos/registry.js'
 
 const WIDTH = 960, HEIGHT = 600, SCALE = 0.5
 // seconds to let a demo run first - longer for those that load models or build up to something
-const WAIT = { viewer: 7, 'guided-tour': 4, 'point-lights': 7, 'fog-shadows': 5, fireworks: 6, paint: 7, particles: 5, textures: 5, lights: 5, artemis: 4, cpu: 4, volcano: 5, engine: 4.5, skull: 5, 'advanced-materials': 5, 'viewer-passes': 5, 'render-textures': 4, 'custom-element': 5 }
+const WAIT = { viewer: 7, 'guided-tour': 4, 'point-lights': 7, 'fog-shadows': 5, fireworks: 6, paint: 7, particles: 5, textures: 5, lights: 5, artemis: 4, cpu: 4, volcano: 5, engine: 4.5, skull: 5, 'advanced-materials': 5, 'viewer-passes': 5, 'render-textures': 4, 'custom-element': 5, maths: 5 }
 // several views on one page: captured from the page, not one view's toImage() - for cells, the
 // whole poster: both cells, their titles and the paper behind them
-const PAGE = ['dashboard', 'chartlab', 'cells', 'colour', 'cad', 'schematic', 'custom-element']
+const PAGE = ['dashboard', 'chartlab', 'cells', 'colour', 'cad', 'schematic', 'custom-element', 'maths']
 // set a demo up for its picture first - scene-json aims off-centre to clear its editor panel, which
 // the picture leaves out: its turntable goes back to the start, with the objects side by side, and it
 // is framed in the middle from a little to the right and above; artemis stops on its way home, with
@@ -37,6 +37,15 @@ const PREPARE = {
     await new Promise((r) => setTimeout(r, 2200))
   })()`,
   dashboard: TILES,
+  // the maths plots alone, three across and two down - no titles, notes, sliders or code - given a
+  // moment to draw at their new sizes
+  maths: `(async () => {
+    document.querySelectorAll('.demo-cards-card > :not(canvas)').forEach((el) => { el.style.display = 'none' })
+    Object.assign(document.querySelector('.demo-maths').style, { inset: '10px', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px', scrollbarWidth: 'none' })
+    document.querySelectorAll('.demo-cards-card').forEach((c) => { c.style.padding = '0' })
+    document.querySelectorAll('.demo-maths-canvas').forEach((c) => { c.style.height = '285px' })
+    await new Promise((r) => setTimeout(r, 1200))
+  })()`,
   // the tag's cards two to a row, with no scrollbar: the script tag across the top, the chair and the
   // chart side by side under it
   'custom-element': "Object.assign(document.querySelector('.demo-cards').style, { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', scrollbarWidth: 'none' })",

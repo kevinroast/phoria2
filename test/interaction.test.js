@@ -388,6 +388,14 @@ describe('explain', () => {
     const text = info(scene, camera())
     expect(text).toMatch(/Shadows: 1 caster, 1 receiver in view, [\d.e-]+ units per shadow texel/)
     expect(text).toContain('No warnings.')
+    // a small texel (0.0026 here - the old formatter said 0) is said with its digits
+    const small = new Scene()
+    small.add(new DirectionalLight({ direction: [0, -1, 0], castShadow: true }))
+    small.add(new Mesh({ geometry: box(5), castShadow: true }))
+    small.add(new Mesh({ geometry: plane(16), position: [0, -2.5, 0], receiveShadow: true }))
+    const said = /([\d.e-]+) units per shadow texel/.exec(info(small, camera()))?.[1]
+    expect(Number(said)).toBeGreaterThan(0)
+    expect(said).not.toBe('0')
     void sun
   })
 })

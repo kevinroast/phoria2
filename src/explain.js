@@ -30,7 +30,13 @@ import { drawKind } from './scene/kinds.js'
  *   groundShadow: Record<string, number | null> | null, fxaa: boolean }} [effects] the picture's effects, on or off
  */
 
-const fmt = (n) => (Math.abs(n) >= 1e4 || (n !== 0 && Math.abs(n) < 1e-3) ? n.toExponential(2) : String(+n.toFixed(2)))
+// two decimals, but two significant figures for small numbers - a shadow texel of 0.0034 units isn't
+// "0" - and exponents only at the extremes
+const fmt = (n) => {
+  const a = Math.abs(n)
+  if (a >= 1e4 || (n !== 0 && a < 1e-4)) return n.toExponential(2)
+  return String(a < 0.1 ? +n.toPrecision(2) : +n.toFixed(2))
+}
 const vec = (v) => `[${fmt(v[0])}, ${fmt(v[1])}, ${fmt(v[2])}]`
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 
