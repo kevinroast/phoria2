@@ -984,7 +984,8 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
   ```js
   // a surface y = fn(x, z): ranges for x and z (x: [-3, 3], or { domain, title, axis }); y: [-1, 1] pins the value axis
   chart({ mark: 'surface', fn: (x, z) => Math.sin(x) * Math.cos(z), x: [-3, 3], z: [-3, 3], samples: 64 })
-  // a parametric surface [x, y, z] = fn(u, v) - a sphere, a torus; x, y and z come from fn (give titles, not ranges)
+  // a parametric surface [x, y, z] = fn(u, v) - a sphere, a torus; x, y and z come from fn - a range for one
+  // (x: [-2, 2]) pins its axis, so shapes shown in turn share one box, each centred in it
   chart({ mark: 'surface', fn: (u, v) => [Math.cos(u) * Math.sin(v), Math.cos(v), Math.sin(u) * Math.sin(v)], u: [0, 2 * Math.PI], v: [0, Math.PI] })
   // a curve [x, y, z] = fn(t), coloured end to end unless color says otherwise
   chart({ mark: 'curve', fn: (t) => [Math.cos(t), t / 4, Math.sin(t)], t: [0, 12 * Math.PI], samples: 400 })

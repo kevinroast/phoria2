@@ -167,14 +167,11 @@ function pair(name, r) {
   return /** @type {[number, number]} */ (r)
 }
 
-/** Ranges aren't given for axes the function's values make. @param {Record<string, any>} spec @param {string} what */
+/** The function's values make x, y and z - not fields of data. @param {Record<string, any>} spec @param {string} what */
 function noAxisRanges(spec, what) {
   for (const name of ['x', 'y', 'z']) {
     const c = spec[name]
-    if (Array.isArray(c) || (c && typeof c === 'object' && c.domain !== undefined)) {
-      fail('chart()', `${what}'s ${name} comes from its function - give its title or axis, not a range (set the parameters' ranges instead)`)
-    }
-    if (typeof c === 'string') fail('chart()', `${what}'s ${name} comes from its function, not a field - leave it out, or give { title, axis }`)
+    if (typeof c === 'string') fail('chart()', `${what}'s ${name} comes from its function, not a field - leave it out, give the range to show such as ${name}: [-2, 2], or { title, axis }`)
   }
 }
 
@@ -244,7 +241,15 @@ function valueChannel(/** @type {Record<string, any>} */ spec, /** @type {string
   return range ? channel(spec, name, range) : { ...object(c, name), field: name }
 }
 
-/** x, y and z made by the function, with what was given for each (title, axis, format). @param {Record<string, any>} spec */
+/**
+ * x, y and z made by the function, with what was given for each (title, axis, format) - and a range,
+ * x: [-2, 2], pins that axis to it: shapes drawn in turn over the same ranges share one box, each
+ * centred as it is in the ranges, rather than each fitted to its own extent.
+ * @param {Record<string, any>} spec
+ */
 function pointChannels(spec) {
-  return Object.fromEntries(['x', 'y', 'z'].map((name) => [name, { ...object(spec[name], name), field: name }]))
+  return Object.fromEntries(['x', 'y', 'z'].map((name) => {
+    const range = axisRange(spec, /** @type {'x' | 'y' | 'z'} */ (name), false)
+    return [name, range ? channel(spec, name, range) : { ...object(spec[name], name), field: name }]
+  }))
 }

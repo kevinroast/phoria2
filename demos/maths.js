@@ -133,19 +133,24 @@ function curve({ canvas, slider }) {
 
 // shapes
 function shapes({ canvas }) {
-  const view = new View({ canvas, orbit: { autoRotate: 0.3 }, background: BG })
+  // looking at the middle of the shapes' box, close enough to fill the card
+  const view = new View({ canvas, orbit: { autoRotate: 0.3 }, background: BG, camera: { position: [0, 8.5, 9.5], target: [0, 5, 0] } })
   view.scene.environment = 'studio'
   const TAU = 2 * Math.PI
   const SHAPES = [
     { u: [0, TAU], v: [0, Math.PI], fn: (u, v) => [Math.cos(u) * Math.sin(v), Math.cos(v), Math.sin(u) * Math.sin(v)] },
     { u: [0, TAU], v: [0, TAU], fn: (u, v) => [(1 + 0.4 * Math.cos(v)) * Math.cos(u), 0.4 * Math.sin(v), (1 + 0.4 * Math.cos(v)) * Math.sin(u)] },
     { u: [0, TAU], v: [-0.5, 0.5], fn: (u, v) => [(1 + v * Math.cos(u / 2)) * Math.cos(u), v * Math.sin(u / 2), (1 + v * Math.cos(u / 2)) * Math.sin(u)] },
-    { u: [0, TAU], v: [0, TAU], fn: (u, v) => { // a Klein bottle - the figure-8 immersion
+    { u: [0, TAU], v: [0, TAU], fn: (u, v) => { // a Klein bottle - the figure-8 immersion, scaled to fit
       const r = 2 + Math.cos(u / 2) * Math.sin(v) - Math.sin(u / 2) * Math.sin(2 * v)
-      return [r * Math.cos(u), Math.sin(u / 2) * Math.sin(v) + Math.cos(u / 2) * Math.sin(2 * v), r * Math.sin(u)]
+      return [r * Math.cos(u) * 0.4, (Math.sin(u / 2) * Math.sin(v) + Math.cos(u / 2) * Math.sin(2 * v)) * 0.4, r * Math.sin(u) * 0.4]
     } },
   ]
-  const plot = view.scene.add(chart({ mark: 'surface', ...SHAPES[0], samples: 72, frame: false, legend: false, transition: { duration: 1.2, ease: 'inOut' } }))
+  // every shape in the same cube, so each sits in its middle - and the morphs stay put
+  const cube = { x: [-1.6, 1.6], y: [-1.6, 1.6], z: [-1.6, 1.6] }
+  // coloured by height over each shape's own heights - the y axis is the cube's, so a flat shape
+  // coloured by the axis would be one colour
+  const plot = view.scene.add(chart({ mark: 'surface', ...SHAPES[0], ...cube, color: 'y', samples: 72, frame: false, legend: false, transition: { duration: 1.2, ease: 'inOut' } }))
   let shown = 0, since = 0
   view.start((dt) => {
     if ((since += dt) < 3.5) return

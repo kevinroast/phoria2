@@ -101,8 +101,12 @@ describe('parametric surfaces', () => {
     expect(c.children.some((n) => n.name === 'axes')).toBe(false)
   })
 
-  it('wants its x, y and z from the function', () => {
-    expect(() => normalise({ mark: 'surface', fn: sphere, u: [0, 1], v: [0, 1], x: [0, 1] })).toThrow("a parametric surface's x comes from its function")
+  it('wants its x, y and z from the function - ranges, given, pin the axes', () => {
+    expect(() => normalise({ mark: 'surface', fn: sphere, u: [0, 1], v: [0, 1], x: 'width' })).toThrow("a parametric surface's x comes from its function, not a field")
+    // pinned to one cube, a flat shape sits in its middle as a tall one does - not on the floor
+    const flat = chart({ mark: 'surface', fn: (u, v) => [Math.cos(u), 0.2 * Math.sin(v), Math.sin(u)], u: [0, 6.28], v: [0, 6.28], x: [-2, 2], y: [-2, 2], z: [-2, 2], samples: 12 })
+    expect(flat.scales.y?.domain).toEqual([-2, 2])
+    expect(flat.scales.y?.(0)).toBeCloseTo(5)
     expect(() => normalise({ mark: 'surface', fn: () => [1, 2], u: [0, 1], v: [0, 1] })).toThrow('it returns a point, [x, y, z] of finite numbers')
   })
 })
