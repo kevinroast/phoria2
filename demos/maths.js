@@ -15,8 +15,16 @@ const CARDS = [
     note: 'A function and the sample ranges over it, in place of data. Move a or b and the surface tweens to the new shape; y is pinned, so you see it change.',
   },
   {
+    name: 'waves', title: 'Waves',
+    note: 'Ripples spread from two sources - adding where crests meet, cancelling in a trough. With "time: true" the function is given the time as t, so the surface moves. Drag the sliders to move the sources apart or change the wavelength.',
+  },
+  {
     name: 'gradient', title: 'Its gradient',
     note: 'Arrows on the floor point up the gradient of the surface above them as long as it is steep. A second chart over the same ranges lining up.',
+  },
+  {
+    name: 'contours', title: 'A contour map',
+    note: 'Lines of equal height, on the surface and projected onto the floor. More lines, closer heights.',
   },
   {
     name: 'curve', title: 'A curve through space',
@@ -80,7 +88,7 @@ export default function run({ canvas }) {
   return views[0]
 }
 
-const EXAMPLES = { surface, gradient, curve, shapes, descent, field, matrix, response }
+const EXAMPLES = { surface, waves, gradient, contours, curve, shapes, descent, field, matrix, response }
 
 // surface
 function surface({ canvas, slider }) {
@@ -94,6 +102,25 @@ function surface({ canvas, slider }) {
   }))
   slider('a', 0.5, 3, p.a, (a) => { p.a = a; plot.update({ params: p }) })
   slider('b', 0.5, 3, p.b, (b) => { p.b = b; plot.update({ params: p }) })
+  return view
+}
+// end
+
+// waves
+function waves({ canvas, slider }) {
+  const view = new View({ canvas, orbit: true, background: BG })
+  const p = { apart: 2, wavelength: 1.6 }
+  // a ripple spreading from a source as t goes on, fading as it goes
+  const ripple = (r, t, wavelength) => Math.sin((2 * Math.PI / wavelength) * r - 3 * t) / Math.sqrt(1 + r)
+  const plot = view.scene.add(chart({
+    mark: 'surface',
+    // where crests meet they add; where a crest meets a trough they cancel
+    fn: (x, z, { t, apart, wavelength }) => ripple(Math.hypot(x - apart / 2, z), t, wavelength) + ripple(Math.hypot(x + apart / 2, z), t, wavelength),
+    x: [-4, 4], z: [-4, 4], y: { domain: [-1.6, 1.6], axis: { ticks: 3 } }, box: [10, 2.5, 10], params: p, time: true, samples: 84, legend: false,
+    color: { field: 'y', scale: { scheme: 'blues' } },
+  }))
+  slider('apart', 0.5, 4, p.apart, (v) => { p.apart = v; plot.update({ params: p }) })
+  slider('wavelength', 0.8, 3, p.wavelength, (v) => { p.wavelength = v; plot.update({ params: p }) })
   return view
 }
 // end
@@ -114,6 +141,21 @@ function gradient({ canvas }) {
     x: [-3, 3], y: [-1.2, 1.2], z: [-3, 3], samples: [13, 1, 13],
     box, equal: false, frame: false, legend: false,
   }))
+  return view
+}
+// end
+
+// contours
+function contours({ canvas, slider }) {
+  const view = new View({ canvas, orbit: true, background: BG })
+  // hills and hollows (MATLAB's peaks, scaled to within -1 and 1)
+  const peaks = (x, z) => (3 * (1 - x) ** 2 * Math.exp(-(x * x) - (z + 1) ** 2)
+    - 10 * (x / 5 - x ** 3 - z ** 5) * Math.exp(-(x * x) - z * z) - Math.exp(-((x + 1) ** 2) - z * z) / 3) / 8.5
+  const plot = view.scene.add(chart({
+    mark: 'surface', fn: peaks, x: [-3, 3], z: [-3, 3], y: [-1, 1], samples: 64, legend: false,
+    contours: { count: 12, place: 'both' },
+  }))
+  slider('lines', 2, 24, 12, (count) => plot.update({ contours: { count, place: 'both' } }), 1)
   return view
 }
 // end
@@ -239,7 +281,7 @@ function matrix({ canvas, slider }) {
   const ranges = { x: [-2, 2], z: [-2, 2] }
   const plot = view.scene.add(chart({
     mark: 'vector', fn: (x, y, z, { a, b, c, d }) => [a * x + b * z, 0, c * x + d * z],
-    ...ranges, samples: 11, params: m, legend: false,
+    ...ranges, samples: 11, params: m, legend: false, frame: 'origin',
   }))
   // the eigenvectors: lines through the origin, where the map's matrix has real eigenvalues
   const eigenLines = () => {

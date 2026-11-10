@@ -12,7 +12,9 @@ import { describe, fail } from '../validate.js'
 // and the ranges of the parameters that aren't axes
 export const FUNCTION_OPTIONS = ['fn', 'samples', 'params', 't', 'u', 'v']
 
+// enough for smooth plots at a steady frame rate - the normals come from fn, so shading stays smooth at these
 const DEFAULT_SAMPLES = { surface: 48, parametric: 64, curve: 256, vector: 9 }
+
 const MAX_SAMPLES = 250_000
 
 /**
@@ -20,8 +22,10 @@ const MAX_SAMPLES = 250_000
  * on, a line about it for summaries, and whether its axes default to equal units.
  * @typedef {object} Sampled
  * @property {Record<string, any>} input
- * @property {{ nx: number, nz: number } | null} grid rows in grid order, u along x - for surfaces whose
- *   x and z aren't the grid's (parametric ones)
+ * @property {{ nx: number, nz: number } | null} grid rows in grid order, z (or v) across and x (or u) along
+ * @property {Float32Array | null} slopes a height surface's slopes, dy/dx and dy/dz a row in the rows'
+ *   order, from fn by central differences - its normals, so shading follows the function rather
+ *   than the triangles between samples. Beside the rows, not on them: rows are the data a hit gives back
  * @property {string} about
  * @property {boolean} equal
  */
@@ -42,41 +46,59 @@ export function sampleFunction(input) {
     fail('chart()', `'params' is an object of values handed to fn as its last argument, such as { a: 2 }, got ${describe(params)}`)
   }
   const p = params ?? {}
-  const call = (/** @type {any[]} */ args) => fn(...args, p)
+  // fn called directly, with its params last - nothing made for a call, as a surface takes
+  // thousands of them a frame when it moves with time
+  const call1 = (/** @type {number} */ a) => fn(a, p)
+  const call2 = (/** @type {number} */ a, /** @type {number} */ b) => fn(a, b, p)
+  const call3 = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ c) => fn(a, b, c, p)
   if (mark === 'surface') {
-    if (u !== undefined || v !== undefined) return parametric(rest, call, samples, u, v)
+    if (u !== undefined || v !== undefined) return parametric(rest, call2, samples, u, v)
     if (t !== undefined) fail('chart()', "'t' is a curve's range - a surface is over x and z, or over u and v")
-    return heights(rest, call, samples)
+    return heights(rest, call2, samples)
   }
   if (mark === 'curve') {
     if (u !== undefined || v !== undefined) fail('chart()', "'u' and 'v' are a parametric surface's ranges - a curve is over t")
-    return curve(rest, call, samples, t)
+    return curve(rest, call1, samples, t)
   }
-  if (mark === 'vector') return field(rest, call, samples)
+  if (mark === 'vector') return field(rest, call3, samples)
   return fail('chart()', `'fn' is plotted as mark: 'surface', 'curve' or 'vector', not ${describe(mark)}`)
 }
 
 // y = fn(x, z): a height over the x-z grid
-/** @param {Record<string, any>} spec @param {(args: any[]) => any} call @param {any} samples @returns {Sampled} */
+/** @param {Record<string, any>} spec @param {(a: number, b: number) => any} call @param {any} samples @returns {Sampled} */
 function heights(spec, call, samples) {
   const x = axisRange(spec, 'x', true), z = axisRange(spec, 'z', true)
   const [nx, nz] = counts(samples, 2, DEFAULT_SAMPLES.surface)
-  const rows = []
+  // sampled low to high whichever way the ranges are given, so the rows are in grid order - z
+  // across, x along - and the surface mark takes them as they come
+  const xr = /** @type {[number, number]} */ ([Math.min(...x), Math.max(...x)]), zr = /** @type {[number, number]} */ ([Math.min(...z), Math.max(...z)])
+  const rows = new Array(nx * nz), slopes = new Float32Array(nx * nz * 2)
+  // a small step for the slopes, well under a sample's spacing
+  const hx = (xr[1] - xr[0]) * 1e-4, hz = (zr[1] - zr[0]) * 1e-4
+  const slope = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ h) => {
+    const d = (a - b) / (2 * h)
+    return Number.isFinite(d) ? d : 0
+  }
+  let k = 0
   for (let j = 0; j < nz; j++) {
-    const zv = along(z, j, nz)
+    const zv = along(zr, j, nz)
     for (let i = 0; i < nx; i++) {
-      const xv = along(x, i, nx)
-      rows.push({ x: xv, z: zv, y: number(call([xv, zv]), `x ${round(xv)}, z ${round(zv)}`) })
+      const xv = along(xr, i, nx), yv = call(xv, zv)
+      // checked as it comes; the message made only when it is needed
+      if (typeof yv !== 'number' || !Number.isFinite(yv)) number(yv, `x ${round(xv)}, z ${round(zv)}`)
+      slopes[k * 2] = slope(call(xv + hx, zv), call(xv - hx, zv), hx)
+      slopes[k * 2 + 1] = slope(call(xv, zv + hz), call(xv, zv - hz), hz)
+      rows[k++] = { x: xv, z: zv, y: yv }
     }
   }
   return {
     input: { ...spec, data: rows, x: channel(spec, 'x', x), z: channel(spec, 'z', z), y: valueChannel(spec, 'y') },
-    grid: null, about: `a function of x and z, ${nx} × ${nz} samples`, equal: false,
+    grid: { nx, nz }, slopes, about: `a function of x and z, ${nx} × ${nz} samples`, equal: false,
   }
 }
 
 // [x, y, z] = fn(u, v): a surface that can fold back on itself - a sphere, a torus
-/** @param {Record<string, any>} spec @param {(args: any[]) => any} call @param {any} samples @param {any} u @param {any} v @returns {Sampled} */
+/** @param {Record<string, any>} spec @param {(a: number, b: number) => any} call @param {any} samples @param {any} u @param {any} v @returns {Sampled} */
 function parametric(spec, call, samples, u, v) {
   const ur = paramRange('u', u), vr = paramRange('v', v)
   noAxisRanges(spec, 'a parametric surface')
@@ -86,14 +108,14 @@ function parametric(spec, call, samples, u, v) {
     const vv = along(vr, j, nv)
     for (let i = 0; i < nu; i++) {
       const uv = along(ur, i, nu)
-      rows.push({ u: uv, v: vv, ...point(call([uv, vv]), `u ${round(uv)}, v ${round(vv)}`) })
+      rows.push({ u: uv, v: vv, ...point(call(uv, vv), () => `u ${round(uv)}, v ${round(vv)}`) })
     }
   }
-  return { input: { ...spec, data: rows, ...pointChannels(spec) }, grid: { nx: nu, nz: nv }, about: `a parametric surface, ${nu} × ${nv} samples`, equal: true }
+  return { input: { ...spec, data: rows, ...pointChannels(spec) }, grid: { nx: nu, nz: nv }, slopes: null, about: `a parametric surface, ${nu} × ${nv} samples`, equal: true }
 }
 
 // [x, y, z] = fn(t): a path through space, in order of t
-/** @param {Record<string, any>} spec @param {(args: any[]) => any} call @param {any} samples @param {any} t @returns {Sampled} */
+/** @param {Record<string, any>} spec @param {(a: number) => any} call @param {any} samples @param {any} t @returns {Sampled} */
 function curve(spec, call, samples, t) {
   const tr = paramRange('t', t)
   noAxisRanges(spec, 'a curve')
@@ -101,13 +123,13 @@ function curve(spec, call, samples, t) {
   const rows = []
   for (let i = 0; i < n; i++) {
     const tv = along(tr, i, n)
-    rows.push({ t: tv, ...point(call([tv]), `t ${round(tv)}`) })
+    rows.push({ t: tv, ...point(call(tv), () => `t ${round(tv)}`) })
   }
-  return { input: { ...spec, data: rows, ...pointChannels(spec) }, grid: null, about: `a parametric curve, ${n} samples`, equal: true }
+  return { input: { ...spec, data: rows, ...pointChannels(spec) }, grid: null, slopes: null, about: `a parametric curve, ${n} samples`, equal: true }
 }
 
 // [vx, vy, vz] = fn(x, y, z): an arrow at each point of a grid - over x and z, and y if given
-/** @param {Record<string, any>} spec @param {(args: any[]) => any} call @param {any} samples @returns {Sampled} */
+/** @param {Record<string, any>} spec @param {(a: number, b: number, c: number) => any} call @param {any} samples @returns {Sampled} */
 function field(spec, call, samples) {
   const x = axisRange(spec, 'x', true), z = axisRange(spec, 'z', true), y = axisRange(spec, 'y', false)
   // over x, y and z when y has a range - one sample in y is a layer at its start, the floor of a
@@ -123,7 +145,7 @@ function field(spec, call, samples) {
       const zv = along(z, j, nz)
       for (let i = 0; i < nx; i++) {
         const xv = along(x, i, nx)
-        const d = point(call([xv, yv, zv]), `x ${round(xv)}, y ${round(yv)}, z ${round(zv)}`, 'a direction')
+        const d = point(call(xv, yv, zv), () => `x ${round(xv)}, y ${round(yv)}, z ${round(zv)}`, 'a direction')
         rows.push({ x: xv, y: yv, z: zv, vx: d.x, vy: d.y, vz: d.z, magnitude: Math.hypot(d.x, d.y, d.z) })
       }
     }
@@ -132,7 +154,7 @@ function field(spec, call, samples) {
   const yChannel = y ? channel(spec, 'y', y) : { axis: false, ...object(spec.y, 'y'), field: 'y' }
   return {
     input: { ...spec, data: rows, x: channel(spec, 'x', x), y: yChannel, z: channel(spec, 'z', z), color: spec.color ?? 'magnitude' },
-    grid: null, about: `a vector field, ${nx} × ${ny} × ${nz} arrows`, equal: true,
+    grid: null, slopes: null, about: `a vector field, ${nx} × ${ny} × ${nz} arrows`, equal: true,
   }
 }
 
@@ -204,14 +226,19 @@ function number(v, where) {
   return v
 }
 
-/** A point - [x, y, z] or { x, y, z } - from fn. @param {any} v @param {string} where @param {string} [what] */
+/**
+ * A point - [x, y, z] or { x, y, z } - from fn. Where it was is said only if it's wrong.
+ * @param {any} v @param {() => string} where @param {string} [what]
+ */
 function point(v, where, what = 'a point') {
   const p = Array.isArray(v) ? { x: v[0], y: v[1], z: v[2] } : v && typeof v === 'object' ? { x: v.x, y: v.y, z: v.z } : null
-  if (!p || (Array.isArray(v) && v.length !== 3) || ![p.x, p.y, p.z].every((n) => typeof n === 'number' && Number.isFinite(n))) {
-    fail('chart()', `fn gave ${describe(v)} at ${where} - it returns ${what}, [x, y, z] of finite numbers`)
+  if (!p || (Array.isArray(v) && v.length !== 3) || !finite(p.x) || !finite(p.y) || !finite(p.z)) {
+    fail('chart()', `fn gave ${describe(v)} at ${where()} - it returns ${what}, [x, y, z] of finite numbers`)
   }
   return /** @type {{ x: number, y: number, z: number }} */ (p)
 }
+
+const finite = (/** @type {any} */ n) => typeof n === 'number' && Number.isFinite(n)
 
 /** A channel option given as an object (title, axis, format...), or none. @param {any} c @param {string} name */
 function object(c, name) {

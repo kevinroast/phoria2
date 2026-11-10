@@ -27,7 +27,7 @@ const makeChart = (o) => {
   if (keys.some((k) => NETWORK_ONLY.includes(k))) return chart({ mark: 'network', data: network, transition: false, ...o })
   if (keys.includes('t')) return chart({ mark: 'curve', fn: (t) => [t, t, t], transition: false, ...o })
   if (keys.includes('u') || keys.includes('v')) return chart({ mark: 'surface', fn: (u, v) => [u, v, u * v], u: [0, 1], v: [0, 1], transition: false, ...o })
-  if (keys.some((k) => ['fn', 'samples', 'params'].includes(k))) return chart({ mark: 'surface', fn: (x, z) => x * z, x: [0, 1], z: [0, 1], transition: false, ...o })
+  if (keys.some((k) => ['fn', 'samples', 'params', 'time', 'contours'].includes(k))) return chart({ mark: 'surface', fn: (x, z) => x * z, x: [0, 1], z: [0, 1], transition: false, ...o })
   return chart({ mark: 'bar', data: rows, x: 'month', y: 'sales', transition: false, ...o })
 }
 const opt = (key) => (c) => c.spec.options[key]
@@ -67,7 +67,9 @@ contract('chart()', {
     $schema: { value: 'https://example.com/chart.json', only: 'metadata, for editors' },
     description: { value: 'Monthly sales', read: opt('description') },
     equal: { value: true, read: opt('equal'), bad: 'yes', error: "'equal' is true or false" },
-    frame: { value: false, read: (c) => c.children.some((n) => n.name === 'axes'), expect: false, bad: 'none', error: "'frame' is true or false" },
+    frame: { value: false, read: (c) => c.children.some((n) => n.name === 'axes'), expect: false, bad: 'none', error: "'frame' is true (walls), false (none) or 'origin'" },
+    time: { value: true, read: opt('time'), bad: 'yes', error: "'time' is true or false" },
+    contours: { value: 6, read: (c) => c.spec.options.contours.count, expect: 6, bad: 'lots', error: "'contours' is true, a count" },
     fn: { value: (x, z) => x + z, read: (c) => c.marks[0].geometry.vertexCount, expect: 48 * 48, bad: 'sin(x)', error: "'fn' is a function to plot", keep: false },
     samples: { value: 9, read: (c) => c.marks[0].geometry.vertexCount, expect: 81, bad: 1, error: "'samples' is how many points" },
     params: { value: { a: 1 }, only: 'handed to fn - test/chart-functions.test.js', bad: 2, error: "'params' is an object", keep: false },

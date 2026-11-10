@@ -973,7 +973,10 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
   `'neighbours'` - the default, lighting the node's links and linked nodes - or `'node'`, the node alone),
   `equal` (the same units on x, y and z, so a shape keeps its proportions - the box takes the data's
   shape, its largest side the box's; default on for curves, parametric surfaces and vector fields),
-  `frame: false` (no axes, grid walls or tick labels - a shape on its own), and node options (`position`, ...).
+  `frame: false` (no axes, grid walls or tick labels - a shape on its own) or `frame: 'origin'` (axes through
+  zero with arrowheads and ticks, as on a blackboard - an axis not reaching zero crosses at its start),
+  `contours` (surfaces: lines of equal height - `true` for about ten at the y axis's ticks, a count, or
+  `{ count, values, place: 'surface' | 'floor' | 'both', color }`), and node options (`position`, ...).
 - **Surfaces**: one row per grid point - `x` and `z` are the grid (numbers or categories), `y` the
   height; colour follows `y` unless `color` says otherwise:
   `chart({ mark: 'surface', data: rows, x: 'hour', z: 'day', y: 'load', color: { field: 'load', scale: { scheme: 'heat' } } })`.
@@ -994,6 +997,8 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
   // params: handed to fn as its last argument - change them and the chart tweens to the new shape
   const plot = chart({ mark: 'surface', fn: (x, z, { a }) => Math.sin(a * x), x: [-3, 3], z: [-1, 1], y: [-1, 1], params: { a: 1 } })
   plot.update({ params: { a: 2 } })      // or update({ fn }) - a new function on the same samples tweens too
+  // time: true - fn gets the chart's clock as t, and only the mark is sampled again each frame (pin y)
+  chart({ mark: 'surface', fn: (x, z, { t }) => Math.sin(Math.hypot(x, z) * 3 - t * 2), x: [-3, 3], z: [-3, 3], y: [-1, 1], time: true })
   ```
 
   `samples`: a number for every range or one each (`[64, 32]`); defaults 48 a side (surfaces), 64

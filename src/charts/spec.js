@@ -26,7 +26,7 @@ import { FUNCTION_OPTIONS, sampleFunction } from './functions.js'
 export const MARKS = /** @type {Mark[]} */ (['bar', 'point', 'line', 'area', 'surface', 'curve', 'vector', 'network'])
 export const CHANNELS = ['x', 'y', 'z', 'color', 'size', 'opacity', 'label', 'key', 'detail']
 export const OPTIONS = ['mark', 'data', 'encoding', 'tooltip', 'box', 'stack', 'width', 'layout', 'flat', 'steps', 'seed',
-  'source', 'target', 'link', 'highlight', 'legend', 'theme', 'overlap', 'transition', 'title', '$schema', 'description', 'equal', 'frame',
+  'source', 'target', 'link', 'highlight', 'legend', 'theme', 'overlap', 'transition', 'title', '$schema', 'description', 'equal', 'frame', 'time', 'contours',
   ...FUNCTION_OPTIONS, ...CHANNELS]
 export const CHANNEL_OPTIONS = ['field', 'type', 'title', 'format', 'scale', 'axis', 'value', 'priority', 'legend']
 
@@ -64,7 +64,7 @@ export const CHANNEL_HINTS = {
  * @param {Record<string, any>} input the spec as written
  * @returns {{ mark: Mark, rows: any[], links: any[], fields: string[], channels: Record<string, Channel>,
  *   tooltip: Channel[] | ((hit: any) => any) | null, link: Record<string, Channel>, options: Record<string, any>,
- *   grid: { nx: number, nz: number } | null, about: string | null }}
+ *   grid: { nx: number, nz: number } | null, slopes: Float32Array | null, about: string | null }}
  */
 export function normalise(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail('chart()', `expected a spec such as { mark: 'bar', data, x, y }, got ${describe(input)}`)
@@ -138,12 +138,41 @@ export function normalise(input) {
   if (options.box !== undefined && (!Array.isArray(options.box) || options.box.length !== 3 || !options.box.every((n) => n > 0))) {
     fail('chart()', `'box' is the chart's size in the scene, [x, y, z] above 0, got ${describe(options.box)}`)
   }
-  for (const key of ['equal', 'frame']) {
-    if (options[key] !== undefined && typeof options[key] !== 'boolean') fail('chart()', `'${key}' is true or false, got ${describe(options[key])}`)
+  if (options.equal !== undefined && typeof options.equal !== 'boolean') fail('chart()', `'equal' is true or false, got ${describe(options.equal)}`)
+  if (options.frame !== undefined && options.frame !== true && options.frame !== false && options.frame !== 'origin') {
+    fail('chart()', `'frame' is true (walls), false (none) or 'origin' (axes through zero, with arrows), got ${describe(options.frame)}`)
   }
+  if (options.time !== undefined) {
+    if (typeof options.time !== 'boolean') fail('chart()', `'time' is true or false, got ${describe(options.time)}`)
+    if (options.time && !sampled) fail('chart()', "'time' animates a chart of a function - add fn, which is handed the time in seconds as t: fn: (x, z, { t }) => ...")
+  }
+  if (options.contours !== undefined) options.contours = contoursOf(options.contours, mark)
   // shapes - parametric surfaces, curves, vector fields - keep their proportions unless told not to
   if (options.equal === undefined) options.equal = sampled ? sampled.equal : mark === 'curve'
-  return { mark, rows, links, fields, channels, tooltip, link, options, grid: sampled?.grid ?? null, about: sampled?.about ?? null }
+  return { mark, rows, links, fields, channels, tooltip, link, options, grid: sampled?.grid ?? null, slopes: sampled?.slopes ?? null, about: sampled?.about ?? null }
+}
+
+/**
+ * A surface's contour lines: true (about ten), how many, or { count, values, place, color } -
+ * place 'surface' (on it, the default), 'floor' (projected under it) or 'both'.
+ * @param {any} v @param {Mark} mark
+ * @returns {{ count: number, values: number[] | null, place: 'surface' | 'floor' | 'both', color: string | null } | false}
+ */
+function contoursOf(v, mark) {
+  if (v === false || v === null) return false
+  if (mark !== 'surface') fail('chart()', `'contours' are lines of equal height on a surface - mark: 'surface', not '${mark}'`)
+  const o = v === true ? {} : typeof v === 'number' ? { count: v } : v
+  if (!o || typeof o !== 'object' || Array.isArray(o)) fail('chart()', `'contours' is true, a count such as 12, or { count, values, place, color }, got ${describe(v)}`)
+  for (const key of Object.keys(o)) {
+    if (!['count', 'values', 'place', 'color'].includes(key)) fail('chart()', `contours has no '${key}' - it takes count, values, place, color`)
+  }
+  if (o.count !== undefined && (!Number.isInteger(o.count) || o.count < 1 || o.count > 100)) fail('chart()', `contours' count is a whole number from 1 to 100, got ${describe(o.count)}`)
+  if (o.values !== undefined && (!Array.isArray(o.values) || !o.values.every((n) => typeof n === 'number' && Number.isFinite(n)))) {
+    fail('chart()', `contours' values are the heights to draw lines at, such as [-0.5, 0, 0.5], got ${describe(o.values)}`)
+  }
+  if (o.place !== undefined && !['surface', 'floor', 'both'].includes(o.place)) fail('chart()', `contours' place is 'surface', 'floor' or 'both', got ${describe(o.place)}`)
+  if (o.color !== undefined && !isColor(o.color)) fail('chart()', `contours' color isn't a colour, got ${describe(o.color)}`)
+  return { count: o.count ?? 10, values: o.values ?? null, place: o.place ?? 'surface', color: o.color ?? null }
 }
 
 /** @param {unknown} v @returns {Mark} */

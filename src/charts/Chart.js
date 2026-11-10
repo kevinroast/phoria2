@@ -5,12 +5,13 @@ import { Label } from '../scene/drawables.js'
 import { Color } from '../value/Color.js'
 import { registerType } from '../registry.js'
 import { describe, fail } from '../validate.js'
-import { chartFrame } from './axes.js'
+import { chartFrame, originFrame } from './axes.js'
 import { legend } from './legend.js'
 import { barMark, curveMark, lineMark, pointMark, stackKey, surfaceMark, vectorMark } from './marks.js'
 import { networkMark } from './network.js'
 import { SCHEMES, distinct, scaleBand, scaleColor, scaleLinear, scaleLog, scaleTime, toDate } from './scales.js'
 import { normalise } from './spec.js'
+import { sampleFunction } from './functions.js'
 import { addStyle } from './style.js'
 import { EASES } from '../ease.js'
 
@@ -59,6 +60,8 @@ export class Chart extends Group {
   /** @type {Float32Array | null} */ #current = null
   /** @type {Target | null} */ #shown = null
   /** @type {{ from: Float32Array, to: Float32Array, t: number, frame: Target, final: Target } | null} */ #tween = null
+  // a chart with time: true - its clock, in seconds, handed to fn as t
+  #time = 0
 
   /** @param {Record<string, any>} spec mark, data, channels and options - and node options such as position */
   constructor(spec) {
@@ -169,7 +172,7 @@ export class Chart extends Group {
 
   /** @param {boolean} animate */
   #rebuild(animate) {
-    const spec = normalise(this.#input)
+    const spec = normalise(this.#timed(this.#input))
     const o = spec.options, ch = spec.channels
     this.#spec = spec
     let box = /** @type {[number, number, number]} */ (o.box ?? defaultBox(spec))
@@ -183,7 +186,7 @@ export class Chart extends Group {
     // they fade rather than vanish, so the chart keeps its shape as it turns
     const overlap = o.overlap ?? 'dim'
     if (!['dim', 'hide', 'show'].includes(overlap)) fail('chart()', `overlap '${overlap}' - expected 'dim', 'hide' or 'show'`)
-    const visible = spec.rows.filter((r) => (!this.#filter || this.#filter(r)) && (!ch.color?.field || !this.#hidden.has(String(ch.color.get(r)))))
+    const visible = this.#visible(spec.rows)
 
     this.scales = scalesFor(spec, box, equal?.domains)
     const color = this.scales.color
@@ -201,7 +204,7 @@ export class Chart extends Group {
     // (the box only for marks whose nodes are sized by it - a shape whose proportions change, as a
     // torus turns into a sphere, still tweens)
     const sized = !['surface', 'curve', 'vector'].includes(spec.mark)
-    const signature = JSON.stringify([spec.mark, Object.entries(ch).map(([k, c]) => [k, c.field, c.type]), sized && box, theme, overlap, o.stack, o.layout, o.flat, Object.keys(spec.link)])
+    const signature = JSON.stringify([spec.mark, Object.entries(ch).map(([k, c]) => [k, c.field, c.type]), sized && box, theme, overlap, o.stack, o.layout, o.flat, o.contours, Object.keys(spec.link)])
     if (signature !== this.#signature) {
       this.#signature = signature
       if (this.#mark) this.remove(.../** @type {any[]} */ (this.#mark.nodes))
@@ -211,7 +214,8 @@ export class Chart extends Group {
       this.#tween = null
     }
     if (this.#frame) this.remove(this.#frame)
-    this.#frame = o.frame === false || (spec.mark === 'network' && o.layout !== 'given') ? null : this.add(chartFrame({ box, theme, overlap, axes: axesFor(spec, this.scales) }))
+    const frameOf = o.frame === 'origin' ? originFrame : chartFrame
+    this.#frame = o.frame === false || (spec.mark === 'network' && o.layout !== 'given') ? null : this.add(frameOf({ box, theme, overlap, axes: axesFor(spec, this.scales) }))
     if (this.#title) this.remove(this.#title)
     this.#title = o.title ? this.add(new Label({ text: String(o.title), position: [0, box[1] * 1.12, -box[2] / 2], className: `phoria-axis-title phoria-${theme}`, overlap: 'show' })) : null
 
@@ -221,7 +225,19 @@ export class Chart extends Group {
     this.highlight = hl === false ? null : Color.fromInput(hl === undefined || hl === 'neighbours' || hl === 'node' ? '#ffffff' : hl, 'chart()')
     this.highlightAmount = WHOLE_TINT[spec.mark]
 
-    this.#show(/** @type {Mark} */ (this.#mark).layout(visible), animate && o.transition !== false)
+    // a chart with time redraws every frame, so a change shows at once rather than tweening
+    this.#show(/** @type {Mark} */ (this.#mark).layout(visible), animate && o.transition !== false && !o.time)
+  }
+
+  /** The rows shown: passing the filter, and not switched off in the legend. @param {any[]} rows */
+  #visible(rows) {
+    const ch = /** @type {ReturnType<typeof normalise>} */ (this.#spec).channels
+    return rows.filter((r) => (!this.#filter || this.#filter(r)) && (!ch.color?.field || !this.#hidden.has(String(ch.color.get(r)))))
+  }
+
+  /** The spec as sampled now: with time on, the chart's clock is t among its params. @param {Record<string, any>} input */
+  #timed(input) {
+    return input.time === true ? { ...input, params: { ...(input.params ?? {}), t: this.#time } } : input
   }
 
   /** @param {ReturnType<typeof normalise>} spec @param {'dark' | 'light'} theme */
@@ -339,6 +355,19 @@ export class Chart extends Group {
     // with motion reduced (the View's reducedMotion), flows stand still and a change shows at once
     const still = /** @type {any} */ (this.root).motionReduced === true
     if (!still) this.#mark?.tick?.(dt)
+    // a function of time: sampled again at the new time, and only the mark redrawn - the scales,
+    // axes and legend stay as they are (pin y, so none of them has to follow the values)
+    if (this.#input.time === true && !still && dt > 0 && this.#mark) {
+      this.#time += dt
+      const sampled = sampleFunction(this.#timed(this.#input))
+      // the new slopes go with the new rows (the mark reads them from the spec, in the rows' order)
+      const spec = /** @type {ReturnType<typeof normalise>} */ (this.#spec)
+      spec.slopes = sampled.slopes
+      const target = this.#mark.layout(this.#visible(sampled.input.data))
+      this.#tween = null
+      this.#draw(target.state, target, target)
+      return
+    }
     const tw = this.#tween
     if (!tw) return
     const o = this.#input.transition ?? {}

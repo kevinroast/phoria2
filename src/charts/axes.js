@@ -50,13 +50,6 @@ export function chartFrame({ box, axes, theme, overlap }) {
   const frame = new Group({ name: 'axes', pickable: false })
   const dir = (camera) => look(frame, camera, h / 2)
   const wallColor = theme === 'light' ? '#c3c8d2' : '#3a3d47'
-  // the values an axis marks: those it lists, or about as many as it asks for (five unless it says)
-  const tickValues = (a) => {
-    const ticks = a.channel?.axis?.ticks
-    if (!Array.isArray(ticks)) return a.scale.kind === 'band' ? a.scale.ticks() : a.scale.ticks(ticks ?? 5)
-    const [r0, r1] = a.scale.range, lo = Math.min(r0, r1), hi = Math.max(r0, r1)
-    return ticks.filter((t) => a.scale(t) >= lo - 1e-9 && a.scale(t) <= hi + 1e-9)
-  }
   const ticksOf = (a) => (a && a.scale.kind !== 'band' && a.channel?.axis !== false ? tickValues(a) : [])
   const xt = ticksOf(axes.x), yt = ticksOf(axes.y), zt = ticksOf(axes.z)
 
@@ -134,6 +127,75 @@ export function chartFrame({ box, axes, theme, overlap }) {
     at: (y, m) => [xs * (w / 2 + m), y, zs * d / 2],
     title: (m) => [xs * (w / 2 + m), h + m * 2, zs * d / 2],
   }))), 'left')
+  return frame
+}
+
+/**
+ * The values an axis marks: those it lists, or about as many as it asks for (five unless it says).
+ * @param {AxisSpec} a
+ */
+function tickValues(a) {
+  const axis = a.channel?.axis, ticks = axis ? axis.ticks : undefined
+  if (!Array.isArray(ticks)) return a.scale.kind === 'band' ? a.scale.ticks() : a.scale.ticks(ticks ?? 5)
+  const [r0, r1] = a.scale.range, lo = Math.min(r0, r1), hi = Math.max(r0, r1)
+  return ticks.filter((t) => a.scale(t) >= lo - 1e-9 && a.scale(t) <= hi + 1e-9)
+}
+
+/**
+ * Axes as on a blackboard (frame: 'origin'): a line through zero for each, an arrowhead at its
+ * positive end and its name there, small ticks across it with their values - where the walls of
+ * chartFrame would box the chart in. An axis whose domain doesn't reach zero crosses the others at
+ * its start. Ticks at zero are left unlabelled, where the axes meet.
+ * @param {{ box: [number, number, number], axes: Partial<Record<'x' | 'y' | 'z', AxisSpec>>, theme: 'dark' | 'light', overlap: 'dim' | 'hide' | 'show' }} options
+ * @returns {Group}
+ */
+export function originFrame({ box, axes, theme, overlap }) {
+  const frame = new Group({ name: 'axes', pickable: false })
+  const color = theme === 'light' ? '#5a606c' : '#9aa0ad'
+  const cls = (kind) => `phoria-axis-${kind} phoria-${theme}`
+  const size = Math.max(...box), tick = size * 0.012, margin = size * 0.03, overshoot = size * 0.04
+  // where each axis crosses the others: at zero, or its start when zero is out of its range
+  const zero = (name) => {
+    const a = axes[name]
+    if (!a) return 0
+    if (a.scale.kind === 'band') return Math.min(...a.scale.range)
+    const [d0, d1] = a.scale.domain
+    return a.scale(Math.min(Math.max(0, Math.min(d0, d1)), Math.max(d0, d1)))
+  }
+  const origin = { x: zero('x'), y: zero('y'), z: zero('z') }
+  const shown = (/** @type {'x' | 'y' | 'z'} */ name) => axes[name] && axes[name].channel?.axis !== false
+  for (const name of /** @type {('x' | 'y' | 'z')[]} */ (['x', 'y', 'z'])) {
+    if (!shown(name)) continue
+    const a = /** @type {AxisSpec} */ (axes[name]), k = 'xyz'.indexOf(name)
+    const at = (/** @type {number} */ v) => {
+      const p = [origin.x, origin.y, origin.z]
+      p[k] = v
+      return p
+    }
+    const [r0, r1] = a.scale.range
+    // +z runs towards the viewer in the scale's range (z: [d / 2, -d / 2]): its arrow at the start of the range
+    const lo = Math.min(r0, r1), hi = Math.max(r0, r1), ahead = name === 'z' ? r0 >= r1 ? lo : hi : hi
+    const behind = ahead === hi ? lo : hi, sign = ahead === hi ? 1 : -1
+    frame.add(new Lines({ geometry: new Geometry({ positions: [...at(behind), ...at(ahead + sign * overshoot)] }), material: { color, width: 1.5 }, arrows: 'end', pickable: false }))
+    // ticks: across the axis, in the plane of the next one (x and z ticks stand up, y's run along x)
+    const across = name === 'y' ? 0 : 1, p = []
+    const values = a.scale.kind === 'band' ? [] : tickValues(a)
+    for (const t of values) {
+      const c = at(a.scale(t))
+      const u = [...c], v = [...c]
+      u[across] -= tick
+      v[across] += tick
+      p.push(...u, ...v)
+      if (Math.abs(t) < 1e-12) continue
+      const label = [...c]
+      if (name === 'y') label[0] -= margin
+      else label[1] -= margin
+      frame.add(new Label({ text: a.scale.format(t), position: label, place: name === 'y' ? 'left' : 'below', className: cls('tick'), priority: 1, overlap }))
+    }
+    if (p.length) frame.add(new Lines({ geometry: new Geometry({ positions: p }), material: { color, width: 1.5 }, pickable: false }))
+    const end = at(ahead + sign * (overshoot + margin))
+    frame.add(new Label({ text: a.title || name, position: end, place: name === 'y' ? 'above' : 'right', className: cls('title'), priority: 2, overlap }))
+  }
   return frame
 }
 

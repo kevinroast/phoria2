@@ -316,23 +316,68 @@ function replace(old, options) {
   return new Geometry(options)
 }
 
+/**
+ * The same geometry with new values, when they fit it - as many vertices and indices, normals or
+ * not as before - so a surface redrawn every frame (time, a tween) keeps its GPU buffers rather
+ * than making new ones; otherwise a new geometry, as replace().
+ * @param {Geometry} old @param {{ positions: Float32Array, normals?: Float32Array, colors: Float32Array, indices: Uint32Array }} options
+ */
+function refill(old, options) {
+  const { positions, normals, colors, indices } = options
+  const fits = old.positions.length === positions.length && old.colors?.length === colors.length && old.indices?.length === indices.length &&
+    (normals ? old.hasNormals : !old.hasNormals)
+  if (!fits) return replace(old, options)
+  const oldColors = /** @type {Float32Array} */ (old.colors), oldIndices = /** @type {Uint16Array | Uint32Array} */ (old.indices)
+  old.positions.set(positions)
+  oldColors.set(colors)
+  oldIndices.set(indices)
+  if (normals) old.normals.set(normals)
+  return old.needsUpdate()
+}
+
 // --- surfaces -----------------------------------------------------------------------------
 
 /** @param {MarkContext} ctx @returns {Mark} */
 export function surfaceMark(ctx) {
   const mesh = new Mesh({ geometry: new Geometry({ positions: [0, 0, 0, 0, 0, 0, 0, 0, 0] }), material: { vertexColors: true, roughness: 0.6, doubleSided: true } })
+  // contour lines, on the surface or under it: faint, in the theme's ink, unless given a colour
+  const contours = ctx.spec.options.contours || null
+  const ink = contours?.color ?? (ctx.theme === 'light' ? '#1b1c22' : '#ffffff')
+  const lines = contours ? new Lines({ geometry: new Geometry({ positions: [0, 0, 0, 0, 0, 0] }), material: { color: ink, opacity: contours.color ? 1 : 0.5, width: 1.25 }, pickable: false }) : null
+  /**
+   * A grid's state from its rows in order, nx along and nz across: position and colour a point,
+   * and - for a function's surface, which brings its slopes - a normal from them in world space
+   * (each axis's units per data unit), so shading follows the function: three more numbers a point.
+   * @param {any[]} rows @param {number} nx @param {number} nz @param {Float32Array | null} [slopes] dy/dx, dy/dz a row
+   * @returns {Target}
+   */
+  const gridTarget = (rows, nx, nz, slopes = null) => {
+    const { x, y, z } = ctx.scales, ch = ctx.spec.channels
+    const sloped = !!slopes && slopes.length === rows.length * 2, stride = sloped ? 9 : 6
+    const kx = x(1) - x(0), ky = y(1) - y(0), kz = z(1) - z(0)
+    const state = new Float32Array(rows.length * stride)
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i], o = i * stride, rgb = ctx.rgb(row)
+      state[o] = x(ch.x.get(row)); state[o + 1] = y(Number(ch.y.get(row)) || 0); state[o + 2] = z(ch.z.get(row))
+      state[o + 3] = rgb[0]; state[o + 4] = rgb[1]; state[o + 5] = rgb[2]
+      if (!sloped) continue
+      // across the tangents along z and along x, (0, ky dy/dz, kz) x (kx, ky dy/dx, 0) - the way the
+      // triangles wind, which the two-sided shading turns to the viewer
+      const sx = /** @type {Float32Array} */ (slopes)[i * 2], sz = /** @type {Float32Array} */ (slopes)[i * 2 + 1]
+      const nx0 = -kz * ky * sx, ny0 = kz * kx, nz0 = -kx * ky * sz, l = Math.hypot(nx0, ny0, nz0) || 1
+      state[o + 6] = nx0 / l; state[o + 7] = ny0 / l; state[o + 8] = nz0 / l
+    }
+    return { rows, keys: null, state, stride, shape: { nx, nz } }
+  }
   return {
-    nodes: [mesh],
+    nodes: lines ? [mesh, lines] : [mesh],
     layout(rows) {
-      const { x, y, z } = ctx.scales, ch = ctx.spec.channels
-      // a parametric surface's rows come in grid order already: its x and z are where the points are,
-      // not the grid's lines
-      const layoutGrid = ctx.spec.grid
-      if (layoutGrid) {
-        const state = new Float32Array(rows.length * 6)
-        rows.forEach((row, i) => state.set([x(ch.x.get(row)), y(ch.y.get(row)), z(ch.z.get(row)), ...ctx.rgb(row)], i * 6))
-        return { rows, keys: null, state, stride: 6, shape: { nx: layoutGrid.nx, nz: layoutGrid.nz } }
-      }
+      const ch = ctx.spec.channels
+      // a function's rows - heights or a parametric surface - come in grid order already, z across
+      // and x along (for a parametric one its x and z are where the points are, not the grid's lines)
+      const sampled = ctx.spec.grid
+      // every row there - nothing filtered or toggled out - so the slopes, in the rows' order, fit them
+      if (sampled && rows.length === sampled.nx * sampled.nz) return gridTarget(rows, sampled.nx, sampled.nz, ctx.spec.slopes)
       const xs = distinct(rows.map((r) => ch.x.get(r))), zs = distinct(rows.map((r) => ch.z.get(r)))
       const grid = new Map(rows.map((r) => [`${+ch.x.get(r)}|${+ch.z.get(r)}|${ch.x.get(r)}|${ch.z.get(r)}`, r]))
       const cell = (a, b) => grid.get(`${+a}|${+b}|${a}|${b}`)
@@ -341,33 +386,45 @@ export function surfaceMark(ctx) {
         const gap = xs.flatMap((a) => zs.map((b) => [a, b])).find(([a, b]) => !cell(a, b))
         fail('chart()', `a surface needs a value for every x and z pair - ${missing} of ${xs.length * zs.length} are missing (first: x ${gap[0]}, z ${gap[1]})`)
       }
-      const ordered = [], state = new Float32Array(xs.length * zs.length * 6)
-      let i = 0
-      for (const b of zs) {
-        for (const a of xs) {
-          const row = cell(a, b)
-          ordered.push(row)
-          state.set([x(a), y(Number(ch.y.get(row)) || 0), z(b), ...ctx.rgb(row)], i++ * 6)
-        }
-      }
-      return { rows: ordered, keys: null, state, stride: 6, shape: { nx: xs.length, nz: zs.length } }
+      const ordered = []
+      for (const b of zs) for (const a of xs) ordered.push(cell(a, b))
+      return gridTarget(ordered, xs.length, zs.length)
     },
     apply(state, target) {
-      const { nx, nz } = target.shape
-      const positions = [], colors = [], indices = []
-      for (let i = 0; i < nx * nz; i++) {
-        positions.push(...state.subarray(i * 6, i * 6 + 3))
-        colors.push(...state.subarray(i * 6 + 3, i * 6 + 6))
+      const { nx, nz } = target.shape, stride = target.stride, n = nx * nz
+      const positions = new Float32Array(n * 3), colors = new Float32Array(n * 3), normals = stride === 9 ? new Float32Array(n * 3) : null
+      for (let i = 0; i < n; i++) {
+        const o = i * stride, q = i * 3
+        positions[q] = state[o]; positions[q + 1] = state[o + 1]; positions[q + 2] = state[o + 2]
+        colors[q] = state[o + 3]; colors[q + 1] = state[o + 4]; colors[q + 2] = state[o + 5]
+        if (normals) { normals[q] = state[o + 6]; normals[q + 1] = state[o + 7]; normals[q + 2] = state[o + 8] }
       }
+      // each cell split along its shorter diagonal, in 3D: the triangles follow a ridge or a
+      // valley running across the grid, where one diagonal everywhere cuts it into a sawtooth
+      const gap = (/** @type {number} */ p, /** @type {number} */ q) => {
+        const dx = positions[p * 3] - positions[q * 3], dy = positions[p * 3 + 1] - positions[q * 3 + 1], dz = positions[p * 3 + 2] - positions[q * 3 + 2]
+        return dx * dx + dy * dy + dz * dz
+      }
+      const indices = new Uint32Array(Math.max(0, nx - 1) * Math.max(0, nz - 1) * 6)
+      let k = 0
       for (let j = 0; j < nz - 1; j++) {
         for (let i = 0; i < nx - 1; i++) {
           const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1
-          indices.push(a, c, b, b, c, d)
+          if (gap(a, d) < gap(b, c)) { indices[k++] = a; indices[k++] = c; indices[k++] = d; indices[k++] = a; indices[k++] = d; indices[k++] = b }
+          else { indices[k++] = a; indices[k++] = c; indices[k++] = b; indices[k++] = b; indices[k++] = c; indices[k++] = d }
         }
       }
-      mesh.geometry = replace(mesh.geometry, { positions, colors, indices })
+      mesh.geometry = refill(mesh.geometry, normals ? { positions, normals, colors, indices } : { positions, colors, indices })
       // a row per vertex: picking gives the nearest grid point's row
       mesh.data = target.rows
+      if (lines && contours) {
+        const y = /** @type {Scale} */ (ctx.scales.y)
+        const [lo, hi] = [Math.min(...y.range), Math.max(...y.range)]
+        // heights as given, or about count of the y axis's ticks, without its ends
+        const values = contours.values ?? y.ticks(contours.count).filter((v) => y(v) > lo + 1e-6 && y(v) < hi - 1e-6)
+        const segments = contourSegments(positions, nx, nz, values.map((v) => y(v)), contours.place)
+        lines.geometry = replace(lines.geometry, { positions: segments.length ? segments : [0, 0, 0, 0, 0, 0] })
+      }
     },
   }
 }
@@ -503,4 +560,54 @@ export function vectorMark(ctx) {
 function normalised(q) {
   const l = Math.hypot(...q)
   return q.map((v) => v / l)
+}
+
+// --- contours -----------------------------------------------------------------------------
+
+// marching squares: which edges of a cell a level crosses, by which corners are above it (a, b, c, d
+// round the cell, bit 0 a); edges 0 a-b, 1 b-c, 2 c-d, 3 d-a. The saddles, 5 and 10, are settled by
+// the cell's middle
+const CELL_EDGES = [[], [[3, 0]], [[0, 1]], [[3, 1]], [[1, 2]], null, [[0, 2]], [[3, 2]], [[3, 2]], [[0, 2]], null, [[1, 2]], [[3, 1]], [[0, 1]], [[3, 0]], []]
+
+/**
+ * Lines of equal height over a grid of points - x, y, z each, nx along and nz across - at each of
+ * the levels (heights in the same space): on the surface, projected flat under it at y = 0, or
+ * both. Segments as pairs of points.
+ * @param {ArrayLike<number>} p @param {number} nx @param {number} nz @param {number[]} levels
+ * @param {'surface' | 'floor' | 'both'} place
+ * @returns {number[]}
+ */
+export function contourSegments(p, nx, nz, levels, place) {
+  const out = []
+  const corner = [0, 0, 0, 0]
+  /** Where a level crosses an edge, as a point. @param {number} e @param {number} level */
+  const cross = (e, level) => {
+    const i = corner[e], j = corner[(e + 1) % 4]
+    const yi = p[i * 3 + 1], yj = p[j * 3 + 1], t = (level - yi) / (yj - yi || 1e-12)
+    return [p[i * 3] + (p[j * 3] - p[i * 3]) * t, level, p[i * 3 + 2] + (p[j * 3 + 2] - p[i * 3 + 2]) * t]
+  }
+  const push = (/** @type {number[]} */ a, /** @type {number[]} */ b) => {
+    if (place !== 'floor') out.push(...a, ...b)
+    if (place !== 'surface') out.push(a[0], 0, a[2], b[0], 0, b[2])
+  }
+  for (let j = 0; j < nz - 1; j++) {
+    for (let i = 0; i < nx - 1; i++) {
+      corner[0] = j * nx + i
+      corner[1] = corner[0] + 1
+      corner[2] = corner[1] + nx
+      corner[3] = corner[0] + nx
+      const ys = corner.map((k) => p[k * 3 + 1])
+      for (const level of levels) {
+        const code = (ys[0] > level ? 1 : 0) | (ys[1] > level ? 2 : 0) | (ys[2] > level ? 4 : 0) | (ys[3] > level ? 8 : 0)
+        let edges = CELL_EDGES[code]
+        if (!edges) {
+          const middle = (ys[0] + ys[1] + ys[2] + ys[3]) / 4 > level
+          // a and c above (5), or b and d (10): the middle says which pair the high ground joins
+          edges = (code === 5) === middle ? [[0, 1], [2, 3]] : [[3, 0], [1, 2]]
+        }
+        for (const [e0, e1] of edges) push(cross(e0, level), cross(e1, level))
+      }
+    }
+  }
+  return out
 }
