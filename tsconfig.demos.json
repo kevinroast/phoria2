@@ -13,7 +13,8 @@
       "phoria2/charts": ["./src/charts/index.js"],
       "phoria2/gltf": ["./src/gltf/index.js"],
       "phoria2/motion": ["./src/motion/index.js"],
-      "phoria2/edit": ["./src/edit/index.js"]
+      "phoria2/edit": ["./src/edit/index.js"],
+      "phoria2/element": ["./src/element/index.js"]
     }
   }
 }

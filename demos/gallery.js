@@ -39,8 +39,14 @@ for (const { section, name, title, hidden } of DEMOS) {
   const li = document.createElement('li')
   // a card without a picture just has none
   const thumb = THUMBS[`./thumbs/${slug(name)}.webp`]
-  li.innerHTML = `<a href="demo.html?name=${slug(name)}">${thumb ? `<img class="thumb" src="${thumb}" alt="" width="480" height="300" loading="lazy">` : ''}<span class="name">${name}</span><span class="title">${title}</span></a>`
+  // names and titles are text - a title can mention a tag, such as <phoria-view>
+  li.innerHTML = `<a href="demo.html?name=${slug(name)}">${thumb ? `<img class="thumb" src="${thumb}" alt="" width="480" height="300" loading="lazy">` : ''}<span class="name">${escape(name)}</span><span class="title">${escape(title)}</span></a>`
   list.append(li)
+}
+
+/** Text for HTML: its own <, > and & shown, not read as markup. @param {string} s */
+function escape(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 // The front scene: a 3D bar chart that builds itself and runs through what charts can do (demos/hero.js)

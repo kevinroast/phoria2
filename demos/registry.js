@@ -25,6 +25,7 @@ export const DEMOS = [
   
   { section: 'Features', name: 'hello', title: 'a minimal scene, with the whole program' },
   { name: 'scene-json', title: 'a scene as plain JSON - edit it, add to it, rebuild it, export it' },
+  { name: 'custom element', title: 'the <phoria-view> tag - model scenes in plain HTML - with example markup', hint: 'Drag to orbit, zoom wheel · click a part of the truck' },
   { name: 'materials', title: 'roughness and metalness under a movable light and the studio environment' },
   { name: 'advanced materials', title: 'glass, clearcoat, cloth sheen, reflectance, brushed metal and paper lanterns' },
   { name: 'stylised materials', title: 'matcaps and toon shading - stylised looks' },

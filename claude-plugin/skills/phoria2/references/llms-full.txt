@@ -31,6 +31,7 @@ import { loadGLTF } from 'phoria2/gltf'                   // glTF 2.0 models
 import { Timeline, follow, reveal } from 'phoria2/motion' // steps on a timeline, moving along curves
 import { Emitter, Body } from 'phoria2/particles'         // particles and simple physics
 import { TransformHandle, History } from 'phoria2/edit'   // a move/turn handle, and undo
+import 'phoria2/element'                                  // defines the <phoria-view> HTML tag
 ```
 
 Without a build step, map the imports to a CDN in the page, pinning the version (they share one
@@ -46,7 +47,8 @@ copy of the core):
 ```
 
 The other sub-paths follow the same pattern: `dist/gltf.js`, `dist/motion.js`, `dist/particles.js`,
-`dist/edit.js`. TypeScript types ship with the package.
+`dist/edit.js`. TypeScript types ship with the package. `dist/element.js` (the `<phoria-view>` tag)
+needs no import map: load it with a plain `<script type="module" src>`.
 
 When this page doesn't settle something, read the source with its comments in
 `node_modules/phoria2/src` (`src/View.js`, `src/scene/`, `src/geometry/`, `src/charts/`...), not the
@@ -1063,6 +1065,52 @@ Product-viewer lighting:
 view.scene.environment = 'studio.hdr'                // or 'studio' (built in)
 view.scene.background = view.scene.environment       // the HDR as a backdrop
 view.scene.backgroundBlur = 0.5
+```
+
+## HTML tag: `phoria2/element`
+
+For pages that want a model, chart or scene without writing a render loop. Importing the module
+defines `<phoria-view>` (from a CDN: `<script type="module" src="https://cdn.jsdelivr.net/npm/phoria2/dist/element.js">`).
+The canvas goes inside the tag (no shadow root), so page CSS styles labels, tooltips and legends;
+the tag is a block, 300px high until the page sizes it.
+
+```html
+<phoria-view src="models/chair.glb" environment="studio" orbit auto-rotate ground-shadow autoplay></phoria-view>
+
+<phoria-view camera="isometric" orbit background="#1b1c22">
+  <script type="application/json">
+    { "type": "scene", "children": [{ "type": "mesh", "geometry": { "type": "box", "size": 2 } }] }
+  </script>
+</phoria-view>
+```
+
+Content, any of: `src` - a glTF model (phoria2/gltf loads on demand), added to the scene; `scene` - a
+URL of a description; or a `<script type="application/json">` inside the tag. A description is what
+`create()` takes: `{ "type": "scene", ... }` replaces the scene, a node or a list of nodes is added; a
+`"type": "chart"` (a chart spec plus the type) loads phoria2/charts first. `autoplay` plays the
+model's first animation, or the one it names.
+
+Attributes (View options, kebab-cased; a switch is on when present, `"false"` turns it off, or JSON
+options such as `ground-shadow='{ "opacity": 0.6 }'`):
+- Changed live: `background`, `environment` ('studio', an .hdr URL), `environment-intensity`, `bloom`,
+  `ambient-occlusion`, `ground-shadow`, `fxaa`, `tone-mapping`, `exposure`, `highlight`,
+  `description`, `debug`, `src`, `scene`, `autoplay`
+- Remake the view when changed: `camera` (a preset: perspective, isometric, top, front, side - fitted
+  to the content), or `camera-position` / `camera-target` ("x y z") and `fov`; `orbit` (present,
+  "map", or orbit options as JSON - `orbit='{ "pan": false }'`), `auto-rotate` (present, or radians a second - turns orbit on); `keyboard`, `render-mode`,
+  `pixel-ratio`, `antialias`, `context`, `auto-light`, `reduced-motion`
+
+From script: `el.view` (the View - null until the tag is in the page), `el.scene`, `el.model`,
+`el.ready` (a promise for the content and its textures), `el.reload()` (after changing the inline
+JSON). Events: `load` (detail `{ view, model }`), `error` (detail `{ error }` - also said in the
+console, naming the attribute), `pick` on a click (detail `{ hit, event }`, hit null for empty
+space), `hover` as the thing under the pointer changes (hover picking starts only when listened for).
+
+```js
+const el = document.querySelector('phoria-view')
+el.addEventListener('pick', (e) => console.log(e.detail.hit?.node.name))
+el.setAttribute('exposure', '0.5')       // live
+el.view.frame(el.model)                   // anything else, on the View
 ```
 
 ## Curves and motion: `phoria2/motion`

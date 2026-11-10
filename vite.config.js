@@ -5,7 +5,7 @@ import { defineConfig } from 'vite'
 const root = import.meta.dirname
 
 // The package entry points: 'phoria2' (the core), 'phoria2/particles', 'phoria2/charts', 'phoria2/gltf',
-// 'phoria2/motion' and 'phoria2/edit'.
+// 'phoria2/motion', 'phoria2/edit' and 'phoria2/element'.
 // The library build emits one ES module per entry (dist/phoria2.js, dist/particles.js, ...).
 const ENTRIES = {
   phoria2: 'src/index.js',
@@ -14,6 +14,7 @@ const ENTRIES = {
   gltf: 'src/gltf/index.js',
   motion: 'src/motion/index.js',
   edit: 'src/edit/index.js',
+  element: 'src/element/index.js',
 }
 
 /**
@@ -93,6 +94,7 @@ export default defineConfig(({ mode }) => ({
       { find: /^phoria2\/gltf$/, replacement: resolve(root, ENTRIES.gltf) },
       { find: /^phoria2\/motion$/, replacement: resolve(root, ENTRIES.motion) },
       { find: /^phoria2\/edit$/, replacement: resolve(root, ENTRIES.edit) },
+      { find: /^phoria2\/element$/, replacement: resolve(root, ENTRIES.element) },
     ],
   },
   build: mode === 'demos'
@@ -125,7 +127,7 @@ export default defineConfig(({ mode }) => ({
             // renderer's environment and shadow passes, bloom, the product viewer's effects, GPU
             // picking) keep chunks of their own - a new one must be named here too, or it is bundled
             // into core
-            manualChunks: (id) => (/[\\/]src[\\/](?!particles|charts|gltf|motion|edit|explain|snapshot|tooltip|keyboard|debug|hdr|irradiance|webgl[\\/](?:passes|picking|bloom|effects))/.test(id) ? 'core' : undefined),
+            manualChunks: (id) => (/[\\/]src[\\/](?!particles|charts|gltf|motion|edit|element|explain|snapshot|tooltip|keyboard|debug|hdr|irradiance|webgl[\\/](?:passes|picking|bloom|effects))/.test(id) ? 'core' : undefined),
             chunkFileNames: '[name].js',
           },
         },

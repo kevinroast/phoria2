@@ -156,6 +156,26 @@ view.frame(model)
 model.play()                                        // its first animation
 ```
 
+## As an HTML tag
+
+No script of your own: load `phoria2/element` once, and `<phoria-view>` shows a model, a chart or
+a scene. Attributes are View options, kebab-cased.
+
+```html
+<script type="module" src="https://cdn.jsdelivr.net/npm/phoria2/dist/element.js"></script>
+
+<phoria-view src="models/chair.glb" environment="studio" orbit auto-rotate ground-shadow></phoria-view>
+
+<phoria-view orbit>
+  <script type="application/json">
+    { "type": "chart", "mark": "bar", "data": [{ "m": "Jan", "v": 3 }, { "m": "Feb", "v": 5 }], "x": "m", "y": "v" }
+  </script>
+</phoria-view>
+```
+
+`el.view` is the View for anything else; `pick`, `hover`, `load` and `error` are events, and
+attributes change it live.
+
 ## With other libraries
 
 phoria2 draws; a library built for the job does the rest. Physics engines hand back positions and
@@ -225,6 +245,7 @@ A full example, with a chart that follows its data, is in
 | `phoria2/gltf` | `loadGLTF()` - glTF 2.0 models with their materials and animations |
 | `phoria2/motion` | `Timeline` - named steps played in order, `follow()` along a curve, `reveal()` a path as it's travelled - for explainers and guided tours |
 | `phoria2/edit` | `TransformHandle` - a move and turn handle with grid and angle snapping - and `History` for undo, for planners and layout editors |
+| `phoria2/element` | `<phoria-view>` - a model, chart or scene as an HTML tag, its attributes View options; importing it defines the tag |
 | `phoria2/schema.json`, `phoria2/charts/schema.json` | JSON Schemas for scene descriptions (`create()`) and chart specs |
 
 ## Versioning

@@ -2678,3 +2678,77 @@ button.demo-legend-item {
     margin: 4px 3px;
   }
 }
+
+/* the custom element demo: cards of a live <phoria-view> and the markup that made it, scrolling */
+.demo-ce {
+  position: fixed;
+  inset: 200px 16px 16px 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(460px, 100%), 1fr));
+  gap: 12px;
+  align-content: start;
+  overflow: auto;
+}
+
+.demo-ce-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #1b1c22;
+}
+
+.demo-ce-intro {
+  grid-column: 1 / -1;
+}
+
+.demo-ce-card h3 {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.demo-ce-card > p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.demo-ce-card pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 8px;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.demo-ce-live phoria-view {
+  height: 280px;
+  border-radius: 8px;
+  background: #1b1c22;
+}
+
+.demo-ce-row {
+  margin: 8px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.demo-ce-row button {
+  font: inherit;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
