@@ -12,19 +12,19 @@ const BG = '#1b1c22'
 const CARDS = [
   {
     name: 'surface', title: 'A surface, y = f(x, z)',
-    note: 'A function and the ranges to sample it over, in place of data. Move a or b and the surface tweens to the new shape; y is pinned, so you see it change.',
+    note: 'A function and the sample ranges over it, in place of data. Move a or b and the surface tweens to the new shape; y is pinned, so you see it change.',
   },
   {
     name: 'gradient', title: 'Its gradient',
-    note: 'Arrows on the floor point uphill - the gradient of the surface above them, as long as it is steep. A second chart over the same ranges, so the two line up.',
+    note: 'Arrows on the floor point up the gradient of the surface above them as long as it is steep. A second chart over the same ranges lining up.',
   },
   {
     name: 'curve', title: 'A curve through space',
-    note: 'A 3D Lissajous figure, [x, y, z] = f(t), with a point riding round it. Whole-number frequencies close the loop.',
+    note: 'A 3D Lissajous figure, [x, y, z] = f(t), with a point riding round it. Whole-number frequencies closing the loop.',
   },
   {
     name: 'shapes', title: 'Parametric shapes',
-    note: 'Surfaces [x, y, z] = f(u, v) that fold back on themselves, with equal units on every axis so they keep their proportions - tweening from one to the next.',
+    note: 'Surfaces [x, y, z] = f(u, v) that fold back on themselves with equal units on every axis - keeping their proportions - tweening from one to the next.',
   },
   {
     name: 'descent', title: 'Gradient descent',
@@ -32,7 +32,11 @@ const CARDS = [
   },
   {
     name: 'field', title: 'An electric field',
-    note: 'The field round two charges, on a plane. Arrow lengths and colours follow the log of its strength, so the far field still shows its way; change the second charge and the field swings.',
+    note: 'The field round two charges on a plane. Arrow lengths and colours follow the log of its strength. Change the second charge and the field swings.',
+  },
+  {
+    name: 'matrix', title: 'A linear map',
+    note: 'A 2 × 2 matrix as a field: each arrow is where the map sends its point. Along the white lines the arrows point along them - the map only stretches there: its eigenvectors. Give b and c opposite signs and they go - a rotation.',
   },
   {
     name: 'response', title: 'A response surface',
@@ -76,7 +80,7 @@ export default function run({ canvas }) {
   return views[0]
 }
 
-const EXAMPLES = { surface, gradient, curve, shapes, descent, field, response }
+const EXAMPLES = { surface, gradient, curve, shapes, descent, field, matrix, response }
 
 // surface
 function surface({ canvas, slider }) {
@@ -223,6 +227,44 @@ function field({ canvas, slider }) {
   })
   show()
   slider('second charge', -2, 2, p.q, (q) => { p.q = q; plot.update({ params: p }); show() }, 0.1)
+  return view
+}
+// end
+
+// matrix
+function matrix({ canvas, slider }) {
+  // from high above: a map of the plane reads best looking down on it
+  const view = new View({ canvas, orbit: true, background: BG, camera: { position: [0, 13.5, 8], target: [0, 0, 0] } })
+  const m = { a: 1, b: 0.6, c: 0.2, d: -0.5 }
+  const ranges = { x: [-2, 2], z: [-2, 2] }
+  const plot = view.scene.add(chart({
+    mark: 'vector', fn: (x, y, z, { a, b, c, d }) => [a * x + b * z, 0, c * x + d * z],
+    ...ranges, samples: 11, params: m, legend: false,
+  }))
+  // the eigenvectors: lines through the origin, where the map's matrix has real eigenvalues
+  const eigenLines = () => {
+    const { a, b, c, d } = m, tr = a + d, disc = tr * tr - 4 * (a * d - b * c)
+    if (disc < 0) return null
+    return [(tr + Math.sqrt(disc)) / 2, (tr - Math.sqrt(disc)) / 2].flatMap((l, i) => {
+      const [vx, vz] = Math.abs(b) > 1e-9 ? [b, l - a] : Math.abs(c) > 1e-9 ? [l - d, c] : i ? [0, 1] : [1, 0]
+      const k = 2 / Math.max(Math.abs(vx), Math.abs(vz))
+      return [{ x: -vx * k, y: 0, z: -vz * k, line: i }, { x: vx * k, y: 0, z: vz * k, line: i }]
+    })
+  }
+  const pinned = (field, domain) => ({ field, scale: { domain, nice: false } })
+  const lines = view.scene.add(chart({
+    mark: 'curve', data: eigenLines() ?? [], x: pinned('x', ranges.x), y: 'y', z: pinned('z', ranges.z),
+    detail: 'line', color: '#ffffff', size: 2, frame: false, tooltip: false,
+  }))
+  for (const k of ['a', 'b', 'c', 'd']) {
+    slider(k, -1.5, 1.5, m[k], (v) => {
+      m[k] = v
+      plot.update({ params: m })
+      const rows = eigenLines()
+      lines.visible = !!rows
+      if (rows) lines.update(rows)
+    })
+  }
   return view
 }
 // end

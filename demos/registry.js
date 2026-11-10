@@ -14,7 +14,7 @@ export const DEMOS = [
   { name: 'scatter', title: 'a 3D scatter of points from a spec - legend, tooltips, flat projections, selection modes', hint: 'Drag a lasso round points to select · set drag mode to orbit the chart' },
   { name: 'timeseries', title: 'visitors over time - stacked areas, ribbons in depth or lines, live data' },
   { name: 'surface', title: 'latency by hour and day as heat-coloured surface, tweens to new data' },
-  { name: 'maths', title: 'plots of functions - surfaces, gradients, curves, parametric shapes, descent and fields, live beside their code', hint: 'Drag to orbit any plot · the sliders change them live' },
+  { name: 'maths', title: 'beautiful function plots - surfaces, gradients, parametric curves, fields', hint: 'Drag to orbit any plot · the sliders change them live' },
   { name: 'network', title: 'a service dependency map - force or tiered layout, flowing traffic, failures' },
   { name: 'topology', title: 'a network topology - status colours, hover to trace links, live traffic' },
   { name: 'dashboard', title: 'eight chart tiles, each its own view, idle until touched' },

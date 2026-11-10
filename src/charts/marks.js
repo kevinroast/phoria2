@@ -445,7 +445,7 @@ function arrowGeometry() {
 /**
  * An arrow at each sample of a field, pointing its way, as long as its magnitude allows - the
  * longest nearly the gap to the next sample - and coloured by the colour channel (by default the
- * magnitude). Every arrow is as wide as the longest is long allows, so a weak one is still seen.
+ * magnitude). Arrows keep their shape down to a width of a third of the longest, so a weak one is still seen.
  * Directions follow the axes' scales, so with unequal units they lean as drawn.
  * @param {MarkContext} ctx @returns {Mark}
  */
@@ -490,7 +490,8 @@ export function vectorMark(ctx) {
         // turned from +Y to its direction (a tween leaves it a little short of unit length)
         const m = Math.hypot(ux, uy, uz) || 1, dx = ux / m, dy = uy / m, dz = uz / m
         const q = dy < -0.9999 ? [1, 0, 0, 0] : normalised([dz, 0, -dx, 1 + dy])
-        const w = len > 1e-6 ? target.shape.width : 1e-4
+        // shaped as the arrow is - as wide as it is long - down to a floor, so a weak one is still an arrow, not a disc
+        const w = len > 1e-6 ? Math.max(len, target.shape.width * 0.35) : 1e-4
         node.setInstance(i, { position: [px, py, pz], quaternion: q, scale: [w, Math.max(1e-4, len), w], color: [r, g, b] })
       }
     },
