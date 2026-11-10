@@ -80,7 +80,7 @@ export default function run({ canvas, gui, info }) {
   grid.className = 'demo-dashboard demo-chartlab'
   document.body.append(grid)
 
-  const settings = { copies: 1, live: false }
+  const settings = { copies: 1, live: true }
   /** @type {{ view: View, chart: any, data: string }[]} */
   let tiles = []
   // the readout: frames drawn across every view, and the time drawing took, each second
@@ -126,6 +126,7 @@ export default function run({ canvas, gui, info }) {
     clearInterval(timer)
     if (on) timer = setInterval(update, 1000)
   }
+  live(settings.live);
 
   const show = () => {
     info.textContent = `${tiles.length} views - ${stats.frames} frames drawn in the last second, ${stats.ms.toFixed(1)} ms drawing` +

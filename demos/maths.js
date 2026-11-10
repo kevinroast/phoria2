@@ -19,8 +19,8 @@ const CARDS = [
     note: 'Ripples spread from two sources - adding where crests meet, cancelling in a trough. With "time: true" the function is given the time as t, so the surface moves. Drag the sliders to move the sources apart or change the wavelength.',
   },
   {
-    name: 'gradient', title: 'Its gradient',
-    note: 'Arrows on the floor point up the gradient of the surface above them as long as it is steep. A second chart over the same ranges lining up.',
+    name: 'shapes', title: 'Parametric shapes',
+    note: 'Surfaces [x, y, z] = f(u, v) that fold back on themselves with equal units on every axis - keeping their proportions - tweening from one to the next.',
   },
   {
     name: 'contours', title: 'A contour map',
@@ -31,8 +31,8 @@ const CARDS = [
     note: 'A 3D Lissajous figure, [x, y, z] = f(t), with a point riding round it. Whole-number frequencies closing the loop.',
   },
   {
-    name: 'shapes', title: 'Parametric shapes',
-    note: 'Surfaces [x, y, z] = f(u, v) that fold back on themselves with equal units on every axis - keeping their proportions - tweening from one to the next.',
+    name: 'gradient', title: 'Its gradient',
+    note: 'Arrows on the floor point up the gradient of the surface above them as long as it is steep. A second chart over the same ranges lining up.',
   },
   {
     name: 'descent', title: 'Gradient descent',
