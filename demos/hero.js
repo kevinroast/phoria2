@@ -37,7 +37,10 @@ function fadingGrid(size = 30, divisions = 30, line = [0.27, 0.27, 0.31], backgr
       }
     }
   }
-  return new Lines({ geometry: new Geometry({ positions, colors }), material: { vertexColors: true }, pickable: false })
+  // a touch below the floor, so a bar shrunk to nothing hides the lines: surfaces are drawn pushed
+  // back a pixel's depth (so lines on them show whole), and on a bar's top, seen this shallow, that
+  // is a few hundredths
+  return new Lines({ geometry: new Geometry({ positions, colors }), material: { vertexColors: true }, pickable: false, position: [0, -0.06, 0] })
 }
 
 /**
