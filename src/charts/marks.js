@@ -2,11 +2,11 @@
 // state into its nodes. The chart tweens between states for transitions, so a mark only has to
 // lay out and draw, never animate.
 import { Geometry } from '../geometry/Geometry.js'
-import { box as boxGeometry, icosphere } from '../geometry/generators.js'
+import { box as boxGeometry, cylinder, icosphere } from '../geometry/generators.js'
 import { Texture } from '../material/Texture.js'
 import { InstancedMesh, Lines, Mesh, Points } from '../scene/drawables.js'
 import { fail } from '../validate.js'
-import { distinct } from './scales.js'
+import { distinct, scaleColor } from './scales.js'
 
 /**
  * Where a row stacks: on the others at its x and in its depth series, negatives down from zero on
@@ -325,6 +325,14 @@ export function surfaceMark(ctx) {
     nodes: [mesh],
     layout(rows) {
       const { x, y, z } = ctx.scales, ch = ctx.spec.channels
+      // a parametric surface's rows come in grid order already: its x and z are where the points are,
+      // not the grid's lines
+      const layoutGrid = ctx.spec.grid
+      if (layoutGrid) {
+        const state = new Float32Array(rows.length * 6)
+        rows.forEach((row, i) => state.set([x(ch.x.get(row)), y(ch.y.get(row)), z(ch.z.get(row)), ...ctx.rgb(row)], i * 6))
+        return { rows, keys: null, state, stride: 6, shape: { nx: layoutGrid.nx, nz: layoutGrid.nz } }
+      }
       const xs = distinct(rows.map((r) => ch.x.get(r))), zs = distinct(rows.map((r) => ch.z.get(r)))
       const grid = new Map(rows.map((r) => [`${+ch.x.get(r)}|${+ch.z.get(r)}|${ch.x.get(r)}|${ch.z.get(r)}`, r]))
       const cell = (a, b) => grid.get(`${+a}|${+b}|${a}|${b}`)
@@ -364,3 +372,134 @@ export function surfaceMark(ctx) {
   }
 }
 
+
+// --- curves -------------------------------------------------------------------------------
+
+/**
+ * A path through x, y and z, drawn in the order of its rows - a helix, an orbit, a GPS track - not
+ * sorted along x as a line is. One path, or one per detail value. Coloured by the colour channel,
+ * or from end to end along the viridis ramp; size, a number, is its width in pixels.
+ * @param {MarkContext} ctx @returns {Mark}
+ */
+export function curveMark(ctx) {
+  const ch = ctx.spec.channels
+  const lines = new Lines({ geometry: new Geometry({ positions: [0, 0, 0, 0, 0, 0] }), material: { width: ch.size?.value ?? 3, vertexColors: true } })
+  return {
+    nodes: [lines],
+    layout(rows) {
+      const { x, y, z } = ctx.scales
+      const by = ch.detail ?? null
+      const groups = new Map()
+      for (const row of rows) {
+        const k = by ? String(by.get(row)) : ''
+        if (!groups.has(k)) groups.set(k, [])
+        groups.get(k).push(row)
+      }
+      const series = [...groups.values()], ordered = series.flat()
+      // no colour channel: end to end along the ramp; a field or a constant colour as any mark has it
+      const ramp = ch.color ? null : scaleColor({ kind: 'sequential', domain: [0, 1], scheme: 'viridis' })
+      const state = new Float32Array(ordered.length * 6)
+      let i = 0
+      for (const path of series) {
+        path.forEach((row, k) => {
+          const rgb = ramp ? ramp(path.length > 1 ? k / (path.length - 1) : 0).toSRGB() : ctx.rgb(row)
+          state.set([pos(x, ch.x, row), pos(y, ch.y, row), pos(z, ch.z, row), ...rgb], i++ * 6)
+        })
+      }
+      return { rows: ordered, keys: null, state, stride: 6, shape: { lengths: series.map((p) => p.length) } }
+    },
+    apply(state, target) {
+      const positions = [], colors = [], data = []
+      let i = 0
+      for (const n of target.shape.lengths) {
+        for (let k = 0; k < n; k++, i++) {
+          if (k === 0) continue
+          positions.push(...state.subarray((i - 1) * 6, (i - 1) * 6 + 3), ...state.subarray(i * 6, i * 6 + 3))
+          colors.push(...state.subarray((i - 1) * 6 + 3, i * 6), ...state.subarray(i * 6 + 3, i * 6 + 6))
+          // a segment is its far end's row: hovering a curve names the point it reaches
+          data.push(target.rows[i])
+        }
+      }
+      lines.geometry = replace(lines.geometry, positions.length ? { positions, colors } : { positions: [0, 0, 0, 0, 0, 0] })
+      lines.data = data
+    },
+  }
+}
+
+// --- vector fields ------------------------------------------------------------------------
+
+/** An arrow a unit long along +Y and a unit wide, centred on the origin: a shaft and a cone. */
+function arrowGeometry() {
+  const shaft = cylinder({ radius: 0.07, height: 0.68, segments: 10 }), head = cylinder({ radius: 0.2, radiusTop: 0, height: 0.32, segments: 14 })
+  const positions = [], normals = [], indices = []
+  for (const [g, dy] of /** @type {[Geometry, number][]} */ ([[shaft, -0.16], [head, 0.34]])) {
+    const base = positions.length / 3
+    const p = g.positions, n = /** @type {Float32Array} */ (g.normals)
+    for (let i = 0; i < p.length; i += 3) positions.push(p[i], p[i + 1] + dy, p[i + 2])
+    normals.push(...n)
+    for (const k of /** @type {Uint32Array} */ (g.indices)) indices.push(base + k)
+  }
+  return new Geometry({ positions, normals, indices })
+}
+
+/**
+ * An arrow at each sample of a field, pointing its way, as long as its magnitude allows - the
+ * longest nearly the gap to the next sample - and coloured by the colour channel (by default the
+ * magnitude). Every arrow is as wide as the longest is long allows, so a weak one is still seen.
+ * Directions follow the axes' scales, so with unequal units they lean as drawn.
+ * @param {MarkContext} ctx @returns {Mark}
+ */
+export function vectorMark(ctx) {
+  /** @type {any} */
+  let node = new InstancedMesh({ geometry: arrowGeometry(), material: { roughness: 0.45 }, count: 64 })
+  node.count = 0
+  const mark = {
+    nodes: [node],
+    layout(rows) {
+      const { x, y, z } = ctx.scales, ch = ctx.spec.channels
+      // world units per data unit along each axis
+      const kx = x(1) - x(0), ky = y(1) - y(0), kz = z(1) - z(0)
+      const gap = (s, c) => {
+        const values = distinct(rows.map((r) => c.get(r)))
+        return values.length > 1 ? Math.abs(s(values[1]) - s(values[0])) : Infinity
+      }
+      const cell = Math.min(gap(x, ch.x), gap(y, ch.y), gap(z, ch.z))
+      const dirs = rows.map((r) => [r.vx * kx, r.vy * ky, r.vz * kz])
+      const longest = Math.max(...dirs.map((d) => Math.hypot(...d)), 0) || 1
+      const reach = Number.isFinite(cell) ? cell * 0.9 : Math.min(...ctx.box) / 10, scale = reach / longest
+      const state = new Float32Array(rows.length * 10)
+      rows.forEach((row, i) => {
+        const d = dirs[i], len = Math.hypot(...d)
+        const u = len > 0 ? d.map((v) => v / len) : [0, 1, 0]
+        state.set([x(ch.x.get(row)), y(ch.y.get(row)), z(ch.z.get(row)), ...u, len * scale, ...ctx.rgb(row)], i * 10)
+      })
+      return { rows, keys: null, state, stride: 10, shape: { count: rows.length, width: reach } }
+    },
+    apply(state, target) {
+      const n = state.length / target.stride
+      if (n > node.instanceMatrices.length / 16) {
+        const bigger = new InstancedMesh({ geometry: node.geometry, material: node.material, count: n })
+        node.parent?.add(bigger)
+        node.parent?.remove(node)
+        mark.nodes[0] = node = bigger
+      }
+      node.count = n
+      node.data = target.rows
+      for (let i = 0; i < n; i++) {
+        const [px, py, pz, ux, uy, uz, len, r, g, b] = state.subarray(i * 10, i * 10 + 10)
+        // turned from +Y to its direction (a tween leaves it a little short of unit length)
+        const m = Math.hypot(ux, uy, uz) || 1, dx = ux / m, dy = uy / m, dz = uz / m
+        const q = dy < -0.9999 ? [1, 0, 0, 0] : normalised([dz, 0, -dx, 1 + dy])
+        const w = len > 1e-6 ? target.shape.width : 1e-4
+        node.setInstance(i, { position: [px, py, pz], quaternion: q, scale: [w, Math.max(1e-4, len), w], color: [r, g, b] })
+      }
+    },
+  }
+  return mark
+}
+
+/** @param {number[]} q */
+function normalised(q) {
+  const l = Math.hypot(...q)
+  return q.map((v) => v / l)
+}

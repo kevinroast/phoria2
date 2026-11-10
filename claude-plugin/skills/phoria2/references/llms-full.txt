@@ -936,7 +936,9 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
 
 - **Marks**: `'bar'` (x and optional z bands, y value), `'point'` (scatter; x, y, z numbers or
   categories), `'line'`, `'area'` (a filled line; `stack: true` stacks series), `'surface'` (x, z grid
-  with y heights), `'network'`. There are no pie, donut or gauge marks - build those from
+  with y heights), `'curve'` (a path through x, y and z in the order of its rows - an orbit, a GPS
+  track; a path per `detail` value; `size` a number is its width in pixels), `'vector'` (arrows, from a
+  function - below), `'network'`. There are no pie, donut or gauge marks - build those from
   `extrude` and `outline.arc`.
 - **Channels**: `x`, `y`, `z`, `color`, `size`, `opacity`, `label` (text on each mark), `key` (row
   identity for animated updates; default `id`), `detail`. Each is a field name or
@@ -968,10 +970,35 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
   `theme: 'dark' | 'light'`, `title`, `description` (what a screen reader hears for it; else `chart.summary()`
   makes one from the title and channels), `transition: false | { duration, ease }`,
   `overlap: 'dim' | 'hide' | 'show'` (labels), `highlight` (a colour, false, or for networks
-  `'neighbours'` - the default, lighting the node's links and linked nodes - or `'node'`, the node alone), and node options (`position`, ...).
+  `'neighbours'` - the default, lighting the node's links and linked nodes - or `'node'`, the node alone),
+  `equal` (the same units on x, y and z, so a shape keeps its proportions - the box takes the data's
+  shape, its largest side the box's; default on for curves, parametric surfaces and vector fields),
+  `frame: false` (no axes, grid walls or tick labels - a shape on its own), and node options (`position`, ...).
 - **Surfaces**: one row per grid point - `x` and `z` are the grid (numbers or categories), `y` the
   height; colour follows `y` unless `color` says otherwise:
   `chart({ mark: 'surface', data: rows, x: 'hour', z: 'day', y: 'load', color: { field: 'load', scale: { scheme: 'heat' } } })`.
+- **Charts of a function** - `fn` and the ranges to sample it over, in place of data; sampled into rows
+  (`hit.datum` is one), then drawn, coloured, tooltipped and tweened as any chart. JavaScript only - a
+  function isn't JSON.
+
+  ```js
+  // a surface y = fn(x, z): ranges for x and z (x: [-3, 3], or { domain, title, axis }); y: [-1, 1] pins the value axis
+  chart({ mark: 'surface', fn: (x, z) => Math.sin(x) * Math.cos(z), x: [-3, 3], z: [-3, 3], samples: 64 })
+  // a parametric surface [x, y, z] = fn(u, v) - a sphere, a torus; x, y and z come from fn (give titles, not ranges)
+  chart({ mark: 'surface', fn: (u, v) => [Math.cos(u) * Math.sin(v), Math.cos(v), Math.sin(u) * Math.sin(v)], u: [0, 2 * Math.PI], v: [0, Math.PI] })
+  // a curve [x, y, z] = fn(t), coloured end to end unless color says otherwise
+  chart({ mark: 'curve', fn: (t) => [Math.cos(t), t / 4, Math.sin(t)], t: [0, 12 * Math.PI], samples: 400 })
+  // a vector field [vx, vy, vz] = fn(x, y, z): over x and z at y = 0, or a volume with a y range; coloured by magnitude
+  chart({ mark: 'vector', fn: (x, y, z) => [-z, 0, x], x: [-2, 2], z: [-2, 2], samples: 9 })
+  // params: handed to fn as its last argument - change them and the chart tweens to the new shape
+  const plot = chart({ mark: 'surface', fn: (x, z, { a }) => Math.sin(a * x), x: [-3, 3], z: [-1, 1], y: [-1, 1], params: { a: 1 } })
+  plot.update({ params: { a: 2 } })      // or update({ fn }) - a new function on the same samples tweens too
+  ```
+
+  `samples`: a number for every range or one each (`[64, 32]`); defaults 48 a side (surfaces), 64
+  (parametric), 256 (curves), 9 (vector fields). Rows: surfaces `{ x, z, y }`, parametric
+  `{ u, v, x, y, z }`, curves `{ t, x, y, z }`, fields `{ x, y, z, vx, vy, vz, magnitude }`. fn must give a
+  finite value everywhere (clamp where it blows up) - an error names the point it didn't.
 - **Networks** - nodes as spheres and links as lines, laid out, labelled and interactive:
 
   ```js

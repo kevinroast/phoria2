@@ -7,7 +7,7 @@ import { registerType } from '../registry.js'
 import { describe, fail } from '../validate.js'
 import { chartFrame } from './axes.js'
 import { legend } from './legend.js'
-import { barMark, lineMark, pointMark, stackKey, surfaceMark } from './marks.js'
+import { barMark, curveMark, lineMark, pointMark, stackKey, surfaceMark, vectorMark } from './marks.js'
 import { networkMark } from './network.js'
 import { SCHEMES, distinct, scaleBand, scaleColor, scaleLinear, scaleLog, scaleTime, toDate } from './scales.js'
 import { normalise } from './spec.js'
@@ -39,6 +39,12 @@ export class Chart extends Group {
 
   /** The scales in use - place your own content in data coordinates: chart.scales.y(50). @type {{ x?: Scale, y?: Scale, z?: Scale, color?: ColorScale, size?: Scale }} */
   scales = {}
+  /**
+   * @internal How far the hover tint moves towards its colour, 0-1: gentler for marks tinted
+   * whole - a surface, a curve - than for a bar or point of their own (the View's default).
+   * @type {number | undefined}
+   */
+  highlightAmount = undefined
 
   /** @type {Record<string, any>} the spec as given, data included */ #input
   /** @type {ReturnType<typeof normalise> | null} */ #spec = null
@@ -80,9 +86,9 @@ export class Chart extends Group {
     return this.#input.data
   }
 
-  /** The nodes drawing the data, for styling: chart.marks[0].material.roughness = 0.2. @returns {import('../scene/Node.js').Node[]} */
+  /** The nodes drawing the data, for styling: chart.marks[0].material.roughness = 0.2. @returns {import('../scene/drawables.js').Drawable[]} */
   get marks() {
-    return this.#mark ? [...this.#mark.nodes] : []
+    return this.#mark ? /** @type {import('../scene/drawables.js').Drawable[]} */ ([...this.#mark.nodes]) : []
   }
 
   /**
@@ -130,7 +136,8 @@ export class Chart extends Group {
     // each field once, though it may set more than one channel (z and colour by region)
     const by = [...new Set(['x', 'y', 'z', 'color', 'size'].map((k) => /** @type {any} */ (s.channels)[k]).filter((c) => c?.field).map((c) => c.title))]
     const count = (n, one) => `${n} ${n === 1 ? one : `${one}s`}`
-    const what = `${s.mark} chart of ${count(s.rows.length, 'row')}${by.length ? ` by ${by.join(', ')}` : ''}${s.links.length ? ` and ${count(s.links.length, 'link')}` : ''}`
+    const what = s.about ? `${s.mark} chart of ${s.about}`
+      : `${s.mark} chart of ${count(s.rows.length, 'row')}${by.length ? ` by ${by.join(', ')}` : ''}${s.links.length ? ` and ${count(s.links.length, 'link')}` : ''}`
     return o.title ? `${o.title}: ${what}` : what
   }
 
@@ -165,7 +172,11 @@ export class Chart extends Group {
     const spec = normalise(this.#input)
     const o = spec.options, ch = spec.channels
     this.#spec = spec
-    const box = /** @type {[number, number, number]} */ (o.box ?? defaultBox(spec))
+    let box = /** @type {[number, number, number]} */ (o.box ?? defaultBox(spec))
+    // equal units on every axis (a sphere stays round): the box takes the data's proportions, as big
+    // as its largest side
+    const equal = o.equal ? equalFrame(spec, box) : null
+    if (equal) box = equal.box
     const theme = o.theme ?? 'dark'
     if (theme !== 'dark' && theme !== 'light') fail('chart()', `theme '${theme}' - expected 'dark' or 'light'`)
     // one rule for every label the chart draws, covered by another label or by the marks: by default
@@ -174,7 +185,7 @@ export class Chart extends Group {
     if (!['dim', 'hide', 'show'].includes(overlap)) fail('chart()', `overlap '${overlap}' - expected 'dim', 'hide' or 'show'`)
     const visible = spec.rows.filter((r) => (!this.#filter || this.#filter(r)) && (!ch.color?.field || !this.#hidden.has(String(ch.color.get(r)))))
 
-    this.scales = scalesFor(spec, box)
+    this.scales = scalesFor(spec, box, equal?.domains)
     const color = this.scales.color
     const fallback = Color.fromInput(ch.color?.field ? SCHEMES.category[0] : ch.color?.value ?? SCHEMES.category[0], 'chart()').toSRGB()
     const linkColors = spec.link.color?.field ? colorScale(spec.link.color, spec.links.map((l) => spec.link.color.get(l))) : null
@@ -187,7 +198,10 @@ export class Chart extends Group {
     })
 
     // a different kind of chart (or channels) means new marks; the same kind keeps them, to animate
-    const signature = JSON.stringify([spec.mark, Object.entries(ch).map(([k, c]) => [k, c.field, c.type]), box, theme, overlap, o.stack, o.layout, o.flat, Object.keys(spec.link)])
+    // (the box only for marks whose nodes are sized by it - a shape whose proportions change, as a
+    // torus turns into a sphere, still tweens)
+    const sized = !['surface', 'curve', 'vector'].includes(spec.mark)
+    const signature = JSON.stringify([spec.mark, Object.entries(ch).map(([k, c]) => [k, c.field, c.type]), sized && box, theme, overlap, o.stack, o.layout, o.flat, Object.keys(spec.link)])
     if (signature !== this.#signature) {
       this.#signature = signature
       if (this.#mark) this.remove(.../** @type {any[]} */ (this.#mark.nodes))
@@ -197,7 +211,7 @@ export class Chart extends Group {
       this.#tween = null
     }
     if (this.#frame) this.remove(this.#frame)
-    this.#frame = spec.mark === 'network' && o.layout !== 'given' ? null : this.add(chartFrame({ box, theme, overlap, axes: axesFor(spec, this.scales) }))
+    this.#frame = o.frame === false || (spec.mark === 'network' && o.layout !== 'given') ? null : this.add(chartFrame({ box, theme, overlap, axes: axesFor(spec, this.scales) }))
     if (this.#title) this.remove(this.#title)
     this.#title = o.title ? this.add(new Label({ text: String(o.title), position: [0, box[1] * 1.12, -box[2] / 2], className: `phoria-axis-title phoria-${theme}`, overlap: 'show' })) : null
 
@@ -205,6 +219,7 @@ export class Chart extends Group {
     this.tooltip = spec.tooltip === null && !spec.link.tooltip ? null : (hit) => this.#tooltipFor(hit)
     const hl = o.highlight
     this.highlight = hl === false ? null : Color.fromInput(hl === undefined || hl === 'neighbours' || hl === 'node' ? '#ffffff' : hl, 'chart()')
+    this.highlightAmount = WHOLE_TINT[spec.mark]
 
     this.#show(/** @type {Mark} */ (this.#mark).layout(visible), animate && o.transition !== false)
   }
@@ -342,9 +357,13 @@ export class Chart extends Group {
 
 registerType(Chart)
 
+// the hover tint for marks drawn as one node, tinted whole: a surface lit at the View's usual
+// strength turns nearly white
+const WHOLE_TINT = /** @type {Record<string, number | undefined>} */ ({ surface: 0.15, curve: 0.25 })
+
 /** Do two layouts have the same shape (series lengths, grid size), so one can tween into the other? */
 function sameShape(a, b) {
-  const key = (s) => JSON.stringify(s ? { lengths: s.lengths, nx: s.nx, nz: s.nz } : null)
+  const key = (s) => JSON.stringify(s ? { lengths: s.lengths, nx: s.nx, nz: s.nz, count: s.count } : null)
   return key(a) === key(b)
 }
 
@@ -354,6 +373,8 @@ function makeMark(mark, ctx) {
   if (mark === 'point') return pointMark(ctx)
   if (mark === 'line' || mark === 'area') return lineMark(ctx, mark === 'area')
   if (mark === 'surface') return surfaceMark(ctx)
+  if (mark === 'curve') return curveMark(ctx)
+  if (mark === 'vector') return vectorMark(ctx)
   return networkMark(ctx)
 }
 
@@ -361,6 +382,7 @@ function makeMark(mark, ctx) {
 function defaultBox(spec) {
   const z = !!spec.channels.z
   if (spec.mark === 'surface') return [10, 4, 10]
+  if (spec.mark === 'curve' || spec.mark === 'vector') return [10, 10, 10]
   if (spec.mark === 'network') return spec.options.flat ? [12, 1, 12] : [12, 8, 12]
   if (spec.mark === 'point') return [8, 6, z ? 8 : 1.6]
   return [10, 6, z ? 6 : 1.6]
@@ -401,11 +423,40 @@ function colorValue(spec, row) {
 }
 
 /**
+ * Equal units on x, y and z: each axis's domain - the channel's, or the data's extent - and a box in
+ * the same proportions, its largest side the given box's. An axis with no extent (a flat field, a
+ * curve in a plane) gets a sliver, so its scale still works.
+ * @param {ReturnType<typeof normalise>} spec @param {[number, number, number]} box
+ * @returns {{ box: [number, number, number], domains: Record<string, [number, number]> } | null}
+ */
+function equalFrame(spec, box) {
+  const ch = spec.channels
+  /** @type {Record<string, [number, number]>} */
+  const domains = {}
+  for (const name of ['x', 'y', 'z']) {
+    const c = ch[name]
+    // only numbers on every axis have one unit to share
+    if (!c?.field || c.type !== 'quantitative') return null
+    domains[name] = /** @type {[number, number]} */ (c.scale.domain ?? extent(spec.rows.map((r) => c.get(r))))
+  }
+  const span = (name) => domains[name][1] - domains[name][0]
+  const largest = Math.max(span('x'), span('y'), span('z')) || 1
+  const size = Math.max(...box), unit = size / largest, sliver = size / 50
+  for (const name of ['x', 'y', 'z']) {
+    if (span(name) * unit >= sliver) continue
+    const mid = (domains[name][0] + domains[name][1]) / 2, half = sliver / unit / 2
+    domains[name] = [mid - half, mid + half]
+  }
+  return { box: [span('x') * unit, span('y') * unit, span('z') * unit], domains }
+}
+
+/**
  * Scales for the channels, over all the rows (not just those shown), so the axes stay put while a
  * legend entry or filter hides some.
  * @param {ReturnType<typeof normalise>} spec @param {[number, number, number]} box
+ * @param {Record<string, [number, number]>} [domains] fixed domains, for equal units - not rounded out
  */
-function scalesFor(spec, box) {
+function scalesFor(spec, box, domains) {
   const [w, h, d] = box
   const ch = spec.channels, rows = spec.rows, out = {}
   const ranges = { x: [-w / 2, w / 2], y: [0, h], z: [d / 2, -d / 2] }
@@ -415,7 +466,8 @@ function scalesFor(spec, box) {
     // the values listed as ticks are always on the axis
     const listed = c.axis && c.axis.ticks
     const values = [...rows.map((r) => c.get(r)), ...(Array.isArray(listed) ? listed : [])]
-    const o = { range: ranges[name], format: (c.axis && c.axis.format) ?? c.format }
+    // (axis: false has no format of its own - the channel's, for tooltips)
+    const o = { range: ranges[name], format: (c.axis ? c.axis.format : undefined) ?? c.format }
     const banded = c.type === 'nominal' || c.type === 'ordinal' || (spec.mark === 'bar' && name !== 'y')
     if (banded) {
       out[name] = scaleBand({ domain: c.scale.domain ?? distinct(values), padding: 0.2, ...o })
@@ -423,10 +475,11 @@ function scalesFor(spec, box) {
       const [a, b] = extent(values.map((v) => toDate(v).getTime()))
       out[name] = scaleTime({ domain: /** @type {any} */ (c.scale.domain ?? [a, b]), ...o })
     } else {
-      let domain = c.scale.domain ?? extent(values)
+      let domain = domains?.[name] ?? c.scale.domain ?? extent(values)
       // stacked bars and areas reach the totals, not the single values
       if (name === 'y' && spec.options.stack) domain = extent([0, ...stackTotals(spec)])
       if (c.scale.type === 'log') out[name] = scaleLog({ domain, ...o })
+      else if (domains) out[name] = scaleLinear({ domain, ...o })
       else out[name] = scaleLinear({ domain, nice: c.scale.nice ?? true, zero: c.scale.zero ?? (name === 'y' && ['bar', 'area'].includes(spec.mark)), ...o })
     }
   }

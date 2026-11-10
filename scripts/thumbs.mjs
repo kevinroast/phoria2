@@ -39,7 +39,7 @@ const PREPARE = {
   dashboard: TILES,
   // the tag's cards two to a row, with no scrollbar: the script tag across the top, the chair and the
   // chart side by side under it
-  'custom-element': "Object.assign(document.querySelector('.demo-ce').style, { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', scrollbarWidth: 'none' })",
+  'custom-element': "Object.assign(document.querySelector('.demo-cards').style, { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', scrollbarWidth: 'none' })",
   // in the dashboard's denser grid, so the picture shows more than two tiles
   chartlab: `${TILES}
     grid.classList.remove('demo-chartlab')`,

@@ -326,6 +326,22 @@ describe('View picking and events', () => {
     expect(hl?.color).toBe(desk.highlight)
   })
 
+  it('tints at the strength the nearest node asks for, or the usual', () => {
+    const view = viewOf({ highlight: '#ffffff' })
+    const group = view.scene.add(new Group())
+    group.add(new Mesh({ geometry: box(1) }))
+    frame()
+    view.canvas.dispatch('pointermove', { clientX: 150, clientY: 75 })
+    frame()
+    frame()
+    expect(view.lastFrame?.highlight?.amount).toBe(0.45)
+    // a chart does this for marks it tints whole, such as a surface
+    Object.assign(group, { highlightAmount: 0.15 })
+    view.invalidate()
+    frame()
+    expect(view.lastFrame?.highlight?.amount).toBe(0.15)
+  })
+
   describe('dragging', () => {
     /** A box on the ground seen from above and in front, with orbiting on; where its top is on the canvas. */
     const dragScene = () => {

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cdn.jsdelivr.net/npm/phoria2@1/schema/chart.schema.json",
   "title": "phoria2 chart spec",
-  "description": "The spec for chart() from phoria2/charts: a mark, data, and channels mapping data fields to what is drawn. Channels may also be nested under 'encoding', as Vega-Lite writes them.",
+  "description": "The spec for chart() from phoria2/charts: a mark, data, and channels mapping data fields to what is drawn. Channels may also be nested under 'encoding', as Vega-Lite writes them. Charts of a function (fn, samples, params, t, u, v - surfaces, curves and vector fields sampled from fn) are JavaScript only: a function is not JSON.",
   "type": "object",
   "required": ["mark", "data"],
   "additionalProperties": false,
@@ -74,6 +74,8 @@
       ]
     },
     "flat": { "type": "boolean", "description": "Lay a force-directed network out in a plane." },
+    "equal": { "type": "boolean", "description": "The same units on x, y and z, so shapes keep their proportions (a sphere stays round). Default: on for curves, parametric surfaces and vector fields." },
+    "frame": { "type": "boolean", "description": "false leaves out the axes, grid walls and tick labels - for a shape on its own." },
     "steps": { "type": "integer", "minimum": 0, "description": "Layout steps for 'force' (default 300; 60 on updates)." },
     "seed": { "type": "number", "description": "Layout seed for 'force' - the same seed and data give the same layout." },
     "source": { "type": "string", "description": "The link field naming a link's first node (default 'source')." },
@@ -128,7 +130,7 @@
     "pickable": { "type": "boolean" }
   },
   "$defs": {
-    "markName": { "enum": ["bar", "point", "line", "area", "surface", "network"] },
+    "markName": { "enum": ["bar", "point", "line", "area", "surface", "curve", "vector", "network"] },
     "vec3": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
     "format": {
       "description": "Intl.NumberFormat or Intl.DateTimeFormat options, e.g. { \"style\": \"currency\", \"currency\": \"GBP\", \"notation\": \"compact\" }.",

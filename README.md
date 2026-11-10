@@ -141,9 +141,17 @@ view.scene.add(chart({
 }))
 ```
 
-Marks: `bar`, `point`, `line`, `area`, `surface` and `network`, with axes, legends, labels, tooltips
-and animated updates (`chart.update(newRows)`). A JSON schema for specs ships as
+Marks: `bar`, `point`, `line`, `area`, `surface`, `curve`, `vector` and `network`, with axes, legends,
+labels, tooltips and animated updates (`chart.update(newRows)`). A JSON schema for specs ships as
 `phoria2/charts/schema.json`.
+
+Or plot a function - surfaces, parametric shapes, curves and vector fields - with parameters that
+tween as they change:
+
+```js
+const plot = chart({ mark: 'surface', fn: (x, z, { a }) => Math.sin(a * x) * Math.cos(z), x: [-3, 3], z: [-3, 3], params: { a: 1 } })
+plot.update({ params: { a: 2 } })
+```
 
 ## Models
 

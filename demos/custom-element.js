@@ -60,7 +60,7 @@ const EXAMPLES = [
     note: 'el.view is the View, for anything the attributes don\'t cover; pick, hover, load and error are events, and attributes change it live.',
     html: `<phoria-view id="truck" src="models/CesiumMilkTruck.glb" environment="studio"
   orbit autoplay highlight="#fff6e2" ground-shadow></phoria-view>
-<p class="demo-ce-row">
+<p class="demo-cards-row">
   <button id="truck-night">Night</button> <span id="truck-part">Click a part of the truck</span>
 </p>`,
     script: true,
@@ -70,16 +70,16 @@ const EXAMPLES = [
 export default function run({ canvas }) {
   canvas.style.display = 'none'
   const page = document.createElement('div')
-  page.className = 'demo-ce'
+  page.className = 'demo-cards'
   // first, across the whole width: what a page needs before any of the tags below
   const intro = card('One script tag, then HTML', 'Load the module once - from the CDN, or import \'phoria2/element\' in a bundled app - then write tags.', CDN)
-  intro.classList.add('demo-ce-intro')
+  intro.classList.add('demo-cards-intro')
   page.append(intro)
   for (const example of EXAMPLES) {
     const code = example.script ? `${example.html}\n\n<script type="module">\n${scriptSource()}\n</script>` : example.html
     const section = card(example.title, example.note, code)
     const live = document.createElement('div')
-    live.className = 'demo-ce-live'
+    live.className = 'demo-cards-live'
     live.innerHTML = example.html
     section.insertBefore(live, section.querySelector('pre'))
     page.append(section)
@@ -124,7 +124,7 @@ function scriptSource() {
 /** A card: a title, a line about it, and its code. @param {string} title @param {string} note @param {string} code */
 function card(title, note, code) {
   const section = document.createElement('section')
-  section.className = 'demo-ce-card'
+  section.className = 'demo-cards-card'
   const h = document.createElement('h3')
   h.textContent = title
   const p = document.createElement('p')

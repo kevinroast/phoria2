@@ -1275,12 +1275,15 @@ export class View {
   #highlightFor(hit) {
     if (!hit) return null
     // the nearest colour wins - or the nearest false, which tints nothing - and the nearest
-    // highlightWhole is what is tinted as one
-    let color = null, whole = null
+    // highlightWhole is what is tinted as one; a node can tint more gently (a chart's surface, lit
+    // whole, would otherwise turn nearly white)
+    let color = null, whole = null, amount = null
     for (let n = /** @type {any} */ (hit.node); n; n = n.parent) {
       color ??= n.highlight
       whole ??= n.highlightWhole ? n : null
+      amount ??= n.highlightAmount ?? null
     }
+    amount ??= HIGHLIGHT_AMOUNT
     color ??= this.#highlight
     // the keyboard's focus always shows
     if (!color && hit === this.#keyFocus) color = FOCUS_COLOR
@@ -1290,10 +1293,10 @@ export class View {
       /** @type {Set<Node>} */
       const nodes = new Set()
       whole.traverse((n) => { nodes.add(n) })
-      return { node, index: null, nodes, color, amount: HIGHLIGHT_AMOUNT }
+      return { node, index: null, nodes, color, amount }
     }
     const index = hit.instance ?? (node.drawMode === 'points' ? hit.face : null)
-    return { node, index, color, amount: HIGHLIGHT_AMOUNT }
+    return { node, index, color, amount }
   }
 
   // hide labels that asked to be hidden behind geometry, by casting a ray to each

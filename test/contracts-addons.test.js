@@ -20,9 +20,16 @@ const network = {
   links: [{ source: 'a', target: 'b', from: 'a', to: 'b', w: 2 }, { source: 'a', target: 'c', from: 'a', to: 'c', w: 1 }],
 }
 const NETWORK_ONLY = ['layout', 'flat', 'steps', 'seed', 'source', 'target', 'link']
-const makeChart = (o) => chart(Object.keys(o).some((k) => NETWORK_ONLY.includes(k))
-  ? { mark: 'network', data: network, transition: false, ...o }
-  : { mark: 'bar', data: rows, x: 'month', y: 'sales', transition: false, ...o })
+// a chart of a function for the options only those take: a surface over x and z, a parametric one
+// over u and v, a curve over t
+const makeChart = (o) => {
+  const keys = Object.keys(o)
+  if (keys.some((k) => NETWORK_ONLY.includes(k))) return chart({ mark: 'network', data: network, transition: false, ...o })
+  if (keys.includes('t')) return chart({ mark: 'curve', fn: (t) => [t, t, t], transition: false, ...o })
+  if (keys.includes('u') || keys.includes('v')) return chart({ mark: 'surface', fn: (u, v) => [u, v, u * v], u: [0, 1], v: [0, 1], transition: false, ...o })
+  if (keys.some((k) => ['fn', 'samples', 'params'].includes(k))) return chart({ mark: 'surface', fn: (x, z) => x * z, x: [0, 1], z: [0, 1], transition: false, ...o })
+  return chart({ mark: 'bar', data: rows, x: 'month', y: 'sales', transition: false, ...o })
+}
 const opt = (key) => (c) => c.spec.options[key]
 const channel = (name, key = 'field') => (c) => c.spec.channels[name]?.[key]
 // a chart takes the node options too, but makes its own children, tooltip and highlight
@@ -59,6 +66,14 @@ contract('chart()', {
     title: { value: 'Sales', read: (c) => c.children.some((n) => n.text === 'Sales'), expect: true },
     $schema: { value: 'https://example.com/chart.json', only: 'metadata, for editors' },
     description: { value: 'Monthly sales', read: opt('description') },
+    equal: { value: true, read: opt('equal'), bad: 'yes', error: "'equal' is true or false" },
+    frame: { value: false, read: (c) => c.children.some((n) => n.name === 'axes'), expect: false, bad: 'none', error: "'frame' is true or false" },
+    fn: { value: (x, z) => x + z, read: (c) => c.marks[0].geometry.vertexCount, expect: 48 * 48, bad: 'sin(x)', error: "'fn' is a function to plot", keep: false },
+    samples: { value: 9, read: (c) => c.marks[0].geometry.vertexCount, expect: 81, bad: 1, error: "'samples' is how many points" },
+    params: { value: { a: 1 }, only: 'handed to fn - test/chart-functions.test.js', bad: 2, error: "'params' is an object", keep: false },
+    t: { value: [0, 2], read: (c) => c.marks[0].data.at(-1).t, expect: 2, bad: [1, 1], error: "t's range is two different numbers" },
+    u: { value: [0, 2], read: (c) => c.marks[0].data.at(-1).u, expect: 2, bad: 'all', error: "u's range is two different numbers" },
+    v: { value: [0, 3], read: (c) => c.marks[0].data.at(-1).v, expect: 3, bad: [0], error: "v's range is two different numbers" },
     x: { value: 'region', read: channel('x'), bad: 'nofield', error: "isn't in the data" },
     y: { value: { field: 'sales' }, read: channel('y'), expect: 'sales', bad: 'nofield', error: "isn't in the data" },
     z: { value: 'region', read: channel('z'), bad: 'nofield', error: "isn't in the data" },

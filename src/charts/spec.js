@@ -4,9 +4,10 @@
 import { Color } from '../value/Color.js'
 import { checkNumber, describe, didYouMean, fail } from '../validate.js'
 import { toDate } from './scales.js'
+import { FUNCTION_OPTIONS, sampleFunction } from './functions.js'
 
 /** @typedef {'quantitative' | 'nominal' | 'ordinal' | 'temporal'} FieldType */
-/** @typedef {'bar' | 'point' | 'line' | 'area' | 'surface' | 'network'} Mark */
+/** @typedef {'bar' | 'point' | 'line' | 'area' | 'surface' | 'curve' | 'vector' | 'network'} Mark */
 
 /**
  * A channel after normalising: a field (with a type and a getter) or a constant value.
@@ -22,10 +23,11 @@ import { toDate } from './scales.js'
  * @property {any} [priority] labels: a number, a field name or a function
  */
 
-export const MARKS = /** @type {Mark[]} */ (['bar', 'point', 'line', 'area', 'surface', 'network'])
+export const MARKS = /** @type {Mark[]} */ (['bar', 'point', 'line', 'area', 'surface', 'curve', 'vector', 'network'])
 export const CHANNELS = ['x', 'y', 'z', 'color', 'size', 'opacity', 'label', 'key', 'detail']
 export const OPTIONS = ['mark', 'data', 'encoding', 'tooltip', 'box', 'stack', 'width', 'layout', 'flat', 'steps', 'seed',
-  'source', 'target', 'link', 'highlight', 'legend', 'theme', 'overlap', 'transition', 'title', '$schema', 'description', ...CHANNELS]
+  'source', 'target', 'link', 'highlight', 'legend', 'theme', 'overlap', 'transition', 'title', '$schema', 'description', 'equal', 'frame',
+  ...FUNCTION_OPTIONS, ...CHANNELS]
 export const CHANNEL_OPTIONS = ['field', 'type', 'title', 'format', 'scale', 'axis', 'value', 'priority', 'legend']
 
 // what other chart libraries call things
@@ -34,10 +36,9 @@ export const OPTION_HINTS = {
   xAxis: "axes come from the channels - use x: { field, axis: { title } }",
   yAxis: "axes come from the channels - use y: { field, axis: { title } }",
   zAxis: "axes come from the channels - use z: { field, axis: { title } }",
-  type: "use mark: 'bar' | 'point' | 'line' | 'area' | 'surface' | 'network'",
+  type: "use mark: 'bar' | 'point' | 'line' | 'area' | 'surface' | 'curve' | 'vector' | 'network'",
   transform: "transforms aren't supported - filter, sum or sort the rows before charting them",
   selection: "use view.on('click', (hit) => ...) or a chart's onClick; hit.datum is the row",
-  params: "use view.on('click', (hit) => ...) or a chart's onClick; hit.datum is the row",
   facet: 'small multiples aren\'t supported - make one chart (or one View) per panel',
   repeat: 'small multiples aren\'t supported - make one chart (or one View) per panel',
   layer: 'layers aren\'t supported yet - add several charts to the same scene with the same box',
@@ -62,13 +63,22 @@ export const CHANNEL_HINTS = {
 /**
  * @param {Record<string, any>} input the spec as written
  * @returns {{ mark: Mark, rows: any[], links: any[], fields: string[], channels: Record<string, Channel>,
- *   tooltip: Channel[] | ((hit: any) => any) | null, link: Record<string, Channel>, options: Record<string, any> }}
+ *   tooltip: Channel[] | ((hit: any) => any) | null, link: Record<string, Channel>, options: Record<string, any>,
+ *   grid: { nx: number, nz: number } | null, about: string | null }}
  */
 export function normalise(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail('chart()', `expected a spec such as { mark: 'bar', data, x, y }, got ${describe(input)}`)
   for (const key of Object.keys(input)) {
     if (OPTIONS.includes(key)) continue
     fail('chart()', `unknown option '${key}' - ${OPTION_HINTS[key] ?? `expected ${OPTIONS.filter((k) => k[0] !== '$').join(', ')}${didYouMean(key, OPTIONS)}`}`)
+  }
+  // a chart of a function: sampled into rows, and from here a chart like any other
+  const sampled = input.fn !== undefined ? sampleFunction(input) : null
+  if (sampled) input = sampled.input
+  else {
+    for (const key of FUNCTION_OPTIONS) {
+      if (input[key] !== undefined) fail('chart()', `'${key}' is for charts of a function - add fn, such as fn: (x, z) => Math.sin(x) * Math.cos(z)`)
+    }
   }
   if (typeof input.width === 'number' && input.width > 1) fail('chart()', `'width' is a bar's share of its band (0-1); in Vega-Lite it is pixels - here the canvas sets the size`)
 
@@ -91,7 +101,8 @@ export function normalise(input) {
       if (channels[name] && input.layout !== 'given') fail('chart()', `${name} on a 'network' places its nodes - add layout: 'given' to use positions from the data`)
     }
   } else {
-    for (const name of mark === 'surface' ? ['x', 'z', 'y'] : ['x', 'y']) {
+    if (mark === 'vector' && !sampled) fail('chart()', "a vector field is drawn from a function - fn: (x, y, z) => [vx, vy, vz], with x and z ranges such as x: [-2, 2]")
+    for (const name of mark === 'surface' || mark === 'vector' ? ['x', 'z', 'y'] : ['x', 'y']) {
       if (!channels[name]) fail('chart()', `a '${mark}' chart needs ${name} - e.g. ${name}: '${fields[0] ?? 'field'}'`)
       // bars, lines, areas and surfaces are laid out along these scales; only points can sit at a constant
       if (mark !== 'point' && channels[name].field === null) {
@@ -127,7 +138,12 @@ export function normalise(input) {
   if (options.box !== undefined && (!Array.isArray(options.box) || options.box.length !== 3 || !options.box.every((n) => n > 0))) {
     fail('chart()', `'box' is the chart's size in the scene, [x, y, z] above 0, got ${describe(options.box)}`)
   }
-  return { mark, rows, links, fields, channels, tooltip, link, options }
+  for (const key of ['equal', 'frame']) {
+    if (options[key] !== undefined && typeof options[key] !== 'boolean') fail('chart()', `'${key}' is true or false, got ${describe(options[key])}`)
+  }
+  // shapes - parametric surfaces, curves, vector fields - keep their proportions unless told not to
+  if (options.equal === undefined) options.equal = sampled ? sampled.equal : mark === 'curve'
+  return { mark, rows, links, fields, channels, tooltip, link, options, grid: sampled?.grid ?? null, about: sampled?.about ?? null }
 }
 
 /** @param {unknown} v @returns {Mark} */

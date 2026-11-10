@@ -15,6 +15,12 @@ const run = (scene, seconds) => {
   scene.updateWorldTree()
 }
 
+it('takes axis: false on a number axis', () => {
+  // its format used to come out as false, which the scale refused
+  const c = chart({ mark: 'point', data: rows, x: 'sales', y: { field: 'sales', axis: false } })
+  expect(c.scales.y?.kind).toBe('linear')
+})
+
 describe('scales', () => {
   it('maps, inverts and ticks linearly, with nice domains', () => {
     const y = scaleLinear({ domain: [0, 120], range: [0, 6] })
