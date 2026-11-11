@@ -2,6 +2,30 @@
 // lines marked - beside the step running in a frame, with buttons to copy it as one HTML file or
 // open it in CodePen. <figure class="whole-page" data-step="..."> shows a step as that file.
 import { CODE, hasMarkup, markupFor, importMap, pageFor, previous, version } from './steps.js'
+import { PARTS } from './parts.js'
+
+// the chips along the top: every part of every tutorial page, numbered across them all, this page's
+// own marked; and at the end of a page, the next part when it's on another page
+const here = location.pathname.split('/').pop() || 'tutorial.html'
+const label = (/** @type {number} */ i) => `Part ${i + 1}: ${PARTS[i].title}`
+for (const nav of document.querySelectorAll('nav.tutorial-contents')) {
+  nav.innerHTML = PARTS.map((p, i) => {
+    const mine = p.page === here
+    return `<a href="${mine ? '' : p.page}#${p.id}"${mine ? ' class="here"' : ''}>${label(i)}</a>`
+  }).join('')
+}
+const last = PARTS.map((p) => p.page).lastIndexOf(here)
+const onward = PARTS[last + 1]
+for (const el of document.querySelectorAll('.tutorial-onward')) {
+  if (onward) el.innerHTML = `<a href="${onward.page}#${onward.id}">Next - ${label(last + 1)} <span aria-hidden="true">&rsaquo;</span></a>`
+  else el.remove()
+}
+// the parts' own headings carry their numbers across the pages
+for (const [i, p] of PARTS.entries()) {
+  if (p.page !== here) continue
+  const heading = document.querySelector(`section#${p.id} > h2`)
+  if (heading) heading.textContent = label(i)
+}
 
 const KEYWORDS = new Set(['import', 'from', 'const', 'let', 'new', 'return', 'if', 'for', 'of', 'true', 'false', 'null', 'export', 'default', 'function'])
 

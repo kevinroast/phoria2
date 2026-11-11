@@ -82,6 +82,27 @@
   text-decoration: none;
 }
 
+/* this page's own parts, among every tutorial's */
+.tutorial-contents a.here {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
+/* the next part, on the next page, at the end of this one */
+.tutorial-onward {
+  margin: 32px 0 8px;
+}
+
+.tutorial-onward a {
+  display: inline-block;
+  padding: 10px 16px;
+  border: 1px solid var(--accent-dim);
+  border-radius: 10px;
+  background: var(--panel-2);
+  font-size: 15px;
+  text-decoration: none;
+}
+
 /* a step: its code, and beside it the step running */
 .step {
   display: grid;

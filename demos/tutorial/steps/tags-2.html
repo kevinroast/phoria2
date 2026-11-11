@@ -1,0 +1,14 @@
+<style>
+  body { margin: 0; background: #1c1c22; font: 13px system-ui, sans-serif }
+  phoria-view { height: 100vh }
+  .buttons { position: fixed; left: 12px; bottom: 12px; display: flex; gap: 8px }
+  button { padding: 6px 12px; border: 1px solid #444; border-radius: 8px; background: #222c; color: #eee; font: inherit; cursor: pointer }
+</style>
+<phoria-view id="chair"
+  src="https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Assets@main/Models/SheenChair/glTF-Binary/SheenChair.glb"
+  environment="studio" orbit auto-rotate ground-shadow ambient-occlusion>
+</phoria-view>
+<div class="buttons">
+  <button id="night">Night</button>
+  <button id="paper">Paper</button>
+</div>

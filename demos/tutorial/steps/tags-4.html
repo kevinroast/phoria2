@@ -1,0 +1,20 @@
+<style>
+  body { margin: 0; background: #1c1c22; color: #ddd; font: 13px system-ui, sans-serif }
+  phoria-view { height: 100vh }
+  #said { position: fixed; left: 12px; bottom: 12px; padding: 6px 12px; border-radius: 8px; background: #000a }
+</style>
+<phoria-view id="sales" orbit>
+  <script type="application/json">
+  {
+    "type": "chart", "name": "sales", "mark": "bar", "x": "month", "z": "region", "y": "sales", "color": "region",
+    "tooltip": true,
+    "data": [
+      { "month": "Jan", "region": "North", "sales": 32 }, { "month": "Jan", "region": "South", "sales": 24 },
+      { "month": "Feb", "region": "North", "sales": 38 }, { "month": "Feb", "region": "South", "sales": 29 },
+      { "month": "Mar", "region": "North", "sales": 35 }, { "month": "Mar", "region": "South", "sales": 36 },
+      { "month": "Apr", "region": "North", "sales": 44 }, { "month": "Apr", "region": "South", "sales": 41 }
+    ]
+  }
+  </script>
+</phoria-view>
+<div id="said">Click a bar</div>

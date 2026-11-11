@@ -4,10 +4,14 @@
 // on the page is always the code that drew the picture beside it.
 import { version } from '../../package.json'
 
-/** The steps' source, by name. @type {Record<string, string>} */
+/**
+ * The steps' source, by name - as shown, copied and opened in CodePen, less the JSDoc type comment
+ * on a handler's argument that only this repo's checks want: the argument reads plain (e).
+ * @type {Record<string, string>}
+ */
 export const CODE = Object.fromEntries(Object.entries(
   /** @type {Record<string, string>} */ (import.meta.glob('./steps/*.js', { query: '?raw', import: 'default', eager: true })),
-).map(([path, text]) => [nameOf(path), text]))
+).map(([path, text]) => [nameOf(path), text.replace(/\(\/\*\* @type \{\w+\} \*\/ (\w+)\)/g, '($1)')]))
 
 /** The steps' own markup, by name. @type {Record<string, string>} */
 const HTML = Object.fromEntries(Object.entries(
@@ -49,9 +53,13 @@ export function previous(name) {
   return CODE[`${part}-${Number(n) - 1}`] ?? null
 }
 
-/** The import map for a step: phoria2 from the CDN, and the sub-paths its code imports. @param {string} code */
+/**
+ * The import map for a step: phoria2 from the CDN, and the sub-paths its code imports - by name
+ * (from 'phoria2/charts') or for what importing does (import 'phoria2/element' defines a tag).
+ * @param {string} code
+ */
 export function importMap(code) {
-  const paths = ['phoria2', ...new Set([...code.matchAll(/from 'phoria2\/(\w+)'/g)].map((m) => `phoria2/${m[1]}`))]
+  const paths = ['phoria2', ...new Set([...code.matchAll(/(?:from|import) 'phoria2\/(\w+)'/g)].map((m) => `phoria2/${m[1]}`))]
   const file = (p) => (p === 'phoria2' ? 'phoria2' : p.slice('phoria2/'.length))
   const lines = paths.map((p) => `    "${p}": "https://cdn.jsdelivr.net/npm/phoria2@${version}/dist/${file(p)}.js"`)
   return `<script type="importmap">\n{ "imports": {\n${lines.join(',\n')}\n} }\n</script>`

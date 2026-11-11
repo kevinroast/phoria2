@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tags and plots with phoria2</title>
+    <meta name="description" content="3D in plain HTML with the phoria-view tag, and plots of functions - surfaces, waves, contours, parametric shapes and vector fields - with phoria2, step by step, every step running beside its code." />
+    <link rel="icon" type="image/png" href="flower.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Saira:wght@100..900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/demos/demos.css" />
+    <link rel="stylesheet" href="/demos/tutorial/tutorial.css" />
+  </head>
+  <body class="gallery tutorial">
+    <main class="tutorial-main">
+      <a class="back" href="./">&lsaquo; Phoria demos</a>
+      <header>
+        <h1>Tags and plots</h1>
+        <p class="tutorial-lead">Two more walk-throughs, carrying on from <a href="tutorial.html">Getting
+          started</a>. First, 3D in plain HTML using the <code>&lt;phoria-view&gt;</code> tag, then plotting
+          maths functions - surfaces that move, contour maps, shapes and fields. As before, every step is a
+          complete program running beside its code, which you can copy as one HTML file or open in CodePen.
+          Allow about fifteen minutes.</p>
+        <!-- every part of every tutorial page: from demos/tutorial/parts.js -->
+        <nav class="tutorial-contents" aria-label="The tutorials"></nav>
+      </header>
+
+      <section id="tags">
+        <h2>Part 3: 3D without a render loop</h2>
+        <p>Sometimes you just want a model, a chart or a scene on a page, without writing any JavaScript
+          beyond a single import. <code>phoria2/element</code> gives you a special HTML tag for exactly that,
+          <code>&lt;phoria-view&gt;</code> and its attributes are the same options a View takes, written in
+          hyphen-case style.</p>
+
+        <h3>1. A model in one tag</h3>
+        <p><code>src</code> points to a glTF model, which is loaded and framed automatically for you.
+          <code>environment="studio"</code> lights it with a built-in studio mode, <code>orbit</code> lets you
+          turn it with the mouse and <code>auto-rotate</code> turns it for you, <code>ground-shadow</code> sits
+          it on a soft shadow and <code>ambient-occlusion</code> darkens its creases. The script is just one
+          line: importing the module defines the tag, and every <code>&lt;phoria-view&gt;</code> on the page
+          starts drawing.</p>
+        <figure class="step" data-step="tags-1"></figure>
+        <p>The tag is an ordinary block element, so you size it with CSS (it's 300px high by default unless
+          you change it). Its canvas lives inside the tag, which means your page's CSS styles the labels and
+          tooltips just like anything else on the page.</p>
+
+        <h3>2. Attributes are live</h3>
+        <p>When you change an attribute, the view updates to match - here the buttons change
+          <code>exposure</code>, <code>environment-intensity</code> and <code>background</code>, and the model
+          doesn't need to load again. A switch like <code>ground-shadow</code> is on when it's there, and you
+          turn it off by removing it or setting it to <code>"false"</code>.</p>
+        <figure class="step" data-step="tags-2"></figure>
+
+        <h3>3. A chart from JSON</h3>
+        <p>Instead of a model, the tag can hold its content as data, in a
+          <code>&lt;script type="application/json"&gt;</code> inside it. That can be a chart spec, a node or a
+          whole scene - the same descriptions <code>create()</code> takes. <code>phoria2/charts</code> is only
+          loaded because the content contains a chart, so pages without one don't pay for it.</p>
+        <figure class="step" data-step="tags-3"></figure>
+        <p>Hover over a bar to see its tooltip. The script hasn't changed at all - everything here is HTML.</p>
+
+        <h3>4. Custom JavaScript when you want it</h3>
+        <p>Clicking sends a <code>pick</code> event, with the hit in its <code>detail</code> - its
+          <code>datum</code> is the row behind the bar you clicked. Once the content has loaded you get a
+          <code>load</code> event, and from then on the tag's View is there for anything the attributes don't
+          cover. Here it's used to find the chart by its name and give it new figures every two seconds.</p>
+        <figure class="step" data-step="tags-4"></figure>
+        <aside class="tutorial-aside">
+          <b>Try mistyping an attribute.</b> Change <code>exposure</code> to <code>"bright"</code> and the
+          console tells you <code>&lt;phoria-view&gt;: 'exposure' is a number, got 'bright'</code>. The tag
+          sends an <code>error</code> event too, if your page wants to know.
+        </aside>
+      </section>
+
+      <section id="plots">
+        <h2>Part 4: Plotting functions</h2>
+        <p>Maths Is Beautiful! As well as rows of data, charts can plot maths functions. You give the chart a function,
+          <code>fn</code>, and the ranges to sample it over, and it does the rest - you get the axes, colours,
+          tooltips and smooth transitions like any other chart.</p>
+
+        <h3>1. A surface from a function</h3>
+        <p>Here <code>fn(x, z)</code> works out a height for each point across <code>x</code> and
+          <code>z</code>. The surface is coloured by height unless you tell it otherwise, and you can hover over
+          it to read off a point.</p>
+        <figure class="step" data-step="plots-1"></figure>
+        <p>How finely the function is sampled is set by <code>samples</code>. 48 is the default unless you
+          change it - go higher for a sharper surface, or lower if you need it to be faster.</p>
+
+        <h3>2. A parameter and a slider</h3>
+        <p>Anything in <code>params</code> is passed to your function along with the point. When you change
+          them with <code>plot.update({ params })</code>, the surface smoothly changes to its new shape. Giving
+          <code>y</code> a fixed range keeps the axis still, so you see the surface itself move rather than the
+          axis rescaling to fit it.</p>
+        <figure class="step" data-step="plots-2"></figure>
+
+        <h3>3. Moving with time</h3>
+        <p>With <code>time: true</code>, your function is also given the chart's clock as <code>t</code>, in
+          seconds, and the surface is worked out again every frame. Only the surface changes - the axes, scales
+          and legend stay as they are, which is why <code>y</code> has a fixed range. Here two ripples spread out
+          and meet: where two crests meet they add together, and where a crest meets a trough they cancel
+          out.</p>
+        <figure class="step" data-step="plots-3"></figure>
+
+        <h3>4. Contour lines</h3>
+        <p>Contour lines join up points of equal height, like the ones on a walker's map. Give
+          <code>contours</code> the number of lines you want, or the exact heights to draw them at, and
+          <code>place</code> puts them on the surface, on the floor underneath it, or both.</p>
+        <figure class="step" data-step="plots-4"></figure>
+
+        <h3>5. Shapes that fold back</h3>
+        <p>A height on its own can't make a shape like a ring, but a <i>parametric</i> surface can. Its
+          <code>fn(u, v)</code> returns a whole point, <code>[x, y, z]</code>, for each pair of <code>u</code>
+          and <code>v</code> values. A <code>curve</code> works the same way with a single parameter,
+          <code>t</code>. Both use equal units on every axis so a torus stays nice and round, and giving both
+          charts the same <code>x</code>, <code>y</code> and <code>z</code> ranges puts them in the same box,
+          so the knot sits neatly on the ring.</p>
+        <figure class="step" data-step="plots-5"></figure>
+
+        <h3>6. A field of arrows</h3>
+        <p><code>mark: 'vector'</code> draws an arrow at each sample, pointing the way your function says,
+          with its length and colour showing how strong it is there. <code>frame: 'origin'</code> swaps the
+          chart's usual walls for axes through zero with arrowheads, like you'd draw on a blackboard.</p>
+        <figure class="step" data-step="plots-6"></figure>
+        <aside class="tutorial-aside">
+          <b>Have a go with your own.</b> <code>[x, 0, z]</code> points everything outwards, and
+          <code>[-z, 0, x - z / 2]</code> spirals inwards. The <a href="demo.html?name=maths">maths demo</a>
+          has ten more to explore, including gradients, gradient descent, an electric field and a linear map.
+        </aside>
+      </section>
+
+      <!-- the next part, when a later page has one: from demos/tutorial/parts.js -->
+      <p class="tutorial-onward"></p>
+
+      <section id="next">
+        <h2>Where next</h2>
+        <ul class="next-links">
+          <li><a href="./"><b>The demos</b></a> - there are over 40! From network maps and floor
+            plans to product viewers and real-time 3D posters - each one has the source code on GitHub. The
+            <a href="demo.html?name=maths">maths</a> and <a href="demo.html?name=custom-element">custom
+            element</a> demos follow on from Parts 3 and 4.</li>
+          <li><a href="llms-full.txt"><b>The reference</b></a> - the whole API on one page, with every option
+            and plenty of examples. It's written for coding agents, but it's just as useful for 'real humans' to read.</li>
+          <li><a href="https://github.com/kevinroast/phoria2"><b>GitHub</b></a> - the source code, a React
+            example, and the place to raise issues with questions and ideas.</li>
+        </ul>
+        <aside class="tutorial-aside">
+          <b>Using a coding agent?</b> Point it at <a href="llms-full.txt">llms-full.txt</a>, or if you use
+          Claude Code, install the phoria2 plugin - then just ask for the scene you want!
+        </aside>
+      </section>
+
+      <div class="credits">
+        <p>Copyright &copy; Kevin Roast 2013-2026 &middot; <a href="https://github.com/kevinroast/phoria2">GitHub</a> &middot;
+          <a href="https://www.npmjs.com/package/phoria2">npm</a></p>
+      </div>
+    </main>
+    <script type="module" src="/demos/tutorial/page.js"></script>
+  </body>
+</html>
