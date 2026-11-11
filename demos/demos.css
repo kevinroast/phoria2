@@ -2726,6 +2726,8 @@ button.demo-legend-item {
 .demo-cards-card {
   display: flex;
   flex-direction: column;
+  /* a card never widens its column - what doesn't fit wraps, or its code block scrolls */
+  min-width: 0;
   gap: 8px;
   padding: 12px;
   border: 1px solid var(--border);
@@ -2770,8 +2772,9 @@ button.demo-legend-item {
 .demo-cards-row {
   margin: 8px 0 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px 16px;
   font-size: 13px;
   color: var(--text-dim);
 }
