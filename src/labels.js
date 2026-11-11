@@ -17,13 +17,14 @@ import { alignColumns, layoutLabels, leaderEnd, placeBox, stackColumns } from '.
  * @property {number} zoomedOut hidden because the view isn't zoomed in to their minScale
  */
 
-/** @typedef {{ el: HTMLDivElement, text: string, className: string, width: number, height: number, showing: boolean, leader: SVGGElement | null, color: string, rule: number, label: FrameLabel | null, interactive: boolean }} Entry */
+/** @typedef {{ el: HTMLDivElement, text: string, content: Element | null, className: string, width: number, height: number, showing: boolean, leader: SVGGElement | null, color: string, rule: number, label: FrameLabel | null, interactive: boolean }} Entry */
 
 /**
  * What the layer asks of its view: whether a label answers the pointer, and what to do when it does.
  * @typedef {object} LabelPointer
  * @property {(label: FrameLabel) => boolean} interactive
  * @property {(type: 'click' | 'over' | 'out', label: FrameLabel, event: MouseEvent | null) => void} on
+ * @property {() => void} [changed] a label's content changed size (its fonts arrived, say) - draw again
  */
 
 /**
@@ -48,10 +49,29 @@ export class LabelLayer {
   /** @type {WeakMap<Element, Entry>} */ #byElement = new WeakMap()
   /** The label under the pointer, when it answers the pointer. @type {Entry | null} */ #over = null
 
+  // labels showing content of their own: measured again when it changes size - KaTeX's fonts
+  // arriving after it was first laid out, say
+  /** @type {ResizeObserver | null} */ #resized = null
+
   /** @param {HTMLCanvasElement} canvas @param {LabelPointer} [pointer] */
   constructor(canvas, pointer) {
     this.canvas = canvas
     this.pointer = pointer
+  }
+
+  /** Watch an entry showing content for a change of size, or stop. @param {Entry} entry @param {boolean} on */
+  #watchSize(entry, on) {
+    if (typeof ResizeObserver === 'undefined') return
+    if (on) {
+      this.#resized ??= new ResizeObserver((changes) => {
+        for (const { target } of changes) {
+          const e = this.#byElement.get(target)
+          if (e) e.width = e.height = -1
+        }
+        this.pointer?.changed?.()
+      })
+      this.#resized.observe(entry.el)
+    } else this.#resized?.unobserve(entry.el)
   }
 
   /** The layer over the canvas: labels, and overlays such as legends. Made on first use. @returns {HTMLDivElement} */
@@ -92,6 +112,7 @@ export class LabelLayer {
     for (const [key, entry] of this.#elements) {
       if (seen.has(key)) continue
       this.#leave(entry)
+      if (entry.content) this.#watchSize(entry, false)
       entry.el.remove()
       entry.leader?.remove()
       this.#elements.delete(key)
@@ -252,6 +273,8 @@ export class LabelLayer {
 
   dispose() {
     this.#over = null
+    this.#resized?.disconnect()
+    this.#resized = null
     for (const el of this.#overlays) el.remove()
     this.#overlays.clear()
     this.#root?.remove()
@@ -270,13 +293,21 @@ export class LabelLayer {
       // opacity eases, so dimming and brightening don't flash
       Object.assign(el.style, { position: 'absolute', left: '0', top: '0', willChange: 'transform', transition: 'opacity 0.15s' })
       root.append(el)
-      entry = { el, text: '', className: '', width: -1, height: -1, showing: false, leader: null, color: '', rule: 0, label: null, interactive: false }
+      entry = { el, text: '', content: null, className: '', width: -1, height: -1, showing: false, leader: null, color: '', rule: 0, label: null, interactive: false }
       this.#elements.set(label.key, entry)
       this.#byElement.set(el, entry)
     }
     const className = `phoria-label${label.style.className ? ` ${label.style.className}` : ''}`
-    if (entry.text !== label.text || entry.className !== className) {
-      entry.el.textContent = entry.text = label.text
+    const content = label.content ?? null
+    if (entry.text !== label.text || entry.content !== content || entry.className !== className) {
+      // an element of the label's own in place of its text; the text is what an exported image shows
+      if (content) entry.el.replaceChildren(content)
+      else entry.el.textContent = label.text
+      if (content) entry.el.dataset.text = label.text
+      else delete entry.el.dataset.text
+      if (!!content !== !!entry.content) this.#watchSize(entry, !!content)
+      entry.text = label.text
+      entry.content = content
       entry.el.className = entry.className = className
       entry.width = entry.height = -1
       entry.color = ''
@@ -309,9 +340,10 @@ export class LabelLayer {
 
   /** Pass clicks and hovers on labels that answer the pointer to the view. @param {HTMLDivElement} root */
   #listen(root) {
-    /** @param {Event} e */
+    /** The label an event happened in - on the label, or on something inside its content. @param {Event} e */
     const entryOf = (e) => {
-      const entry = this.#byElement.get(/** @type {Element} */ (e.target))
+      let entry
+      for (let n = /** @type {Element | null} */ (e.target); n && n !== root && !entry; n = n.parentElement) entry = this.#byElement.get(n)
       return entry?.interactive && entry.label ? entry : null
     }
     root.addEventListener('click', (e) => {
@@ -326,7 +358,9 @@ export class LabelLayer {
     })
     root.addEventListener('pointerout', (e) => {
       const entry = entryOf(e)
-      if (entry && entry === this.#over) this.#leave(entry)
+      // moving between the parts of a label's content isn't leaving it
+      const to = /** @type {Node | null} */ (/** @type {PointerEvent} */ (e).relatedTarget ?? null)
+      if (entry && entry === this.#over && !(to && entry.el.contains(to))) this.#leave(entry)
     })
   }
 

@@ -249,6 +249,8 @@ export class ChangeWatch {
   /** @param {any} label */
   #label(label) {
     this.#strings.push(label.text, label.className, label.place, label.overlap, label.edge ?? '')
+    // its content, by which element it is: a new one shows on the next frame
+    this.#push(label.content ? contentId(label.content) : 0)
     this.#pushAll(label.offset)
     this.#push(label.priority)
     this.#push(label.occlude ? 1 : 0)
@@ -274,4 +276,14 @@ export class ChangeWatch {
       this.#push(light.penumbra)
     }
   }
+}
+
+// a number for each element shown as a label's content, so swapping one for another is a change
+const contentIds = new WeakMap()
+let nextContentId = 1
+/** @param {object} el */
+function contentId(el) {
+  let id = contentIds.get(el)
+  if (id === undefined) contentIds.set(el, id = nextContentId++)
+  return id
 }

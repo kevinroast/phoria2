@@ -94,6 +94,7 @@ const OVER_LIMIT = {
  * @property {Node} node the Label, or the InstancedMesh or Points it labels
  * @property {number | null} index the instance or point, for labels made from `labels`
  * @property {string} text
+ * @property {Element | null} [content] an element shown in place of the text (Label's content)
  * @property {Required<LabelPlacement>} style
  * @property {Vec3} position world
  * @property {[number, number]} ndc [x, y] in -1..1
@@ -273,7 +274,7 @@ export function collect(scene, camera, { display = true } = {}) {
     } else if (node.isLabel) {
       if (!display) return
       const position = node.worldPosition
-      frame.labels.push({ key: node, node, index: null, text: node.text, style: node, position, ...project(position, viewProjection, view, projection[5]) })
+      frame.labels.push({ key: node, node, index: null, text: node.text, content: node.content, style: node, position, ...project(position, viewProjection, view, projection[5]) })
     } else if (node.lightKind) {
       addLight(/** @type {Light} */ (node))
     }

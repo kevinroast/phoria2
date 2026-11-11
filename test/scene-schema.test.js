@@ -65,7 +65,8 @@ describe('the scene description schema', () => {
     const types = defs.node.anyOf.map((v) => v.properties.type.const)
     expect(types).toEqual([...classes.map((C) => C.type), 'chart'])
     for (const C of classes) {
-      expect([C.type, names(variant(C.type))]).toEqual([C.type, [...C.OPTIONS.filter((o) => !HANDLERS.includes(o)), 'type'].sort()])
+      // a label's content is an element of the page's, which JSON can't hold - like its handlers
+      expect([C.type, names(variant(C.type))]).toEqual([C.type, [...C.OPTIONS.filter((o) => !HANDLERS.includes(o) && o !== 'content'), 'type'].sort()])
     }
   })
 

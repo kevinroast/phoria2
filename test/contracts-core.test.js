@@ -86,8 +86,15 @@ nodeContract(Lines, (o) => new Lines({ geometry: new Geometry({ positions: [0, 0
   arrowSize: { value: 14, read: (n) => n.arrowSize, default: 0, bad: 'big', error: 'arrowSize' },
 })
 
+// an element for a label's content, where the tests have no page: just enough of one to be told apart
+class FakeElement {
+  cloneNode() { return new FakeElement() }
+}
+globalThis.Element ??= /** @type {any} */ (FakeElement)
+
 nodeContract(Label, (o) => new Label({ text: 'label', ...o }), {
   text: { value: 'Crater', read: (l) => l.text, bad: {}, error: 'text' },
+  content: { fresh: () => new globalThis.Element(), read: (l) => l.content instanceof globalThis.Element, expect: true, default: false, bad: '<b>x</b>', error: "'content' is an element", keep: false },
   place: { value: 'above', read: (l) => l.place, default: 'center', bad: 'top', error: 'place' },
   offset: { value: [4, -2], read: (l) => l.offset, default: [0, 0], bad: [1], error: 'offset' },
   className: { value: 'tag', read: (l) => l.className, default: '' },

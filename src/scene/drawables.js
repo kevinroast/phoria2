@@ -3,7 +3,7 @@ import { Color } from '../value/Color.js'
 import { Euler } from '../value/Euler.js'
 import { Quat } from '../value/Quat.js'
 import { Vec3 } from '../value/Vec3.js'
-import { checkNumber, checkOneOf, describe, fail } from '../validate.js'
+import { checkNumber, checkOneOf, describe, fail, warnOnce } from '../validate.js'
 import { resolveGeometry, resolveMaterial } from '../resolve.js'
 import { NODE_OPTIONS, Node } from './Node.js'
 import { isInstanced } from './kinds.js'
@@ -577,21 +577,25 @@ export class Lines extends Drawable {
 }
 
 /**
- * @typedef {NodeOptions & LabelPlacement & { text: string | number }} LabelOptions
+ * @typedef {NodeOptions & LabelPlacement & { text?: string | number, content?: Element | null }} LabelOptions
+ * text, or content - an element of your own (an equation typeset by KaTeX, an icon, a badge) - or
+ * both, when the text stands in for the content where an element can't go: an exported image, the
+ * scene's JSON
  */
 
 /**
  * HTML text pinned to a 3D position: crisp at any pixel ratio and styleable with CSS. Hidden when
- * behind the camera or invisible.
+ * behind the camera or invisible. Its content can be an element of your own instead of text.
  */
 export class Label extends Node {
   static type = 'label'
-  static get OPTIONS() { return [...NODE_OPTIONS, 'text', ...PLACEMENT_OPTIONS] }
+  static get OPTIONS() { return [...NODE_OPTIONS, 'text', 'content', ...PLACEMENT_OPTIONS] }
   static get HINTS() { return LABEL_HINTS }
 
   text = ''
   /** CSS class(es) for the label element. */
   className = ''
+  /** @type {Element | null} */ #content = null
   /** Where the label goes relative to its point. @type {LabelPlace} */
   place = 'center'
   /** Extra shift in CSS pixels, +y down. @type {[number, number]} */
@@ -612,11 +616,27 @@ export class Label extends Node {
   /** @param {LabelOptions} options */
   constructor(options) {
     super(options)
-    if (typeof options?.text !== 'string' && typeof options?.text !== 'number') {
-      fail('Label', `'text' is required, got ${describe(options?.text)}`)
-    }
-    this.text = String(options.text)
+    const hasText = typeof options?.text === 'string' || typeof options?.text === 'number'
+    if (options?.content !== undefined && options.content !== null) this.content = options.content
+    if (!hasText && options?.text !== undefined) fail('Label', `'text' is a string or a number, got ${describe(options.text)}`)
+    if (!hasText && !this.#content) fail('Label', `'text' is required - or 'content', an element of your own - got ${describe(options?.text)}`)
+    if (hasText) this.text = String(options.text)
     Object.assign(this, placement('Label', options))
+  }
+
+  /**
+   * An element shown as the label in place of its text - an equation typeset by KaTeX, an icon, a
+   * badge - or null for the text. It's placed, given way to and dimmed as text is; the text (if
+   * any) is what an exported image shows instead, and what the scene's JSON keeps.
+   * @returns {Element | null}
+   */
+  get content() { return this.#content }
+  /** @param {Element | null} v */
+  set content(v) {
+    if (v !== null && !(typeof Element !== 'undefined' && v instanceof Element)) {
+      fail('Label', `'content' is an element - one KaTeX has rendered into, say - or null; for plain text use 'text'. Got ${describe(v)}`)
+    }
+    this.#content = v
   }
 
   /** @internal Lets renderers spot labels without importing this class. */
@@ -631,13 +651,16 @@ export class Label extends Node {
 
   /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
-    return { ...super.cloneOptions(), text: this.text, className: this.className, place: this.place,
+    // an element can only be in one place: the copy gets a copy of it
+    return { ...super.cloneOptions(), text: this.text, content: this.#content ? this.#content.cloneNode(true) : null, className: this.className, place: this.place,
       offset: [...this.offset], priority: this.priority, overlap: this.overlap, occlude: this.occlude, leader: this.leader, edge: this.edge,
       minScale: this.minScale }
   }
 
   /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
+    // content is an element of the page's, which JSON can't hold - its text stands in for it
+    if (this.#content && !this.text) warnOnce(this, "Label: toJSON() can't keep 'content' (an element) - give the label 'text' too, which the JSON keeps in its place")
     /** @type {Record<string, unknown>} */
     const json = { text: this.text }
     if (this.className) json.className = this.className

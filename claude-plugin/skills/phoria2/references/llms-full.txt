@@ -301,6 +301,19 @@ clicked and hovered like a mesh (`new Label({ text: 'Mantle', onClick: () => sho
 callout that opens its layer), and a label of an instance or point is part of it - clicking it is
 clicking that bar, with the same hit. Other labels let the pointer through to the scene.
 
+A Label can show an element of your own instead of text - `content` takes any element: an equation
+typeset by KaTeX or MathJax, an icon, a badge. It's placed, given way to, dimmed and clicked like any
+label, and a change of `content` (or of its size - KaTeX's fonts arriving) redraws. `text` is optional
+then, and stands in for the element where one can't go: `view.toImage()` paints the text (a canvas
+can't draw HTML; with no text the label is left out of the image), and `toJSON()` keeps the text.
+
+```js
+import katex from 'katex'
+const formula = document.createElement('span')
+katex.render('y = \\sin(a x)\\cos(z)', formula)
+view.scene.add(new Label({ content: formula, text: 'y = sin(ax) cos(z)', position: [0, 2.5, 0] }))
+```
+
 **Labels per instance or point**, without a Label node each:
 
 ```js

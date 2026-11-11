@@ -1,4 +1,4 @@
-import { Mesh, View, sphere as sphereGeometry } from 'phoria2'
+import { Label, Mesh, View, sphere as sphereGeometry } from 'phoria2'
 import { chart } from 'phoria2/charts'
 import source from './maths.js?raw'
 import { random } from './kit.js'
@@ -52,8 +52,10 @@ const CARDS = [
   },
 ]
 
-export default function run({ canvas }) {
+export default async function run({ canvas }) {
   canvas.style.display = 'none'
+  // the formulas on the cards are typeset by KaTeX, loaded from the CDN for this page only
+  await loadKatex()
   const page = document.createElement('div')
   page.className = 'demo-cards demo-maths'
   const views = []
@@ -100,6 +102,11 @@ function surface({ canvas, slider }) {
     x: [-3, 3], z: [-3, 3], y: [-1, 1],
     params: p, samples: 64, legend: false,
   }))
+  // the function itself, typeset by KaTeX (tex() below) - with plain text if it can't be
+  view.scene.add(new Label({
+    content: tex('y = \\sin(a x)\\,\\cos(b z)'), text: 'y = sin(ax) cos(bz)',
+    position: [0, 4.6, -5], place: 'above', className: 'maths-tex', overlap: 'show',
+  }))
   slider('a', 0.5, 3, p.a, (a) => { p.a = a; plot.update({ params: p }) })
   slider('b', 0.5, 3, p.b, (b) => { p.b = b; plot.update({ params: p }) })
   return view
@@ -118,6 +125,10 @@ function waves({ canvas, slider }) {
     fn: (x, z, { t, apart, wavelength }) => ripple(Math.hypot(x - apart / 2, z), t, wavelength) + ripple(Math.hypot(x + apart / 2, z), t, wavelength),
     x: [-4, 4], z: [-4, 4], y: { domain: [-1.6, 1.6], axis: { ticks: 3 } }, box: [10, 2.5, 10], params: p, time: true, samples: 84, legend: false,
     color: { field: 'y', scale: { scheme: 'blues' } },
+  }))
+  view.scene.add(new Label({
+    content: tex('y = \\sum_{i=1}^{2} \\frac{\\sin(k r_i - 3t)}{\\sqrt{1 + r_i}}'), text: 'y = sum of sin(k r - 3t) / sqrt(1 + r)',
+    position: [0, 3.1, -5], place: 'above', className: 'maths-tex', overlap: 'show',
   }))
   slider('apart', 0.5, 4, p.apart, (v) => { p.apart = v; plot.update({ params: p }) })
   slider('wavelength', 0.8, 3, p.wavelength, (v) => { p.wavelength = v; plot.update({ params: p }) })
@@ -165,13 +176,17 @@ function curve({ canvas, slider }) {
   const view = new View({ canvas, orbit: true, background: BG })
   const p = { a: 3, b: 2, c: 5 }
   const lissajous = (t, { a, b, c }) => [Math.sin(a * t + Math.PI / 2), Math.sin(b * t), Math.sin(c * t)]
-  const plot = view.scene.add(chart({ mark: 'curve', fn: lissajous, t: [0, 2 * Math.PI], samples: 600, params: p, size: 3 }))
+  const plot = view.scene.add(chart({ mark: 'curve', fn: lissajous, t: [0, 2 * Math.PI], samples: 600, params: p, size: 3, y: { axis: { title: '' } } }))
   const rider = view.scene.add(new Mesh({ geometry: sphereGeometry({ radius: 0.25 }), material: { color: '#ffffff', emissive: '#ffffff' } }))
   // the point rides round in the chart's own coordinates, through its scales
   view.start((dt, time) => {
     const [x, y, z] = lissajous((time * 0.4) % (2 * Math.PI), p)
     rider.position.set(plot.scales.x(x), plot.scales.y(y), plot.scales.z(z))
   })
+  view.scene.add(new Label({
+    content: tex('\\mathbf{r}(t) = \\begin{pmatrix} \\sin(a t + \\tfrac{\\pi}{2}) \\\\ \\sin(b t) \\\\ \\sin(c t) \\end{pmatrix}'),
+    text: 'r(t) = (sin(at + pi/2), sin(bt), sin(ct))', position: [-5, 11, 5], edge: 'left', className: 'maths-tex', overlap: 'show',
+  }))
   for (const k of ['a', 'b', 'c']) slider(k, 1, 6, p[k], (v) => { p[k] = v; plot.update({ params: p }) }, 1)
   return view
 }
@@ -298,10 +313,18 @@ function matrix({ canvas, slider }) {
     mark: 'curve', data: eigenLines() ?? [], x: pinned('x', ranges.x), y: 'y', z: pinned('z', ranges.z),
     detail: 'line', color: '#ffffff', size: 2, frame: false, tooltip: false,
   }))
+  // the matrix, typeset again into the same element as it changes - the label follows its new size
+  const n = (v) => String(+v.toFixed(2))
+  const matrixTex = () => `A = \\begin{pmatrix} ${n(m.a)} & ${n(m.b)} \\\\ ${n(m.c)} & ${n(m.d)} \\end{pmatrix}`
+  const formula = view.scene.add(new Label({
+    content: tex(matrixTex()), text: 'the matrix A',
+    position: [plot.scales.x(-2.2), 0, plot.scales.z(1.4)], place: 'left', className: 'maths-tex', overlap: 'show',
+  }))
   for (const k of ['a', 'b', 'c', 'd']) {
     slider(k, -1.5, 1.5, m[k], (v) => {
       m[k] = v
       plot.update({ params: m })
+      if (formula.content) tex(matrixTex(), formula.content)
       const rows = eigenLines()
       lines.visible = !!rows
       if (rows) lines.update(rows)
@@ -332,6 +355,33 @@ function response({ canvas }) {
   return view
 }
 // end
+
+// KaTeX, pinned, from the CDN - for this page only; phoria2 knows nothing of it
+const KATEX = 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist'
+/** @type {any} */
+let katex = null
+
+/** Load KaTeX and its stylesheet; without the network the formulas fall back to their text. */
+async function loadKatex() {
+  const link = Object.assign(document.createElement('link'), { rel: 'stylesheet', href: `${KATEX}/katex.min.css` })
+  document.head.append(link)
+  try {
+    katex = (await import(/* @vite-ignore */ `${KATEX}/katex.mjs`)).default
+  } catch {
+    katex = null
+  }
+}
+
+/**
+ * TeX typeset by KaTeX into an element - a new one, or the one given to change it - or null when
+ * KaTeX couldn't load, so a Label shows its text instead.
+ * @param {string} source @param {Element} [into]
+ */
+function tex(source, into = document.createElement('span')) {
+  if (!katex) return null
+  katex.render(source, into, { throwOnError: false })
+  return into
+}
 
 /** An example's code as it reads, between its markers. @param {string} name */
 function sourceOf(name) {

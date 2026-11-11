@@ -2814,3 +2814,12 @@ button.demo-legend-item {
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
+
+/* the maths demo's formulas: typeset by KaTeX, on a quiet panel */
+.maths-tex {
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(16, 16, 16, 0.72);
+  color: #eee;
+  font-size: 15px;
+}

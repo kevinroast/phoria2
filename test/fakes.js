@@ -187,6 +187,16 @@ export function fakeElement(tag = 'div') {
     getBoundingClientRect: () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }),
     append(...els) { base.children.push(...els) },
     prepend(...els) { base.children.unshift(...els) },
+    // what a label's content does to its element: the children replaced, each told its parent
+    replaceChildren(...els) {
+      base.children = els
+      for (const el of els) if (el && typeof el === 'object') el.parentElement = proxy
+    },
+    /** @param {any} other */
+    contains(other) {
+      for (let n = other; n; n = n.parentElement) if (n === proxy) return true
+      return false
+    },
     /** @type {Map<string, Set<Function>>} */ listeners: new Map(),
     addEventListener(type, fn) {
       if (!base.listeners.has(type)) base.listeners.set(type, new Set())
@@ -198,7 +208,9 @@ export function fakeElement(tag = 'div') {
       for (const fn of base.listeners.get(type) ?? []) fn({ type, clientX: 0, clientY: 0, preventDefault() {}, ...event })
     },
   }
-  return new Proxy(base, { get: (t, key) => (key in t ? t[key] : typeof key === 'string' ? () => fakeElement() : undefined) })
+  // parentElement is null until something takes the element in (replaceChildren)
+  const proxy = new Proxy(base, { get: (t, key) => (key in t ? t[key] : key === 'parentElement' ? null : typeof key === 'string' ? () => fakeElement() : undefined) })
+  return proxy
 }
 
 /**

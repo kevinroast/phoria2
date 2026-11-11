@@ -303,6 +303,7 @@ export class View {
     this.#labels = new LabelLayer(this.canvas, {
       interactive: (label) => labelHandlers(label, 'click').length > 0 || labelHandlers(label, 'hover').length > 0,
       on: (type, label, e) => this.#labelPointer(type, label, e),
+      changed: () => this.invalidate(),
     })
     if (options.debug !== undefined) this.debug = options.debug
 

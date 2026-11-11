@@ -63,8 +63,14 @@ function paintLeader(ctx, { from, to, color, opacity }, scale) {
   ctx.restore()
 }
 
-/** @param {CanvasRenderingContext2D} ctx @param {HTMLElement} el @param {DOMRect} frame @param {number} scale */
+/**
+ * A label as it looks: its box and its text. One showing an element of its own (Label's content)
+ * paints the text it was given in its place - a canvas can't draw HTML - or isn't painted at all.
+ * @param {CanvasRenderingContext2D} ctx @param {HTMLElement} el @param {DOMRect} frame @param {number} scale
+ */
 function paintLabel(ctx, el, frame, scale) {
+  const text = el.dataset.text ?? el.textContent ?? ''
+  if (el.dataset.text === '') return
   const r = el.getBoundingClientRect(), cs = getComputedStyle(el)
   const x = (r.left - frame.left) * scale, y = (r.top - frame.top) * scale
   const w = r.width * scale, h = r.height * scale
@@ -88,6 +94,6 @@ function paintLabel(ctx, el, frame, scale) {
   const right = cs.textAlign === 'right' || cs.textAlign === 'end'
   ctx.textAlign = right ? 'right' : 'left'
   const at = right ? x + w - (parseFloat(cs.paddingRight) || 0) * scale : x + (parseFloat(cs.paddingLeft) || 0) * scale
-  ctx.fillText(transformText(el.textContent ?? '', cs.textTransform), at, y + h / 2)
+  ctx.fillText(transformText(text, cs.textTransform), at, y + h / 2)
   ctx.restore()
 }
