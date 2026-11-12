@@ -839,13 +839,65 @@ body.gallery {
   .masthead h1 {
     font-size: 30px;
   }
-  /* on a phone the chip goes first, at the left, across from the flower */
+  /* on a phone: a small flower beside the name, the kevs3d chip in the corner, the definition and
+     the links across the full width below - and only the links that are any use on a phone */
   .masthead {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 0 14px;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  .masthead-text {
+    display: contents;
+  }
+  .masthead-flower {
+    grid-row: 1 / 3;
+    width: 60px;
+    height: 76px;
+  }
+  .masthead h1 {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+  }
+  .masthead .masthead-say {
+    grid-column: 2 / 4;
+    grid-row: 2;
+    align-self: start;
+  }
+  .masthead .masthead-def {
+    grid-column: 1 / -1;
+    margin-top: 10px;
+  }
+  .get-it {
+    grid-column: 1 / -1;
+  }
+  .wide-only {
+    display: none;
   }
   .home-link {
-    order: -1;
-    margin: 0 auto 0 0;
+    grid-column: 3;
+    grid-row: 1;
+    align-self: center;
+    margin: 0;
+  }
+}
+
+/* the narrowest phones: the name, the flower and the kevs3d chip just fit on one row */
+@media (max-width: 370px) {
+  .masthead {
+    column-gap: 10px;
+  }
+  .masthead h1 {
+    font-size: 26px;
+    letter-spacing: 1px;
+  }
+  .home-link {
+    padding: 0 8px;
+  }
+  .home-link svg {
+    display: none;
   }
   .canvas-frame {
     height: 260px;
@@ -1115,6 +1167,17 @@ button.demo-legend-item {
   min-height: 0;
   width: 100%;
   display: block;
+}
+
+/* pages of views on a touch screen - the dashboard, chart lab, maths and custom element demos: a
+   plot fills most of a phone's width, so it can't swallow every swipe or the page never scrolls.
+   Up and down over a plot moves the page; side to side still turns it. The orbit control sets
+   touch-action: none on its canvas, hence !important */
+@media (pointer: coarse) {
+  .demo-dashboard canvas,
+  .demo-cards canvas {
+    touch-action: pan-y !important;
+  }
 }
 
 /* a demo's own source, beside the scene */
