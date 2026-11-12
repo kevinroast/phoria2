@@ -26,6 +26,9 @@ const makeChart = (o) => {
   const keys = Object.keys(o)
   if (keys.some((k) => NETWORK_ONLY.includes(k))) return chart({ mark: 'network', data: network, transition: false, ...o })
   if (keys.includes('t')) return chart({ mark: 'curve', fn: (t) => [t, t, t], transition: false, ...o })
+  // curved coordinates: a sphere, or a polar surface for r
+  if (keys.includes('r')) return chart({ mark: 'surface', coords: 'polar', fn: (r) => r, samples: 8, transition: false, ...o })
+  if (keys.some((k) => ['coords', 'theta', 'phi'].includes(k))) return chart({ mark: 'surface', coords: 'spherical', fn: () => 1, samples: 8, transition: false, ...o })
   if (keys.includes('u') || keys.includes('v')) return chart({ mark: 'surface', fn: (u, v) => [u, v, u * v], u: [0, 1], v: [0, 1], transition: false, ...o })
   if (keys.some((k) => ['fn', 'samples', 'params', 'time', 'contours'].includes(k))) return chart({ mark: 'surface', fn: (x, z) => x * z, x: [0, 1], z: [0, 1], transition: false, ...o })
   return chart({ mark: 'bar', data: rows, x: 'month', y: 'sales', transition: false, ...o })
@@ -76,6 +79,10 @@ contract('chart()', {
     t: { value: [0, 2], read: (c) => c.marks[0].data.at(-1).t, expect: 2, bad: [1, 1], error: "t's range is two different numbers" },
     u: { value: [0, 2], read: (c) => c.marks[0].data.at(-1).u, expect: 2, bad: 'all', error: "u's range is two different numbers" },
     v: { value: [0, 3], read: (c) => c.marks[0].data.at(-1).v, expect: 3, bad: [0], error: "v's range is two different numbers" },
+    coords: { value: 'spherical', read: (c) => ('phi' in c.marks[0].data[0] ? 'spherical' : 'cartesian'), bad: 'round', error: "'coords' is 'cartesian' (the default), 'polar', 'cylindrical' or 'spherical'" },
+    theta: { value: [0, Math.PI], read: (c) => c.marks[0].data.at(-1).theta, expect: Math.PI, bad: [1, 1], error: "theta's range is two different numbers" },
+    phi: { value: [0, 1], read: (c) => c.marks[0].data.at(-1).phi, expect: 1, bad: 'top', error: "phi's range is two different numbers" },
+    r: { value: [0, 2], read: (c) => c.marks[0].data.at(-1).r, expect: 2, bad: [2], error: "r's range is two different numbers" },
     x: { value: 'region', read: channel('x'), bad: 'nofield', error: "isn't in the data" },
     y: { value: { field: 'sales' }, read: channel('y'), expect: 'sales', bad: 'nofield', error: "isn't in the data" },
     z: { value: 'region', read: channel('z'), bad: 'nofield', error: "isn't in the data" },

@@ -1017,7 +1017,32 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
   `samples`: a number for every range or one each (`[64, 32]`); defaults 48 a side (surfaces), 64
   (parametric), 256 (curves), 9 (vector fields). Rows: surfaces `{ x, z, y }`, parametric
   `{ u, v, x, y, z }`, curves `{ t, x, y, z }`, fields `{ x, y, z, vx, vy, vz, magnitude }`. fn must give a
-  finite value everywhere (clamp where it blows up) - an error names the point it didn't.
+  finite value everywhere (clamp where it blows up) - an error names the point it didn't. Surfaces are
+  shaded by normals worked out from fn, so they look smooth between samples (a sphere's poles too).
+- **Curved coordinates** - `coords: 'polar' | 'cylindrical' | 'spherical'` (default `'cartesian'`): fn gives a
+  radius (or a height) over angles, and the chart makes the points. Angles are radians; theta turns from +x
+  towards -z (anticlockwise seen from above) and defaults to all the way round, `[0, 2 * Math.PI]`; phi runs
+  down from +y (0) to -y (π) and defaults to `[0, Math.PI]` (the maths names - physics swaps theta and phi).
+  Equal units, and `frame: 'origin'` with faint rings round the origin like polar graph paper, unless
+  `frame` says otherwise (`true`: walls, no rings). A negative radius is drawn through the origin, opposite.
+
+  ```js
+  // spherical: r = fn(theta, phi) - a sphere's bumps, spherical harmonics; coloured by r
+  chart({ mark: 'surface', coords: 'spherical', fn: (theta, phi) => 1 + 0.2 * Math.cos(5 * theta) * Math.sin(phi) })
+  // cylindrical: r = fn(theta, y), over a y range - a vase, a column
+  chart({ mark: 'surface', coords: 'cylindrical', fn: (theta, y) => 1 + 0.3 * Math.sin(y * 2), y: [0, 4] })
+  // polar surface: a height y = fn(r, theta) over a disc, over an r range
+  chart({ mark: 'surface', coords: 'polar', fn: (r, theta) => Math.cos(r * 3) / (1 + r), r: [0, 4] })
+  // polar curve: r = fn(theta), upright in the x-y plane, facing you - roses, cardioids, spirals
+  chart({ mark: 'curve', coords: 'polar', fn: (theta) => Math.cos(3 * theta) })
+  // a surface's fn may return { r, ...fields }: the fields go on each row, to colour by - here the
+  // sign of an orbital's wave, drawn at its size
+  chart({ mark: 'surface', coords: 'spherical', fn: (theta, phi) => { const y = Math.cos(phi); return { r: Math.abs(y), sign: y < 0 ? '-' : '+' } }, color: 'sign' })
+  ```
+
+  Rows: spherical `{ theta, phi, r, x, y, z }`, cylindrical `{ theta, y, r, x, z }`, polar surfaces
+  `{ r, theta, y, x, z }`, polar curves `{ theta, r, x, y, z }`. `params`, `time`, `samples` and tweening
+  work as above; a range for x, y or z pins that axis, as for parametric shapes.
 - **Networks** - nodes as spheres and links as lines, laid out, labelled and interactive:
 
   ```js

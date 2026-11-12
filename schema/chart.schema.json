@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cdn.jsdelivr.net/npm/phoria2@1/schema/chart.schema.json",
   "title": "phoria2 chart spec",
-  "description": "The spec for chart() from phoria2/charts: a mark, data, and channels mapping data fields to what is drawn. Channels may also be nested under 'encoding', as Vega-Lite writes them. Charts of a function (fn, samples, params, t, u, v - surfaces, curves and vector fields sampled from fn) are JavaScript only: a function is not JSON.",
+  "description": "The spec for chart() from phoria2/charts: a mark, data, and channels mapping data fields to what is drawn. Channels may also be nested under 'encoding', as Vega-Lite writes them. Charts of a function (fn, samples, params, t, u, v, coords, theta, phi, r - surfaces, curves and vector fields sampled from fn, in cartesian or curved coordinates) are JavaScript only: a function is not JSON.",
   "type": "object",
   "required": ["mark", "data"],
   "additionalProperties": false,

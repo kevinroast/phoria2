@@ -23,12 +23,20 @@ const CARDS = [
     note: 'Surfaces [x, y, z] = f(u, v) that fold back on themselves with equal units on every axis - keeping their proportions - tweening from one to the next.',
   },
   {
+    name: 'response', title: 'A response surface',
+    note: 'A fitted model of yield over temperature and pressure, with the measurements it was fitted to. Hover the surface or a point to read it.',
+  },
+  {
     name: 'contours', title: 'A contour map',
     note: 'Lines of equal height, on the surface and projected onto the floor. More lines, closer heights.',
   },
   {
     name: 'curve', title: 'A curve through space',
     note: 'A 3D Lissajous figure, [x, y, z] = f(t), with a point riding round it. Whole-number frequencies closing the loop.',
+  },
+  {
+    name: 'polar', title: 'Polar curves',
+    note: 'A radius for each angle, r = f(θ), drawn with coords: \'polar\' on rings and spokes, like polar graph paper. a = 0 draws a rose; a = 1 with k = 1 is a cardioid; in between are limaçons.',
   },
   {
     name: 'gradient', title: 'Its gradient',
@@ -47,8 +55,8 @@ const CARDS = [
     note: 'A 2 × 2 matrix as a field: each arrow is where the map sends its point. Along the white lines the arrows point along them - the map only stretches there: its eigenvectors. Give b and c opposite signs and they go - a rotation.',
   },
   {
-    name: 'response', title: 'A response surface',
-    note: 'A fitted model of yield over temperature and pressure, with the measurements it was fitted to. Hover the surface or a point to read it.',
+    name: 'orbitals', title: 'Atomic orbitals',
+    note: 'The shapes of electron orbitals: spherical harmonics, drawn with coords: \'spherical\' as a radius over the angles. The two colours are the sign of the wave - its phase. Pick l and m: l = 0 is s, 1 is p, 2 is d and 3 is f.',
   },
 ]
 
@@ -90,7 +98,7 @@ export default async function run({ canvas }) {
   return views[0]
 }
 
-const EXAMPLES = { surface, waves, gradient, contours, curve, shapes, descent, field, matrix, response }
+const EXAMPLES = { surface, waves, gradient, contours, curve, polar, shapes, orbitals, descent, field, matrix, response }
 
 // surface
 function surface({ canvas, slider }) {
@@ -219,6 +227,112 @@ function shapes({ canvas }) {
     shown = (shown + 1) % SHAPES.length
     plot.update(SHAPES[shown])
   })
+  return view
+}
+// end
+
+// orbitals
+function orbitals({ canvas, slider }) {
+  const view = new View({ canvas, orbit: { autoRotate: 0.25 }, background: BG, camera: { position: [8.5, 10.5, 13.5], target: [0, 5.3, 0] } })
+  const p = { l: 2, m: 0 }
+  // each shape scaled so its largest lobe reaches 1 - the shapes are the point here, not their sizes
+  let scale = 1 / peak(p.l, p.m)
+  const plot = view.scene.add(chart({
+    mark: 'surface', coords: 'spherical',
+    // the radius is the harmonic's size, and its sign a field to colour by: the + and - lobes
+    fn: (theta, phi, { l, m }) => {
+      const y = harmonic(l, m, phi, -theta) * scale
+      return { r: Math.abs(y), sign: y < 0 ? '−' : '+' }
+    },
+    params: p, samples: 72, legend: false, transition: { duration: 0.8, ease: 'inOut' },
+    color: { field: 'sign', scale: { domain: ['+', '−'], range: ['#f28e2b', '#4e79a7'] } },
+    // the same box for every shape, so each grows and shrinks in place - with no ticks, as the sizes
+    // are scaled - and the axes named as chemists name them, z up
+    x: { domain: [-1, 1], title: 'x', axis: { ticks: [] } }, y: { domain: [-1, 1], title: 'z', axis: { ticks: [] } }, z: { domain: [-1, 1], title: 'y', axis: { ticks: [] } },
+  }))
+  const formula = view.scene.add(new Label({
+    content: tex(orbitalTex(p.l, p.m)), text: `r = |Y(l = ${p.l}, m = ${p.m})|`,
+    position: [-6, 10, 5], edge: 'left', className: 'maths-tex', overlap: 'show',
+  }))
+  const show = () => {
+    scale = 1 / peak(p.l, p.m)
+    plot.update({ params: p })
+    if (formula.content) tex(orbitalTex(p.l, p.m), formula.content)
+  }
+  // m runs from -l to l: its slider narrows and widens with l
+  const mInput = slider('m', -p.l, p.l, p.m, (m) => { p.m = m; show() }, 1)
+  slider('l', 0, 3, p.l, (l) => {
+    p.l = l
+    Object.assign(mInput, { min: -l, max: l })
+    mInput.value = String(Math.max(-l, Math.min(l, p.m)))
+    mInput.dispatchEvent(new Event('input'))
+  }, 1)
+  return view
+}
+
+/**
+ * A real spherical harmonic Y(l, m) at a polar angle down from the top, and an azimuth round it -
+ * normalised, through the associated Legendre polynomial P(l, |m|).
+ */
+function harmonic(l, m, polarAngle, azimuth) {
+  const k = Math.abs(m), x = Math.cos(polarAngle), s = Math.sin(polarAngle)
+  // up from P(k, k) by the usual recurrence - without the (-1)^m physicists add, as chemists draw
+  // real orbitals: p_x's + lobe along +x
+  let below = 1
+  for (let i = 1; i <= k; i++) below *= (2 * i - 1) * s
+  let legendre = below
+  if (l > k) {
+    let at = x * (2 * k + 1) * below
+    for (let n = k + 2; n <= l; n++) {
+      const next = (x * (2 * n - 1) * at - (n + k - 1) * below) / (n - k)
+      below = at
+      at = next
+    }
+    legendre = at
+  }
+  let ratio = 1
+  for (let i = l - k + 1; i <= l + k; i++) ratio /= i
+  const norm = Math.sqrt((2 * l + 1) / (4 * Math.PI) * ratio)
+  if (m === 0) return norm * legendre
+  return Math.SQRT2 * norm * legendre * (m > 0 ? Math.cos(k * azimuth) : Math.sin(k * azimuth))
+}
+
+/** The largest size a harmonic reaches, over the sphere. */
+function peak(l, m) {
+  let most = 0
+  for (let i = 0; i <= 48; i++) {
+    for (let j = 0; j <= 24; j++) most = Math.max(most, Math.abs(harmonic(l, m, (j / 24) * Math.PI, (i / 48) * 2 * Math.PI)))
+  }
+  return most
+}
+
+// the orbitals' names, by l and then m from -l to l - with z up, as chemists draw them
+const ORBITALS = [
+  ['s'],
+  ['p_y', 'p_z', 'p_x'],
+  ['d_{xy}', 'd_{yz}', 'd_{z^2}', 'd_{xz}', 'd_{x^2 - y^2}'],
+  ['f_{y(3x^2 - y^2)}', 'f_{xyz}', 'f_{yz^2}', 'f_{z^3}', 'f_{xz^2}', 'f_{z(x^2 - y^2)}', 'f_{x(x^2 - 3y^2)}'],
+]
+const orbitalTex = (l, m) => `r = \\left| Y_{${l}}^{${m}}(\\theta, \\varphi) \\right| \\qquad ${ORBITALS[l][m + l]}`
+// end
+
+// polar
+function polar({ canvas, slider }) {
+  const view = new View({ canvas, orbit: true, background: BG, camera: { position: [1.5, 5.5, 12.5], target: [0, 5, 0] } })
+  const p = { a: 0, k: 3 }
+  const plot = view.scene.add(chart({
+    mark: 'curve', coords: 'polar',
+    fn: (theta, { a, k }) => a + Math.cos(k * theta),
+    // twice round, so a k ending in .5 closes its loop too - in one colour, as a rose goes over itself
+    theta: [0, 4 * Math.PI], samples: 720, params: p, size: 3, color: '#76b7b2',
+    x: { axis: { ticks: 3 } }, y: { axis: { ticks: 3 } },
+  }))
+  view.scene.add(new Label({
+    content: tex('r = a + \\cos(k\\theta)'), text: 'r = a + cos(kθ)',
+    position: [-5.5, 10.5, 0], edge: 'left', className: 'maths-tex', overlap: 'show',
+  }))
+  slider('a', 0, 1.5, p.a, (a) => { p.a = a; plot.update({ params: p }) })
+  slider('k', 0.5, 6, p.k, (k) => { p.k = k; plot.update({ params: p }) }, 0.5)
   return view
 }
 // end
@@ -408,5 +522,7 @@ function sliders(row) {
     })
     label.append(`${name} `, input, shown)
     row.append(label)
+    // handed back, so a card can change its range
+    return input
   }
 }

@@ -5,6 +5,7 @@ import { Geometry } from '../geometry/Geometry.js'
 import { Group } from '../scene/Node.js'
 import { Label, Lines } from '../scene/drawables.js'
 import * as mat4 from '../math/mat4.js'
+import { scaleLinear } from './scales.js'
 
 /** @import { Camera } from '../scene/cameras.js' */
 /** @import { Scale } from './scales.js' */
@@ -197,6 +198,72 @@ export function originFrame({ box, axes, theme, overlap }) {
     frame.add(new Label({ text: a.title || name, position: end, place: name === 'y' ? 'above' : 'right', className: cls('title'), priority: 2, overlap }))
   }
   return frame
+}
+
+/**
+ * Rings around the origin for curved coordinates (with frame: 'origin'), as polar graph paper - faint,
+ * under the axes. A polar curve's rings stand upright with it, with spokes every 30°; a polar
+ * surface's lie on the floor, with spokes; a cylinder's lie under it, its outermost repeated at its
+ * top; a sphere's lie round its equator, with two upright circles through its poles at the outermost.
+ * The rings are at round radii out to how far the shape reaches.
+ * @param {{ coords: string, upright: boolean, rows: any[], scales: { x?: Scale, y?: Scale, z?: Scale }, theme: 'dark' | 'light' }} options
+ * @returns {Lines | null}
+ */
+export function curvedGuides({ coords, upright, rows, scales, theme }) {
+  const { x, y, z } = scales
+  if (!x || !y || !z) return null
+  // the origin - or, for an axis that doesn't reach it, that axis's nearest end
+  const zero = (/** @type {Scale} */ s) => {
+    const [d0, d1] = s.domain
+    return Math.min(Math.max(0, Math.min(d0, d1)), Math.max(d0, d1))
+  }
+  const o = [zero(x), zero(y), zero(z)]
+  // how far the shape reaches from the axis the rings turn about (from the origin, for a sphere)
+  let reach = 0, low = Infinity, high = -Infinity
+  for (const r of rows) {
+    reach = Math.max(reach, coords === 'spherical' ? Math.hypot(r.x, r.y, r.z) : upright ? Math.hypot(r.x, r.y) : Math.hypot(r.x, r.z))
+    low = Math.min(low, r.y)
+    high = Math.max(high, r.y)
+  }
+  if (!(reach > 0)) return null
+  const radii = scaleLinear({ domain: [0, reach] }).ticks(4).filter((t) => t > reach * 1e-6)
+  const outer = /** @type {number} */ (radii.at(-1) ?? reach)
+  const positions = /** @type {number[]} */ ([])
+  const put = (/** @type {number[]} */ p) => positions.push(x(p[0]), y(p[1]), z(p[2]))
+  const SIDES = 96
+  /** A circle, from the point at each angle round it. @param {(a: number) => number[]} at */
+  const circle = (at) => {
+    for (let i = 0; i < SIDES; i++) {
+      put(at(i / SIDES * 2 * Math.PI))
+      put(at((i + 1) / SIDES * 2 * Math.PI))
+    }
+  }
+  // on the floor at a height: theta turning from +x towards -z, as the surfaces are sampled
+  const flat = (/** @type {number} */ r, /** @type {number} */ h) => (/** @type {number} */ a) => [o[0] + r * Math.cos(a), h, o[2] - r * Math.sin(a)]
+  // from the origin out to the outermost ring, every 30°
+  const spokes = (/** @type {(a: number) => number[]} */ rim) => {
+    for (let i = 0; i < 12; i++) {
+      put(o)
+      put(rim(i * Math.PI / 6))
+    }
+  }
+  if (upright) {
+    const ring = (/** @type {number} */ r) => (/** @type {number} */ a) => [o[0] + r * Math.cos(a), o[1] + r * Math.sin(a), o[2]]
+    for (const r of radii) circle(ring(r))
+    spokes(ring(outer))
+  } else if (coords === 'polar') {
+    for (const r of radii) circle(flat(r, o[1]))
+    spokes(flat(outer, o[1]))
+  } else if (coords === 'cylindrical') {
+    for (const r of radii) circle(flat(r, low))
+    circle(flat(outer, high))
+  } else {
+    for (const r of radii) circle(flat(r, o[1]))
+    circle((a) => [o[0] + outer * Math.cos(a), o[1] + outer * Math.sin(a), o[2]])
+    circle((a) => [o[0], o[1] + outer * Math.sin(a), o[2] + outer * Math.cos(a)])
+  }
+  const color = theme === 'light' ? '#5a606c' : '#9aa0ad'
+  return new Lines({ name: 'guides', geometry: new Geometry({ positions }), material: { color, opacity: 0.3, width: 1 }, pickable: false })
 }
 
 /** Four edges of a rectangle as segments. */

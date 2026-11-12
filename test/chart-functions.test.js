@@ -256,3 +256,118 @@ describe("frame: 'origin'", () => {
     expect(arrows[1].geometry.positions[0]).toBeCloseTo(c.scales.x(1))
   })
 })
+
+describe('curved coordinates', () => {
+  /** A row's distance from the origin. */
+  const reach = (row) => Math.hypot(row.x, row.y, row.z)
+  /** The guides in a chart's frame, if any. */
+  const guides = (c) => c.children.find((n) => n.name === 'axes')?.children.find((n) => n.name === 'guides')
+
+  it('spherical: r = fn(theta, phi), all the way round by default, on axes through the origin with rings', () => {
+    const c = chart({ mark: 'surface', coords: 'spherical', fn: () => 2, samples: 9 })
+    const rows = c.marks[0].data
+    expect(rows).toHaveLength(81)
+    for (const row of rows) expect(reach(row)).toBeCloseTo(2, 6)
+    // theta from +x towards -z, phi down from +y
+    expect(rows[0]).toMatchObject({ theta: 0, phi: 0, r: 2 })
+    expect(rows.at(-1).theta).toBeCloseTo(2 * Math.PI)
+    expect(rows.at(-1).phi).toBeCloseTo(Math.PI)
+    const quarter = rows.find((r) => Math.abs(r.theta - Math.PI / 2) < 1e-9 && Math.abs(r.phi - Math.PI / 2) < 1e-9)
+    expect(quarter.z).toBeCloseTo(-2)
+    expect(c.spec.options.equal).toBe(true)
+    expect(c.spec.options.frame).toBe('origin')
+    expect(guides(c)).toBeDefined()
+    expect(c.summary()).toBe('surface chart of r = fn(theta, phi), in spherical coordinates, 9 × 9 samples')
+    // coloured by the radius
+    expect(c.spec.channels.color.field).toBe('r')
+    // walls when asked for, with no rings; none at all with frame: false
+    expect(guides(chart({ mark: 'surface', coords: 'spherical', fn: () => 1, samples: 5, frame: true }))).toBeUndefined()
+    expect(chart({ mark: 'surface', coords: 'spherical', fn: () => 1, samples: 5, frame: false }).children.some((n) => n.name === 'axes')).toBe(false)
+  })
+
+  it('shades a sphere smoothly to its poles: normals along the radius everywhere, the same way, none lost', () => {
+    const c = chart({ mark: 'surface', coords: 'spherical', fn: () => 1, samples: 12 })
+    const n = /** @type {Float32Array} */ (c.marks[0].geometry.normals), p = c.marks[0].geometry.positions
+    const centre = [c.scales.x(0), c.scales.y(0), c.scales.z(0)]
+    let sign = 0
+    for (let i = 0; i < n.length; i += 3) {
+      expect(Math.hypot(n[i], n[i + 1], n[i + 2])).toBeCloseTo(1, 5)
+      const d = [p[i] - centre[0], p[i + 1] - centre[1], p[i + 2] - centre[2]], l = Math.hypot(d[0], d[1], d[2])
+      const along = (n[i] * d[0] + n[i + 1] * d[1] + n[i + 2] * d[2]) / l
+      expect(Math.abs(along)).toBeCloseTo(1, 3)
+      sign ||= Math.sign(along)
+      expect(Math.sign(along)).toBe(sign)
+    }
+    // a parametric sphere gets its normals from fn too, poles and all
+    const u = chart({ mark: 'surface', fn: sphere, u: [0, 2 * Math.PI], v: [0, Math.PI], samples: 12 }).marks[0].geometry.normals
+    for (let i = 0; i < u.length; i++) expect(Number.isFinite(u[i])).toBe(true)
+    expect(Math.abs(u[1])).toBeCloseTo(1, 3)
+  })
+
+  it('draws a negative radius through the origin, and keeps the fields fn gives beside it, to colour by', () => {
+    const c = chart({ mark: 'surface', coords: 'spherical', fn: (theta, phi) => ({ r: Math.cos(phi), sign: Math.cos(phi) < 0 ? 'minus' : 'plus' }), samples: 9, color: 'sign' })
+    const below = c.marks[0].data.find((r) => r.phi > Math.PI * 0.7)
+    // phi past the equator and r below zero: the point is above, through the origin
+    expect(below.r).toBeLessThan(0)
+    expect(below.y).toBeGreaterThan(0)
+    expect(below.sign).toBe('minus')
+    expect(c.spec.channels.color.field).toBe('sign')
+  })
+
+  it('cylindrical: r = fn(theta, y) over the range of y; polar: y = fn(r, theta) over the range of r', () => {
+    const cyl = chart({ mark: 'surface', coords: 'cylindrical', fn: (theta, y) => 1 + y, y: [0, 1], samples: 5 })
+    for (const row of cyl.marks[0].data) expect(Math.hypot(row.x, row.z)).toBeCloseTo(1 + row.y, 6)
+    expect(cyl.scales.y?.domain).toEqual([0, 1])
+    const disk = chart({ mark: 'surface', coords: 'polar', fn: (r) => r * r, r: [0, 2], samples: 5 })
+    for (const row of disk.marks[0].data) {
+      expect(Math.hypot(row.x, row.z)).toBeCloseTo(row.r, 6)
+      expect(row.y).toBeCloseTo(row.r * row.r, 6)
+    }
+    // a height over the floor, coloured by it as any surface
+    expect(disk.spec.channels.color).toBeUndefined()
+  })
+
+  it('polar curves: r = fn(theta), upright in the x-y plane, with no z axis', () => {
+    const c = chart({ mark: 'curve', coords: 'polar', fn: (theta) => Math.cos(3 * theta), samples: 100 })
+    const rows = c.marks[0].data
+    expect(rows.at(-1).theta).toBeCloseTo(2 * Math.PI)
+    for (const row of rows) {
+      expect(row.z).toBe(0)
+      expect(row.x).toBeCloseTo(row.r * Math.cos(row.theta), 9)
+      expect(row.y).toBeCloseTo(row.r * Math.sin(row.theta), 9)
+    }
+    expect(c.spec.channels.z.axis).toBe(false)
+    expect(c.spec.options.frame).toBe('origin')
+    expect(guides(c)).toBeDefined()
+  })
+
+  it('tweens to new params, and moves with time', () => {
+    const scene = new Scene()
+    const c = scene.add(chart({ mark: 'surface', coords: 'spherical', fn: (theta, phi, { a }) => a, params: { a: 1 }, samples: 7, x: [-2, 2], y: [-2, 2], z: [-2, 2], transition: { duration: 0.2 } }))
+    run(scene, 0.3)
+    const before = span(c.marks[0], 1)
+    c.update({ params: { a: 2 } })
+    run(scene, 0.4)
+    expect(span(c.marks[0], 1)).toBeCloseTo(before * 2, 3)
+    const timed = scene.add(chart({ mark: 'curve', coords: 'polar', fn: (theta, { t }) => 1 + t, time: true, samples: 8, x: [-5, 5], y: [-5, 5] }))
+    const first = span(timed.marks[0], 0)
+    run(scene, 1)
+    expect(span(timed.marks[0], 0)).toBeGreaterThan(first)
+  })
+
+  it('says what is wrong with a spec', () => {
+    const fn = () => 1
+    expect(() => normalise({ mark: 'surface', coords: 'round', fn })).toThrow("'coords' is 'cartesian' (the default), 'polar', 'cylindrical' or 'spherical'")
+    expect(() => normalise({ mark: 'surface', fn, x: [0, 1], z: [0, 1], theta: [0, 1] })).toThrow("'theta' is a range in curved coordinates - add coords")
+    expect(() => normalise({ mark: 'curve', coords: 'spherical', fn })).toThrow("a curve takes coords: 'polar'")
+    expect(() => normalise({ mark: 'surface', coords: 'spherical', fn, u: [0, 1] })).toThrow("in coords: 'spherical' fn is sampled over theta and phi, not u")
+    expect(() => normalise({ mark: 'surface', coords: 'cylindrical', fn, phi: [0, 1], y: [0, 1] })).toThrow('sampled over theta and y - leave out phi')
+    expect(() => normalise({ mark: 'surface', coords: 'cylindrical', fn })).toThrow('needs the range of y to sample')
+    expect(() => normalise({ mark: 'surface', coords: 'polar', fn })).toThrow("coords: 'polar' needs the range of r to sample")
+    expect(() => normalise({ mark: 'vector', coords: 'polar', fn, x: [0, 1], z: [0, 1] })).toThrow("'coords' is for a surface or a curve")
+    expect(() => normalise({ mark: 'surface', coords: 'spherical', fn: () => NaN })).toThrow("fn gave NaN at theta 0, phi 0 - in coords: 'spherical' it returns r")
+    expect(() => normalise({ mark: 'surface', coords: 'spherical', fn: () => ({ r: 1, x: 2 }) })).toThrow("fn's x is the row's own")
+    expect(() => normalise({ mark: 'curve', coords: 'polar', fn: () => [1, 2] })).toThrow("a polar curve's fn returns its radius")
+    expect(() => normalise({ mark: 'surface', coords: 'spherical', fn, x: 'width' })).toThrow('comes from its function, not a field')
+  })
+})

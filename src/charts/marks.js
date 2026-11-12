@@ -346,25 +346,26 @@ export function surfaceMark(ctx) {
   const lines = contours ? new Lines({ geometry: new Geometry({ positions: [0, 0, 0, 0, 0, 0] }), material: { color: ink, opacity: contours.color ? 1 : 0.5, width: 1.25 }, pickable: false }) : null
   /**
    * A grid's state from its rows in order, nx along and nz across: position and colour a point,
-   * and - for a function's surface, which brings its slopes - a normal from them in world space
-   * (each axis's units per data unit), so shading follows the function: three more numbers a point.
-   * @param {any[]} rows @param {number} nx @param {number} nz @param {Float32Array | null} [slopes] dy/dx, dy/dz a row
+   * and - for a function's surface, which brings its normals in data units - the normal in world
+   * space (each axis's units per data unit), so shading follows the function: three more numbers a point.
+   * @param {any[]} rows @param {number} nx @param {number} nz @param {Float32Array | null} [normals] three a row
    * @returns {Target}
    */
-  const gridTarget = (rows, nx, nz, slopes = null) => {
+  const gridTarget = (rows, nx, nz, normals = null) => {
     const { x, y, z } = ctx.scales, ch = ctx.spec.channels
-    const sloped = !!slopes && slopes.length === rows.length * 2, stride = sloped ? 9 : 6
+    const lit = !!normals && normals.length === rows.length * 3, stride = lit ? 9 : 6
     const kx = x(1) - x(0), ky = y(1) - y(0), kz = z(1) - z(0)
     const state = new Float32Array(rows.length * stride)
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i], o = i * stride, rgb = ctx.rgb(row)
       state[o] = x(ch.x.get(row)); state[o + 1] = y(Number(ch.y.get(row)) || 0); state[o + 2] = z(ch.z.get(row))
       state[o + 3] = rgb[0]; state[o + 4] = rgb[1]; state[o + 5] = rgb[2]
-      if (!sloped) continue
-      // across the tangents along z and along x, (0, ky dy/dz, kz) x (kx, ky dy/dx, 0) - the way the
-      // triangles wind, which the two-sided shading turns to the viewer
-      const sx = /** @type {Float32Array} */ (slopes)[i * 2], sz = /** @type {Float32Array} */ (slopes)[i * 2 + 1]
-      const nx0 = -kz * ky * sx, ny0 = kz * kx, nz0 = -kx * ky * sz, l = Math.hypot(nx0, ny0, nz0) || 1
+      if (!lit) continue
+      // a normal scales by the other two axes' units: the cross product of the tangents, each scaled
+      // (z's scale runs backwards, which turns it the way the triangles wind, as they turn too) - the
+      // way the two-sided shading turns to the viewer
+      const n = /** @type {Float32Array} */ (normals), m = i * 3
+      const nx0 = n[m] * ky * kz, ny0 = n[m + 1] * kx * kz, nz0 = n[m + 2] * kx * ky, l = Math.hypot(nx0, ny0, nz0) || 1
       state[o + 6] = nx0 / l; state[o + 7] = ny0 / l; state[o + 8] = nz0 / l
     }
     return { rows, keys: null, state, stride, shape: { nx, nz } }
@@ -376,8 +377,8 @@ export function surfaceMark(ctx) {
       // a function's rows - heights or a parametric surface - come in grid order already, z across
       // and x along (for a parametric one its x and z are where the points are, not the grid's lines)
       const sampled = ctx.spec.grid
-      // every row there - nothing filtered or toggled out - so the slopes, in the rows' order, fit them
-      if (sampled && rows.length === sampled.nx * sampled.nz) return gridTarget(rows, sampled.nx, sampled.nz, ctx.spec.slopes)
+      // every row there - nothing filtered or toggled out - so the normals, in the rows' order, fit them
+      if (sampled && rows.length === sampled.nx * sampled.nz) return gridTarget(rows, sampled.nx, sampled.nz, ctx.spec.normals)
       const xs = distinct(rows.map((r) => ch.x.get(r))), zs = distinct(rows.map((r) => ch.z.get(r)))
       const grid = new Map(rows.map((r) => [`${+ch.x.get(r)}|${+ch.z.get(r)}|${ch.x.get(r)}|${ch.z.get(r)}`, r]))
       const cell = (a, b) => grid.get(`${+a}|${+b}|${a}|${b}`)

@@ -64,7 +64,7 @@ export const CHANNEL_HINTS = {
  * @param {Record<string, any>} input the spec as written
  * @returns {{ mark: Mark, rows: any[], links: any[], fields: string[], channels: Record<string, Channel>,
  *   tooltip: Channel[] | ((hit: any) => any) | null, link: Record<string, Channel>, options: Record<string, any>,
- *   grid: { nx: number, nz: number } | null, slopes: Float32Array | null, about: string | null }}
+ *   grid: { nx: number, nz: number } | null, normals: Float32Array | null, coords: string | null, about: string | null }}
  */
 export function normalise(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail('chart()', `expected a spec such as { mark: 'bar', data, x, y }, got ${describe(input)}`)
@@ -127,6 +127,7 @@ export function normalise(input) {
     if (input.link.tooltip !== undefined) link.tooltip = /** @type {any} */ (tooltipOf(input.link.tooltip, {}, links, linkFields))
   }
 
+  /** @type {Record<string, any>} */
   const options = {}
   for (const key of OPTIONS) if (!CHANNELS.includes(key) && !['mark', 'data', 'encoding', 'tooltip', 'link'].includes(key) && input[key] !== undefined) options[key] = input[key]
   // a network's force layout: how long it settles, and where it starts
@@ -149,7 +150,9 @@ export function normalise(input) {
   if (options.contours !== undefined) options.contours = contoursOf(options.contours, mark)
   // shapes - parametric surfaces, curves, vector fields - keep their proportions unless told not to
   if (options.equal === undefined) options.equal = sampled ? sampled.equal : mark === 'curve'
-  return { mark, rows, links, fields, channels, tooltip, link, options, grid: sampled?.grid ?? null, slopes: sampled?.slopes ?? null, about: sampled?.about ?? null }
+  // curved coordinates are drawn on axes through the origin, with rings around it
+  if (options.frame === undefined && sampled?.coords) options.frame = 'origin'
+  return { mark, rows, links, fields, channels, tooltip, link, options, grid: sampled?.grid ?? null, normals: sampled?.normals ?? null, coords: sampled?.coords ?? null, about: sampled?.about ?? null }
 }
 
 /**

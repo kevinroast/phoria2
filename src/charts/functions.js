@@ -6,11 +6,42 @@
 //     chart({ mark: 'surface', fn: (u, v) => [x, y, z], u: [0, 2 * Math.PI], v: [0, Math.PI] })
 //     chart({ mark: 'curve', fn: (t) => [Math.cos(t), t / 4, Math.sin(t)], t: [0, 12 * Math.PI] })
 //     chart({ mark: 'vector', fn: (x, y, z) => [-z, 0, x], x: [-2, 2], z: [-2, 2] })
+//
+// and in curved coordinates, where fn gives a radius (or a height) over angles:
+//
+//     chart({ mark: 'surface', coords: 'spherical', fn: (theta, phi) => 1 + 0.3 * Math.cos(3 * theta) })
+//     chart({ mark: 'surface', coords: 'cylindrical', fn: (theta, y) => 1 + y * y / 4, y: [-2, 2] })
+//     chart({ mark: 'surface', coords: 'polar', fn: (r, theta) => Math.cos(r * 3), r: [0, 3] })
+//     chart({ mark: 'curve', coords: 'polar', fn: (theta) => Math.cos(3 * theta) })
 import { describe, fail } from '../validate.js'
 
 // the options a chart of a function adds: its function, how finely to sample it, its parameters,
 // and the ranges of the parameters that aren't axes
-export const FUNCTION_OPTIONS = ['fn', 'samples', 'params', 't', 'u', 'v']
+export const FUNCTION_OPTIONS = ['fn', 'samples', 'params', 't', 'u', 'v', 'coords', 'theta', 'phi', 'r']
+
+const COORDS = ['cartesian', 'polar', 'cylindrical', 'spherical']
+const FULL_TURN = /** @type {[number, number]} */ ([0, 2 * Math.PI])
+
+/**
+ * Curved coordinates for a surface: the two ranges sampled - the grid's along and across - the name
+ * of fn's value, and the point they make. x is right, y up and z towards you; theta turns
+ * anticlockwise seen from above, from +x towards -z, and phi runs down from +y (0) to -y (π).
+ * @type {Record<string, { along: string, across: string, value: string, about: string, point: (a: number, b: number, v: number) => [number, number, number] }>}
+ */
+const CURVED = {
+  spherical: {
+    along: 'theta', across: 'phi', value: 'r', about: 'r = fn(theta, phi), in spherical coordinates',
+    point: (theta, phi, r) => [r * Math.sin(phi) * Math.cos(theta), r * Math.cos(phi), -r * Math.sin(phi) * Math.sin(theta)],
+  },
+  cylindrical: {
+    along: 'theta', across: 'y', value: 'r', about: 'r = fn(theta, y), in cylindrical coordinates',
+    point: (theta, y, r) => [r * Math.cos(theta), y, -r * Math.sin(theta)],
+  },
+  polar: {
+    along: 'r', across: 'theta', value: 'y', about: 'y = fn(r, theta), in polar coordinates',
+    point: (r, theta, y) => [r * Math.cos(theta), y, -r * Math.sin(theta)],
+  },
+}
 
 // enough for smooth plots at a steady frame rate - the normals come from fn, so shading stays smooth at these
 const DEFAULT_SAMPLES = { surface: 48, parametric: 64, curve: 256, vector: 9 }
@@ -23,9 +54,11 @@ const MAX_SAMPLES = 250_000
  * @typedef {object} Sampled
  * @property {Record<string, any>} input
  * @property {{ nx: number, nz: number } | null} grid rows in grid order, z (or v) across and x (or u) along
- * @property {Float32Array | null} slopes a height surface's slopes, dy/dx and dy/dz a row in the rows'
- *   order, from fn by central differences - its normals, so shading follows the function rather
- *   than the triangles between samples. Beside the rows, not on them: rows are the data a hit gives back
+ * @property {Float32Array | null} normals a surface's normals, three numbers a row in the rows' order
+ *   and in data units, from fn by central differences - so shading follows the function rather than
+ *   the triangles between samples. Each faces the way the grid's triangles do: across x along, in
+ *   the order the grid is laid out. Beside the rows, not on them: rows are the data a hit gives back
+ * @property {string | null} coords the curved coordinates it was drawn in, or null
  * @property {string} about
  * @property {boolean} equal
  */
@@ -36,7 +69,7 @@ const MAX_SAMPLES = 250_000
  * @returns {Sampled}
  */
 export function sampleFunction(input) {
-  const { fn, samples, params, t, u, v, ...rest } = input
+  const { fn, samples, params, t, u, v, coords, theta, phi, r, ...rest } = input
   const mark = typeof input.mark === 'object' && input.mark ? input.mark.type : input.mark
   if (typeof fn !== 'function') {
     fail('chart()', `'fn' is a function to plot, such as (x, z) => Math.sin(x) * Math.cos(z), got ${describe(fn)}`)
@@ -51,6 +84,31 @@ export function sampleFunction(input) {
   const call1 = (/** @type {number} */ a) => fn(a, p)
   const call2 = (/** @type {number} */ a, /** @type {number} */ b) => fn(a, b, p)
   const call3 = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ c) => fn(a, b, c, p)
+  if (coords !== undefined && !COORDS.includes(coords)) {
+    fail('chart()', `'coords' is 'cartesian' (the default), 'polar', 'cylindrical' or 'spherical', got ${describe(coords)}`)
+  }
+  const curved = coords !== undefined && coords !== 'cartesian' ? coords : null
+  const angles = { theta, phi, r }
+  if (!curved) {
+    for (const [name, value] of Object.entries(angles)) {
+      if (value !== undefined) fail('chart()', `'${name}' is a range in curved coordinates - add coords: 'polar', 'cylindrical' or 'spherical'`)
+    }
+  } else {
+    const over = mark === 'curve' ? 'theta' : CURVED[curved] ? `${CURVED[curved].along} and ${CURVED[curved].across}` : ''
+    const other = ['t', 'u', 'v'].filter((k) => input[k] !== undefined)
+    if (other.length) fail('chart()', `in coords: '${curved}' fn is sampled over ${over}, not ${other.join(' or ')}`)
+    if (mark === 'curve') {
+      if (curved !== 'polar') fail('chart()', `a curve takes coords: 'polar' - r = fn(theta) - not '${curved}'; for a path in space, fn: (t) => [x, y, z]`)
+      if (phi !== undefined || r !== undefined) fail('chart()', `a polar curve is sampled over theta - leave out ${phi !== undefined ? 'phi' : 'r'}`)
+      return polarCurve(rest, call1, samples, theta)
+    }
+    if (mark !== 'surface') fail('chart()', `'coords' is for a surface or a curve, not mark: ${describe(mark)}`)
+    const c = CURVED[curved]
+    for (const [name, value] of Object.entries(angles)) {
+      if (value !== undefined && name !== c.along && name !== c.across) fail('chart()', `coords: '${curved}' is sampled over ${c.along} and ${c.across} - leave out ${name}`)
+    }
+    return curvedSurface(rest, call2, samples, curved, angles)
+  }
   if (mark === 'surface') {
     if (u !== undefined || v !== undefined) return parametric(rest, call2, samples, u, v)
     if (t !== undefined) fail('chart()', "'t' is a curve's range - a surface is over x and z, or over u and v")
@@ -72,7 +130,7 @@ function heights(spec, call, samples) {
   // sampled low to high whichever way the ranges are given, so the rows are in grid order - z
   // across, x along - and the surface mark takes them as they come
   const xr = /** @type {[number, number]} */ ([Math.min(...x), Math.max(...x)]), zr = /** @type {[number, number]} */ ([Math.min(...z), Math.max(...z)])
-  const rows = new Array(nx * nz), slopes = new Float32Array(nx * nz * 2)
+  const rows = new Array(nx * nz), normals = new Float32Array(nx * nz * 3)
   // a small step for the slopes, well under a sample's spacing
   const hx = (xr[1] - xr[0]) * 1e-4, hz = (zr[1] - zr[0]) * 1e-4
   const slope = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ h) => {
@@ -86,14 +144,16 @@ function heights(spec, call, samples) {
       const xv = along(xr, i, nx), yv = call(xv, zv)
       // checked as it comes; the message made only when it is needed
       if (typeof yv !== 'number' || !Number.isFinite(yv)) number(yv, `x ${round(xv)}, z ${round(zv)}`)
-      slopes[k * 2] = slope(call(xv + hx, zv), call(xv - hx, zv), hx)
-      slopes[k * 2 + 1] = slope(call(xv, zv + hz), call(xv, zv - hz), hz)
+      // across the tangents along z and along x: (0, dy/dz, 1) x (1, dy/dx, 0)
+      normals[k * 3] = -slope(call(xv + hx, zv), call(xv - hx, zv), hx)
+      normals[k * 3 + 1] = 1
+      normals[k * 3 + 2] = -slope(call(xv, zv + hz), call(xv, zv - hz), hz)
       rows[k++] = { x: xv, z: zv, y: yv }
     }
   }
   return {
     input: { ...spec, data: rows, x: channel(spec, 'x', x), z: channel(spec, 'z', z), y: valueChannel(spec, 'y') },
-    grid: { nx, nz }, slopes, about: `a function of x and z, ${nx} × ${nz} samples`, equal: false,
+    grid: { nx, nz }, normals, coords: null, about: `a function of x and z, ${nx} × ${nz} samples`, equal: false,
   }
 }
 
@@ -103,15 +163,22 @@ function parametric(spec, call, samples, u, v) {
   const ur = paramRange('u', u), vr = paramRange('v', v)
   noAxisRanges(spec, 'a parametric surface')
   const [nu, nv] = counts(samples, 2, DEFAULT_SAMPLES.parametric)
-  const rows = []
+  const rows = [], normals = new Float32Array(nu * nv * 3)
+  // where fn puts (u, v), for the normals - nothing said if it's wrong there, just off the grid
+  const at = (/** @type {number} */ a, /** @type {number} */ b) => {
+    const p = call(a, b)
+    return Array.isArray(p) ? p : p && typeof p === 'object' ? [p.x, p.y, p.z] : [NaN, NaN, NaN]
+  }
   for (let j = 0; j < nv; j++) {
     const vv = along(vr, j, nv)
     for (let i = 0; i < nu; i++) {
       const uv = along(ur, i, nu)
-      rows.push({ u: uv, v: vv, ...point(call(uv, vv), () => `u ${round(uv)}, v ${round(vv)}`) })
+      const p = point(call(uv, vv), () => `u ${round(uv)}, v ${round(vv)}`)
+      surfaceNormal(normals, rows.length, at, uv, vv, ur, vr, nu, nv, [p.x, p.y, p.z])
+      rows.push({ u: uv, v: vv, ...p })
     }
   }
-  return { input: { ...spec, data: rows, ...pointChannels(spec) }, grid: { nx: nu, nz: nv }, slopes: null, about: `a parametric surface, ${nu} × ${nv} samples`, equal: true }
+  return { input: { ...spec, data: rows, ...pointChannels(spec) }, grid: { nx: nu, nz: nv }, normals, coords: null, about: `a parametric surface, ${nu} × ${nv} samples`, equal: true }
 }
 
 // [x, y, z] = fn(t): a path through space, in order of t
@@ -125,7 +192,132 @@ function curve(spec, call, samples, t) {
     const tv = along(tr, i, n)
     rows.push({ t: tv, ...point(call(tv), () => `t ${round(tv)}`) })
   }
-  return { input: { ...spec, data: rows, ...pointChannels(spec) }, grid: null, slopes: null, about: `a parametric curve, ${n} samples`, equal: true }
+  return { input: { ...spec, data: rows, ...pointChannels(spec) }, grid: null, normals: null, coords: null, about: `a parametric curve, ${n} samples`, equal: true }
+}
+
+// r = fn(theta): a curve around the origin, upright in the x-y plane - facing you, as a chart's page does
+/** @param {Record<string, any>} spec @param {(a: number) => any} call @param {any} samples @param {any} theta @returns {Sampled} */
+function polarCurve(spec, call, samples, theta) {
+  const tr = theta === undefined ? FULL_TURN : pair('theta', theta)
+  noAxisRanges(spec, 'a polar curve')
+  const [n] = counts(samples, 1, DEFAULT_SAMPLES.curve)
+  const rows = []
+  for (let i = 0; i < n; i++) {
+    const th = along(tr, i, n), r = call(th)
+    if (typeof r !== 'number' || !Number.isFinite(r)) fail('chart()', `fn gave ${describe(r)} at theta ${round(th)} - a polar curve's fn returns its radius, a finite number (a negative one is drawn through the origin, opposite)`)
+    rows.push({ theta: th, r, x: r * Math.cos(th), y: r * Math.sin(th), z: 0 })
+  }
+  // flat, so no z axis unless asked for
+  const channels = pointChannels(spec)
+  if (spec.z === undefined) channels.z = { axis: false, field: 'z' }
+  return { input: { ...spec, data: rows, ...channels }, grid: null, normals: null, coords: 'polar', about: `r = fn(theta), a polar curve, ${n} samples`, equal: true }
+}
+
+// a radius (or a height) over two of theta, phi, y and r: see CURVED
+/**
+ * @param {Record<string, any>} spec @param {(a: number, b: number) => any} call @param {any} samples
+ * @param {string} coords @param {Record<string, any>} given the ranges given, of theta, phi and r
+ * @returns {Sampled}
+ */
+function curvedSurface(spec, call, samples, coords, given) {
+  const c = CURVED[coords]
+  // angles go all the way round (and phi top to bottom) unless told otherwise; r and y need a range
+  const range = (/** @type {string} */ name) => {
+    if (name === 'y') return /** @type {[number, number]} */ (axisRange(spec, 'y', true))
+    const r = given[name]
+    if (r !== undefined) return pair(name, r)
+    if (name === 'theta') return FULL_TURN
+    if (name === 'phi') return /** @type {[number, number]} */ ([0, Math.PI])
+    return fail('chart()', `coords: '${coords}' needs the range of ${name} to sample - e.g. ${name}: [0, 3]`)
+  }
+  const ar = range(c.along), br = range(c.across)
+  noAxisRanges(spec, `a surface in ${coords} coordinates`)
+  const [na, nb] = counts(samples, 2, DEFAULT_SAMPLES.parametric)
+  const rows = new Array(na * nb), normals = new Float32Array(na * nb * 3)
+  // fn's value: a number, or { [value]: number, ...fields } - the fields kept on the row, to colour by
+  const valueOf = (/** @type {any} */ v, /** @type {() => string} */ where) => {
+    if (typeof v === 'number' && Number.isFinite(v)) return v
+    const n = v && typeof v === 'object' && !Array.isArray(v) ? v[c.value] : v
+    if (typeof n !== 'number' || !Number.isFinite(n)) {
+      fail('chart()', `fn gave ${describe(v)} at ${where()} - in coords: '${coords}' it returns ${c.value}, a finite number, or { ${c.value}, ...fields to colour by }`)
+    }
+    return n
+  }
+  // where (a, b) lands, for the normals - a value that isn't a number just leaves that normal out
+  const at = (/** @type {number} */ a, /** @type {number} */ b) => {
+    const v = call(a, b)
+    return c.point(a, b, typeof v === 'number' ? v : v && typeof v === 'object' ? v[c.value] : NaN)
+  }
+  const reserved = [c.along, c.across, c.value, 'x', 'y', 'z']
+  let k = 0
+  for (let j = 0; j < nb; j++) {
+    const b = along(br, j, nb)
+    for (let i = 0; i < na; i++) {
+      const a = along(ar, i, na), got = call(a, b)
+      const v = valueOf(got, () => `${c.along} ${round(a)}, ${c.across} ${round(b)}`)
+      const p = c.point(a, b, v)
+      surfaceNormal(normals, k, at, a, b, ar, br, na, nb, p)
+      /** @type {Record<string, any>} */
+      const row = { [c.along]: a, [c.across]: b, [c.value]: v, x: p[0], y: p[1], z: p[2] }
+      if (typeof got === 'object') {
+        for (const key of Object.keys(got)) {
+          if (key === c.value) continue
+          if (reserved.includes(key)) fail('chart()', `fn's ${key} is the row's own in coords: '${coords}' - give the field to colour by another name`)
+          row[key] = got[key]
+        }
+      }
+      rows[k++] = row
+    }
+  }
+  // coloured by the radius, out from the middle - or by the height, as any surface
+  return {
+    input: { ...spec, data: rows, ...pointChannels(spec), ...(c.value === 'r' && spec.color === undefined ? { color: 'r' } : {}) },
+    grid: { nx: na, nz: nb }, normals, coords, about: `${c.about}, ${na} × ${nb} samples`, equal: true,
+  }
+}
+
+/**
+ * A surface's normal at grid point (a, b), into normals at k: across its tangents across and along
+ * the grid, in the order it is laid out - the way its triangles face. Where the grid pinches to a
+ * point - a sphere's pole, a radius of zero - the tangent there is nothing, so it is taken a hair
+ * inside the grid instead: the limit the faces around the point lean towards.
+ * @param {Float32Array} normals @param {number} k
+ * @param {(a: number, b: number) => ArrayLike<number>} at where (a, b) lands
+ * @param {number} a @param {number} b @param {[number, number]} ar @param {[number, number]} br
+ * @param {number} na @param {number} nb @param {ArrayLike<number>} p the point at (a, b)
+ */
+function surfaceNormal(normals, k, at, a, b, ar, br, na, nb, p) {
+  // steps the way the grid runs, well under a sample's spacing
+  const ha = (ar[1] - ar[0]) * 1e-4, hb = (br[1] - br[0]) * 1e-4
+  let n = normalAt(at, a, b, ha, hb)
+  if (!n) {
+    // a hair inside the grid, towards its middle: along whichever way doesn't pinch
+    const ia = (ar[1] - ar[0]) / Math.max(1, na - 1) * 0.01, ib = (br[1] - br[0]) / Math.max(1, nb - 1) * 0.01
+    const inA = (a - ar[0]) / (ar[1] - ar[0]) < 0.5 ? 1 : -1, inB = (b - br[0]) / (br[1] - br[0]) < 0.5 ? 1 : -1
+    n = normalAt(at, a, b + inB * ib, ha, hb) ?? normalAt(at, a + inA * ia, b, ha, hb) ?? normalAt(at, a + inA * ia, b + inB * ib, ha, hb)
+    // nowhere to lean: out from the origin, or up
+    const out = Math.hypot(p[0], p[1], p[2])
+    n ??= out > 0 ? [p[0] / out, p[1] / out, p[2] / out] : [0, 1, 0]
+  }
+  normals[k * 3] = n[0]
+  normals[k * 3 + 1] = n[1]
+  normals[k * 3 + 2] = n[2]
+}
+
+/**
+ * The normal at (a, b) by central differences, unit length - or null where the grid pinches.
+ * @param {(a: number, b: number) => ArrayLike<number>} at @param {number} a @param {number} b @param {number} ha @param {number} hb
+ * @returns {number[] | null}
+ */
+function normalAt(at, a, b, ha, hb) {
+  const a1 = at(a + ha, b), a0 = at(a - ha, b), b1 = at(a, b + hb), b0 = at(a, b - hb)
+  const ux = a1[0] - a0[0], uy = a1[1] - a0[1], uz = a1[2] - a0[2]
+  const vx = b1[0] - b0[0], vy = b1[1] - b0[1], vz = b1[2] - b0[2]
+  // across, then along: (b) x (a)
+  const nx = vy * uz - vz * uy, ny = vz * ux - vx * uz, nz = vx * uy - vy * ux
+  const l = Math.hypot(nx, ny, nz), scale = Math.max(ux * ux + uy * uy + uz * uz, vx * vx + vy * vy + vz * vz)
+  if (!(l > 1e-6 * scale) || !Number.isFinite(l)) return null
+  return [nx / l, ny / l, nz / l]
 }
 
 // [vx, vy, vz] = fn(x, y, z): an arrow at each point of a grid - over x and z, and y if given
@@ -154,7 +346,7 @@ function field(spec, call, samples) {
   const yChannel = y ? channel(spec, 'y', y) : { axis: false, ...object(spec.y, 'y'), field: 'y' }
   return {
     input: { ...spec, data: rows, x: channel(spec, 'x', x), y: yChannel, z: channel(spec, 'z', z), color: spec.color ?? 'magnitude' },
-    grid: null, slopes: null, about: `a vector field, ${nx} × ${ny} × ${nz} arrows`, equal: true,
+    grid: null, normals: null, coords: null, about: `a vector field, ${nx} × ${ny} × ${nz} arrows`, equal: true,
   }
 }
 

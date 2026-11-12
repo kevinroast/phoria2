@@ -5,7 +5,7 @@ import { Label } from '../scene/drawables.js'
 import { Color } from '../value/Color.js'
 import { registerType } from '../registry.js'
 import { describe, fail } from '../validate.js'
-import { chartFrame, originFrame } from './axes.js'
+import { chartFrame, curvedGuides, originFrame } from './axes.js'
 import { legend } from './legend.js'
 import { barMark, curveMark, lineMark, pointMark, stackKey, surfaceMark, vectorMark } from './marks.js'
 import { networkMark } from './network.js'
@@ -216,6 +216,9 @@ export class Chart extends Group {
     if (this.#frame) this.remove(this.#frame)
     const frameOf = o.frame === 'origin' ? originFrame : chartFrame
     this.#frame = o.frame === false || (spec.mark === 'network' && o.layout !== 'given') ? null : this.add(frameOf({ box, theme, overlap, axes: axesFor(spec, this.scales) }))
+    // curved coordinates on axes through the origin: rings around it, as polar graph paper
+    const guides = this.#frame && o.frame === 'origin' && spec.coords ? curvedGuides({ coords: spec.coords, upright: spec.mark === 'curve', rows: spec.rows, scales: this.scales, theme }) : null
+    if (guides) this.#frame?.add(guides)
     if (this.#title) this.remove(this.#title)
     this.#title = o.title ? this.add(new Label({ text: String(o.title), position: [0, box[1] * 1.12, -box[2] / 2], className: `phoria-axis-title phoria-${theme}`, overlap: 'show' })) : null
 
@@ -360,9 +363,9 @@ export class Chart extends Group {
     if (this.#input.time === true && !still && dt > 0 && this.#mark) {
       this.#time += dt
       const sampled = sampleFunction(this.#timed(this.#input))
-      // the new slopes go with the new rows (the mark reads them from the spec, in the rows' order)
+      // the new normals go with the new rows (the mark reads them from the spec, in the rows' order)
       const spec = /** @type {ReturnType<typeof normalise>} */ (this.#spec)
-      spec.slopes = sampled.slopes
+      spec.normals = sampled.normals
       const target = this.#mark.layout(this.#visible(sampled.input.data))
       this.#tween = null
       this.#draw(target.state, target, target)
