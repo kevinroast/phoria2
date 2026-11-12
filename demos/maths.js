@@ -35,6 +35,10 @@ const CARDS = [
     note: 'Arrows on the floor point up the gradient of the surface above them as long as it is steep. A second chart over the same ranges lining up.',
   },
   {
+    name: 'riemann', title: 'The area under a curve',
+    note: 'A Riemann sum: the area under f as rectangles, each as high as f at its middle - or its left or right end. More rectangles and the sum closes on the integral. The bars are mark: \'bar\' from fn; the shaded area is mark: \'area\'.',
+  },
+  {
     name: 'matrix', title: 'A linear map',
     note: 'A 2 × 2 matrix as a field: each arrow is where the map sends its point. Along the white lines the arrows point along them - the map only stretches there: its eigenvectors. Give b and c opposite signs and they go - a rotation.',
   },
@@ -44,7 +48,7 @@ export default function run({ canvas }) {
   return cardPage({ canvas, cards: CARDS, examples: EXAMPLES, source })
 }
 
-const EXAMPLES = { surface, shapes, contours, curve, polar, gradient, matrix }
+const EXAMPLES = { surface, shapes, contours, curve, polar, gradient, riemann, matrix }
 
 // surface
 function surface({ canvas, slider }) {
@@ -170,6 +174,42 @@ function gradient({ canvas }) {
     x: [-3, 3], y: [-1.2, 1.2], z: [-3, 3], samples: [13, 1, 13],
     box, equal: false, frame: false, legend: false,
   }))
+  return view
+}
+// end
+
+// riemann
+function riemann({ canvas, slider, row }) {
+  const view = new View({ canvas, orbit: true, background: BG, camera: { position: [1.5, 4, 11], target: [0, 2.8, 0] } })
+  const f = (x) => 1 + x / 2 + Math.sin(2 * x)
+  // the exact area, from f's antiderivative
+  const F = (x) => x + x * x / 4 - Math.cos(2 * x) / 2
+  const ranges = { x: [0, 4], y: [0, 4.5] }, p = { n: 6, rule: 'mid' }
+  // the area under f, shaded, and rectangles under it - one chart each over the same ranges, the
+  // area just in front, so its edge shows across the bars
+  view.scene.add(chart({ mark: 'area', fn: f, ...ranges, color: '#76b7b2', position: [0, 0, 0.5] }))
+  const bars = view.scene.add(chart({ mark: 'bar', fn: f, ...ranges, samples: p.n, rule: p.rule, width: 0.94, color: '#f28e2b', frame: false }))
+  // the sum beside the integral, typeset again as they change
+  const sum = () => {
+    const w = 4 / p.n, k = { left: 0, mid: 0.5, right: 1 }[p.rule]
+    let total = 0
+    for (let i = 0; i < p.n; i++) total += f((i + k) * w) * w
+    return total
+  }
+  const sumTex = () => `\\sum_{i=1}^{${p.n}} f(x_i)\\,\\Delta x = ${sum().toFixed(3)} \\qquad \\int_0^4 f(x)\\,dx = ${(F(4) - F(0)).toFixed(3)}`
+  const formula = view.scene.add(new Label({
+    content: tex(sumTex()), text: 'the sum and the integral', position: [-5, 6.6, 0], edge: 'left', className: 'maths-tex', overlap: 'show',
+  }))
+  const show = () => {
+    bars.update({ samples: p.n, rule: p.rule })
+    if (formula.content) tex(sumTex(), formula.content)
+  }
+  slider('rectangles', 1, 40, p.n, (n) => { p.n = n; show() }, 1)
+  for (const rule of ['left', 'mid', 'right']) {
+    const button = Object.assign(document.createElement('button'), { type: 'button', textContent: rule })
+    button.addEventListener('click', () => { p.rule = rule; show() })
+    row.append(button)
+  }
   return view
 }
 // end

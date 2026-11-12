@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cdn.jsdelivr.net/npm/phoria2@1/schema/chart.schema.json",
   "title": "phoria2 chart spec",
-  "description": "The spec for chart() from phoria2/charts: a mark, data, and channels mapping data fields to what is drawn. Channels may also be nested under 'encoding', as Vega-Lite writes them. Charts of a function (fn, samples, params, t, u, v - surfaces, curves and vector fields sampled from fn, in cartesian or curved coordinates) are JavaScript only: a function is not JSON. Data measured by angle is JSON: coords with theta, phi and r naming fields.",
+  "description": "The spec for chart() from phoria2/charts: a mark, data, and channels mapping data fields to what is drawn. Channels may also be nested under 'encoding', as Vega-Lite writes them. Charts of a function (fn, samples, params, t, u, v, rule - surfaces, curves, vector fields, lines, areas and Riemann bars sampled from fn, in cartesian or curved coordinates) are JavaScript only: a function is not JSON. Data measured by angle is JSON: coords with theta, phi and r naming fields.",
   "type": "object",
   "required": ["mark", "data"],
   "additionalProperties": false,
@@ -42,6 +42,7 @@
       "additionalProperties": false,
       "properties": {
         "x": { "$ref": "#/$defs/channel" }, "y": { "$ref": "#/$defs/channel" }, "z": { "$ref": "#/$defs/channel" },
+        "x2": { "$ref": "#/$defs/channel" }, "y2": { "$ref": "#/$defs/channel" },
         "color": { "$ref": "#/$defs/channel" }, "size": { "$ref": "#/$defs/channel" }, "opacity": { "$ref": "#/$defs/channel" },
         "label": { "$ref": "#/$defs/channel" }, "key": { "$ref": "#/$defs/channel" }, "detail": { "$ref": "#/$defs/channel" },
         "tooltip": { "$ref": "#/$defs/tooltip" }
@@ -50,6 +51,8 @@
     "x": { "$ref": "#/$defs/channel", "description": "Position across the floor: categories (bands), numbers or dates." },
     "y": { "$ref": "#/$defs/channel", "description": "Position up: the value axis for bars, lines, areas and surfaces." },
     "z": { "$ref": "#/$defs/channel", "description": "Position into the depth; leave out for a 2.5D chart in one row." },
+    "x2": { "$ref": "#/$defs/channel", "description": "Where a bar ends along x, x where it starts - bars span x to x2 on a number axis: a histogram's bins." },
+    "y2": { "$ref": "#/$defs/channel", "description": "The other edge of an area (a band between y and y2 - a confidence interval), or where a bar starts (a bar floating from y2 to y)." },
     "color": { "$ref": "#/$defs/channel", "description": "A field (categorical or sequential scale) or a constant colour." },
     "size": { "$ref": "#/$defs/channel", "description": "Point or network node size: a field, or a number in world units." },
     "opacity": { "$ref": "#/$defs/channel", "description": "A constant 0-1." },

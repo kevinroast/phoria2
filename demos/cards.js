@@ -3,7 +3,7 @@
 // what runs. The formulas are typeset by KaTeX, loaded from the CDN for these pages only.
 
 /** @typedef {{ name: string, title: string, note: string }} Card */
-/** @typedef {(o: { canvas: HTMLCanvasElement, slider: ReturnType<typeof sliders> }) => any} Example */
+/** @typedef {(o: { canvas: HTMLCanvasElement, slider: ReturnType<typeof sliders>, row: HTMLElement }) => any} Example */
 
 /**
  * A page of cards under the title panel, one plot each, in order - returning the first plot's view.
@@ -38,7 +38,7 @@ export async function cardPage({ canvas, cards, examples, source }) {
   const place = () => { page.style.top = `${title.getBoundingClientRect().bottom + 16}px` }
   new ResizeObserver(place).observe(title)
   place()
-  const views = made.map(({ card, canvas: c, row }) => examples[card.name]({ canvas: c, slider: sliders(row) }))
+  const views = made.map(({ card, canvas: c, row }) => examples[card.name]({ canvas: c, slider: sliders(row), row }))
   // every plot's view, for poking at from the console in dev (window.view is the first)
   if (import.meta.env.DEV) Object.assign(window, { views })
   return views[0]

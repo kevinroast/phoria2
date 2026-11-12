@@ -948,12 +948,15 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
 (`encoding: { x: { field, type } }`, `data: { values }`) is accepted as-is.
 
 - **Marks**: `'bar'` (x and optional z bands, y value), `'point'` (scatter; x, y, z numbers or
-  categories), `'line'`, `'area'` (a filled line; `stack: true` stacks series), `'surface'` (x, z grid
+  categories), `'line'`, `'area'` (a filled line; `stack: true` stacks series; with `y2` it fills between y and
+  y2 - a band), `'surface'` (x, z grid
   with y heights), `'curve'` (a path through x, y and z in the order of its rows - an orbit, a GPS
   track; a path per `detail` value; `size` a number is its width in pixels), `'vector'` (arrows, from a
   function - below), `'network'`. There are no pie, donut or gauge marks - build those from
   `extrude` and `outline.arc`.
-- **Channels**: `x`, `y`, `z`, `color`, `size`, `opacity`, `label` (text on each mark), `key` (row
+- **Channels**: `x`, `y`, `z`, `x2` (where a bar ends along x: bars span x to x2 on a number axis - a
+  histogram's bins), `y2` (an area's other edge - a band such as a confidence interval - or where a bar
+  starts, floating from y2 to y), `color`, `size`, `opacity`, `label` (text on each mark), `key` (row
   identity for animated updates; default `id`), `detail`. Each is a field name or
   `{ field, type, title, format, scale, axis, priority, legend }`, or a constant: `color: '#4e79a7'`
   (or `{ value: '#4e79a7' }`), `size: 0.2`.
@@ -1007,6 +1010,12 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
   chart({ mark: 'curve', fn: (t) => [Math.cos(t), t / 4, Math.sin(t)], t: [0, 12 * Math.PI], samples: 400 })
   // a vector field [vx, vy, vz] = fn(x, y, z): over x and z at y = 0, or a volume with a y range; coloured by magnitude
   chart({ mark: 'vector', fn: (x, y, z) => [-z, 0, x], x: [-2, 2], z: [-2, 2], samples: 9 })
+  // y = fn(x) as a line or an area (200 samples by default); an area's fn may give [y, y2] to fill between two curves
+  chart({ mark: 'area', fn: (x) => Math.sin(x), x: [0, Math.PI] })
+  chart({ mark: 'area', fn: (x) => [Math.sqrt(x), x * x], x: [0, 1] })
+  // a Riemann sum: samples rectangles across the x range (10 by default), each as high as fn at its
+  // middle - rule: 'left' | 'mid' | 'right'; rows { x, x2, at, y }
+  chart({ mark: 'bar', fn: (x) => x * x, x: [0, 2], samples: 8, rule: 'left' })
   // params: handed to fn as its last argument - change them and the chart tweens to the new shape
   const plot = chart({ mark: 'surface', fn: (x, z, { a }) => Math.sin(a * x), x: [-3, 3], z: [-1, 1], y: [-1, 1], params: { a: 1 } })
   plot.update({ params: { a: 2 } })      // or update({ fn }) - a new function on the same samples tweens too
@@ -1016,7 +1025,8 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
 
   `samples`: a number for every range or one each (`[64, 32]`); defaults 48 a side (surfaces), 64
   (parametric), 256 (curves), 9 (vector fields). Rows: surfaces `{ x, z, y }`, parametric
-  `{ u, v, x, y, z }`, curves `{ t, x, y, z }`, fields `{ x, y, z, vx, vy, vz, magnitude }`. fn must give a
+  `{ u, v, x, y, z }`, curves `{ t, x, y, z }`, fields `{ x, y, z, vx, vy, vz, magnitude }`, lines and areas
+  `{ x, y }` (or `{ x, y, y2 }`), bars `{ x, x2, at, y }`. fn must give a
   finite value everywhere (clamp where it blows up) - an error names the point it didn't. Surfaces are
   shaded by normals worked out from fn, so they look smooth between samples (a sphere's poles too).
 - **Curved coordinates** - `coords: 'polar' | 'cylindrical' | 'spherical'` (default `'cartesian'`): fn gives a

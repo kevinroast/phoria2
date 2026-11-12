@@ -497,10 +497,13 @@ function scalesFor(spec, box, domains) {
     if (!c?.field) continue
     // the values listed as ticks are always on the axis
     const listed = c.axis && c.axis.ticks
-    const values = [...rows.map((r) => c.get(r)), ...(Array.isArray(listed) ? listed : [])]
+    // the other end of a range is on the axis too
+    const end = name === 'x' ? ch.x2 : name === 'y' ? ch.y2 : null
+    const values = [...rows.map((r) => c.get(r)), ...(end?.field ? rows.map((r) => end.get(r)) : []), ...(Array.isArray(listed) ? listed : [])]
     // (axis: false has no format of its own - the channel's, for tooltips)
     const o = { range: ranges[name], format: (c.axis ? c.axis.format : undefined) ?? c.format }
-    const banded = c.type === 'nominal' || c.type === 'ordinal' || (spec.mark === 'bar' && name !== 'y')
+    // bars are in bands along x and z - unless they span x to x2, along a number axis
+    const banded = c.type === 'nominal' || c.type === 'ordinal' || (spec.mark === 'bar' && name !== 'y' && !(name === 'x' && ch.x2))
     if (banded) {
       out[name] = scaleBand({ domain: c.scale.domain ?? distinct(values), padding: 0.2, ...o })
     } else if (c.type === 'temporal') {
@@ -512,7 +515,7 @@ function scalesFor(spec, box, domains) {
       if (name === 'y' && spec.options.stack) domain = extent([0, ...stackTotals(spec)])
       if (c.scale.type === 'log') out[name] = scaleLog({ domain, ...o })
       else if (domains) out[name] = scaleLinear({ domain, ...o })
-      else out[name] = scaleLinear({ domain, nice: c.scale.nice ?? true, zero: c.scale.zero ?? (name === 'y' && ['bar', 'area'].includes(spec.mark)), ...o })
+      else out[name] = scaleLinear({ domain, nice: c.scale.nice ?? true, zero: c.scale.zero ?? (name === 'y' && ['bar', 'area'].includes(spec.mark) && !ch.y2), ...o })
     }
   }
   const color = ch.color

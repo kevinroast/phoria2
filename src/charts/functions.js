@@ -6,6 +6,8 @@
 //     chart({ mark: 'surface', fn: (u, v) => [x, y, z], u: [0, 2 * Math.PI], v: [0, Math.PI] })
 //     chart({ mark: 'curve', fn: (t) => [Math.cos(t), t / 4, Math.sin(t)], t: [0, 12 * Math.PI] })
 //     chart({ mark: 'vector', fn: (x, y, z) => [-z, 0, x], x: [-2, 2], z: [-2, 2] })
+//     chart({ mark: 'area', fn: (x) => Math.sin(x), x: [0, Math.PI] })      // or [y, y2]: between two curves
+//     chart({ mark: 'bar', fn: (x) => x * x, x: [0, 2], samples: 8 })       // a Riemann sum
 //
 // and in curved coordinates, where fn gives a radius (or a height) over angles:
 //
@@ -21,7 +23,7 @@ import { describe, fail } from '../validate.js'
 
 // the options a chart of a function adds: its function, how finely to sample it, its parameters,
 // and the ranges of the parameters that aren't axes
-export const FUNCTION_OPTIONS = ['fn', 'samples', 'params', 't', 'u', 'v', 'coords', 'theta', 'phi', 'r', 'angles']
+export const FUNCTION_OPTIONS = ['fn', 'samples', 'params', 't', 'u', 'v', 'coords', 'theta', 'phi', 'r', 'angles', 'rule']
 // those a chart of data takes too, in curved coordinates - theta, phi and r name its fields
 export const CURVED_OPTIONS = ['coords', 'theta', 'phi', 'r', 'angles']
 
@@ -52,7 +54,9 @@ const CURVED = {
 }
 
 // enough for smooth plots at a steady frame rate - the normals come from fn, so shading stays smooth at these
-const DEFAULT_SAMPLES = { surface: 48, parametric: 64, curve: 256, vector: 9 }
+const DEFAULT_SAMPLES = { surface: 48, parametric: 64, curve: 256, vector: 9, graph: 200, bar: 10 }
+// where a Riemann sum's rectangle takes its height: its left end, its middle or its right end
+const RULES = { left: 0, mid: 0.5, right: 1 }
 
 const MAX_SAMPLES = 250_000
 
@@ -87,7 +91,7 @@ const MAX_SAMPLES = 250_000
  * @returns {Sampled}
  */
 export function sampleFunction(input) {
-  const { fn, samples, params, t, u, v, coords, theta, phi, r, angles: units, ...rest } = input
+  const { fn, samples, params, t, u, v, coords, theta, phi, r, angles: units, rule, ...rest } = input
   const mark = typeof input.mark === 'object' && input.mark ? input.mark.type : input.mark
   if (typeof fn !== 'function') {
     fail('chart()', `'fn' is a function to plot, such as (x, z) => Math.sin(x) * Math.cos(z), got ${describe(fn)}`)
@@ -137,8 +141,14 @@ export function sampleFunction(input) {
     if (u !== undefined || v !== undefined) fail('chart()', "'u' and 'v' are a parametric surface's ranges - a curve is over t")
     return curve(rest, call1, samples, t)
   }
+  if (rule !== undefined && mark !== 'bar') fail('chart()', "'rule' is where a bar from fn takes its height - for mark: 'bar'")
+  if (mark === 'line' || mark === 'area' || mark === 'bar') {
+    const other = ['t', 'u', 'v'].filter((k) => input[k] !== undefined)
+    if (other.length) fail('chart()', `a '${mark}' from fn is over x - y = fn(x), x: [0, 4] - not ${other.join(' or ')}`)
+    return mark === 'bar' ? riemann(rest, call1, samples, rule) : graph(rest, call1, samples, mark)
+  }
   if (mark === 'vector') return field(rest, call3, samples)
-  return fail('chart()', `'fn' is plotted as mark: 'surface', 'curve' or 'vector', not ${describe(mark)}`)
+  return fail('chart()', `'fn' is plotted as mark: 'surface', 'curve', 'vector', 'line', 'area' or 'bar', not ${describe(mark)}`)
 }
 
 // y = fn(x, z): a height over the x-z grid
@@ -212,6 +222,60 @@ function curve(spec, call, samples, t) {
     rows.push({ t: tv, ...point(call(tv), () => `t ${round(tv)}`) })
   }
   return { input: { ...spec, data: rows, ...pointChannels(spec) }, grid: null, normals: null, coords: null, about: `a parametric curve, ${n} samples`, equal: true }
+}
+
+// y = fn(x): a graph over an x range - a line, or an area down to zero; fn may give [y, y2], and an
+// area fills between them
+/** @param {Record<string, any>} spec @param {(a: number) => any} call @param {any} samples @param {string} mark @returns {Sampled} */
+function graph(spec, call, samples, mark) {
+  const xr = /** @type {[number, number]} */ (axisRange(spec, 'x', true))
+  if (typeof spec.y2 === 'string') fail('chart()', "y2 on a chart of a function is its second value - return [y, y2] from fn, and leave y2 out (or give { title, axis })")
+  const [n] = counts(samples, 1, DEFAULT_SAMPLES.graph)
+  const rows = new Array(n)
+  let ranged = false
+  for (let i = 0; i < n; i++) {
+    const xv = along(xr, i, n), v = call(xv)
+    if (Array.isArray(v)) {
+      if (mark !== 'area') fail('chart()', `fn gave ${describe(v)} at x ${round(xv)} - a line has one value; [y, y2] fills between them with mark: 'area'`)
+      if (v.length !== 2 || !finite(v[0]) || !finite(v[1])) fail('chart()', `fn gave ${describe(v)} at x ${round(xv)} - an area's fn returns y, or [y, y2] to fill between them, finite numbers`)
+      if (i > 0 && !ranged) fail('chart()', `fn gave [y, y2] at x ${round(xv)} but a single y before - give the same at every x`)
+      ranged = true
+      rows[i] = { x: xv, y: v[0], y2: v[1] }
+    } else {
+      if (ranged) fail('chart()', `fn gave ${describe(v)} at x ${round(xv)} but [y, y2] before - give the same at every x`)
+      if (typeof v !== 'number' || !Number.isFinite(v)) fail('chart()', `fn gave ${describe(v)} at x ${round(xv)} - y = fn(x) is a finite number at every x (clamp it where it blows up)`)
+      rows[i] = { x: xv, y: v }
+    }
+  }
+  return {
+    input: {
+      ...spec, data: rows, x: channel(spec, 'x', xr), y: valueChannel(spec, 'y'),
+      ...(ranged ? { y2: { ...object(spec.y2, 'y2'), field: 'y2' } } : {}),
+    },
+    grid: null, normals: null, coords: null, about: `y = fn(x)${ranged ? ' and a second edge' : ''}, ${n} samples`, equal: false,
+  }
+}
+
+// rectangles under y = fn(x): the range cut into equal widths, each as high as fn at its left end,
+// middle or right end - a Riemann sum
+/** @param {Record<string, any>} spec @param {(a: number) => any} call @param {any} samples @param {any} rule @returns {Sampled} */
+function riemann(spec, call, samples, rule) {
+  const xr = /** @type {[number, number]} */ (axisRange(spec, 'x', true))
+  if (rule !== undefined && !(rule in RULES)) fail('chart()', `'rule' is 'left', 'mid' (the default) or 'right' - where each rectangle takes its height - got ${describe(rule)}`)
+  if (spec.x2 !== undefined) fail('chart()', 'a bar from fn spans its share of the x range - leave x2 out')
+  const k = RULES[rule ?? 'mid']
+  const [n] = counts(samples, 1, DEFAULT_SAMPLES.bar, false, [1])
+  const lo = Math.min(...xr), hi = Math.max(...xr), width = (hi - lo) / n
+  const rows = []
+  for (let i = 0; i < n; i++) {
+    const from = lo + i * width, to = from + width, at = from + width * k, v = call(at)
+    if (typeof v !== 'number' || !Number.isFinite(v)) fail('chart()', `fn gave ${describe(v)} at x ${round(at)} - y = fn(x) is a finite number at every x`)
+    rows.push({ x: from, x2: to, at, y: v })
+  }
+  return {
+    input: { ...spec, data: rows, x: channel(spec, 'x', xr), x2: { field: 'x2' }, y: valueChannel(spec, 'y') },
+    grid: null, normals: null, coords: null, about: `a Riemann sum of fn, ${n} rectangles, each at its ${rule === 'left' ? 'left end' : rule === 'right' ? 'right end' : 'middle'}`, equal: false,
+  }
 }
 
 // r = fn(theta): a curve around the origin, upright in the x-y plane - facing you, as a chart's page does

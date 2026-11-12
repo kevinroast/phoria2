@@ -91,7 +91,7 @@ describe('function surfaces', () => {
     expect(() => normalise({ mark: 'surface', fn: wave, x: [0, 1], z: [0, 1], data: [] })).toThrow("has no 'data'")
     expect(() => normalise({ mark: 'surface', fn: wave, x: [0, 1], z: [0, 1], params: 2 })).toThrow("'params' is an object")
     expect(() => normalise({ mark: 'surface', fn: wave, x: [0, 1], z: [0, 1], y: 'height' })).toThrow('y on a chart of a function is its value')
-    expect(() => normalise({ mark: 'bar', fn: wave, x: [0, 1] })).toThrow("'fn' is plotted as mark: 'surface', 'curve' or 'vector'")
+    expect(() => normalise({ mark: 'point', fn: wave, x: [0, 1] })).toThrow("'fn' is plotted as mark: 'surface', 'curve', 'vector', 'line', 'area' or 'bar'")
     expect(() => normalise({ mark: 'surface', fn: 'sin(x)', x: [0, 1], z: [0, 1] })).toThrow("'fn' is a function to plot")
     expect(() => normalise({ mark: 'bar', data: [{ a: 1 }], x: 'a', y: 'a', samples: 9 })).toThrow("'samples' is for charts of a function")
   })
@@ -481,5 +481,72 @@ describe('data by angle', () => {
     expect(() => normalise({ ...base, r: 'gain', data: data.map((r) => ({ ...r, x: 1 })) })).toThrow('row 0 has its own x, y or z')
     expect(() => normalise({ mark: 'curve', coords: 'polar', data, theta: 'azimuth', r: 'gain', phi: 'polar' })).toThrow('a polar curve reads theta, r - leave out phi')
     expect(() => normalise({ mark: 'bar', data, x: 'azimuth', y: 'gain', theta: 'azimuth' })).toThrow("'theta' is for curved coordinates - add coords")
+  })
+})
+
+describe('graphs, bands and Riemann sums', () => {
+  it('samples y = fn(x) into a line or an area over the x range, the axis spanning exactly it', () => {
+    const c = chart({ mark: 'area', fn: (x) => Math.sin(x), x: [0, Math.PI], samples: 21 })
+    const rows = normalise({ mark: 'area', fn: (x) => Math.sin(x), x: [0, Math.PI], samples: 21 }).rows
+    expect(rows).toHaveLength(21)
+    expect(rows[10].y).toBeCloseTo(1, 9)
+    expect(c.scales.x?.domain).toEqual([0, Math.PI])
+    expect(c.summary()).toBe('area chart of y = fn(x), 21 samples')
+    expect(normalise({ mark: 'line', fn: (x) => x, x: [0, 1] }).rows).toHaveLength(200)
+  })
+
+  it('fills between two curves when fn gives [y, y2] - the band\'s lower edge, not zero', () => {
+    const c = chart({ mark: 'area', fn: (x) => [x + 2, x + 1], x: [0, 1], samples: 3 })
+    expect(normalise({ mark: 'area', fn: (x) => [x + 2, x + 1], x: [0, 1], samples: 3 }).rows[0]).toEqual({ x: 0, y: 2, y2: 1 })
+    // the y axis reaches the lower edge without being pulled to zero
+    expect(c.scales.y?.domain[0]).toBeGreaterThan(0)
+    // two triangles a step, from y down to y2
+    const p = c.marks[0].geometry.positions, y = /** @type {any} */ (c.scales.y)
+    expect(p[1]).toBeCloseTo(y(2), 5)
+    expect(p[4]).toBeCloseTo(y(1), 5)
+  })
+
+  it('cuts the range into rectangles as high as fn at their middles - or left or right ends', () => {
+    const sq = (x) => x * x
+    const mid = chart({ mark: 'bar', fn: sq, x: [0, 2], samples: 4, transition: false })
+    expect(mid.marks[0].data.map((r) => [r.x, r.x2, r.at])).toEqual([[0, 0.5, 0.25], [0.5, 1, 0.75], [1, 1.5, 1.25], [1.5, 2, 1.75]])
+    expect(mid.marks[0].data[0].y).toBeCloseTo(0.0625, 9)
+    expect(mid.scales.x?.kind).toBe('linear')
+    expect(mid.summary()).toBe('bar chart of a Riemann sum of fn, 4 rectangles, each at its middle')
+    // side by side, each as wide as its span
+    const bars = mid.marks[0], m = bars.instanceMatrices, x = /** @type {any} */ (mid.scales.x)
+    expect(m[0]).toBeCloseTo(x(0.5) - x(0), 5)
+    expect(m[12]).toBeCloseTo((x(0) + x(0.5)) / 2, 5)
+    expect(chart({ mark: 'bar', fn: sq, x: [0, 2], samples: 4, rule: 'right' }).marks[0].data.map((r) => r.at)).toEqual([0.5, 1, 1.5, 2])
+    expect(chart({ mark: 'bar', fn: sq, x: [0, 2], samples: 1 }).marks[0].data).toHaveLength(1)
+  })
+
+  it('spans data bars from x to x2 on a number axis - a histogram - and floats them from y2', () => {
+    const bins = [{ from: 0, to: 10, n: 4 }, { from: 10, to: 30, n: 7 }]
+    const c = chart({ mark: 'bar', data: bins, x: 'from', x2: 'to', y: 'n', transition: false })
+    expect(c.scales.x?.kind).toBe('linear')
+    expect(c.scales.x?.domain).toEqual([0, 30])
+    const m = c.marks[0].instanceMatrices, x = /** @type {any} */ (c.scales.x)
+    // the second bin twice as wide as the first
+    expect(m[16] / m[0]).toBeCloseTo(2, 5)
+    expect(m[16]).toBeCloseTo(x(30) - x(10), 5)
+    const floating = chart({ mark: 'bar', data: [{ k: 'a', lo: 2, hi: 5 }], x: 'k', y: 'hi', y2: 'lo', transition: false })
+    const y = /** @type {any} */ (floating.scales.y), f = floating.marks[0].instanceMatrices
+    expect(f[5]).toBeCloseTo(y(5) - y(2), 5)
+  })
+
+  it('says what is wrong with a spec', () => {
+    const rows = [{ a: 1, b: 2, c: 'x' }]
+    expect(() => normalise({ mark: 'line', data: rows, x: 'a', y: 'b', x2: 'b' })).toThrow("x2 is where a bar ends along x, with x where it starts - for mark: 'bar', not 'line'")
+    expect(() => normalise({ mark: 'bar', data: rows, x: 'c', x2: 'b', y: 'a' })).toThrow('x2 spans a bar along a number axis')
+    expect(() => normalise({ mark: 'line', data: rows, x: 'a', y: 'b', y2: 'a' })).toThrow("y2 is the other edge of an area, or the other end of a bar - for mark: 'area' or 'bar', not 'line'")
+    expect(() => normalise({ mark: 'area', data: rows, x: 'a', y: 'b', y2: 'a', stack: true })).toThrow('stack or y2, not both')
+    expect(() => normalise({ mark: 'line', fn: (x) => [x, x], x: [0, 1] })).toThrow("a line has one value; [y, y2] fills between them with mark: 'area'")
+    expect(() => normalise({ mark: 'area', fn: (x) => (x > 0.5 ? [x, 0] : x), x: [0, 1] })).toThrow('but a single y before')
+    expect(() => normalise({ mark: 'area', fn: (x) => x, x: [0, 1], y2: 'low' })).toThrow('return [y, y2] from fn')
+    expect(() => normalise({ mark: 'bar', fn: (x) => x, x: [0, 1], rule: 'trapezoid' })).toThrow("'rule' is 'left', 'mid' (the default) or 'right'")
+    expect(() => normalise({ mark: 'area', fn: (x) => x, x: [0, 1], rule: 'left' })).toThrow("'rule' is where a bar from fn takes its height - for mark: 'bar'")
+    expect(() => normalise({ mark: 'line', fn: (x) => x })).toThrow('needs the range of x to sample')
+    expect(() => normalise({ mark: 'area', fn: (x) => x, x: [0, 1], t: [0, 1] })).toThrow("a 'area' from fn is over x")
   })
 })

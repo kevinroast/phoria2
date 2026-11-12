@@ -84,16 +84,19 @@ export function barMark(ctx) {
     nodes: [mesh],
     layout(rows) {
       const { x, y, z } = ctx.scales, ch = ctx.spec.channels
-      const share = ctx.spec.options.width ?? 0.7
+      // bars from x to x2 fill their span, side by side as a histogram's do, unless width says
+      const spans = !!ch.x2
+      const share = ctx.spec.options.width ?? (spans ? 1 : 0.7)
       const w = (x.bandwidth ?? ctx.box[0] / 20) * share / (1 - 0.2)
-      const d = z?.bandwidth !== undefined ? z.bandwidth * share / (1 - 0.2) : Math.min(w, ctx.box[2] * 0.8)
+      const d = z?.bandwidth !== undefined ? z.bandwidth * (spans ? 0.7 : share) / (1 - 0.2) : Math.min(spans ? ctx.box[0] / 12 : w, ctx.box[2] * 0.8)
       const base = y(Math.max(y.domain[0], Math.min(0, y.domain[1])))
       // stacking: running totals per x (and z), in row order
       const stacks = new Map()
       const stride = 9, state = new Float32Array(rows.length * stride)
       rows.forEach((row, i) => {
         const v = Number(ch.y.get(row)) || 0
-        let y0 = base, y1 = y(v)
+        // from y2 to y, or up from zero
+        let y0 = ch.y2 ? y(Number(ch.y2.get(row)) || 0) : base, y1 = y(v)
         if (ctx.spec.options.stack) {
           const at = stackKey(ch, row, v)
           const below = stacks.get(at) ?? 0
@@ -101,7 +104,9 @@ export function barMark(ctx) {
           y1 = y(below + v)
           stacks.set(at, below + v)
         }
-        state.set([pos(x, ch.x, row), pos(z, ch.z, row), y0, y1, w, d, ...ctx.rgb(row)], i * stride)
+        // a bar from x to x2: in the middle, as wide as its span
+        const x0 = pos(x, ch.x, row), x1 = spans ? pos(x, ch.x2, row) : x0
+        state.set([(x0 + x1) / 2, pos(z, ch.z, row), y0, y1, spans ? Math.abs(x1 - x0) * share : w, d, ...ctx.rgb(row)], i * stride)
       })
       return { rows, keys: keysOf(ctx, rows), state, stride }
     },
@@ -271,7 +276,9 @@ export function lineMark(ctx, area) {
           const at = stackKey(ch, row, v)
           const below = ctx.spec.options.stack ? totals.get(at) ?? 0 : 0
           if (ctx.spec.options.stack) totals.set(at, below + v)
-          state.set([x(xv), y(below + v), pos(z, ch.z, row), y(below)], i * 4)
+          // an area fills down to y2 - the other edge of a band - or to what's below it
+          const edge = ch.y2 ? y(Number(ch.y2.get(row)) || 0) : y(below)
+          state.set([x(xv), y(below + v), pos(z, ch.z, row), edge], i * 4)
           i++
         }
       }

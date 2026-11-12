@@ -19,6 +19,8 @@ const network = {
   nodes: [{ id: 'a', tier: 1 }, { id: 'b', tier: 2 }, { id: 'c', tier: 2 }],
   links: [{ source: 'a', target: 'b', from: 'a', to: 'b', w: 2 }, { source: 'a', target: 'c', from: 'a', to: 'c', w: 1 }],
 }
+const bins = [{ from: 0, to: 2, n: 3, wide: 1 }, { from: 2, to: 4, n: 5, wide: 3 }]
+const band = [{ day: 1, high: 5, low: 2 }, { day: 2, high: 6, low: 3 }]
 const NETWORK_ONLY = ['layout', 'flat', 'steps', 'seed', 'source', 'target', 'link']
 // a chart of a function for the options only those take: a surface over x and z, a parametric one
 // over u and v, a curve over t
@@ -26,6 +28,10 @@ const makeChart = (o) => {
   const keys = Object.keys(o)
   if (keys.some((k) => NETWORK_ONLY.includes(k))) return chart({ mark: 'network', data: network, transition: false, ...o })
   if (keys.includes('t')) return chart({ mark: 'curve', fn: (t) => [t, t, t], transition: false, ...o })
+  // ranges: bars from x to x2 (a histogram's bins), an area between y and y2, rectangles from fn
+  if (keys.includes('x2')) return chart({ mark: 'bar', data: bins, x: 'from', y: 'n', transition: false, ...o })
+  if (keys.includes('y2')) return chart({ mark: 'area', data: band, x: 'day', y: 'high', transition: false, ...o })
+  if (keys.includes('rule')) return chart({ mark: 'bar', fn: (x) => x, x: [0, 1], samples: 4, transition: false, ...o })
   // curved coordinates: a sphere, or a polar surface for r
   if (keys.includes('r')) return chart({ mark: 'surface', coords: 'polar', fn: (r) => r, samples: 8, transition: false, ...o })
   if (keys.some((k) => ['coords', 'theta', 'phi', 'angles'].includes(k))) return chart({ mark: 'surface', coords: 'spherical', fn: () => 1, samples: 8, transition: false, ...o })
@@ -87,6 +93,9 @@ contract('chart()', {
     x: { value: 'region', read: channel('x'), bad: 'nofield', error: "isn't in the data" },
     y: { value: { field: 'sales' }, read: channel('y'), expect: 'sales', bad: 'nofield', error: "isn't in the data" },
     z: { value: 'region', read: channel('z'), bad: 'nofield', error: "isn't in the data" },
+    x2: { value: 'to', read: (c) => c.marks[0].count && c.scales.x?.domain, expect: [0, 4], bad: 'nofield', error: "isn't in the data" },
+    y2: { value: 'low', read: (c) => c.scales.y?.domain[0], expect: 2, bad: 'nofield', error: "isn't in the data" },
+    rule: { value: 'left', read: (c) => c.marks[0].data.map((r) => r.at), expect: [0, 0.25, 0.5, 0.75], bad: 'trapezoid', error: "'rule' is 'left', 'mid' (the default) or 'right'" },
     color: { value: 'region', read: channel('color'), bad: 'nofield', error: "isn't in the data" },
     size: { value: 'sales', read: channel('size'), bad: 'nofield', error: "isn't in the data" },
     opacity: { value: 0.5, read: channel('opacity', 'value'), bad: 'nofield', error: "isn't in the data" },

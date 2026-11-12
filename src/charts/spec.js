@@ -24,7 +24,7 @@ import { CURVED_OPTIONS, FUNCTION_OPTIONS, placeData, sampleFunction } from './f
  */
 
 export const MARKS = /** @type {Mark[]} */ (['bar', 'point', 'line', 'area', 'surface', 'curve', 'vector', 'network'])
-export const CHANNELS = ['x', 'y', 'z', 'color', 'size', 'opacity', 'label', 'key', 'detail']
+export const CHANNELS = ['x', 'y', 'z', 'x2', 'y2', 'color', 'size', 'opacity', 'label', 'key', 'detail']
 export const OPTIONS = ['mark', 'data', 'encoding', 'tooltip', 'box', 'stack', 'width', 'layout', 'flat', 'steps', 'seed',
   'source', 'target', 'link', 'highlight', 'legend', 'theme', 'overlap', 'transition', 'title', '$schema', 'description', 'equal', 'frame', 'time', 'contours',
   ...FUNCTION_OPTIONS, ...CHANNELS]
@@ -120,6 +120,19 @@ export function normalise(input) {
         fail('chart()', `${name} on a '${mark}' chart lays its marks out along a scale - it needs a field, not a constant value - e.g. ${name}: '${fields[0] ?? 'field'}'`)
       }
     }
+  }
+  // the other end of a range: a bar from x to x2 along a number axis (a histogram's bins), an area
+  // or a bar from y to y2 (a band between two lines, a bar floating between two values)
+  if (channels.x2) {
+    if (mark !== 'bar') fail('chart()', `x2 is where a bar ends along x, with x where it starts - for mark: 'bar', not '${mark}'`)
+    if (channels.x2.field === null || channels.x2.type !== 'quantitative' || channels.x.type !== 'quantitative') {
+      fail('chart()', "x2 spans a bar along a number axis - x and x2 are fields of numbers, such as x: 'from', x2: 'to'")
+    }
+  }
+  if (channels.y2) {
+    if (mark !== 'area' && mark !== 'bar') fail('chart()', `y2 is the other edge of an area, or the other end of a bar - for mark: 'area' or 'bar', not '${mark}'`)
+    if (channels.y2.field === null || channels.y2.type !== 'quantitative') fail('chart()', "y2 is a field of numbers, the other edge from y - such as y: 'high', y2: 'low'")
+    if (input.stack) fail('chart()', 'stack or y2, not both - stacked marks sit on the ones below them, y2 says where each starts')
   }
 
   const tooltipSpec = input.tooltip ?? encoding.tooltip
