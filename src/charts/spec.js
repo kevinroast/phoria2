@@ -4,7 +4,7 @@
 import { Color } from '../value/Color.js'
 import { checkNumber, describe, didYouMean, fail } from '../validate.js'
 import { toDate } from './scales.js'
-import { FUNCTION_OPTIONS, sampleFunction } from './functions.js'
+import { CURVED_OPTIONS, FUNCTION_OPTIONS, placeData, sampleFunction } from './functions.js'
 
 /** @typedef {'quantitative' | 'nominal' | 'ordinal' | 'temporal'} FieldType */
 /** @typedef {'bar' | 'point' | 'line' | 'area' | 'surface' | 'curve' | 'vector' | 'network'} Mark */
@@ -64,7 +64,8 @@ export const CHANNEL_HINTS = {
  * @param {Record<string, any>} input the spec as written
  * @returns {{ mark: Mark, rows: any[], links: any[], fields: string[], channels: Record<string, Channel>,
  *   tooltip: Channel[] | ((hit: any) => any) | null, link: Record<string, Channel>, options: Record<string, any>,
- *   grid: { nx: number, nz: number } | null, normals: Float32Array | null, coords: string | null, about: string | null }}
+ *   grid: { nx: number, nz: number } | null, normals: Float32Array | null, coords: string | null,
+ *   rings: import('./functions.js').Rings | null, about: string | null }}
  */
 export function normalise(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail('chart()', `expected a spec such as { mark: 'bar', data, x, y }, got ${describe(input)}`)
@@ -72,12 +73,22 @@ export function normalise(input) {
     if (OPTIONS.includes(key)) continue
     fail('chart()', `unknown option '${key}' - ${OPTION_HINTS[key] ?? `expected ${OPTIONS.filter((k) => k[0] !== '$').join(', ')}${didYouMean(key, OPTIONS)}`}`)
   }
-  // a chart of a function: sampled into rows, and from here a chart like any other
-  const sampled = input.fn !== undefined ? sampleFunction(input) : null
+  // a chart of a function: sampled into rows - or data in curved coordinates, placed - and from here
+  // a chart like any other
+  const fromFn = input.fn !== undefined
+  const curvedData = !fromFn && input.coords !== undefined && input.coords !== 'cartesian'
+  if (curvedData) {
+    for (const key of FUNCTION_OPTIONS) {
+      if (!CURVED_OPTIONS.includes(key) && input[key] !== undefined) fail('chart()', `'${key}' is for charts of a function - with data, the rows are what's drawn`)
+    }
+  }
+  const sampled = fromFn ? sampleFunction(input) : curvedData ? placeData(input) : null
   if (sampled) input = sampled.input
   else {
     for (const key of FUNCTION_OPTIONS) {
-      if (input[key] !== undefined) fail('chart()', `'${key}' is for charts of a function - add fn, such as fn: (x, z) => Math.sin(x) * Math.cos(z)`)
+      if (input[key] === undefined || (key === 'coords' && input[key] === 'cartesian')) continue
+      if (CURVED_OPTIONS.includes(key)) fail('chart()', `'${key}' is for curved coordinates - add coords: 'polar', 'cylindrical' or 'spherical'`)
+      fail('chart()', `'${key}' is for charts of a function - add fn, such as fn: (x, z) => Math.sin(x) * Math.cos(z)`)
     }
   }
   if (typeof input.width === 'number' && input.width > 1) fail('chart()', `'width' is a bar's share of its band (0-1); in Vega-Lite it is pixels - here the canvas sets the size`)
@@ -145,14 +156,14 @@ export function normalise(input) {
   }
   if (options.time !== undefined) {
     if (typeof options.time !== 'boolean') fail('chart()', `'time' is true or false, got ${describe(options.time)}`)
-    if (options.time && !sampled) fail('chart()', "'time' animates a chart of a function - add fn, which is handed the time in seconds as t: fn: (x, z, { t }) => ...")
+    if (options.time && !fromFn) fail('chart()', "'time' animates a chart of a function - add fn, which is handed the time in seconds as t: fn: (x, z, { t }) => ...")
   }
   if (options.contours !== undefined) options.contours = contoursOf(options.contours, mark)
   // shapes - parametric surfaces, curves, vector fields - keep their proportions unless told not to
   if (options.equal === undefined) options.equal = sampled ? sampled.equal : mark === 'curve'
   // curved coordinates are drawn on axes through the origin, with rings around it
   if (options.frame === undefined && sampled?.coords) options.frame = 'origin'
-  return { mark, rows, links, fields, channels, tooltip, link, options, grid: sampled?.grid ?? null, normals: sampled?.normals ?? null, coords: sampled?.coords ?? null, about: sampled?.about ?? null }
+  return { mark, rows, links, fields, channels, tooltip, link, options, grid: sampled?.grid ?? null, normals: sampled?.normals ?? null, coords: sampled?.coords ?? null, rings: sampled?.rings ?? null, about: sampled?.about ?? null }
 }
 
 /**

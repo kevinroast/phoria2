@@ -268,12 +268,12 @@ describe('curved coordinates', () => {
     const rows = c.marks[0].data
     expect(rows).toHaveLength(81)
     for (const row of rows) expect(reach(row)).toBeCloseTo(2, 6)
-    // theta from +x towards -z, phi down from +y
+    // theta from +x towards +z, phi down from +y
     expect(rows[0]).toMatchObject({ theta: 0, phi: 0, r: 2 })
     expect(rows.at(-1).theta).toBeCloseTo(2 * Math.PI)
     expect(rows.at(-1).phi).toBeCloseTo(Math.PI)
     const quarter = rows.find((r) => Math.abs(r.theta - Math.PI / 2) < 1e-9 && Math.abs(r.phi - Math.PI / 2) < 1e-9)
-    expect(quarter.z).toBeCloseTo(-2)
+    expect(quarter.z).toBeCloseTo(2)
     expect(c.spec.options.equal).toBe(true)
     expect(c.spec.options.frame).toBe('origin')
     expect(guides(c)).toBeDefined()
@@ -358,7 +358,7 @@ describe('curved coordinates', () => {
   it('says what is wrong with a spec', () => {
     const fn = () => 1
     expect(() => normalise({ mark: 'surface', coords: 'round', fn })).toThrow("'coords' is 'cartesian' (the default), 'polar', 'cylindrical' or 'spherical'")
-    expect(() => normalise({ mark: 'surface', fn, x: [0, 1], z: [0, 1], theta: [0, 1] })).toThrow("'theta' is a range in curved coordinates - add coords")
+    expect(() => normalise({ mark: 'surface', fn, x: [0, 1], z: [0, 1], theta: [0, 1] })).toThrow("'theta' is for curved coordinates - add coords")
     expect(() => normalise({ mark: 'curve', coords: 'spherical', fn })).toThrow("a curve takes coords: 'polar'")
     expect(() => normalise({ mark: 'surface', coords: 'spherical', fn, u: [0, 1] })).toThrow("in coords: 'spherical' fn is sampled over theta and phi, not u")
     expect(() => normalise({ mark: 'surface', coords: 'cylindrical', fn, phi: [0, 1], y: [0, 1] })).toThrow('sampled over theta and y - leave out phi')
@@ -369,5 +369,117 @@ describe('curved coordinates', () => {
     expect(() => normalise({ mark: 'surface', coords: 'spherical', fn: () => ({ r: 1, x: 2 }) })).toThrow("fn's x is the row's own")
     expect(() => normalise({ mark: 'curve', coords: 'polar', fn: () => [1, 2] })).toThrow("a polar curve's fn returns its radius")
     expect(() => normalise({ mark: 'surface', coords: 'spherical', fn, x: 'width' })).toThrow('comes from its function, not a field')
+  })
+})
+
+describe('data by angle', () => {
+  /** A pattern measured every 30° round and down: gain in dB, highest straight ahead (+x). */
+  const pattern = () => {
+    const rows = []
+    for (let azimuth = 0; azimuth < 360; azimuth += 30) {
+      for (let polar = 0; polar <= 180; polar += 30) {
+        const ahead = Math.sin(polar * Math.PI / 180) * Math.cos(azimuth * Math.PI / 180)
+        rows.push({ azimuth, polar, gain: -20 + 25 * (1 + ahead) / 2 })
+      }
+    }
+    return rows
+  }
+  const guides = (c) => c.children.find((n) => n.name === 'axes')?.children.find((n) => n.name === 'guides')
+
+  it('places rows measured in degrees on a sphere, from a dB floor, and closes the turn', () => {
+    const data = pattern()
+    const c = chart({ mark: 'surface', coords: 'spherical', angles: 'degrees', data, theta: 'azimuth', phi: 'polar', r: { field: 'gain', scale: { domain: [-20, 10] } } })
+    const rows = c.marks[0].data
+    // 12 azimuths - 0 to 330 - and the first again, to close it; 7 polar angles
+    expect(rows).toHaveLength(13 * 7)
+    expect(rows[12].azimuth).toBe(0)
+    // a row keeps its own fields, and gains where it's drawn: straight ahead, 5 dB is 25 out from -20
+    const ahead = rows.find((r) => r.azimuth === 0 && r.polar === 90)
+    expect(ahead.gain).toBe(5)
+    expect(ahead.x).toBeCloseTo(25, 6)
+    expect(ahead.y).toBeCloseTo(0, 6)
+    // theta towards +z
+    const quarter = rows.find((r) => r.azimuth === 90 && r.polar === 90)
+    expect(quarter.z).toBeGreaterThan(0)
+    // coloured by r's field, read off labelled rings with no axes in the way; the tooltip says the fields
+    expect(c.spec.channels.color.field).toBe('gain')
+    expect(['x', 'y', 'z'].map((n) => c.spec.channels[n].axis)).toEqual([false, false, false])
+    const texts = guides(c).children.filter((n) => n.text !== undefined).map((n) => n.text)
+    expect(texts).toContain('0')
+    expect(texts).toContain('10')
+    expect(texts).toContain('90°')
+    expect(c.spec.options.frame).toBe('origin')
+    expect(c.summary()).toBe('surface chart of gain by azimuth and polar, in spherical coordinates, 13 × 7 rows')
+    // the data as given
+    expect(c.data).toBe(data)
+  })
+
+  it('clamps values beyond r\'s domain to its ends, and tweens to new data on the same grid', () => {
+    const scene = new Scene()
+    const spec = { mark: 'surface', coords: 'spherical', angles: 'degrees', theta: 'azimuth', phi: 'polar', r: { field: 'gain', scale: { domain: [-10, 0] } }, transition: { duration: 0.2 } }
+    const c = scene.add(chart({ ...spec, data: pattern() }))
+    for (const row of c.marks[0].data) expect(Math.hypot(row.x, row.y, row.z)).toBeLessThanOrEqual(10 + 1e-9)
+    // nothing below the floor: those rows sit at the centre
+    expect(c.marks[0].data.filter((r) => r.gain <= -10).every((r) => Math.hypot(r.x, r.y, r.z) < 1e-9)).toBe(true)
+    run(scene, 0.3)
+    const mesh = c.marks[0]
+    c.update({ data: pattern().map((r) => ({ ...r, gain: r.gain + 5 })) })
+    run(scene, 0.3)
+    expect(c.marks[0]).toBe(mesh)
+  })
+
+  it('draws polar data as a path per series, in order of theta and closed, on labelled rings', () => {
+    const rows = ['front', 'back'].flatMap((side, s) => Array.from({ length: 12 }, (_, i) => ({ side, angle: (11 - i) * 30, level: -s * 10 })))
+    const spec = { mark: 'curve', coords: 'polar', angles: 'degrees', data: rows, theta: 'angle', r: { field: 'level', scale: { domain: [-30, 0] } }, color: 'side' }
+    const c = chart(spec), drawn = normalise(spec).rows
+    // 12 a series and the first again
+    expect(drawn).toHaveLength(26)
+    expect(drawn.slice(0, 13).map((r) => r.angle)).toEqual([0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330, 0])
+    expect(drawn[0]).toMatchObject({ side: 'front', x: 30, y: 0, z: 0 })
+    expect(drawn[13].x).toBeCloseTo(20, 6)
+    expect(c.spec.channels.detail.field).toBe('side')
+    expect(['x', 'y'].map((n) => c.spec.channels[n].axis)).toEqual([false, false])
+    expect(guides(c).children.some((n) => n.text === '-10')).toBe(true)
+  })
+
+  it('places a cylinder of data over a height field, and a polar surface over r', () => {
+    const rows = []
+    for (let theta = 0; theta < 360; theta += 90) for (const height of [0, 1, 2]) rows.push({ theta, height, r: 1 + height })
+    const cyl = chart({ mark: 'surface', coords: 'cylindrical', angles: 'degrees', data: rows, theta: 'theta', y: 'height', r: 'r' })
+    for (const row of cyl.marks[0].data) {
+      expect(Math.hypot(row.x, row.z)).toBeCloseTo(1 + row.height, 6)
+      expect(row.y).toBe(row.height)
+    }
+    expect(cyl.spec.channels.y.title).toBe('height')
+    // its height axis stays; the rings say the rest
+    expect(cyl.spec.channels.y.axis).not.toBe(false)
+    expect(cyl.spec.channels.x.axis).toBe(false)
+    const disc = []
+    for (const radius of [0, 1, 2]) for (let angle = 0; angle < 360; angle += 120) disc.push({ radius, angle, depth: -radius })
+    const polar = chart({ mark: 'surface', coords: 'polar', angles: 'degrees', data: disc, r: 'radius', theta: 'angle', y: 'depth' })
+    expect(polar.marks[0].data).toHaveLength(3 * 4)
+    for (const row of polar.marks[0].data) expect(Math.hypot(row.x, row.z)).toBeCloseTo(row.radius, 6)
+  })
+
+  it('takes degrees for fn too: its ranges, what it is handed, and its rows', () => {
+    const seen = []
+    const c = chart({ mark: 'curve', coords: 'polar', angles: 'degrees', fn: (theta) => { seen.push(theta); return 1 }, samples: 5 })
+    expect(seen.at(-1)).toBe(360)
+    const quarter = c.marks[0].data.find((r) => r.theta === 90)
+    expect(quarter.y).toBeCloseTo(1, 9)
+    expect(chart({ mark: 'surface', coords: 'spherical', angles: 'degrees', fn: () => 1, samples: 5 }).marks[0].data.at(-1).phi).toBe(180)
+  })
+
+  it('says what is wrong with a spec', () => {
+    const data = pattern(), base = { mark: 'surface', coords: 'spherical', angles: 'degrees', data, theta: 'azimuth', phi: 'polar' }
+    expect(() => normalise({ ...base })).toThrow("with data, r names a field of the rows - e.g. r: 'gain'")
+    expect(() => normalise({ ...base, r: [0, 1] })).toThrow("r names a field of the rows, such as r: 'gain' - ranges are for fn")
+    expect(() => normalise({ ...base, r: 'loss' })).toThrow('the row at azimuth 0, polar 0 has loss undefined - a number in every row')
+    expect(() => normalise({ ...base, data: data.slice(1), r: 'gain' })).toThrow('a surface needs a row for every azimuth and polar pair - 1 of 84 are missing (first: azimuth 0, polar 0)')
+    expect(() => normalise({ ...base, r: 'gain', samples: 9 })).toThrow("'samples' is for charts of a function - with data")
+    expect(() => normalise({ ...base, r: 'gain', angles: 'turns' })).toThrow("'angles' is 'radians' (the default) or 'degrees'")
+    expect(() => normalise({ ...base, r: 'gain', data: data.map((r) => ({ ...r, x: 1 })) })).toThrow('row 0 has its own x, y or z')
+    expect(() => normalise({ mark: 'curve', coords: 'polar', data, theta: 'azimuth', r: 'gain', phi: 'polar' })).toThrow('a polar curve reads theta, r - leave out phi')
+    expect(() => normalise({ mark: 'bar', data, x: 'azimuth', y: 'gain', theta: 'azimuth' })).toThrow("'theta' is for curved coordinates - add coords")
   })
 })

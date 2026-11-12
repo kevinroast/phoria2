@@ -51,12 +51,20 @@ const CARDS = [
     note: 'The field round two charges on a plane. Arrow lengths and colours follow the log of its strength. Change the second charge and the field swings.',
   },
   {
-    name: 'matrix', title: 'A linear map',
-    note: 'A 2 × 2 matrix as a field: each arrow is where the map sends its point. Along the white lines the arrows point along them - the map only stretches there: its eigenvectors. Give b and c opposite signs and they go - a rotation.',
+    name: 'microphones', title: 'Microphone patterns',
+    note: 'The datasheet picture: how a microphone hears from each direction, in dB, one curve per pattern - polar data, read off its labelled rings. 0° is straight ahead.',
+  },
+  {
+    name: 'antenna', title: 'An antenna pattern',
+    note: 'Measured data, not a formula: a Yagi antenna\'s gain in dBi every 5° round and down, as an antenna range records it - the rows drawn with coords: \'spherical\' and angles in degrees. r\'s domain puts -20 dBi at the centre. More elements, a narrower beam.',
   },
   {
     name: 'orbitals', title: 'Atomic orbitals',
     note: 'The shapes of electron orbitals: spherical harmonics, drawn with coords: \'spherical\' as a radius over the angles. The two colours are the sign of the wave - its phase. Pick l and m: l = 0 is s, 1 is p, 2 is d and 3 is f.',
+  },
+  {
+    name: 'matrix', title: 'A linear map',
+    note: 'A 2 × 2 matrix as a field: each arrow is where the map sends its point. Along the white lines the arrows point along them - the map only stretches there: its eigenvectors. Give b and c opposite signs and they go - a rotation.',
   },
 ]
 
@@ -98,7 +106,7 @@ export default async function run({ canvas }) {
   return views[0]
 }
 
-const EXAMPLES = { surface, waves, gradient, contours, curve, polar, shapes, orbitals, descent, field, matrix, response }
+const EXAMPLES = { surface, waves, gradient, contours, curve, polar, shapes, orbitals, antenna, microphones, descent, field, matrix, response }
 
 // surface
 function surface({ canvas, slider }) {
@@ -241,7 +249,7 @@ function orbitals({ canvas, slider }) {
     mark: 'surface', coords: 'spherical',
     // the radius is the harmonic's size, and its sign a field to colour by: the + and - lobes
     fn: (theta, phi, { l, m }) => {
-      const y = harmonic(l, m, phi, -theta) * scale
+      const y = harmonic(l, m, phi, theta) * scale
       return { r: Math.abs(y), sign: y < 0 ? '−' : '+' }
     },
     params: p, samples: 72, legend: false, transition: { duration: 0.8, ease: 'inOut' },
@@ -318,14 +326,13 @@ const orbitalTex = (l, m) => `r = \\left| Y_{${l}}^{${m}}(\\theta, \\varphi) \\r
 
 // polar
 function polar({ canvas, slider }) {
-  const view = new View({ canvas, orbit: true, background: BG, camera: { position: [1.5, 5.5, 12.5], target: [0, 5, 0] } })
+  const view = new View({ canvas, orbit: true, background: BG, camera: { position: [1.5, 5.5, 15], target: [0, 5, 0] } })
   const p = { a: 0, k: 3 }
   const plot = view.scene.add(chart({
     mark: 'curve', coords: 'polar',
     fn: (theta, { a, k }) => a + Math.cos(k * theta),
     // twice round, so a k ending in .5 closes its loop too - in one colour, as a rose goes over itself
     theta: [0, 4 * Math.PI], samples: 720, params: p, size: 3, color: '#76b7b2',
-    x: { axis: { ticks: 3 } }, y: { axis: { ticks: 3 } },
   }))
   view.scene.add(new Label({
     content: tex('r = a + \\cos(k\\theta)'), text: 'r = a + cos(kθ)',
@@ -333,6 +340,63 @@ function polar({ canvas, slider }) {
   }))
   slider('a', 0, 1.5, p.a, (a) => { p.a = a; plot.update({ params: p }) })
   slider('k', 0.5, 6, p.k, (k) => { p.k = k; plot.update({ params: p }) }, 0.5)
+  return view
+}
+// end
+
+// antenna
+function antenna({ canvas, slider }) {
+  const view = new View({ canvas, orbit: true, background: BG, camera: { position: [2, 8.5, 15], target: [0, 4.5, 0] } })
+  const p = { elements: 6 }
+  const plot = view.scene.add(chart({
+    mark: 'surface', coords: 'spherical', angles: 'degrees',
+    data: yagi(p.elements), theta: 'azimuth', phi: 'polar',
+    // -20 dBi at the centre, 15 dBi on the outer ring
+    r: { field: 'gain', scale: { domain: [-20, 15] } },
+    color: { field: 'gain', title: 'Gain (dBi)', scale: { scheme: 'heat', domain: [-20, 15] } },
+    legend: { position: 'bottom-right' }, transition: { duration: 0.6 },
+  }))
+  slider('elements', 2, 12, p.elements, (n) => { plot.update({ data: yagi(n) }) }, 1)
+  return view
+}
+
+/**
+ * A Yagi antenna's gain in dBi, every 5° round (azimuth) and down from the top (polar) - made up as
+ * an antenna range would measure it: n half-wave dipoles in a row along x, each lying across it.
+ */
+function yagi(n) {
+  const kd = 2 * Math.PI * 0.2, beta = -(kd + Math.PI / n), rad = Math.PI / 180
+  const rows = []
+  for (let azimuth = 0; azimuth < 360; azimuth += 5) {
+    for (let polar = 0; polar <= 180; polar += 5) {
+      // which way: along the row (x) and along a dipole (z)
+      const ux = Math.sin(polar * rad) * Math.cos(azimuth * rad), uz = Math.sin(polar * rad) * Math.sin(azimuth * rad)
+      // the row adds up in step only straight ahead; a dipole is quiet off its ends
+      const psi = kd * ux + beta, half = Math.sin(psi / 2)
+      const array = Math.abs(half) < 1e-9 ? 1 : Math.abs(Math.sin(n * psi / 2) / (n * half))
+      rows.push({ azimuth, polar, strength: array * Math.sqrt(Math.max(0, 1 - uz * uz)) })
+    }
+  }
+  // in dB from the peak, which is about 10 log10(n) + 3 dBi
+  const peak = Math.max(...rows.map((r) => r.strength)), top = 10 * Math.log10(n) + 3
+  return rows.map(({ azimuth, polar, strength }) => ({ azimuth, polar, gain: +(top + 20 * Math.log10(Math.max(strength / peak, 1e-4))).toFixed(1) }))
+}
+// end
+
+// microphones
+function microphones({ canvas }) {
+  const view = new View({ canvas, orbit: true, background: BG, camera: { position: [1, 5.2, 13.5], target: [0, 5, 0] } })
+  // how much each hears from the side and behind: from all round (1) to a figure 8 (0)
+  const PATTERNS = { omni: 1, cardioid: 0.5, supercardioid: 0.37, 'figure 8': 0 }
+  const rows = Object.entries(PATTERNS).flatMap(([pattern, a]) => Array.from({ length: 72 }, (_, i) => {
+    const angle = i * 5, heard = Math.abs(a + (1 - a) * Math.cos(angle * Math.PI / 180))
+    return { pattern, angle, level: +(20 * Math.log10(Math.max(heard, 1e-3))).toFixed(1) }
+  }))
+  view.scene.add(chart({
+    mark: 'curve', coords: 'polar', angles: 'degrees', data: rows, theta: 'angle',
+    r: { field: 'level', scale: { domain: [-30, 0] } }, color: 'pattern', size: 3,
+    legend: { position: 'bottom-right' },
+  }))
   return view
 }
 // end

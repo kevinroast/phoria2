@@ -205,11 +205,14 @@ export function originFrame({ box, axes, theme, overlap }) {
  * under the axes. A polar curve's rings stand upright with it, with spokes every 30°; a polar
  * surface's lie on the floor, with spokes; a cylinder's lie under it, its outermost repeated at its
  * top; a sphere's lie round its equator, with two upright circles through its poles at the outermost.
- * The rings are at round radii out to how far the shape reaches.
- * @param {{ coords: string, upright: boolean, rows: any[], scales: { x?: Scale, y?: Scale, z?: Scale }, theme: 'dark' | 'light' }} options
- * @returns {Lines | null}
+ * The rings are at round radii out to how far the shape reaches. Labelled - a polar plot, or data -
+ * each ring says its radius, from the value at the centre (a dB floor, say), and the angles are
+ * marked round the outermost every 30°, with spokes out to them.
+ * @param {{ coords: string, upright: boolean, rows: any[], scales: { x?: Scale, y?: Scale, z?: Scale },
+ *   theme: 'dark' | 'light', overlap?: 'dim' | 'hide' | 'show', rings?: import('./functions.js').Rings | null }} options
+ * @returns {Group | null}
  */
-export function curvedGuides({ coords, upright, rows, scales, theme }) {
+export function curvedGuides({ coords, upright, rows, scales, theme, overlap = 'dim', rings = null }) {
   const { x, y, z } = scales
   if (!x || !y || !z) return null
   // the origin - or, for an axis that doesn't reach it, that axis's nearest end
@@ -218,16 +221,23 @@ export function curvedGuides({ coords, upright, rows, scales, theme }) {
     return Math.min(Math.max(0, Math.min(d0, d1)), Math.max(d0, d1))
   }
   const o = [zero(x), zero(y), zero(z)]
-  // how far the shape reaches from the axis the rings turn about (from the origin, for a sphere)
+  // how far the shape reaches from the axis the rings turn about (from the origin, for a sphere) -
+  // or as far as r's domain pins it
   let reach = 0, low = Infinity, high = -Infinity
   for (const r of rows) {
     reach = Math.max(reach, coords === 'spherical' ? Math.hypot(r.x, r.y, r.z) : upright ? Math.hypot(r.x, r.y) : Math.hypot(r.x, r.z))
     low = Math.min(low, r.y)
     high = Math.max(high, r.y)
   }
+  if (rings?.reach) reach = rings.reach
   if (!(reach > 0)) return null
-  const radii = scaleLinear({ domain: [0, reach] }).ticks(4).filter((t) => t > reach * 1e-6)
+  // round values out from the one at the centre, each ring at its distance from there
+  const offset = rings?.offset ?? 0
+  const values = scaleLinear({ domain: [offset, offset + reach] })
+  const ticks = values.ticks(4).filter((t) => t - offset > reach * 1e-6)
+  const radii = ticks.map((t) => t - offset)
   const outer = /** @type {number} */ (radii.at(-1) ?? reach)
+  const labelled = !!rings?.labelled
   const positions = /** @type {number[]} */ ([])
   const put = (/** @type {number[]} */ p) => positions.push(x(p[0]), y(p[1]), z(p[2]))
   const SIDES = 96
@@ -238,32 +248,42 @@ export function curvedGuides({ coords, upright, rows, scales, theme }) {
       put(at((i + 1) / SIDES * 2 * Math.PI))
     }
   }
-  // on the floor at a height: theta turning from +x towards -z, as the surfaces are sampled
-  const flat = (/** @type {number} */ r, /** @type {number} */ h) => (/** @type {number} */ a) => [o[0] + r * Math.cos(a), h, o[2] - r * Math.sin(a)]
-  // from the origin out to the outermost ring, every 30°
-  const spokes = (/** @type {(a: number) => number[]} */ rim) => {
+  // on the floor at a height: theta turning from +x towards +z, as the surfaces are sampled
+  const flat = (/** @type {number} */ r, /** @type {number} */ h) => (/** @type {number} */ a) => [o[0] + r * Math.cos(a), h, o[2] + r * Math.sin(a)]
+  const standing = (/** @type {number} */ r) => (/** @type {number} */ a) => [o[0] + r * Math.cos(a), o[1] + r * Math.sin(a), o[2]]
+  // the plane the rings are read in: upright for a polar curve, else on the floor - under a
+  // cylinder, through a sphere's middle
+  const base = upright ? standing : (/** @type {number} */ r) => flat(r, coords === 'cylindrical' ? low : o[1])
+  // from the centre out to the outermost ring, every 30°
+  const spokes = () => {
+    const centre = base(0)(0)
     for (let i = 0; i < 12; i++) {
-      put(o)
-      put(rim(i * Math.PI / 6))
+      put(centre)
+      put(base(outer)(i * Math.PI / 6))
     }
   }
-  if (upright) {
-    const ring = (/** @type {number} */ r) => (/** @type {number} */ a) => [o[0] + r * Math.cos(a), o[1] + r * Math.sin(a), o[2]]
-    for (const r of radii) circle(ring(r))
-    spokes(ring(outer))
-  } else if (coords === 'polar') {
-    for (const r of radii) circle(flat(r, o[1]))
-    spokes(flat(outer, o[1]))
-  } else if (coords === 'cylindrical') {
-    for (const r of radii) circle(flat(r, low))
-    circle(flat(outer, high))
-  } else {
-    for (const r of radii) circle(flat(r, o[1]))
+  for (const r of radii) circle(base(r))
+  if (upright || coords === 'polar' || labelled) spokes()
+  if (coords === 'cylindrical') circle(flat(outer, high))
+  if (coords === 'spherical') {
     circle((a) => [o[0] + outer * Math.cos(a), o[1] + outer * Math.sin(a), o[2]])
     circle((a) => [o[0], o[1] + outer * Math.sin(a), o[2] + outer * Math.cos(a)])
   }
   const color = theme === 'light' ? '#5a606c' : '#9aa0ad'
-  return new Lines({ name: 'guides', geometry: new Geometry({ positions }), material: { color, opacity: 0.3, width: 1 }, pickable: false })
+  const group = new Group({ name: 'guides', pickable: false })
+  group.add(new Lines({ geometry: new Geometry({ positions }), material: { color, opacity: 0.3, width: 1 }, pickable: false }))
+  if (!labelled) return group
+  const world = (/** @type {number[]} */ p) => /** @type {[number, number, number]} */ ([x(p[0]), y(p[1]), z(p[2])])
+  const cls = (/** @type {string} */ kind) => `phoria-axis-${kind} phoria-${theme}`
+  // each ring's value, between the spokes at 0° and 30° - clear of both
+  ticks.forEach((t, i) => {
+    group.add(new Label({ text: values.format(t), position: world(base(radii[i])(Math.PI / 12)), className: cls('tick'), priority: 1, overlap }))
+  })
+  // the angles round the outside
+  for (let i = 0; i < 12; i++) {
+    group.add(new Label({ text: `${i * 30}°`, position: world(base(outer * 1.12)(i * Math.PI / 6)), className: cls('tick'), priority: 1, overlap }))
+  }
+  return group
 }
 
 /** Four edges of a rectangle as segments. */

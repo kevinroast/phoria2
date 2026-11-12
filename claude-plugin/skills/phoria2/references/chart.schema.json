@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cdn.jsdelivr.net/npm/phoria2@1/schema/chart.schema.json",
   "title": "phoria2 chart spec",
-  "description": "The spec for chart() from phoria2/charts: a mark, data, and channels mapping data fields to what is drawn. Channels may also be nested under 'encoding', as Vega-Lite writes them. Charts of a function (fn, samples, params, t, u, v, coords, theta, phi, r - surfaces, curves and vector fields sampled from fn, in cartesian or curved coordinates) are JavaScript only: a function is not JSON.",
+  "description": "The spec for chart() from phoria2/charts: a mark, data, and channels mapping data fields to what is drawn. Channels may also be nested under 'encoding', as Vega-Lite writes them. Charts of a function (fn, samples, params, t, u, v - surfaces, curves and vector fields sampled from fn, in cartesian or curved coordinates) are JavaScript only: a function is not JSON. Data measured by angle is JSON: coords with theta, phi and r naming fields.",
   "type": "object",
   "required": ["mark", "data"],
   "additionalProperties": false,
@@ -74,6 +74,11 @@
       ]
     },
     "flat": { "type": "boolean", "description": "Lay a force-directed network out in a plane." },
+    "coords": { "enum": ["cartesian", "polar", "cylindrical", "spherical"], "description": "Rows measured by angle, placed in curved coordinates: theta, phi and r (and y, for a cylinder's height or a polar surface's) name their fields. theta turns from +x towards +z, phi runs down from +y. A surface needs a full grid of its two directions; a polar curve is one path per series." },
+    "theta": { "$ref": "#/$defs/channel", "description": "The field of the angle round (azimuth), with coords." },
+    "phi": { "$ref": "#/$defs/channel", "description": "The field of the angle down from the top (polar angle), with coords: 'spherical'." },
+    "r": { "$ref": "#/$defs/channel", "description": "The field of the radius, with coords - scale: { domain: [lo, hi] } puts lo at the centre and hi on the outer ring (a dB floor)." },
+    "angles": { "enum": ["radians", "degrees"], "description": "The units of theta and phi (default radians)." },
     "equal": { "type": "boolean", "description": "The same units on x, y and z, so shapes keep their proportions (a sphere stays round). Default: on for curves, parametric surfaces and vector fields." },
     "frame": { "description": "true: grid walls and tick labels (default); false: none - a shape on its own; \"origin\": axes through zero with arrowheads, as on a blackboard.", "oneOf": [{ "type": "boolean" }, { "const": "origin" }] },
     "contours": {

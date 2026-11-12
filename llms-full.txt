@@ -1020,11 +1020,16 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
   finite value everywhere (clamp where it blows up) - an error names the point it didn't. Surfaces are
   shaded by normals worked out from fn, so they look smooth between samples (a sphere's poles too).
 - **Curved coordinates** - `coords: 'polar' | 'cylindrical' | 'spherical'` (default `'cartesian'`): fn gives a
-  radius (or a height) over angles, and the chart makes the points. Angles are radians; theta turns from +x
-  towards -z (anticlockwise seen from above) and defaults to all the way round, `[0, 2 * Math.PI]`; phi runs
-  down from +y (0) to -y (π) and defaults to `[0, Math.PI]` (the maths names - physics swaps theta and phi).
-  Equal units, and `frame: 'origin'` with faint rings round the origin like polar graph paper, unless
-  `frame` says otherwise (`true`: walls, no rings). A negative radius is drawn through the origin, opposite.
+  radius (or a height) over angles - or rows of data give them, measured by angle - and the chart makes the
+  points. theta turns from +x towards +z (away from the front, as a chart's z runs: anticlockwise seen
+  from above) and defaults to all the way round; phi runs down from +y (0) to -y and defaults to top to
+  bottom - the maths names (physics swaps theta and phi). Angles are radians, or degrees with
+  `angles: 'degrees'` - ranges, what fn is handed, and the rows, all in degrees then. Equal units, and
+  `frame: 'origin'` with faint rings round the origin like polar graph paper, unless `frame` says
+  otherwise (`true`: walls, no rings). A negative radius is drawn through the origin, opposite.
+  On a polar plot - and any plot of data - the rings are labelled with their values and the angles marked
+  round the outermost every 30°, in place of the x and z axes (x and y for a polar curve; all three for
+  data on a sphere). Give a channel - `x: { axis: { title } }` - to have its axis back.
 
   ```js
   // spherical: r = fn(theta, phi) - a sphere's bumps, spherical harmonics; coloured by r
@@ -1043,6 +1048,26 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
   Rows: spherical `{ theta, phi, r, x, y, z }`, cylindrical `{ theta, y, r, x, z }`, polar surfaces
   `{ r, theta, y, x, z }`, polar curves `{ theta, r, x, y, z }`. `params`, `time`, `samples` and tweening
   work as above; a range for x, y or z pins that axis, as for parametric shapes.
+- **Data by angle** - with `data`, theta, phi and r (and y, for a cylinder's height or a polar surface's)
+  name fields of the rows instead of ranges: patterns measured round an antenna, a microphone, a lamp.
+  `r: { field, scale: { domain: [lo, hi] } }` puts lo at the centre and hi on the outer ring - a dB floor -
+  with what's beyond clamped there; the rings are labelled in r's own units. A surface's rows are a full
+  grid of its two directions (an error names the first pair missing); angles a step short of all the
+  way round (0-355°) are closed. A polar curve's rows are one path per series - `detail`, or a colour
+  field of names - each in order of theta and closed if it goes round. Rows keep their own fields and
+  gain x, y and z (a row's own x, y or z is refused - rename it); the tooltip shows the fields named.
+
+  ```js
+  // a 3D pattern: one row per direction - { azimuth, polar, gain } every 5°, gain in dBi
+  chart({ mark: 'surface', coords: 'spherical', angles: 'degrees', data: rows, theta: 'azimuth', phi: 'polar',
+    r: { field: 'gain', scale: { domain: [-20, 15] } }, color: { field: 'gain', scale: { scheme: 'heat' } } })
+  // datasheet cuts: { pattern, angle, level } - one curve per pattern, on rings from -30 to 0 dB
+  chart({ mark: 'curve', coords: 'polar', angles: 'degrees', data: rows, theta: 'angle',
+    r: { field: 'level', scale: { domain: [-30, 0] } }, color: 'pattern' })
+  ```
+
+  Elevation (up from the horizon) is phi = 90 - elevation; an azimuth measured clockwise is theta = -azimuth.
+  `update({ data })` with a grid of the same shape tweens.
 - **Networks** - nodes as spheres and links as lines, laid out, labelled and interactive:
 
   ```js

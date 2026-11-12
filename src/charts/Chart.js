@@ -217,7 +217,7 @@ export class Chart extends Group {
     const frameOf = o.frame === 'origin' ? originFrame : chartFrame
     this.#frame = o.frame === false || (spec.mark === 'network' && o.layout !== 'given') ? null : this.add(frameOf({ box, theme, overlap, axes: axesFor(spec, this.scales) }))
     // curved coordinates on axes through the origin: rings around it, as polar graph paper
-    const guides = this.#frame && o.frame === 'origin' && spec.coords ? curvedGuides({ coords: spec.coords, upright: spec.mark === 'curve', rows: spec.rows, scales: this.scales, theme }) : null
+    const guides = this.#frame && o.frame === 'origin' && spec.coords ? curvedGuides({ coords: spec.coords, upright: spec.mark === 'curve', rows: spec.rows, scales: this.scales, theme, overlap, rings: spec.rings }) : null
     if (guides) this.#frame?.add(guides)
     if (this.#title) this.remove(this.#title)
     this.#title = o.title ? this.add(new Label({ text: String(o.title), position: [0, box[1] * 1.12, -box[2] / 2], className: `phoria-axis-title phoria-${theme}`, overlap: 'show' })) : null
