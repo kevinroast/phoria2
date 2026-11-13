@@ -81,7 +81,13 @@
     "theta": { "$ref": "#/$defs/channel", "description": "The field of the angle round (azimuth), with coords." },
     "phi": { "$ref": "#/$defs/channel", "description": "The field of the angle down from the top (polar angle), with coords: 'spherical'." },
     "r": { "$ref": "#/$defs/channel", "description": "The field of the radius, with coords - scale: { domain: [lo, hi] } puts lo at the centre and hi on the outer ring (a dB floor)." },
-    "angles": { "enum": ["radians", "degrees"], "description": "The units of theta and phi (default radians)." },
+    "angles": {
+      "description": "The units of theta and phi (default radians) - or { units, zero, clockwise }: also where theta 0 points (right, the default; top, left or bottom) and whether theta turns clockwise, as a datasheet draws it.",
+      "oneOf": [
+        { "enum": ["radians", "degrees"] },
+        { "type": "object", "additionalProperties": false, "properties": { "units": { "enum": ["radians", "degrees"] }, "zero": { "enum": ["right", "top", "left", "bottom"] }, "clockwise": { "type": "boolean" } } }
+      ]
+    },
     "equal": { "type": "boolean", "description": "The same units on x, y and z, so shapes keep their proportions (a sphere stays round). Default: on for curves, parametric surfaces and vector fields." },
     "frame": { "description": "true: grid walls and tick labels (default); false: none - a shape on its own; \"origin\": axes through zero with arrowheads, as on a blackboard.", "oneOf": [{ "type": "boolean" }, { "const": "origin" }] },
     "contours": {

@@ -207,7 +207,8 @@ export function originFrame({ box, axes, theme, overlap }) {
  * top; a sphere's lie round its equator, with two upright circles through its poles at the outermost.
  * The rings are at round radii out to how far the shape reaches. Labelled - a polar plot, or data -
  * each ring says its radius, from the value at the centre (a dB floor, say), and the angles are
- * marked round the outermost every 30°, with spokes out to them.
+ * marked round the outermost every 30°, with spokes out to them - from where theta 0 points, turning
+ * the way theta does (angles: { zero, clockwise }).
  * @param {{ coords: string, upright: boolean, rows: any[], scales: { x?: Scale, y?: Scale, z?: Scale },
  *   theme: 'dark' | 'light', overlap?: 'dim' | 'hide' | 'show', rings?: import('./functions.js').Rings | null }} options
  * @returns {Group | null}
@@ -238,6 +239,9 @@ export function curvedGuides({ coords, upright, rows, scales, theme, overlap = '
   const radii = ticks.map((t) => t - offset)
   const outer = /** @type {number} */ (radii.at(-1) ?? reach)
   const labelled = !!rings?.labelled
+  // where theta 0 points, and which way theta turns - where each angle's label goes
+  const zeroAt = rings?.zero ?? 0, sign = rings?.sign ?? 1
+  const angleAt = (/** @type {number} */ a) => zeroAt + sign * a
   const positions = /** @type {number[]} */ ([])
   const put = (/** @type {number[]} */ p) => positions.push(x(p[0]), y(p[1]), z(p[2]))
   const SIDES = 96
@@ -277,11 +281,11 @@ export function curvedGuides({ coords, upright, rows, scales, theme, overlap = '
   const cls = (/** @type {string} */ kind) => `phoria-axis-${kind} phoria-${theme}`
   // each ring's value, between the spokes at 0° and 30° - clear of both
   ticks.forEach((t, i) => {
-    group.add(new Label({ text: values.format(t), position: world(base(radii[i])(Math.PI / 12)), className: cls('tick'), priority: 1, overlap }))
+    group.add(new Label({ text: values.format(t), position: world(base(radii[i])(angleAt(Math.PI / 12))), className: cls('tick'), priority: 1, overlap }))
   })
   // the angles round the outside
   for (let i = 0; i < 12; i++) {
-    group.add(new Label({ text: `${i * 30}°`, position: world(base(outer * 1.12)(i * Math.PI / 6)), className: cls('tick'), priority: 1, overlap }))
+    group.add(new Label({ text: `${i * 30}°`, position: world(base(outer * 1.12)(angleAt(i * Math.PI / 6))), className: cls('tick'), priority: 1, overlap }))
   }
   return group
 }

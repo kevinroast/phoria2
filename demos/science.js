@@ -29,7 +29,7 @@ const CARDS = [
   },
   {
     name: 'microphones', title: 'Microphone patterns',
-    note: 'The datasheet picture: how a microphone hears from each direction, in dB, one curve per pattern - polar data, read off its labelled rings. 0° is straight ahead.',
+    note: 'The datasheet picture: how a microphone hears from each direction, in dB, one curve per pattern - polar data, read off its labelled rings, with 0° - straight ahead - at the top and the angles turning clockwise, as angles: { zero, clockwise } sets them.',
   },
   {
     name: 'antenna', title: 'An antenna pattern',
@@ -167,7 +167,8 @@ function microphones({ canvas }) {
     return { pattern, angle, level: +(20 * Math.log10(Math.max(heard, 1e-3))).toFixed(1) }
   }))
   view.scene.add(chart({
-    mark: 'curve', coords: 'polar', angles: 'degrees', data: rows, theta: 'angle',
+    // as a datasheet draws it: 0° - straight ahead - at the top, the angles going round clockwise
+    mark: 'curve', coords: 'polar', angles: { units: 'degrees', zero: 'top', clockwise: true }, data: rows, theta: 'angle',
     r: { field: 'level', scale: { domain: [-30, 0] } }, color: 'pattern', size: 3,
     legend: { position: 'bottom-right' },
   }))

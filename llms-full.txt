@@ -1034,7 +1034,12 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
   points. theta turns from +x towards +z (away from the front, as a chart's z runs: anticlockwise seen
   from above) and defaults to all the way round; phi runs down from +y (0) to -y and defaults to top to
   bottom - the maths names (physics swaps theta and phi). Angles are radians, or degrees with
-  `angles: 'degrees'` - ranges, what fn is handed, and the rows, all in degrees then. Equal units, and
+  `angles: 'degrees'` - ranges, what fn is handed, and the rows, all in degrees then. The long form,
+  `angles: { units, zero, clockwise }`, also says where theta 0 points - `zero: 'right'` (the default),
+  `'top'`, `'left'` or `'bottom'`; up the page for a polar curve, away from the front on the floor, as
+  north on a map - and `clockwise: true` turns theta the other way: `{ units: 'degrees', zero: 'top',
+  clockwise: true }` draws a microphone or antenna datasheet, or a compass bearing. The rings' angle
+  labels follow. Equal units, and
   `frame: 'origin'` with faint rings round the origin like polar graph paper, unless `frame` says
   otherwise (`true`: walls, no rings). A negative radius is drawn through the origin, opposite.
   On a polar plot - and any plot of data - the rings are labelled with their values and the angles marked
@@ -1076,7 +1081,8 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
     r: { field: 'level', scale: { domain: [-30, 0] } }, color: 'pattern' })
   ```
 
-  Elevation (up from the horizon) is phi = 90 - elevation; an azimuth measured clockwise is theta = -azimuth.
+  Elevation (up from the horizon) is phi = 90 - elevation; an azimuth measured clockwise from north is
+  `angles: { units: 'degrees', zero: 'top', clockwise: true }`.
   `update({ data })` with a grid of the same shape tweens.
 - **Networks** - nodes as spheres and links as lines, laid out, labelled and interactive:
 

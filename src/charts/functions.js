@@ -83,6 +83,13 @@ const MAX_SAMPLES = 250_000
  * @property {boolean} labelled
  * @property {number} offset
  * @property {number | null} reach
+ * @property {number} zero where theta 0 points, in radians from +x
+ * @property {number} sign 1 for angles turning anticlockwise, -1 clockwise
+ */
+
+/**
+ * How angles are given: in degrees or radians, where theta 0 points, and which way theta turns.
+ * @typedef {{ deg: boolean, zero: number, sign: number }} Angles
  */
 
 /**
@@ -111,7 +118,7 @@ export function sampleFunction(input) {
   }
   const curved = coords !== undefined && coords !== 'cartesian' ? coords : null
   const angles = { theta, phi, r }
-  const deg = degrees(units)
+  const turns = anglesOf(units)
   if (!curved) {
     for (const [name, value] of Object.entries({ ...angles, angles: units })) {
       if (value !== undefined) fail('chart()', `'${name}' is for curved coordinates - add coords: 'polar', 'cylindrical' or 'spherical'`)
@@ -123,14 +130,14 @@ export function sampleFunction(input) {
     if (mark === 'curve') {
       if (curved !== 'polar') fail('chart()', `a curve takes coords: 'polar' - r = fn(theta) - not '${curved}'; for a path in space, fn: (t) => [x, y, z]`)
       if (phi !== undefined || r !== undefined) fail('chart()', `a polar curve is sampled over theta - leave out ${phi !== undefined ? 'phi' : 'r'}`)
-      return polarCurve(rest, call1, samples, theta, deg)
+      return polarCurve(rest, call1, samples, theta, turns)
     }
     if (mark !== 'surface') fail('chart()', `'coords' is for a surface or a curve, not mark: ${describe(mark)}`)
     const c = CURVED[curved]
     for (const [name, value] of Object.entries(angles)) {
       if (value !== undefined && name !== c.along && name !== c.across) fail('chart()', `coords: '${curved}' is sampled over ${c.along} and ${c.across} - leave out ${name}`)
     }
-    return curvedSurface(rest, call2, samples, curved, angles, deg)
+    return curvedSurface(rest, call2, samples, curved, angles, turns)
   }
   if (mark === 'surface') {
     if (u !== undefined || v !== undefined) return parametric(rest, call2, samples, u, v)
@@ -279,23 +286,23 @@ function riemann(spec, call, samples, rule) {
 }
 
 // r = fn(theta): a curve around the origin, upright in the x-y plane - facing you, as a chart's page does
-/** @param {Record<string, any>} spec @param {(a: number) => any} call @param {any} samples @param {any} theta @param {boolean} deg @returns {Sampled} */
-function polarCurve(spec, call, samples, theta, deg) {
-  const tr = theta === undefined ? /** @type {[number, number]} */ ([0, turn(deg)]) : pair('theta', theta)
-  const k = deg ? Math.PI / 180 : 1
+/** @param {Record<string, any>} spec @param {(a: number) => any} call @param {any} samples @param {any} theta @param {Angles} turns @returns {Sampled} */
+function polarCurve(spec, call, samples, theta, turns) {
+  const tr = theta === undefined ? /** @type {[number, number]} */ ([0, turn(turns.deg)]) : pair('theta', theta)
   noAxisRanges(spec, 'a polar curve')
   const [n] = counts(samples, 1, DEFAULT_SAMPLES.curve)
   const rows = []
   for (let i = 0; i < n; i++) {
     const th = along(tr, i, n), r = call(th)
     if (typeof r !== 'number' || !Number.isFinite(r)) fail('chart()', `fn gave ${describe(r)} at theta ${round(th)} - a polar curve's fn returns its radius, a finite number (a negative one is drawn through the origin, opposite)`)
-    rows.push({ theta: th, r, x: r * Math.cos(th * k), y: r * Math.sin(th * k), z: 0 })
+    const a = radians('theta', th, turns)
+    rows.push({ theta: th, r, x: r * Math.cos(a), y: r * Math.sin(a), z: 0 })
   }
   // flat, and read off its labelled rings: no axes unless asked for
   const channels = hideAxes(pointChannels(spec), spec, ['x', 'y', 'z'])
   return {
     input: { ...spec, data: rows, ...channels, tooltip: spec.tooltip ?? ['theta', 'r'] }, grid: null, normals: null, coords: 'polar',
-    rings: { labelled: true, offset: 0, reach: null }, about: `r = fn(theta), a polar curve, ${n} samples`, equal: true,
+    rings: { labelled: true, offset: 0, reach: null, zero: turns.zero, sign: turns.sign }, about: `r = fn(theta), a polar curve, ${n} samples`, equal: true,
   }
 }
 
@@ -303,21 +310,20 @@ function polarCurve(spec, call, samples, theta, deg) {
 /**
  * @param {Record<string, any>} spec @param {(a: number, b: number) => any} call @param {any} samples
  * @param {string} coords @param {Record<string, any>} given the ranges given, of theta, phi and r
- * @param {boolean} deg angles in degrees
+ * @param {Angles} turns how the angles are given
  * @returns {Sampled}
  */
-function curvedSurface(spec, call, samples, coords, given, deg) {
+function curvedSurface(spec, call, samples, coords, given, turns) {
   const c = CURVED[coords]
-  // fn is handed angles in the units given; the points are made in radians
-  const ka = angular(c.along, deg), kb = angular(c.across, deg)
-  const place = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ v) => c.point(a * ka, b * kb, v)
+  // fn is handed angles as they're given; the points are made in radians, from +x anticlockwise
+  const place = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ v) => c.point(radians(c.along, a, turns), radians(c.across, b, turns), v)
   // angles go all the way round (and phi top to bottom) unless told otherwise; r and y need a range
   const range = (/** @type {string} */ name) => {
     if (name === 'y') return /** @type {[number, number]} */ (axisRange(spec, 'y', true))
     const r = given[name]
     if (r !== undefined) return pair(name, r)
-    if (name === 'theta') return /** @type {[number, number]} */ ([0, turn(deg)])
-    if (name === 'phi') return /** @type {[number, number]} */ ([0, turn(deg) / 2])
+    if (name === 'theta') return /** @type {[number, number]} */ ([0, turn(turns.deg)])
+    if (name === 'phi') return /** @type {[number, number]} */ ([0, turn(turns.deg) / 2])
     return fail('chart()', `coords: '${coords}' needs the range of ${name} to sample - e.g. ${name}: [0, 3]`)
   }
   const ar = range(c.along), br = range(c.across)
@@ -367,7 +373,7 @@ function curvedSurface(spec, call, samples, coords, given, deg) {
       ...spec, data: rows, ...channels, ...(c.value === 'r' && spec.color === undefined ? { color: 'r' } : {}),
       tooltip: spec.tooltip ?? [c.along, c.across, c.value],
     },
-    grid: { nx: na, nz: nb }, normals, coords, rings: { labelled: coords === 'polar', offset: 0, reach: null },
+    grid: { nx: na, nz: nb }, normals, coords, rings: { labelled: coords === 'polar', offset: 0, reach: null, zero: turns.zero, sign: turns.sign },
     about: `${c.about}, ${na} × ${nb} samples`, equal: true,
   }
 }
@@ -389,7 +395,7 @@ export function placeData(input) {
   const mark = typeof input.mark === 'object' && input.mark ? input.mark.type : input.mark
   if (!COORDS.includes(coords) || coords === 'cartesian') fail('chart()', `'coords' is 'cartesian' (the default), 'polar', 'cylindrical' or 'spherical', got ${describe(coords)}`)
   if (!Array.isArray(data)) fail('chart()', `in coords: '${coords}' data is an array of rows, one for each direction measured, got ${describe(data)}`)
-  const deg = degrees(units)
+  const turns = anglesOf(units)
   /** @type {Record<string, any>} */
   const given = { theta, phi, r, y: rest.y }
   // the fields this kind of chart reads, in order: along and across a surface's grid, then its value
@@ -415,8 +421,8 @@ export function placeData(input) {
   }
   // the radius drawn: as given, or out from the floor of r's domain, within it
   const radius = (/** @type {number} */ v) => (domain ? Math.min(Math.max(v, domain[0]), domain[1]) - domain[0] : v)
-  const rings = { labelled: true, offset: domain ? domain[0] : 0, reach: domain ? domain[1] - domain[0] : null }
-  const full = turn(deg), k = deg ? Math.PI / 180 : 1
+  const rings = { labelled: true, offset: domain ? domain[0] : 0, reach: domain ? domain[1] - domain[0] : null, zero: turns.zero, sign: turns.sign }
+  const full = turn(turns.deg)
   const tooltip = rest.tooltip ?? names.map((n) => fields[n].field)
 
   if (mark === 'curve') {
@@ -436,8 +442,8 @@ export function placeData(input) {
       path.sort((a, b) => a.th - b.th)
       if (closes(path.map((p) => p.th), full)) path.push(path[0])
       for (const { row, th, rv } of path) {
-        const rr = radius(rv)
-        rows.push({ ...row, x: rr * Math.cos(th * k), y: rr * Math.sin(th * k), z: 0 })
+        const rr = radius(rv), a = radians('theta', th, turns)
+        rows.push({ ...row, x: rr * Math.cos(a), y: rr * Math.sin(a), z: 0 })
       }
     }
     const channels = hideAxes(placedChannels(rest, []), rest, ['x', 'y', 'z'])
@@ -448,7 +454,7 @@ export function placeData(input) {
   }
 
   // a surface: a full grid of its two directions
-  const c = CURVED[coords], ka = angular(c.along, deg), kb = angular(c.across, deg)
+  const c = CURVED[coords]
   const alongs = distinctNumbers(data.map((row, i) => read(row, i, c.along)))
   const acrosses = distinctNumbers(data.map((row, i) => read(row, i, c.across)))
   const grid = new Map(data.map((row) => [`${row[fields[c.along].field]}|${row[fields[c.across].field]}`, row]))
@@ -468,7 +474,7 @@ export function placeData(input) {
       if (typeof v !== 'number' || !Number.isFinite(v)) fail('chart()', `the row at ${fields[c.along].field} ${a}, ${fields[c.across].field} ${b} has ${fields[c.value].field} ${describe(v)} - a number in every row`)
       // a radius out from the floor, or a height as given; the angles turned to radians
       const ra = c.along === 'r' ? radius(a) : a, rv = c.value === 'r' ? radius(v) : v
-      const p = c.point(ra * ka, b * kb, rv)
+      const p = c.point(radians(c.along, ra, turns), radians(c.across, b, turns), rv)
       placed.set(key, { ...row, x: p[0], y: p[1], z: p[2] })
     }
     return placed.get(key)
@@ -534,14 +540,39 @@ function hideAxes(channels, spec, names) {
   return channels
 }
 
-/** 'radians' (the default) or 'degrees'. @param {any} units @returns {boolean} */
-function degrees(units) {
-  if (units !== undefined && units !== 'radians' && units !== 'degrees') fail('chart()', `'angles' is 'radians' (the default) or 'degrees', got ${describe(units)}`)
-  return units === 'degrees'
+// where theta 0 can point: right (+x, the default), top, left or bottom - up the page for a polar
+// curve, and away from you on the floor, as north on a map seen from above
+const ZEROS = { right: 0, top: Math.PI / 2, left: Math.PI, bottom: -Math.PI / 2 }
+
+/**
+ * How angles are given: 'radians' (the default), 'degrees', or { units, zero, clockwise } - where
+ * theta 0 points and which way theta turns, as an antenna's or a microphone's datasheet draws it.
+ * @param {any} spec @returns {Angles}
+ */
+function anglesOf(spec) {
+  const what = "'angles' is 'radians' (the default) or 'degrees', or { units, zero, clockwise }"
+  if (spec === undefined || spec === 'radians' || spec === 'degrees') return { deg: spec === 'degrees', zero: 0, sign: 1 }
+  if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return fail('chart()', `${what}, got ${describe(spec)}`)
+  for (const key of Object.keys(spec)) {
+    if (!['units', 'zero', 'clockwise'].includes(key)) fail('chart()', `angles has no '${key}' - ${what}`)
+  }
+  const { units = 'radians', zero = 'right', clockwise = false } = spec
+  if (units !== 'radians' && units !== 'degrees') fail('chart()', `angles' units are 'radians' (the default) or 'degrees', got ${describe(units)}`)
+  if (!(zero in ZEROS)) fail('chart()', `angles' zero is where theta 0 points: 'right' (the default), 'top', 'left' or 'bottom', got ${describe(zero)}`)
+  if (typeof clockwise !== 'boolean') fail('chart()', `angles' clockwise is true or false, got ${describe(clockwise)}`)
+  return { deg: units === 'degrees', zero: ZEROS[/** @type {keyof typeof ZEROS} */ (zero)], sign: clockwise ? -1 : 1 }
 }
 
-/** What turns one of the grid's values into radians: theta and phi are angles, r and y aren't. @param {string} name @param {boolean} deg */
-const angular = (name, deg) => (deg && (name === 'theta' || name === 'phi') ? Math.PI / 180 : 1)
+/**
+ * One of the grid's values in radians, as the points are made: theta from where its zero points,
+ * turning the way given; phi in radians; r and y as they are.
+ * @param {string} name @param {number} v @param {Angles} turns
+ */
+function radians(name, v, turns) {
+  const k = turns.deg ? Math.PI / 180 : 1
+  if (name === 'theta') return turns.zero + turns.sign * v * k
+  return name === 'phi' ? v * k : v
+}
 
 /**
  * A surface's normal at grid point (a, b), into normals at k: across its tangents across and along

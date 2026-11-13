@@ -550,3 +550,47 @@ describe('graphs, bands and Riemann sums', () => {
     expect(() => normalise({ mark: 'area', fn: (x) => x, x: [0, 1], t: [0, 1] })).toThrow("a 'area' from fn is over x")
   })
 })
+
+describe('angles: where zero points, and which way they turn', () => {
+  const guides = (c) => c.children.find((n) => n.name === 'axes')?.children.find((n) => n.name === 'guides')
+  const labelAt = (c, text) => guides(c).children.find((n) => n.text === text).position
+
+  it('puts 0° at the top, turning clockwise, as a datasheet draws it - the angle labels with it', () => {
+    const rows = [0, 90, 180, 270].map((angle) => ({ angle, level: 1 }))
+    const spec = { mark: 'curve', coords: 'polar', data: rows, theta: 'angle', r: 'level', angles: { units: 'degrees', zero: 'top', clockwise: true } }
+    const drawn = normalise(spec).rows
+    // 0° up, 90° to the right
+    expect(drawn[0].x).toBeCloseTo(0, 9)
+    expect(drawn[0].y).toBeCloseTo(1, 9)
+    expect(drawn[1].x).toBeCloseTo(1, 9)
+    expect(drawn[1].y).toBeCloseTo(0, 9)
+    const c = chart(spec)
+    const x = /** @type {any} */ (c.scales.x), y = /** @type {any} */ (c.scales.y)
+    const top = labelAt(c, '0°'), right = labelAt(c, '90°')
+    expect(top[0]).toBeCloseTo(x(0), 5)
+    expect(top[1]).toBeGreaterThan(y(0))
+    expect(right[0]).toBeGreaterThan(x(0))
+    expect(right[1]).toBeCloseTo(y(0), 5)
+  })
+
+  it('turns surfaces and functions too - on the floor, top is away from the front', () => {
+    const quarter = normalise({ mark: 'surface', coords: 'spherical', fn: () => 1, samples: 5, angles: { zero: 'top', clockwise: true } })
+      .rows.find((r) => Math.abs(r.theta - Math.PI / 2) < 1e-9 && Math.abs(r.phi - Math.PI / 2) < 1e-9)
+    // a quarter turn clockwise from +z (away) is +x
+    expect(quarter.x).toBeCloseTo(1, 9)
+    expect(quarter.z).toBeCloseTo(0, 9)
+    const left = normalise({ mark: 'curve', coords: 'polar', fn: () => 2, samples: 3, angles: { zero: 'left' } }).rows[0]
+    expect([left.x, left.y]).toEqual([-2, expect.closeTo(0, 9)])
+    // the shorthand still works, and the defaults are as before
+    expect(normalise({ mark: 'curve', coords: 'polar', fn: () => 1, samples: 3, angles: { units: 'degrees' } }).rows.at(-1).theta).toBe(360)
+  })
+
+  it('says what is wrong with angles', () => {
+    const base = { mark: 'curve', coords: 'polar', fn: () => 1 }
+    expect(() => normalise({ ...base, angles: { zero: 'north' } })).toThrow("angles' zero is where theta 0 points: 'right' (the default), 'top', 'left' or 'bottom'")
+    expect(() => normalise({ ...base, angles: { clockwise: 'yes' } })).toThrow("angles' clockwise is true or false")
+    expect(() => normalise({ ...base, angles: { units: 'turns' } })).toThrow("angles' units are 'radians' (the default) or 'degrees'")
+    expect(() => normalise({ ...base, angles: { direction: 'cw' } })).toThrow("angles has no 'direction'")
+    expect(() => normalise({ ...base, angles: 3 })).toThrow("'angles' is 'radians' (the default) or 'degrees', or { units, zero, clockwise }")
+  })
+})
