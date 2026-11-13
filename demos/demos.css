@@ -2842,6 +2842,49 @@ button.demo-legend-item {
   color: var(--text-dim);
 }
 
+/* a maths or science card's code: its first lines, fading out, until shown in full */
+.demo-code {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.demo-code-folded:not(.demo-code-open) pre {
+  /* five lines of 12px / 1.5, and the padding */
+  max-height: calc(5 * 18px + 20px);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent);
+  mask-image: linear-gradient(to bottom, #000 45%, transparent);
+}
+
+.demo-code-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.demo-code-bar button {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.demo-code-bar button:hover {
+  color: var(--text);
+  border-color: var(--accent-dim);
+}
+
+/* with nothing to show or hide, the copy button sits on the right */
+.demo-code-bar button:only-child {
+  margin-left: auto;
+}
+
 .demo-cards-row button {
   font: inherit;
   color: var(--text);

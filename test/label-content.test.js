@@ -19,6 +19,42 @@ afterAll(async () => {
 
 const viewOf = () => new View({ canvas: page.canvas(), camera: { position: [0, 0, 10], target: [0, 0, 0] } })
 
+describe('labels over a canvas the page moves', () => {
+  it('follow it while the view is idle - after a change elsewhere on the page, not their own', () => {
+    /** @type {(records: any[]) => void} */
+    let changed = () => {}
+    const saved = { MutationObserver: globalThis.MutationObserver, documentElement: document.documentElement }
+    globalThis.MutationObserver = /** @type {any} */ (class {
+      constructor(fn) { changed = fn }
+      observe() {}
+      disconnect() {}
+    })
+    Object.assign(document, { documentElement: fakeElement('html') })
+    try {
+      const view = viewOf()
+      Object.assign(view.canvas, { offsetLeft: 10, offsetTop: 20, clientLeft: 0, clientTop: 0 })
+      view.scene.add(new Label({ text: 'a label' }))
+      view.render()
+      const root = /** @type {any} */ (view.canvas).siblings.find((el) => el.className === 'phoria-labels')
+      expect(root.style.top).toBe('20px')
+      // a card above it opens: the canvas moves down the page, and its view doesn't draw
+      Object.assign(view.canvas, { offsetTop: 260 })
+      const at = (closest) => ({ target: Object.assign(Object.create(globalThis.Element.prototype), { closest: () => closest }) })
+      // a label of its own moving is no reason to look
+      const asked = page.pending
+      changed([at(root)])
+      expect(page.pending).toBe(asked)
+      changed([at(null)])
+      page.frame(0)
+      expect([root.style.left, root.style.top]).toEqual(['10px', '260px'])
+      view.dispose()
+    } finally {
+      globalThis.MutationObserver = saved.MutationObserver
+      Object.assign(document, { documentElement: saved.documentElement })
+    }
+  })
+})
+
 describe('Label content', () => {
   it('takes an element in place of text, or as well as it', () => {
     const formula = element()

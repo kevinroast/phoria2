@@ -26,9 +26,7 @@ export async function cardPage({ canvas, cards, examples, source }) {
     live.className = 'demo-maths-canvas'
     const row = document.createElement('div')
     row.className = 'demo-cards-row'
-    const pre = document.createElement('pre')
-    pre.textContent = sourceOf(source, card.name)
-    section.append(h, p, live, row, pre)
+    section.append(h, p, live, row, codeBlock(sourceOf(source, card.name)))
     page.append(section)
     return { card, canvas: live, row }
   })
@@ -69,6 +67,48 @@ export function tex(source, into = document.createElement('span')) {
   if (!katex) return null
   katex.render(source, into, { throwOnError: false })
   return into
+}
+
+// longer than this, a card's code shows its first lines, fading, until opened
+const PREVIEW_LINES = 5
+
+/**
+ * A card's code: a few lines fading out, with a button to show it all (and hide it again) and one to
+ * copy it - the code is always there to read, without every card being as long as its example.
+ * @param {string} code
+ */
+function codeBlock(code) {
+  const block = document.createElement('div')
+  block.className = 'demo-code'
+  const pre = document.createElement('pre')
+  pre.textContent = code
+  const bar = document.createElement('div')
+  bar.className = 'demo-code-bar'
+  const lines = code.split('\n').length
+  const copy = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Copy' })
+  copy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(code)
+      copy.textContent = 'Copied'
+    } catch {
+      copy.textContent = 'Copy failed'
+    }
+    setTimeout(() => { copy.textContent = 'Copy' }, 1500)
+  })
+  if (lines > PREVIEW_LINES + 1) {
+    block.classList.add('demo-code-folded')
+    const toggle = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Show code' })
+    toggle.setAttribute('aria-expanded', 'false')
+    toggle.addEventListener('click', () => {
+      const open = block.classList.toggle('demo-code-open')
+      toggle.textContent = open ? 'Hide code' : 'Show code'
+      toggle.setAttribute('aria-expanded', String(open))
+    })
+    bar.append(toggle)
+  }
+  bar.append(copy)
+  block.append(pre, bar)
+  return block
 }
 
 /** An example's code as it reads, between its markers in its page's source. @param {string} source @param {string} name */

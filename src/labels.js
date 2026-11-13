@@ -37,6 +37,60 @@ const SVG = 'http://www.w3.org/2000/svg'
 // how faint a covered label is drawn, with overlap: 'dim'
 const DIM_OPACITY = '0.4'
 
+// ---- keeping layers over their canvases as the page moves round them ---------------------------
+// A layer is placed at its canvas's offsets each frame its view draws. A view that's idle doesn't
+// draw, so when the page moves its canvas - a card above it opening, an image loading - the labels
+// would stay behind. One watcher for every layer: after a change to the page that can move things,
+// each layer checks where its canvas is, once, the next frame, and follows it - without its view
+// drawing again.
+/** @type {Set<LabelLayer>} */
+const LAYERS = new Set()
+/** @type {MutationObserver | null} */
+let watcher = null
+let pending = 0
+
+function followAll() {
+  pending = 0
+  for (const layer of LAYERS) layer.follow()
+}
+
+function soon() {
+  if (!pending) pending = requestAnimationFrame(followAll)
+}
+
+/** Did a change happen outside the label layers? Theirs - labels moving each frame - move nothing else. @param {MutationRecord[]} records */
+const outsideLayers = (records) => records.some((r) => {
+  const el = r.target instanceof Element ? r.target : r.target.parentElement
+  return !el?.closest('.phoria-labels')
+})
+
+/** @param {LabelLayer} layer */
+function watch(layer) {
+  LAYERS.add(layer)
+  if (watcher || typeof MutationObserver === 'undefined' || typeof requestAnimationFrame === 'undefined') return
+  watcher = new MutationObserver((records) => {
+    if (outsideLayers(records)) soon()
+  })
+  watcher.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true })
+  addEventListener('resize', soon)
+  // images and the like loading (their load events don't bubble, so caught on the way down), and fonts
+  document.addEventListener('load', soon, true)
+  document.fonts.addEventListener('loadingdone', soon)
+}
+
+/** @param {LabelLayer} layer */
+function unwatch(layer) {
+  LAYERS.delete(layer)
+  if (LAYERS.size || !watcher) return
+  watcher.disconnect()
+  watcher = null
+  removeEventListener('resize', soon)
+  document.removeEventListener('load', soon, true)
+  document.fonts.removeEventListener('loadingdone', soon)
+  if (pending) cancelAnimationFrame(pending)
+  pending = 0
+}
+
 export class LabelLayer {
   /** @type {HTMLDivElement | null} */ #root = null
   /** @type {Map<any, Entry>} */ #elements = new Map()
@@ -52,6 +106,7 @@ export class LabelLayer {
   // labels showing content of their own: measured again when it changes size - KaTeX's fonts
   // arriving after it was first laid out, say
   /** @type {ResizeObserver | null} */ #resized = null
+  /** Where the layer was last put, to write only when that changes. */ #placed = ''
 
   /** @param {HTMLCanvasElement} canvas @param {LabelPointer} [pointer] */
   constructor(canvas, pointer) {
@@ -72,6 +127,11 @@ export class LabelLayer {
       })
       this.#resized.observe(entry.el)
     } else this.#resized?.unobserve(entry.el)
+  }
+
+  /** @internal Put the layer back over its canvas, after the page has moved round it. */
+  follow() {
+    if (this.#root) this.#place(this.#root)
   }
 
   /** The layer over the canvas: labels, and overlays such as legends. Made on first use. @returns {HTMLDivElement} */
@@ -272,6 +332,7 @@ export class LabelLayer {
   }
 
   dispose() {
+    unwatch(this)
     this.#over = null
     this.#resized?.disconnect()
     this.#resized = null
@@ -279,6 +340,7 @@ export class LabelLayer {
     this.#overlays.clear()
     this.#root?.remove()
     this.#root = null
+    this.#placed = ''
     this.#lines = null
     this.#elements.clear()
     this.shown = []
@@ -335,6 +397,7 @@ export class LabelLayer {
     this.#root = root
     this.#listen(root)
     this.#place(root)
+    watch(this)
     return root
   }
 
@@ -368,10 +431,12 @@ export class LabelLayer {
   /** @param {HTMLDivElement} root */
   #place(root) {
     const c = this.canvas
-    root.style.position = getComputedStyle(c).position === 'fixed' ? 'fixed' : 'absolute'
-    root.style.left = `${c.offsetLeft + c.clientLeft}px`
-    root.style.top = `${c.offsetTop + c.clientTop}px`
-    root.style.width = `${c.clientWidth}px`
-    root.style.height = `${c.clientHeight}px`
+    const position = getComputedStyle(c).position === 'fixed' ? 'fixed' : 'absolute'
+    const left = c.offsetLeft + c.clientLeft, top = c.offsetTop + c.clientTop, width = c.clientWidth, height = c.clientHeight
+    const placed = `${position} ${left} ${top} ${width} ${height}`
+    // written only when it moves: unchanged, it's no change to the page
+    if (placed === this.#placed) return
+    this.#placed = placed
+    Object.assign(root.style, { position, left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` })
   }
 }

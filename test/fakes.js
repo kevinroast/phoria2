@@ -220,7 +220,8 @@ export function fakeElement(tag = 'div') {
  * away again. The canvas keeps its listeners: canvas.dispatch(type, event) calls them.
  */
 export function fakePage() {
-  const saved = ['document', 'HTMLCanvasElement', 'ResizeObserver', 'IntersectionObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle', 'devicePixelRatio']
+  const saved = ['document', 'HTMLCanvasElement', 'ResizeObserver', 'IntersectionObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle', 'devicePixelRatio',
+    'addEventListener', 'removeEventListener']
     .map((k) => [k, Object.getOwnPropertyDescriptor(globalThis, k)])
   class HTMLCanvasElement {
     width = 300
@@ -267,7 +268,12 @@ export function fakePage() {
     document: {
       createElement: (tag) => (tag === 'canvas' ? new HTMLCanvasElement() : fakeElement(tag)), createElementNS: (_ns, tag) => fakeElement(tag),
       body: fakeElement('body'), head: fakeElement('head'), querySelector: () => null, getElementById: () => null,
+      // the page's events, and its fonts' - listened to, never fired here
+      addEventListener() {}, removeEventListener() {},
+      fonts: { addEventListener() {}, removeEventListener() {} },
     },
+    // the window's events, as a browser has them
+    addEventListener() {}, removeEventListener() {},
     ResizeObserver: observer, IntersectionObserver: observer,
     requestAnimationFrame: (fn) => {
       frames.set(nextFrame, fn)
