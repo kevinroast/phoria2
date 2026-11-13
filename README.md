@@ -123,7 +123,8 @@ chair.onDrag = (drag) => drag.point && chair.position.copy(drag.point)
 ```
 
 A hit carries the node, the instance and its row of `data`, so a chart of 10,000 bars is one mesh
-with one handler. Labels are HTML, styled with your CSS.
+with one handler. Labels are HTML, styled with your CSS - text, or an element of your own (KaTeX
+maths, an icon, a badge).
 
 ## Charts
 
@@ -145,13 +146,16 @@ Marks: `bar`, `point`, `line`, `area`, `surface`, `curve`, `vector` and `network
 labels, tooltips and animated updates (`chart.update(newRows)`). A JSON schema for specs ships as
 `phoria2/charts/schema.json`.
 
-Or plot a function - surfaces, parametric shapes, curves and vector fields - with parameters that
-tween as they change:
+Or plot a function - surfaces, parametric shapes, curves, vector fields, areas and Riemann sums, in
+cartesian, polar, cylindrical or spherical coordinates - with parameters that tween as they change:
 
 ```js
 const plot = chart({ mark: 'surface', fn: (x, z, { a }) => Math.sin(a * x) * Math.cos(z), x: [-3, 3], z: [-3, 3], params: { a: 1 } })
 plot.update({ params: { a: 2 } })
 ```
+
+`x2` and `y2` give histograms and bands; data measured by angle draws antenna and microphone
+patterns; `scheme: 'hue'` colours a phase round the colour wheel.
 
 ## Models
 
@@ -162,6 +166,7 @@ const model = await loadGLTF('models/chair.glb')   // .glb or .gltf
 view.scene.add(model)
 view.frame(model)
 model.play()                                        // its first animation
+model.variant = 'Peacock Velvet'                    // one of model.variants - its colourways
 ```
 
 ## As an HTML tag
@@ -181,8 +186,8 @@ a scene. Attributes are View options, kebab-cased.
 </phoria-view>
 ```
 
-`el.view` is the View for anything else; `pick`, `hover`, `load` and `error` are events, and
-attributes change it live.
+`autoplay` and `variant` pick a model's animation and colourway. `el.view` is the View for anything
+else; `pick`, `hover`, `load` and `error` are events, and attributes change it live.
 
 ## With other libraries
 
@@ -248,9 +253,9 @@ A full example, with a chart that follows its data, is in
 | Import | |
 |---|---|
 | `phoria2` | the view, scene graph, cameras, lights, materials, geometry, curves, textures, picking, labels, bloom, ambient occlusion, ground shadows, FXAA, render textures, `create()` from JSON |
-| `phoria2/charts` | `chart()` - charts from a spec of mark, data and channels, and the scales they use |
+| `phoria2/charts` | `chart()` - charts from a spec of mark, data and channels, or of a function in cartesian or curved coordinates, and the scales they use |
 | `phoria2/particles` | `Emitter` and `Body` |
-| `phoria2/gltf` | `loadGLTF()` - glTF 2.0 models with their materials and animations |
+| `phoria2/gltf` | `loadGLTF()` - glTF 2.0 models with their materials, material variants and animations |
 | `phoria2/motion` | `Timeline` - named steps played in order, `follow()` along a curve, `reveal()` a path as it's travelled - for explainers and guided tours |
 | `phoria2/edit` | `TransformHandle` - a move and turn handle with grid and angle snapping - and `History` for undo, for planners and layout editors |
 | `phoria2/element` | `<phoria-view>` - a model, chart or scene as an HTML tag, its attributes View options; importing it defines the tag |
