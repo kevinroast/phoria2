@@ -411,3 +411,63 @@ describe('glass and clearcoat from glTF', () => {
     warn.mockRestore()
   })
 })
+
+describe('material variants (KHR_materials_variants)', () => {
+  /** The sample with two more materials and two variants: the triangle red in one, blue in the other. */
+  const withVariants = () => {
+    const json = sampleGLTF()
+    delete json.materials[0].pbrMetallicRoughness.baseColorTexture
+    json.extensionsUsed = [...json.extensionsUsed, 'KHR_materials_variants']
+    json.extensions = { ...json.extensions, KHR_materials_variants: { variants: [{ name: 'Red' }, { name: 'Blue' }] } }
+    json.materials.push({ name: 'Red paint', pbrMetallicRoughness: { baseColorFactor: [1, 0, 0, 1] } }, { name: 'Blue paint', pbrMetallicRoughness: { baseColorFactor: [0, 0, 1, 1] } })
+    json.meshes[0].primitives[0].extensions = { KHR_materials_variants: { mappings: [{ material: 1, variants: [0] }, { material: 2, variants: [1] }] } }
+    return json
+  }
+
+  it('lists the variants, swaps the parts they name, and goes back to the materials it was made with', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const model = await parseGLTF(withVariants(), { waitForTextures: false })
+    const tri = /** @type {Mesh} */ (model.find('Triangle'))
+    const made = tri.material
+    expect(model.variants).toEqual(['Red', 'Blue'])
+    expect(model.variant).toBeNull()
+    model.variant = 'Blue'
+    expect([model.variant, tri.material.name]).toEqual(['Blue', 'Blue paint'])
+    model.variant = 'Red'
+    expect(tri.material.name).toBe('Red paint')
+    model.variant = null
+    expect(tri.material).toBe(made)
+    // supported, so not warned about
+    expect(warn.mock.calls.some(([m]) => /KHR_materials_variants/.test(String(m)))).toBe(false)
+    // a name it doesn't have: said, and nothing changes
+    model.variant = 'Red'
+    model.variant = 'Green'
+    expect(warn.mock.calls.some(([m]) => String(m).includes("no material variant 'Green' - this model has 'Red', 'Blue'"))).toBe(true)
+    expect([model.variant, tri.material.name]).toEqual(['Red', 'Red paint'])
+    warn.mockRestore()
+  })
+
+  it('keeps a part\'s own material in a variant that doesn\'t name it, and a model without variants has none', async () => {
+    const json = withVariants()
+    json.meshes[0].primitives[0].extensions.KHR_materials_variants.mappings = [{ material: 1, variants: [0] }]
+    const model = await parseGLTF(json, { waitForTextures: false })
+    const tri = /** @type {Mesh} */ (model.find('Triangle'))
+    model.variant = 'Blue'
+    expect(tri.material.name).toBe('Paint')
+    const plain = sampleGLTF()
+    delete plain.materials[0].pbrMetallicRoughness.baseColorTexture
+    expect((await parseGLTF(plain, { waitForTextures: false })).variants).toEqual([])
+  })
+
+  it('reads the Khronos sheen chair\'s two velvets', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const model = await parseGLTF(readFileSync(new URL('../public/models/SheenChair.glb', import.meta.url)), { waitForTextures: false })
+    expect(model.variants).toEqual(['Mango Velvet', 'Peacock Velvet'])
+    const fabric = /** @type {Mesh} */ (model.find('SheenChair_fabric'))
+    model.variant = 'Peacock Velvet'
+    expect(fabric.material.name).toBe('fabric Mystere Peacock Velvet')
+    expect(fabric.material.sheen).toBe(1)
+    await new Promise((r) => setTimeout(r, 10))
+    warn.mockRestore()
+  })
+})

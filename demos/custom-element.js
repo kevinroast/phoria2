@@ -10,8 +10,8 @@ const CDN = '<script type="module" src="https://cdn.jsdelivr.net/npm/phoria2/dis
 const EXAMPLES = [
   {
     title: 'A model',
-    note: 'A glTF file in the studio light, turning slowly, with a soft shadow on the floor. Drag to look round it.',
-    html: `<phoria-view src="models/SheenChair.glb" environment="studio"
+    note: 'A glTF file in the studio light, with a soft shadow - in the second of its two colour variants. Drag to look round it.',
+    html: `<phoria-view src="models/SheenChair.glb" variant="Peacock Velvet" environment="studio"
   orbit='{ "pan": false }' auto-rotate ground-shadow ambient-occlusion></phoria-view>`,
   },
   {

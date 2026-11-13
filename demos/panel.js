@@ -98,20 +98,24 @@ class NumberController extends Controller {
 class SelectController extends Controller {
   constructor(object, property, options) {
     super(object, property)
-    const entries = Array.isArray(options) ? options.map((o) => [String(o), o]) : Object.entries(options)
-    const select = el('select')
-    for (const [label, value] of entries) {
-      const option = el('option', '', label)
-      option.value = label
-      option.selected = value === object[property]
-      select.append(option)
-    }
+    const select = this.select = el('select')
     select.addEventListener('change', () => {
-      this.setValue(entries.find(([label]) => label === select.value)[1])
+      this.setValue(this.entries.find(([label]) => label === select.value)[1])
     })
     this.root.append(this.label, select)
-    this.select = select
-    this.entries = entries
+    this.options(options)
+  }
+
+  // the choices, given anew - as lil-gui's options(), though this keeps the same controller
+  options(options) {
+    this.entries = Array.isArray(options) ? options.map((o) => [String(o), o]) : Object.entries(options)
+    this.select.replaceChildren(...this.entries.map(([label, value]) => {
+      const option = el('option', '', label)
+      option.value = label
+      option.selected = value === this.object[this.property]
+      return option
+    }))
+    return this
   }
 
   updateDisplay() {

@@ -62,7 +62,7 @@ const text = (/** @type {string} */ _name, /** @type {string} */ v) => v
  * How each attribute reaches the view. `option`: the View option it sets when the view is made.
  * `live`: how a change reaches the view already made - without one, a change remakes the view.
  * `scene`: set on the scene (each one the tag loads, too). Content attributes - src, scene,
- * autoplay - are handled by the element.
+ * autoplay, variant - are handled by the element.
  * @type {Record<string, { parse: (name: string, v: string) => any, option?: string, live?: (view: View, v: any) => void, scene?: (scene: Scene, v: any) => void }>}
  */
 const ATTRIBUTES = {
@@ -92,8 +92,8 @@ const ATTRIBUTES = {
   'auto-light': { parse: flag, option: 'autoLight' },
   'reduced-motion': { parse: (name, v) => (v.trim() === 'auto' ? 'auto' : flag(name, v)), option: 'reducedMotion' },
 }
-// what the tag loads
-const CONTENT = ['src', 'scene', 'autoplay']
+// what the tag loads, and what it does with the model: the animation it plays, the material variant it shows
+const CONTENT = ['src', 'scene', 'autoplay', 'variant']
 
 /**
  * The View options a tag's attributes ask for - every value checked on the way, so a mistake names
@@ -220,6 +220,7 @@ export class PhoriaView extends Base {
     try {
       if (CONTENT.includes(name)) {
         if (name === 'autoplay') this.#autoplay()
+        else if (name === 'variant') this.#variant()
         else this.#load()
         return
       }
@@ -320,6 +321,7 @@ export class PhoriaView extends Base {
         if (!current()) return
         this.#model = view.scene.add(model)
         this.#added.push(model)
+        this.#variant()
         this.#autoplay()
       }
       await view.ready
@@ -348,6 +350,14 @@ export class PhoriaView extends Base {
     const which = this.getAttribute('autoplay')
     if (which === null) for (const a of model.animations) a.stop()
     else model.play(which.trim() === '' ? 0 : which)
+  }
+
+  // variant shows one of the model's material variants by name; without it, the materials it was made with
+  #variant() {
+    const model = this.#model
+    if (!model) return
+    const which = this.getAttribute('variant')?.trim()
+    model.variant = which ? which : null
   }
 
   /** @param {string} type @param {Record<string, any>} detail */

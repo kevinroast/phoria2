@@ -1,5 +1,5 @@
 // glTF 2.0 (.gltf and .glb) to phoria2 nodes: meshes, the metallic-roughness material and its maps,
-// textures, the node hierarchy, cameras, KHR_lights_punctual and node animations. glTF's
+// textures, the node hierarchy, cameras, KHR_lights_punctual, material variants and node animations. glTF's
 // conventions are phoria2's (+Y up, metres, counter-clockwise front faces, linear colour), so
 // little needs converting.
 import * as quat from '../math/quat.js'
@@ -10,7 +10,7 @@ import { DirectionalLight, PointLight, SpotLight } from '../scene/lights.js'
 import { Geometry } from '../geometry/Geometry.js'
 import { Material } from '../material/Material.js'
 import { Texture } from '../material/Texture.js'
-import { PhoriaError, warnOnce } from '../validate.js'
+import { PhoriaError, describe, warnOnce } from '../validate.js'
 import { Animation } from './Animation.js'
 
 /** @import { Node } from '../scene/Node.js' */
@@ -26,7 +26,8 @@ import { Animation } from './Animation.js'
 
 const SUPPORTED = new Set(['KHR_materials_emissive_strength', 'KHR_texture_transform', 'KHR_lights_punctual',
   'KHR_materials_unlit', 'KHR_mesh_quantization', 'KHR_materials_transmission', 'KHR_materials_clearcoat', 'KHR_materials_sheen',
-  'KHR_materials_ior', 'KHR_materials_specular', 'KHR_materials_anisotropy', 'KHR_materials_diffuse_transmission'])
+  'KHR_materials_ior', 'KHR_materials_specular', 'KHR_materials_anisotropy', 'KHR_materials_diffuse_transmission',
+  'KHR_materials_variants'])
 const COMPRESSION = new Set(['KHR_draco_mesh_compression', 'EXT_meshopt_compression', 'KHR_texture_basisu'])
 
 const COMPONENTS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT2: 4, MAT3: 9, MAT4: 16 }
@@ -35,11 +36,51 @@ const ARRAYS = { 5120: Int8Array, 5121: Uint8Array, 5122: Int16Array, 5123: Uint
 const NORMALIZE = { 5120: 127, 5121: 255, 5122: 32767, 5123: 65535, 5125: 1 }
 const WRAP = { 33071: 'clamp', 33648: 'mirror', 10497: 'repeat' }
 
-/** A loaded glTF scene: a Group, plus the file's animations and cameras. */
+/**
+ * The parts a model's material variants change: each drawable, the material it was made with, and
+ * its material in each variant that names it (by the variant's index).
+ * @typedef {{ node: Drawable, base: Material, materials: Map<number, Material> }} VariantPart
+ */
+/** @type {WeakMap<Model, VariantPart[]>} */
+const VARIANT_PARTS = new WeakMap()
+
+/** A loaded glTF scene: a Group, plus the file's animations, cameras and material variants. */
 export class Model extends Group {
   static type = 'model'
   /** @type {Animation[]} */ animations = []
   /** @type {Camera[]} */ cameras = []
+  /**
+   * The names of the file's material variants (KHR_materials_variants) - its colourways, a
+   * configurator's choices: ['Red leather', 'Blue suede']. Empty when it has none.
+   * @type {string[]}
+   */
+  variants = []
+  /** @type {string | null} */ #variant = null
+
+  /**
+   * The material variant shown, by name - null (the default) for the materials the model was made
+   * with. Setting it swaps the materials of every part the variant names, at once; their textures
+   * loaded with the model.
+   *
+   *     model.variants          // ['Midnight', 'Beach', 'Street']
+   *     model.variant = 'Beach'
+   *
+   * @returns {string | null}
+   */
+  get variant() {
+    return this.#variant
+  }
+
+  set variant(name) {
+    const index = name === null || name === undefined ? -1 : this.variants.indexOf(name)
+    if (index < 0 && name !== null && name !== undefined) {
+      const names = this.variants.map((v) => `'${v}'`).join(', ')
+      warnOnce(this, `no material variant ${describe(name)} - this model has ${names || 'none'}`)
+      return
+    }
+    for (const part of VARIANT_PARTS.get(this) ?? []) part.node.material = part.materials.get(index) ?? part.base
+    this.#variant = index < 0 ? null : /** @type {string} */ (name)
+  }
 
   /**
    * Every mesh, point set and line set in the model - to change them together:
@@ -152,6 +193,7 @@ class Builder {
   /** @type {Map<string, Geometry>} */ #geometries = new Map()
   /** @type {Node[]} */ #nodes = []
   /** @type {string[]} */ #objectUrls = []
+  /** @type {VariantPart[]} */ #variantParts = []
 
   /** @param {Record<string, any>} json @param {Uint8Array | null} bin @param {string} base @param {Model} model */
   constructor(json, bin, base, model) {
@@ -199,6 +241,10 @@ class Builder {
     const scene = json.scenes?.[json.scene ?? 0]
     const roots = scene ? scene.nodes ?? [] : this.#nodes.map((_, i) => i).filter((i) => !this.#nodes[i].parent)
     for (const i of roots) this.model.add(this.#nodes[i])
+    // material variants: their names, and the parts each one changes
+    const variants = json.extensions?.KHR_materials_variants?.variants ?? []
+    this.model.variants = variants.map((/** @type {any} */ v, /** @type {number} */ i) => String(v?.name ?? `variant ${i}`))
+    VARIANT_PARTS.set(this.model, this.#variantParts)
     this.model.animations = (json.animations ?? []).map((a, i) => this.#animation(a, i))
     if (this.model.animations.length) {
       const model = this.model
@@ -251,6 +297,18 @@ class Builder {
       else if (mode === 1 || mode === 2 || mode === 3) node = new Lines({ geometry: lineList(geometry, mode), material: pointMaterial(material) })
       else node = new Mesh({ geometry: mode === 4 ? geometry : triangleList(geometry, mode), material })
       node.name = m.primitives.length > 1 ? `${m.name ?? `mesh ${index}`} ${i}` : m.name ?? `mesh ${index}`
+      // its material in each variant that changes it - made now, so their textures load with the model
+      const mappings = p.extensions?.KHR_materials_variants?.mappings
+      if (Array.isArray(mappings) && mappings.length) {
+        const drawable = /** @type {Drawable} */ (node)
+        /** @type {Map<number, Material>} */
+        const materials = new Map()
+        for (const mapping of mappings) {
+          const made = this.#material(mapping.material)
+          for (const v of mapping.variants ?? []) materials.set(v, mode <= 3 ? pointMaterial(made) : made)
+        }
+        this.#variantParts.push({ node: drawable, base: /** @type {Material} */ (drawable.material), materials })
+      }
       return node
     })
   }

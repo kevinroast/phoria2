@@ -1,6 +1,7 @@
 // phoria2/element: <phoria-view> on a stand-in page - attributes as View options, the content it
 // loads (inline descriptions, scene URLs, glTF models, charts), changes after it is in the page,
 // and what it says when something is wrong.
+import { Buffer } from 'node:buffer'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { Mesh, Scene } from '../src/index.js'
 import { fakePage } from './fakes.js'
@@ -180,6 +181,31 @@ describe('in the page', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
     expect(el.scene.find('first')).toBeUndefined()
     expect(el.model?.find('second')).toBeTruthy()
+  })
+
+  it('shows the material variant it names, and changes it live', async () => {
+    // a triangle, red in one variant and blue in the other
+    const positions = Buffer.from(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer).toString('base64')
+    const model = {
+      asset: { version: '2.0' }, scenes: [{ nodes: [0] }], scene: 0, nodes: [{ name: 'tri', mesh: 0 }],
+      extensionsUsed: ['KHR_materials_variants'], extensions: { KHR_materials_variants: { variants: [{ name: 'Red' }, { name: 'Blue' }] } },
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 }, material: 0,
+        extensions: { KHR_materials_variants: { mappings: [{ material: 1, variants: [0] }, { material: 2, variants: [1] }] } } }] }],
+      materials: [{ name: 'grey' }, { name: 'red' }, { name: 'blue' }],
+      buffers: [{ byteLength: 36, uri: `data:application/octet-stream;base64,${positions}` }],
+      bufferViews: [{ buffer: 0, byteLength: 36 }],
+      accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3' }],
+    }
+    const real = globalThis.fetch
+    vi.spyOn(globalThis, 'fetch').mockImplementation((url) => (String(url).startsWith('data:') ? real(url) : Promise.resolve(new Response(JSON.stringify(model)))))
+    const el = connect(tag({ src: 'tri.gltf', variant: 'Blue' }))
+    await el.ready
+    const tri = el.model.find('tri')
+    expect([el.model.variant, tri.material.name]).toEqual(['Blue', 'blue'])
+    el.setAttribute('variant', 'Red')
+    expect(tri.material.name).toBe('red')
+    el.removeAttribute('variant')
+    expect([el.model.variant, tri.material.name]).toEqual([null, 'grey'])
   })
 
   it('changes a live setting in place, and remakes the view for one that needs it', async () => {

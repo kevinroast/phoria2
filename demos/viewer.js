@@ -4,7 +4,8 @@ import { loadGLTF } from 'phoria2/gltf'
 // glTF sample models (see public/models/CREDITS.md) and a Poly Haven studio HDR
 const MODELS = {
   'sci-fi helmet': 'models/DamagedHelmet.glb',
-  // velvet with sheen, occlusion baked onto a second UV set, and tiled, turned wood and fabric
+  // velvet with sheen, occlusion baked onto a second UV set, tiled, turned wood and fabric - and two
+  // colourways, as material variants
   'velvet chair': 'models/SheenChair.glb',
   'milk truck (animated)': 'models/CesiumMilkTruck.glb',
 }
@@ -13,6 +14,7 @@ const HDR = 'hdr/studio_small_09_1k.hdr'
 // A product viewer: a glTF model with its full material maps, lit by an HDR studio that also
 // shows as a soft backdrop, standing on a plinth in the sun's shadow. The chair's occlusion is baked
 // onto its own UV set, as Blender and Unreal export it, apart from the tiling of its fabric and wood.
+// A model with material variants - the chair's velvets - gets a choice of them, as a configurator would.
 export default function run({ canvas, gui, info }) {
   const view = new View({ canvas, orbit: { autoRotate: true }, camera: { position: [2.4, 1.6, 3.2], fov: 35 } })
   const scene = view.scene
@@ -27,7 +29,7 @@ export default function run({ canvas, gui, info }) {
     receiveShadow: true,
   }))
 
-  const settings = { model: Object.keys(MODELS)[0], environment: 'studio HDR', backdrop: true, shadows: true, playing: true, occlusion: true }
+  const settings = { model: Object.keys(MODELS)[0], variant: '', environment: 'studio HDR', backdrop: true, shadows: true, playing: true, occlusion: true }
   /** @type {import('phoria2/gltf').Model | null} */
   let model = null
   let loading = 0
@@ -48,6 +50,12 @@ export default function run({ canvas, gui, info }) {
     bake(model)
     scene.add(model)
     if (settings.playing) model.play()
+    // its variants to choose from, if it has any - shown in the first
+    settings.variant = model.variants[0] ?? ''
+    model.variant = model.variants[0] ?? null
+    bake(model)
+    variants.options(model.variants)
+    variants.root.style.display = model.variants.length ? '' : 'none'
     view.frame(model, { padding: 0.5 })
     const maps = new Set()
     for (const m of model.meshes) for (const [slot] of m.material.textures) maps.add(slot)
@@ -57,9 +65,14 @@ export default function run({ canvas, gui, info }) {
   const bake = (m) => {
     for (const { material } of m.meshes) if (material.aoMap) material.aoMapIntensity = settings.occlusion ? 1 : 0
   }
-  show()
-
   gui.add(settings, 'model', Object.keys(MODELS)).onChange(show)
+  // the model's material variants: all its parts in another colourway at once
+  const variants = gui.add(settings, 'variant', []).onChange((v) => {
+    if (!model) return
+    model.variant = v
+    bake(model)
+  })
+  show()
   gui.add(settings, 'occlusion').name('baked occlusion').onChange(() => model && bake(model))
   gui.add(settings, 'environment', ['studio HDR', 'built-in studio', 'none']).onChange((v) => {
     scene.environment = v === 'studio HDR' ? HDR : v === 'built-in studio' ? 'studio' : 'none'

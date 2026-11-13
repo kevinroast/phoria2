@@ -1160,10 +1160,14 @@ view.frame(model)
 model.find('Cushion').material.color.set('#2a6')
 for (const m of model.meshes) m.castShadow = true
 model.play()                                          // its first animation; or model.play('Open')
+model.variants                                        // ['Mango Velvet', 'Peacock Velvet'] - its colourways
+model.variant = 'Peacock Velvet'                      // null for the materials it was made with
 ```
 
-A model has `animations` (each with `play()`, `pause()`, `stop()`, `loop`, `speed`), `cameras` and
-`meshes`. Its `toJSON()` is a plain group of its parts, with their vertex data - `create()` builds it
+A model has `animations` (each with `play()`, `pause()`, `stop()`, `loop`, `speed`), `cameras`,
+`meshes`, and material variants (KHR_materials_variants - a configurator's colourways in one file):
+`variants` lists their names, and setting `variant` swaps the materials of every part it names at once
+(their textures load with the model; an unknown name is warned about and changes nothing). Its `toJSON()` is a plain group of its parts, with their vertex data - `create()` builds it
 back without `phoria2/gltf`, but the animations, and textures embedded in a `.glb`, aren't kept.
 Product-viewer lighting:
 
@@ -1194,13 +1198,13 @@ Content, any of: `src` - a glTF model (phoria2/gltf loads on demand), added to t
 URL of a description; or a `<script type="application/json">` inside the tag. A description is what
 `create()` takes: `{ "type": "scene", ... }` replaces the scene, a node or a list of nodes is added; a
 `"type": "chart"` (a chart spec plus the type) loads phoria2/charts first. `autoplay` plays the
-model's first animation, or the one it names.
+model's first animation, or the one it names; `variant` shows one of its material variants by name.
 
 Attributes (View options, kebab-cased; a switch is on when present, `"false"` turns it off, or JSON
 options such as `ground-shadow='{ "opacity": 0.6 }'`):
 - Changed live: `background`, `environment` ('studio', an .hdr URL), `environment-intensity`, `bloom`,
   `ambient-occlusion`, `ground-shadow`, `fxaa`, `tone-mapping`, `exposure`, `highlight`,
-  `description`, `debug`, `src`, `scene`, `autoplay`
+  `description`, `debug`, `src`, `scene`, `autoplay`, `variant`
 - Remake the view when changed: `camera` (a preset: perspective, isometric, top, front, side - fitted
   to the content), or `camera-position` / `camera-target` ("x y z") and `fov`; `orbit` (present,
   "map", or orbit options as JSON - `orbit='{ "pan": false }'`), `auto-rotate` (present, or radians a second - turns orbit on); `keyboard`, `render-mode`,
