@@ -49,7 +49,7 @@ export default function run({ canvas, gui, info }) {
     for (const m of model.meshes) m.castShadow = m.receiveShadow = settings.shadows
     bake(model)
     scene.add(model)
-    if (settings.playing) model.play()
+    if (settings.playing && model.animations.length) model.play()
     // its variants to choose from, if it has any - shown in the first
     settings.variant = model.variants[0] ?? ''
     model.variant = model.variants[0] ?? null
