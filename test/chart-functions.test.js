@@ -594,3 +594,25 @@ describe('angles: where zero points, and which way they turn', () => {
     expect(() => normalise({ ...base, angles: 3 })).toThrow("'angles' is 'radians' (the default) or 'degrees', or { units, zero, clockwise }")
   })
 })
+
+describe('colour by a second value: a complex function\'s phase on the hue wheel', () => {
+  it('keeps the fields a height fn gives beside y, to colour by', () => {
+    const rows = normalise({ mark: 'surface', fn: (x, z) => ({ y: Math.hypot(x, z), phase: Math.atan2(z, x) }), x: [-1, 1], z: [-1, 1], samples: 3 }).rows
+    expect(rows[0]).toEqual({ x: -1, z: -1, y: Math.SQRT2, phase: Math.atan2(-1, -1) })
+    const c = chart({ mark: 'surface', fn: (x, z) => ({ y: x * z, phase: x }), x: [-1, 1], z: [-1, 1], samples: 5, color: { field: 'phase', scale: { scheme: 'hue', domain: [-1, 1] } } })
+    expect(c.spec.channels.color.field).toBe('phase')
+    // shaded by the height alone: a level y gives level normals, whatever the other field does
+    const flat = chart({ mark: 'surface', fn: (x) => ({ y: 0, phase: x * 9 }), x: [-1, 1], z: [-1, 1], y: [-1, 1], samples: 5 }).marks[0].geometry.normals
+    for (let i = 1; i < flat.length; i += 3) expect(Math.abs(flat[i])).toBeCloseTo(1, 6)
+    expect(() => normalise({ mark: 'surface', fn: () => ({ y: 1, x: 2 }), x: [0, 1], z: [0, 1] })).toThrow("fn's x is the row's own")
+    expect(() => normalise({ mark: 'surface', fn: () => ({ phase: 1 }), x: [0, 1], z: [0, 1] })).toThrow('or { y, ...fields to colour by }')
+  })
+
+  it('has a hue wheel that comes back round: the same colour at both ends of its domain', () => {
+    const wheel = chart({ mark: 'surface', fn: (x) => ({ y: 0, a: x }), x: [-Math.PI, Math.PI], z: [0, 1], samples: 9, color: { field: 'a', scale: { scheme: 'hue', domain: [-Math.PI, Math.PI] } } })
+    const color = /** @type {any} */ (wheel.scales.color)
+    expect(color(-Math.PI).getHex()).toBe(color(Math.PI).getHex())
+    // and goes all the way round between
+    expect(color(0).getHex()).not.toBe(color(Math.PI).getHex())
+  })
+})

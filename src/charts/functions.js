@@ -158,7 +158,8 @@ export function sampleFunction(input) {
   return fail('chart()', `'fn' is plotted as mark: 'surface', 'curve', 'vector', 'line', 'area' or 'bar', not ${describe(mark)}`)
 }
 
-// y = fn(x, z): a height over the x-z grid
+// y = fn(x, z): a height over the x-z grid - or { y, ...fields }, the fields kept on the row to colour
+// by (a complex function's phase, say)
 /** @param {Record<string, any>} spec @param {(a: number, b: number) => any} call @param {any} samples @returns {Sampled} */
 function heights(spec, call, samples) {
   const x = axisRange(spec, 'x', true), z = axisRange(spec, 'z', true)
@@ -173,18 +174,28 @@ function heights(spec, call, samples) {
     const d = (a - b) / (2 * h)
     return Number.isFinite(d) ? d : 0
   }
+  // the height in what fn gives: the number, or its y
+  const height = (/** @type {any} */ v) => (typeof v === 'number' ? v : v && typeof v === 'object' && !Array.isArray(v) ? v.y : NaN)
   let k = 0
   for (let j = 0; j < nz; j++) {
     const zv = along(zr, j, nz)
     for (let i = 0; i < nx; i++) {
-      const xv = along(xr, i, nx), yv = call(xv, zv)
+      const xv = along(xr, i, nx), got = call(xv, zv), yv = height(got)
       // checked as it comes; the message made only when it is needed
-      if (typeof yv !== 'number' || !Number.isFinite(yv)) number(yv, `x ${round(xv)}, z ${round(zv)}`)
+      if (typeof yv !== 'number' || !Number.isFinite(yv)) number(got, `x ${round(xv)}, z ${round(zv)}`)
       // across the tangents along z and along x: (0, dy/dz, 1) x (1, dy/dx, 0)
-      normals[k * 3] = -slope(call(xv + hx, zv), call(xv - hx, zv), hx)
+      normals[k * 3] = -slope(height(call(xv + hx, zv)), height(call(xv - hx, zv)), hx)
       normals[k * 3 + 1] = 1
-      normals[k * 3 + 2] = -slope(call(xv, zv + hz), call(xv, zv - hz), hz)
-      rows[k++] = { x: xv, z: zv, y: yv }
+      normals[k * 3 + 2] = -slope(height(call(xv, zv + hz)), height(call(xv, zv - hz)), hz)
+      /** @type {Record<string, any>} */
+      const row = { x: xv, z: zv, y: yv }
+      if (typeof got === 'object') {
+        for (const key of Object.keys(got)) {
+          if (key === 'x' || key === 'z') fail('chart()', `fn's ${key} is the row's own - give the field to colour by another name`)
+          if (key !== 'y') row[key] = got[key]
+        }
+      }
+      rows[k++] = row
     }
   }
   return {
@@ -711,7 +722,7 @@ const round = (/** @type {number} */ v) => +v.toFixed(3)
 /** @param {any} v @param {string} where */
 function number(v, where) {
   if (typeof v !== 'number' || !Number.isFinite(v)) {
-    fail('chart()', `fn gave ${describe(v)} at ${where} - a surface's fn returns a finite number at every point (clamp it where it blows up)`)
+    fail('chart()', `fn gave ${describe(v)} at ${where} - a surface's fn returns a finite number at every point, or { y, ...fields to colour by } (clamp it where it blows up)`)
   }
   return v
 }

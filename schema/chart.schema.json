@@ -183,7 +183,7 @@
               "properties": {
                 "domain": { "type": "array" },
                 "range": { "type": "array" },
-                "scheme": { "enum": ["category", "viridis", "blues", "heat", "cool", "redblue"] },
+                "scheme": { "enum": ["category", "viridis", "blues", "heat", "cool", "redblue", "hue"] },
                 "zero": { "type": "boolean" },
                 "nice": { "type": "boolean" },
                 "type": { "enum": ["linear", "log"] }

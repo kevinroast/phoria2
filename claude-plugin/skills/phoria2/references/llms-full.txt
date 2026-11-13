@@ -963,7 +963,9 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
   `scale`: `{ domain, range, scheme, zero, nice, type: 'linear' | 'log' }`; a colour field's `type` picks a ramp
   (quantitative) or a colour per value (anything else), and a ramp's domain can have more than two stops
   (`[0, 50, 100]` for a diverging scheme); schemes: `'category'`,
-  `'viridis'`, `'blues'`, `'heat'`, `'cool'`, `'redblue'`. `axis: false` or `{ title, format, ticks }`:
+  `'viridis'`, `'blues'`, `'heat'`, `'cool'`, `'redblue'`, and `'hue'` - a colour wheel, the same colour at both
+  ends, for angles that come back round (a phase, a direction, a time of day): give it the whole
+  turn as its domain, `[-Math.PI, Math.PI]` or `[0, 360]`, and it wraps without a seam. `axis: false` or `{ title, format, ticks }`:
   `ticks` lists the values to mark (`[0, 25, 50, 75, 100]` - the axis reaches them) or says about how
   many (default 5).
 - **Formats** (`format` on a channel, an axis or a tooltip field) are `Intl.NumberFormat` /
@@ -1003,6 +1005,10 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
   ```js
   // a surface y = fn(x, z): ranges for x and z (x: [-3, 3], or { domain, title, axis }); y: [-1, 1] pins the value axis
   chart({ mark: 'surface', fn: (x, z) => Math.sin(x) * Math.cos(z), x: [-3, 3], z: [-3, 3], samples: 64 })
+  // fn may give { y, ...fields }: the fields go on each row, to colour by - a complex function's size
+  // as the height and its phase round the hue wheel (domain colouring)
+  chart({ mark: 'surface', fn: (x, z) => ({ y: Math.hypot(x, z), phase: Math.atan2(z, x) }), x: [-2, 2], z: [-2, 2],
+    color: { field: 'phase', scale: { scheme: 'hue', domain: [-Math.PI, Math.PI] } } })
   // a parametric surface [x, y, z] = fn(u, v) - a sphere, a torus; x, y and z come from fn - a range for one
   // (x: [-2, 2]) pins its axis, so shapes shown in turn share one box, each centred in it
   chart({ mark: 'surface', fn: (u, v) => [Math.cos(u) * Math.sin(v), Math.cos(v), Math.sin(u) * Math.sin(v)], u: [0, 2 * Math.PI], v: [0, Math.PI] })

@@ -243,7 +243,19 @@ export function scaleBand({ domain, range = [0, 1], padding = 0.2, format }) {
   return scale
 }
 
-// colour schemes: categorical (Tableau 10) and ramps for numbers, as sRGB hex stops
+/**
+ * The sinebow at t (0 - 1) as sRGB hex: a colour wheel of even brightness, the same colour at both
+ * ends - for angles, which come back round.
+ * @param {number} t
+ */
+function sinebow(t) {
+  const a = 0.5 - t
+  const channel = (/** @type {number} */ k) => Math.round(255 * Math.sin(Math.PI * (a + k / 3)) ** 2).toString(16).padStart(2, '0')
+  return `#${channel(0)}${channel(1)}${channel(2)}`
+}
+
+// colour schemes: categorical (Tableau 10), ramps for numbers, and a wheel for angles (hue: its
+// first and last stops the same, so a phase or a direction wraps round without a seam), as sRGB hex stops
 export const SCHEMES = {
   category: ['#4e79a7', '#f28e2b', '#59a14f', '#e15759', '#76b7b2', '#edc948', '#b07aa1', '#ff9da7', '#9c755f', '#bab0ac'],
   viridis: ['#440154', '#3b528b', '#21918c', '#5ec962', '#fde725'],
@@ -251,6 +263,7 @@ export const SCHEMES = {
   heat: ['#2c7bb6', '#abd9e9', '#ffffbf', '#fdae61', '#d7191c'],
   cool: ['#f7fcf0', '#ccebc5', '#7bccc4', '#2b8cbe', '#084081'],
   redblue: ['#b2182b', '#ef8a62', '#f7f7f7', '#67a9cf', '#2166ac'],
+  hue: Array.from({ length: 13 }, (_, i) => sinebow(i / 12)),
 }
 
 /**

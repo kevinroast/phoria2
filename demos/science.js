@@ -28,6 +28,10 @@ const CARDS = [
     note: 'The field round two charges on a plane. Arrow lengths and colours follow the log of its strength. Change the second charge and the field swings.',
   },
   {
+    name: 'filter', title: 'A filter\'s poles',
+    note: 'A low-pass filter\'s transfer function over the complex s-plane: height its size |H(s)|, colour its phase, round the hue wheel. The two spikes are its poles. Along the white line - the imaginary axis, s = jω - the height is its frequency response: less damping pulls the poles towards it, and a resonance peak rises.',
+  },
+  {
     name: 'microphones', title: 'Microphone patterns',
     note: 'The datasheet picture: how a microphone hears from each direction, in dB, one curve per pattern - polar data, read off its labelled rings, with 0° - straight ahead - at the top and the angles turning clockwise, as angles: { zero, clockwise } sets them.',
   },
@@ -45,7 +49,7 @@ export default function run({ canvas }) {
   return cardPage({ canvas, cards: CARDS, examples: EXAMPLES, source })
 }
 
-const EXAMPLES = { waves, response, descent, field, microphones, antenna, orbitals }
+const EXAMPLES = { waves, response, descent, field, filter, microphones, antenna, orbitals }
 
 // waves
 function waves({ canvas, slider }) {
@@ -153,6 +157,51 @@ function field({ canvas, slider }) {
   })
   show()
   slider('second charge', -2, 2, p.q, (q) => { p.q = q; plot.update({ params: p }); show() }, 0.1)
+  return view
+}
+// end
+
+// filter
+function filter({ canvas, slider }) {
+  const view = new View({ canvas, orbit: true, background: BG, camera: { position: [13, 8.5, 9], target: [0, 0.8, 0] } })
+  const p = { frequency: 1, damping: 0.25 }
+  // H(s) = w0² / (s² + 2ζw0 s + w0²) at s = σ + jω: its size, capped where it runs off to the poles,
+  // and its phase
+  const CAP = 5
+  const H = (sigma, omega, { frequency: w, damping: d }) => {
+    const re = sigma * sigma - omega * omega + 2 * d * w * sigma + w * w, im = 2 * sigma * omega + 2 * d * w * omega
+    return { size: (w * w) / Math.hypot(re, im), phase: -Math.atan2(im, re) }
+  }
+  const ranges = { x: { domain: [-2, 0.5], title: 'σ' }, z: { domain: [-2, 2], title: 'jω' }, y: { domain: [0, CAP], title: '|H|' } }
+  const plot = view.scene.add(chart({
+    mark: 'surface', ...ranges, samples: 80, params: p, legend: false,
+    fn: (sigma, omega, params) => {
+      const h = H(sigma, omega, params)
+      return { y: Math.min(h.size, CAP), phase: h.phase }
+    },
+    color: { field: 'phase', scale: { scheme: 'hue', domain: [-Math.PI, Math.PI] } },
+  }))
+  // the frequency response: the surface along the imaginary axis, a hair above it
+  const pinned = (field, c) => ({ field, scale: { domain: c.domain, nice: false } })
+  const response = () => Array.from({ length: 161 }, (_, i) => {
+    const omega = -2 + i / 40
+    return { sigma: 0, omega, size: Math.min(H(0, omega, p).size, CAP) + 0.04 }
+  })
+  const line = view.scene.add(chart({
+    mark: 'curve', data: response(), x: pinned('sigma', ranges.x), z: pinned('omega', ranges.z), y: pinned('size', ranges.y),
+    // in the surface's box, not a curve's own cube
+    color: '#ffffff', size: 3, box: [10, 4, 10], equal: false, frame: false, tooltip: false, transition: false,
+  }))
+  view.scene.add(new Label({
+    content: tex('H(s) = \\frac{\\omega_0^2}{s^2 + 2\\zeta\\omega_0 s + \\omega_0^2}'), text: 'H(s) = w0² / (s² + 2ζ w0 s + w0²)',
+    position: [-5, 6, -5], edge: 'left', className: 'maths-tex', overlap: 'show',
+  }))
+  const show = () => {
+    plot.update({ params: p })
+    line.update(response())
+  }
+  slider('frequency ω₀', 0.5, 1.5, p.frequency, (v) => { p.frequency = v; show() })
+  slider('damping ζ', 0.12, 1, p.damping, (v) => { p.damping = v; show() }, 0.01)
   return view
 }
 // end
