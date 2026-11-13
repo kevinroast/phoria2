@@ -4,7 +4,7 @@ import { random } from './kit.js'
 
 // Every chart mark, and the axis and legend options, each in a tile of its own View: grouped and
 // stacked bars, listed and counted ticks, number keys, formats, a light theme, log and time axes,
-// stacked areas, surfaces, force and tiered networks. Live updates animate every tile to new data
+// stacked areas, a band between two values, a histogram of uneven bins, surfaces, force and tiered networks. Live updates animate every tile to new data
 // each second; more copies of the set put more views on the page - past four they share one WebGL
 // context. The readout counts the frames the views draw and the time they take.
 
@@ -12,6 +12,8 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
 const REGIONS = ['North', 'South', 'East', 'West']
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const PRODUCTS = ['Widgets', 'Gadgets', 'Gizmos', 'Doohickeys', 'Sprockets']
+// response-time bins in ms, narrow where most requests are and wider in the tail
+const BINS = [0, 50, 100, 150, 200, 300, 500, 800, 1200]
 const SERVICES = [['edge', 'gateway'], ['edge', 'cdn'], ['service', 'auth'], ['service', 'orders'], ['service', 'search'],
   ['service', 'billing'], ['data', 'users-db'], ['data', 'orders-db'], ['data', 'cache'], ['data', 'queue']]
 const CALLS = [['gateway', 'auth'], ['gateway', 'orders'], ['gateway', 'search'], ['cdn', 'search'], ['orders', 'billing'],
@@ -31,6 +33,12 @@ export default function run({ canvas, gui, info }) {
       tenure: +(rand() * 10).toFixed(1), score: Math.round(rand() * 100), segment: ['Retail', 'Trade', 'Online'][i % 3], orders: 1 + Math.round(rand() * 20) })),
     traffic: () => ['Organic', 'Paid', 'Referral'].flatMap((channel, c) => Array.from({ length: 45 }, (_, d) => ({ id: `${channel}-${d}`, channel,
       date: new Date(start + d * 864e5), visitors: jitter((900 - c * 260) * (1 + 0.25 * Math.sin(d / 7 * Math.PI * 2)), 0.2) }))),
+    responses: () => BINS.slice(0, -1).map((from, i) => ({ id: from, from, to: BINS[i + 1], requests: jitter(1800 * Math.exp(-((Math.log(from + 25) - 4.6) ** 2) / 0.9), 0.3) })),
+    // a forecast, its band widening as it looks further ahead
+    forecast: () => Array.from({ length: 30 }, (_, d) => {
+      const mid = 120 + 4 * d + 15 * Math.sin(d / 3), spread = jitter(6 + d * 1.4, 0.2)
+      return { id: d, day: d + 1, high: Math.round(mid + spread), low: Math.round(mid - spread) }
+    }),
     growth: () => Array.from({ length: 30 }, (_, d) => ({ id: d, day: d + 1, users: Math.round(40 * 1.22 ** d * (0.85 + rand() * 0.3)) })),
     errors: () => Array.from({ length: 48 }, (_, h) => ({ id: h, time: new Date(start + h * 36e5), rate: +(0.5 + Math.abs(Math.sin(h / 5)) * 2 + rand() * 0.6).toFixed(2) })),
     latency: () => DAYS.flatMap((day, d) => Array.from({ length: 24 }, (_, hour) => ({ id: `${day}-${hour}`, day, hour,
@@ -52,6 +60,8 @@ export default function run({ canvas, gui, info }) {
       spec: { mark: 'bar', x: 'product', y: { field: 'units', axis: { ticks: [0, 250, 500, 750, 1000] } }, color: '#76b7b2', label: 'units' } },
     { title: 'Bar - currency, light theme', data: 'revenue', light: true, camera: 'front',
       spec: { mark: 'bar', x: 'product', y: { field: 'revenue', format: { style: 'currency', currency: 'GBP', notation: 'compact' } }, color: 'product', theme: 'light', legend: false } },
+    { title: 'Bar - histogram, uneven bins (x2)', data: 'responses',
+      spec: { mark: 'bar', x: { field: 'from', title: 'Response time (ms)', axis: { ticks: [0, 200, 500, 800, 1200] } }, x2: 'to', y: { field: 'requests', title: 'Requests' }, color: '#59a14f' } },
     { title: 'Point - 3D, number key with ticks', data: 'customers',
       spec: { mark: 'point', x: { field: 'spend', axis: { ticks: [0, 25, 50, 75, 100] } }, y: 'visits', z: 'tenure',
         color: { field: 'score', title: 'Score' }, legend: { ticks: [0, 25, 50, 75, 100] } } },
@@ -65,6 +75,8 @@ export default function run({ canvas, gui, info }) {
       spec: { mark: 'area', x: 'date', y: 'visitors', color: 'channel', stack: true } },
     { title: 'Area - one series, untitled', data: 'errors', camera: 'front',
       spec: { mark: 'area', x: { field: 'time', axis: { title: '' } }, y: { field: 'rate', title: 'Errors (%)' }, color: '#e15759' } },
+    { title: 'Area - a band, y to y2', data: 'forecast', camera: 'front',
+      spec: { mark: 'area', x: 'day', y: { field: 'high', title: 'Forecast' }, y2: 'low', color: '#9c755f' } },
     { title: 'Surface - heat, counted key', data: 'latency',
       spec: { mark: 'surface', x: 'hour', z: 'day', y: 'latency', color: { field: 'latency', title: 'ms', scale: { scheme: 'heat' } }, legend: { ticks: 4 } } },
     { title: 'Surface - diverging, three stops', data: 'change',
@@ -138,7 +150,8 @@ export default function run({ canvas, gui, info }) {
   show()
 
   gui.add(settings, 'live').name('live updates').onChange(live)
-  gui.add(settings, 'copies', { '14 views': 1, '28 views': 2, '56 views': 4, '112 views': 8 }).name('views').onChange((n) => {
+  // the menu in views, from however many tiles a copy has
+  gui.add(settings, 'copies', Object.fromEntries([1, 2, 4, 8].map((n) => [`${n * TILES.length} views`, n]))).name('views').onChange((n) => {
     settings.copies = Number(n)
     build()
   })
