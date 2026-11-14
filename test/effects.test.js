@@ -22,14 +22,16 @@ function watchedGL() {
 /** The defines a program was compiled with, for each program whose fragment source has `marker`. */
 const definesOf = (sources, marker) => sources.filter((s) => s.includes(marker)).map((s) => [...s.matchAll(/#define (\w+)/g)].map((m) => m[1]))
 
-/** A renderer once the effects' code has loaded, and the scene drawn with them. */
+/** A renderer once the effects' code has loaded, and the scene drawn with them. Each of these tests
+ * loads two chunks - the passes and the effects - side by side, and either can arrive first, so each
+ * waits for both before drawing again (on CI the effects chunk can be the slower one). */
 async function withEffects(options, scene, gl) {
   const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl), ...options })
   renderer.setSize(64, 64)
   let ready = 0
   renderer.onReady = () => ready++
   renderer.render(scene, camera())
-  await vi.waitFor(() => expect(ready).toBeGreaterThan(0))
+  await vi.waitFor(() => expect(ready).toBeGreaterThanOrEqual(2))
   renderer.render(scene, camera())
   return renderer
 }
@@ -99,7 +101,7 @@ describe('the effects in a frame', () => {
     renderer.render(scene, camera())
     // drawn plainly while the code loads
     expect(count('framebuffer')).toBe(0)
-    await vi.waitFor(() => expect(ready).toBeGreaterThan(0))
+    await vi.waitFor(() => expect(ready).toBeGreaterThanOrEqual(2))
     renderer.render(scene, camera())
     // occlusion: normals (with depth), occlusion, blurred; ground: depth, darkness, blurred; the
     // scene's picture for FXAA, and the multisampled buffer it is drawn into
@@ -152,7 +154,7 @@ describe('the effects in a frame', () => {
     let ready = 0
     big.onReady = () => ready++
     big.render(scene, camera())
-    await vi.waitFor(() => expect(ready).toBeGreaterThan(0))
+    await vi.waitFor(() => expect(ready).toBeGreaterThanOrEqual(2))
     big.render(scene, camera())
     small.render(scene, camera())
     const before = made.framebuffers
@@ -175,7 +177,7 @@ describe('the effects in a frame', () => {
     let ready = 0
     renderer.onReady = () => ready++
     renderer.render(scene, camera())
-    await vi.waitFor(() => expect(ready).toBeGreaterThan(0))
+    await vi.waitFor(() => expect(ready).toBeGreaterThanOrEqual(2))
     // the box's program still compiling: the ground's square isn't drawn (a four-vertex strip)
     fake.draws.sizes.length = 0
     renderer.render(scene, camera())
