@@ -163,8 +163,8 @@ function wheelMarks(teeth, holes) {
 // outside - and a pen through one of the wheel's holes draws as it goes: hypotrochoids inside,
 // epitrochoids outside. Because the teeth mesh, the pattern always closes, and the tooth counts say
 // when: with g their greatest common divisor, it has ring / g points and closes after wheel / g laps.
-// Drag round the ring to roll the wheel; tap a hole to move the pen there. Lifting the wheel and
-// setting it down a tooth on turns the next pattern a little - layer on layer, in different pens.
+// Drag round the ring to roll the wheel; tap a hole to move the pen there. Change pen, wheel or hole
+// and draw again - layer on layer.
 // The ink is Lines, kept in chunks of fixed size and grown with drawCount, so only the chunk being
 // drawn into is sent again each frame.
 export default function run({ canvas, gui, info }) {
@@ -274,14 +274,13 @@ base.rgb = mix(base.rgb, uRule, line * shown * uRuleStrength);`,
     holeControl?.input && (holeControl.input.max = String(holes.length))
   }
 
-  // where things are: theta is the angle round the ring to where the wheel meets it, and lift is how
-  // far the wheel was turned on the teeth when last set down
-  let theta = 0, lift = 0
+  // where things are: theta is the angle round the ring to where the wheel meets it
+  let theta = 0
   const spinOf = (/** @type {number} */ angle) => {
     const r = radius(), R = pitch(ringTeeth())
     // rolling inside, the wheel turns back as it goes round; outside, it turns on with it - and is
     // set down a half tooth round, so its gap meets the ring's tooth
-    return settings.rolling === 'inside' ? lift - (R - r) / r * angle : lift + (R + r) / r * angle + Math.PI - Math.PI / settings.wheel
+    return settings.rolling === 'inside' ? -(R - r) / r * angle : (R + r) / r * angle + Math.PI - Math.PI / settings.wheel
   }
   const centreOf = (/** @type {number} */ angle) => {
     const r = radius(), R = pitch(ringTeeth()), d = settings.rolling === 'inside' ? R - r : R + r
@@ -539,7 +538,6 @@ base.rgb = mix(base.rgb, uRule, line * shown * uRuleStrength);`,
   const holeControl = gui.add(settings, 'hole', 1, holesOf(radius()).length, 1).name('pen hole').onChange(changed)
   gui.add(settings, 'width', Object.keys(WIDTHS)).name('pen').onChange(changed)
   gui.add(settings, 'speed', 0.05, 2, 0.05).name('laps a second')
-  gui.add({ turn: () => { lift += TAU / settings.wheel; changed() } }, 'turn').name('lift, set down a tooth on')
   gui.add({ save: () => {
     // the drawing alone: the gears off the paper for the picture
     wheel.visible = false
