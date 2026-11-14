@@ -168,6 +168,10 @@ function wheelMarks(teeth, holes) {
 // The ink is Lines, kept in chunks of fixed size and grown with drawCount, so only the chunk being
 // drawn into is sent again each frame.
 export default function run({ canvas, gui, info }) {
+  // the readout of points and laps, and the frame rate: hidden on a phone, where the drawing needs
+  // the room (demos.css)
+  info.classList.add('gears-info')
+  document.getElementById('fps')?.classList.add('gears-fps')
   const settings = {
     ring: Object.keys(RINGS)[0], wheel: 52, hole: 4, rolling: 'inside', pen: PENS[0], width: 'medium', speed: 1,
   }
@@ -179,7 +183,7 @@ export default function run({ canvas, gui, info }) {
 
   // overhead, a little in front, so the gears' thickness and shadows show. The orbit is off while
   // drawing - a drag rolls the wheel - and on once the layers are lifted to look round
-  const view = new View({ canvas, background: '#2b2420', camera: { position: [0, 1, 0.12], target: [0, 0, 0], fov: 30 },
+  const view = new View({ canvas, background: '#2b2420', camera: { position: [0, 1, 0.12], target: [0, 0, 0], fov: 30, near: 2 },
     orbit: { enabled: false, pan: false, autoRotate: 0.12, minDistance: 8, maxDistance: 400, minPitch: 0.05 } })
   const scene = view.scene
   scene.environment = 'studio'
@@ -187,20 +191,32 @@ export default function run({ canvas, gui, info }) {
   const sun = scene.add(new DirectionalLight({ direction: [-0.35, -1, -0.45], intensity: 1.3, castShadow: true }))
   sun.shadowBounds = { min: [-30, -1, -30], max: [30, 2, 30] }
 
-  // the desk, and the squared paper on it: one square drawn once, repeated across the sheet
-  const tile = document.createElement('canvas')
-  tile.width = tile.height = 64
-  const t = /** @type {CanvasRenderingContext2D} */ (tile.getContext('2d'))
-  t.fillStyle = '#fbfaf5'
-  t.fillRect(0, 0, 64, 64)
-  t.fillStyle = 'rgba(70, 125, 195, 0.28)'
-  t.fillRect(0, 0, 64, 2)
-  t.fillRect(0, 0, 2, 64)
-  const paper = new Mesh({ geometry: plane(SHEET), material: { map: new Texture({ image: tile, repeat: [SHEET, SHEET], anisotropy: 16 }), roughness: 0.95 }, receiveShadow: true })
+  // the squared paper: the squares drawn in its shader, from where each pixel is on the desk, rather
+  // than as a small tile repeated across it - a phone's GPU blurs a much-repeated tile away, and
+  // streaks it. Each line is a pixel and a bit wide at any distance (fwidth: how far one pixel spans),
+  // fading out as the squares get too small to show
+  const paper = new Mesh({
+    geometry: plane(SHEET),
+    material: {
+      color: '#fbfaf5', roughness: 0.95,
+      shader: {
+        uniforms: { uRule: [0.06, 0.2, 0.55], uRuleWidth: 1.25, uRuleStrength: 0.32 },
+        fragment: `vec2 p = vWorldPosition.xz;
+vec2 w = max(fwidth(p), vec2(1e-5));
+vec2 d = abs(fract(p - 0.5) - 0.5) / w;
+float line = clamp(uRuleWidth * 0.5 + 0.5 - min(d.x, d.y), 0.0, 1.0);
+float shown = smoothstep(3.0, 8.0, 1.0 / max(w.x, w.y));
+base.rgb = mix(base.rgb, uRule, line * shown * uRuleStrength);`,
+      },
+    },
+    receiveShadow: true,
+  })
 
-  // everything drawn with lies flat on the paper: the toy's own x, y are the paper's, z up off it
+  // everything drawn with lies flat on the paper: the toy's own x, y are the paper's, z up off it.
+  // The desk is a frame round the paper, not under it: two surfaces a hair apart are more than many
+  // phones' depth buffers can tell apart from this far back
   const desk = scene.add(new Group())
-  desk.add(new Mesh({ geometry: plane(400), material: { color: '#4a3a30', roughness: 0.7 }, position: [0, -0.02, 0], receiveShadow: true }))
+  desk.add(new Mesh({ geometry: extrude({ shape: outline.rect(400), holes: [outline.rect(SHEET)], depth: 0.02, axis: 'y' }), material: { color: '#4a3a30', roughness: 0.7 }, position: [0, -0.011, 0], receiveShadow: true }))
   desk.add(paper)
   const toy = desk.add(new Group({ rotation: [-Math.PI / 2, 0, 0] }))
   /** A point on the desk, in the toy's x, y. @param {{ x: number, z: number }} p */

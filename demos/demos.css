@@ -2809,10 +2809,21 @@ button.demo-legend-item {
   color: var(--text);
 }
 
+/* a phone: no readout or frame rate under the bar - the drawing needs the room - so the bar drops
+   to the bottom */
 @media (max-width: 520px) {
   .gears-wheel {
     min-width: 52px;
     font-size: 12px;
+  }
+
+  .hud-info.gears-info,
+  .hud-fps.gears-fps {
+    display: none;
+  }
+
+  .paint-bar.gears-bar {
+    bottom: 16px;
   }
 }
 
