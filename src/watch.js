@@ -276,6 +276,10 @@ export class ChangeWatch {
       this.#pushAll(light.shadowBounds.max)
     }
     if ('range' in light) this.#push(light.range)
+    if ('width' in light) {
+      this.#push(light.width)
+      this.#push(light.height)
+    }
     if ('angle' in light) {
       this.#push(light.angle)
       this.#push(light.penumbra)

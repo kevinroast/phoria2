@@ -24,31 +24,58 @@ import { drawKind, isInstanced } from './scene/kinds.js'
 // collecting a frame doesn't pull every node class into an app's bundle.
 
 /** Per-scene light limits for the WebGL 2 renderer; extras are dropped with a warning. */
-export const LIGHT_LIMITS = { punctual: 4, directional: 2 }
+export const LIGHT_LIMITS = { punctual: 4, directional: 2, rect: 4 }
 // what is said when a group is over its limit
 const OVER_LIMIT = {
   directional: `more than ${LIGHT_LIMITS.directional} directional lights - the extras are ignored; use scene.environment for more light`,
   punctual: `more than ${LIGHT_LIMITS.punctual} point and spot lights - the extras are ignored`,
+  rect: `more than ${LIGHT_LIMITS.rect} rect-area lights - the extras are ignored`,
 }
 
 /**
  * @typedef {object} FrameLight
- * @property {'ambient' | 'hemisphere' | 'directional' | 'point' | 'spot'} kind
- * @property {'directional' | 'punctual' | null} group the lit shaders' light array it takes a slot in
+ * @property {'ambient' | 'hemisphere' | 'directional' | 'point' | 'spot' | 'rect'} kind
+ * @property {'directional' | 'punctual' | 'rect' | null} group the lit shaders' light array it takes a slot in
  *   (limited by LIGHT_LIMITS), or null for light from all round
  * @property {Node} node
  * @property {Color} color
  * @property {number} intensity
  * @property {Color} [ground] hemisphere
- * @property {Vec3} [position] point, spot (world)
- * @property {Vec3} [direction] directional, spot (world, the way the light travels)
+ * @property {Vec3} [position] point, spot, rect (world; a rect light's middle)
+ * @property {Vec3} [direction] directional, spot, rect (world, the way the light travels)
+ * @property {Vec3} [halfWidth] rect: half its width, along its width (world)
+ * @property {Vec3} [halfHeight] rect: half its height, along its height (world)
  * @property {number} [range] point, spot (0 = unlimited)
  * @property {number} [angle] spot
  * @property {number} [penumbra] spot
- * @property {boolean} [castShadow] directional, spot, point
+ * @property {boolean} [castShadow] directional, spot, point, rect
  * @property {number} [shadowSoftness] directional, spot, point: contact-hardening soft shadows, 0 for the plain edge
- * @property {number} [shadowTile] spot: which spot shadow is its, or -1
+ * @property {number} [shadowTile] spot, rect: which spot shadow is its, or -1
  */
+
+// A rect-area light's shadow is a spot light's from its middle, its cone just wide enough for what
+// casts in front of it - up to this far off straight ahead (radians, about 66 degrees), as a wider
+// view spreads the map too thin to be worth it.
+const RECT_SHADOW_ANGLE = 1.15
+
+/**
+ * The half-angle of the cone from `at`, looking along `direction`, that takes in every corner of
+ * these boxes in front of it - at least a little, at most RECT_SHADOW_ANGLE.
+ * @param {ArrayLike<number>} at @param {ArrayLike<number>} direction @param {Box3[]} boxes
+ */
+function coneOver(at, direction, boxes) {
+  let widest = 0.2
+  for (const b of boxes) {
+    if (b.isEmpty()) continue
+    for (let i = 0; i < 8; i++) {
+      const x = (i & 1 ? b.max[0] : b.min[0]) - at[0], y = (i & 2 ? b.max[1] : b.min[1]) - at[1], z = (i & 4 ? b.max[2] : b.min[2]) - at[2]
+      const along = x * direction[0] + y * direction[1] + z * direction[2]
+      if (along <= 0) continue
+      widest = Math.max(widest, Math.acos(Math.min(1, along / Math.hypot(x, y, z))))
+    }
+  }
+  return Math.min(widest, RECT_SHADOW_ANGLE)
+}
 
 /**
  * The section plane cutting a drawable, from the nearest clip above it.
@@ -222,7 +249,7 @@ export function collect(scene, camera, { display = true } = {}) {
     scene,
   }
   // lights in each limited group so far
-  const inGroup = { directional: 0, punctual: 0 }
+  const inGroup = { directional: 0, punctual: 0, rect: 0 }
   // shadows: what casts (seen or not - a shadow can fall into view from off screen) and what
   // receives; only looked at further when a light casts
   /** @type {[any, FrameClip | null][]} */
@@ -287,7 +314,7 @@ export function collect(scene, camera, { display = true } = {}) {
 
   /** A light, as its frame entry - unless its group is full. @param {any} node */
   const addLight = (node) => {
-    const group = /** @type {'directional' | 'punctual' | null} */ (node.lightGroup)
+    const group = /** @type {'directional' | 'punctual' | 'rect' | null} */ (node.lightGroup)
     if (group && ++inGroup[group] > LIGHT_LIMITS[group]) return warnOnce(scene, OVER_LIMIT[group])
     frame.lights.push(node.toFrameLight())
   }
@@ -298,10 +325,11 @@ export function collect(scene, camera, { display = true } = {}) {
   // one shadow map, for the first directional light that casts; it goes first, so the shader
   // knows which light the map belongs to
   const sun = frame.lights.findIndex((l) => l.kind === 'directional' && l.castShadow)
-  const spots = frame.lights.filter((l) => l.kind === 'spot' && l.castShadow)
+  // spot and rect lights share the spot shadows' tiles
+  const spots = frame.lights.filter((l) => (l.kind === 'spot' || l.kind === 'rect') && l.castShadow)
   const points = frame.lights.filter((l) => l.kind === 'point' && l.castShadow)
   const items = sun >= 0 || spots.length || points.length ? /** @type {DrawItem[]} */ (casters.map(([n, clip]) => drawItem(n, view, null, clip)).filter(Boolean)) : []
-  if (spots.length > SPOT_TILES) warnOnce(scene, `more than ${SPOT_TILES} spot lights cast shadows - the extras don't`)
+  if (spots.length > SPOT_TILES) warnOnce(scene, `more than ${SPOT_TILES} spot and rect-area lights cast shadows - the extras don't`)
   if (points.length > 1) warnOnce(scene, 'more than one point light casts shadows - only the first does')
   if (items.length && points.length) {
     const light = points[0]
@@ -323,7 +351,9 @@ export function collect(scene, camera, { display = true } = {}) {
       const at = /** @type {Vec3} */ (light.position)
       // the light's own fitting - a lamp round it - doesn't shadow it
       const own = boxes.map((b) => b.containsPoint(at))
-      const fit = fitSpotShadow(at, /** @type {Vec3} */ (light.direction), /** @type {number} */ (light.angle), light.range ?? 0, boxes.filter((_, i) => !own[i]), receiving)
+      const direction = /** @type {Vec3} */ (light.direction), casting = boxes.filter((_, i) => !own[i])
+      const angle = light.kind === 'rect' ? coneOver(at, direction, casting) : /** @type {number} */ (light.angle)
+      const fit = fitSpotShadow(at, direction, angle, light.range ?? 0, casting, receiving)
       if (!fit) continue
       const planes = frustumPlanes(fit.viewProjection)
       const seen = items.filter((item, i) => {

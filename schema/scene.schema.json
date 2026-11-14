@@ -445,6 +445,46 @@
         {
           "type": "object",
           "required": ["type"],
+          "$ref": "#/$defs/nodeOptions",
+          "properties": {
+            "type": {
+              "const": "rect-area-light"
+            },
+            "color": {
+              "$ref": "#/$defs/color"
+            },
+            "intensity": {
+              "type": "number",
+              "description": "As a point light's: face on, from a distance, it lights as a point light of this intensity would - a bigger light is softer, not brighter."
+            },
+            "direction": {
+              "$ref": "#/$defs/vec3",
+              "description": "The way its front face shines."
+            },
+            "target": {
+              "$ref": "#/$defs/vec3",
+              "description": "A point it shines towards, instead of direction."
+            },
+            "width": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Across, level with the ground (along x when it shines straight up or down)."
+            },
+            "height": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "The other way."
+            },
+            "castShadow": {
+              "type": "boolean",
+              "description": "Soft shadows from its middle, as soft as it is big; shares the four spot light shadows."
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
           "description": "A chart: the chart() spec - see phoria2/charts/schema.json - with type 'chart' and node options. Needs phoria2/charts imported, which registers it.",
           "properties": {
             "type": {

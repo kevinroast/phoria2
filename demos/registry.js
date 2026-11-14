@@ -40,6 +40,7 @@ export const DEMOS = [
   { name: 'particles', title: 'particle emitters in three set pieces - a fountain, a brazier and falling snow' },
   { name: 'fog shadows', title: 'a harbour on a foggy night - lamps and a lighthouse beam casting shadows through mist' },
   { name: 'shadows', title: 'hard or soft shadows - sun, spot and point lights', hint: 'Drag to orbit · pick a light below' },
+  { name: 'area lights', title: 'a rect-area light in a photo studio - a softbox, its shape in glossy reflections, soft shadows as wide as the light is big' },
   { name: 'point lights', title: "a jack-o'-lantern - candle inside casting shadows, light escaping through the carved face" },
   { name: 'viewer', title: 'a glTF product viewer - full material maps, baked occlusion, an HDR studio, shadows, animation' },
   { name: 'render textures', title: 'live camera feeds - sweeping CCTV, overhead map and a robot camera, each a live RenderTexture' },

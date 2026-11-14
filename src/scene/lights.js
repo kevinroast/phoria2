@@ -8,11 +8,11 @@ import { NODE_OPTIONS, Node, inParentSpace, setPoint } from './Node.js'
 /** @import { Box3Input, ColorInput, Vec3Input } from '../types.js' */
 
 /** @typedef {NodeOptions & { color?: ColorInput, intensity?: number }} LightOptions */
-/** @typedef {'ambient' | 'hemisphere' | 'directional' | 'point' | 'spot'} LightKind */
+/** @typedef {'ambient' | 'hemisphere' | 'directional' | 'point' | 'spot' | 'rect'} LightKind */
 /**
  * Which of the lit shaders' light arrays a kind takes a slot in - each limited (LIGHT_LIMITS) - or
  * null for light from all round, which adds to one sum.
- * @typedef {'directional' | 'punctual' | null} LightGroup
+ * @typedef {'directional' | 'punctual' | 'rect' | null} LightGroup
  */
 /** @import { FrameLight } from '../frame.js' */
 
@@ -403,6 +403,100 @@ export class SpotLight extends AimedLight {
     if (this.shadowSoftness) json.shadowSoftness = this.shadowSoftness
     return json
   }
+}
+
+/**
+ * A glowing rectangle - a softbox, a ceiling panel, a window, a screen: light from its whole face,
+ * so shiny things reflect its shape and its shadows soften away from what casts them. It shines
+ * from its front face only, the way `direction` (or towards `target`) says. `width` runs across,
+ * level with the ground (along x when it shines straight up or down), `height` the other way.
+ *
+ * `intensity` is a point light's: face on, from a distance, it lights as a point light of the same
+ * intensity would - so a bigger light is softer, not brighter. Up to four a scene (LIGHT_LIMITS).
+ */
+export class RectAreaLight extends AimedLight {
+  static type = 'rect-area-light'
+  /** @internal @type {LightKind} */
+  static kind = 'rect'
+  /** @internal @type {LightGroup} */
+  static group = 'rect'
+  static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'width', 'height', 'castShadow'] }
+  static HINTS = {
+    ...LIGHT_HINTS,
+    size: "use 'width' and 'height'",
+    shadowSoftness: "a rect light's shadow is as soft as the light is big - set 'width' and 'height'",
+    range: "a rect light has no range - it fades with distance as a point light does",
+    angle: "a rect light shines over everything in front of it - size it with 'width' and 'height'",
+  }
+
+  /** Across, level with the ground, in world units. */
+  width = 1
+  /** The other way, in world units. */
+  height = 1
+  /**
+   * Cast shadows: shares the four shadows spot lights have (SpotLight.castShadow). Taken from the
+   * light's middle, softened by its size - sharp where a shadow meets what casts it, wider away from
+   * it - over what is within about 66 degrees of straight ahead. Anything round the light itself -
+   * its own panel - doesn't block it.
+   */
+  castShadow = false
+
+  /** @param {AimedLightOptions & { width?: number, height?: number, castShadow?: boolean }} [options] */
+  constructor(options = {}) {
+    super(options)
+    if (options.width !== undefined) this.width = sizeOf('width', options.width)
+    if (options.height !== undefined) this.height = sizeOf('height', options.height)
+    if (options.castShadow !== undefined) this.castShadow = !!options.castShadow
+  }
+
+  /**
+   * Its edges, half its width and half its height long, in world space as of the last update: width
+   * level with the parent's ground (its x when it shines straight up or down), height across it,
+   * turned so the rectangle faces the way it shines.
+   * @returns {[Vec3, Vec3]}
+   */
+  get worldEdges() {
+    const d = this.worldDirection
+    const m = this.parent ? this.parent.worldMatrix : null
+    // the parent's up, and its x for a light shining along it
+    const pick = (/** @type {number} */ i) => m ? new Vec3(m[i], m[i + 1], m[i + 2]).normalize() : new Vec3(i === 4 ? 0 : 1, i === 4 ? 1 : 0, 0)
+    const up = pick(4)
+    let across = d.clone().cross(up)
+    if (across.len() < 1e-3) across = pick(0).cross(d).cross(d).negate()
+    across.normalize()
+    // across x along is against the way it shines: the corner order the shader integrates round
+    const along = across.clone().cross(d)
+    return [across.multiplyScalar(this.width / 2), along.multiplyScalar(this.height / 2)]
+  }
+
+  /** @internal @returns {FrameLight} */
+  toFrameLight() {
+    const [halfWidth, halfHeight] = this.worldEdges
+    return { ...super.toFrameLight(), position: this.worldPosition, direction: this.worldDirection, halfWidth, halfHeight,
+      castShadow: this.castShadow, shadowTile: -1 }
+  }
+
+  /** @internal @returns {Record<string, unknown>} */
+  cloneOptions() {
+    return { ...super.cloneOptions(), width: this.width, height: this.height, castShadow: this.castShadow }
+  }
+
+  /** @internal @returns {Record<string, unknown>} */
+  jsonOptions() {
+    /** @type {Record<string, unknown>} */
+    const json = super.jsonOptions()
+    if (this.width !== 1) json.width = this.width
+    if (this.height !== 1) json.height = this.height
+    if (this.castShadow) json.castShadow = true
+    return json
+  }
+}
+
+/** @param {'width' | 'height'} key @param {unknown} v */
+function sizeOf(key, v) {
+  const s = checkNumber('RectAreaLight', key, v)
+  if (s <= 0) fail('RectAreaLight', `'${key}' must be above 0, got ${s}`)
+  return s
 }
 
 /** @param {string} owner @param {unknown} v */

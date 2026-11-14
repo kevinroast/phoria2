@@ -14,7 +14,7 @@
 // log, and the check goes on. Run from shaders.html, or headless with `npm run shaders`.
 import {
   AmbientLight, DirectionalLight, Fog, Geometry, Group, HemisphereLight, InstancedMesh, Lines, Mesh, PerspectiveCamera,
-  PointLight, Points, Scene, SpotLight, Texture, box,
+  PointLight, Points, RectAreaLight, Scene, SpotLight, Texture, box,
 } from '../src/index.js'
 import { FEATURES } from '../src/material/features.js'
 import { collect } from '../src/frame.js'
@@ -40,6 +40,7 @@ const ENABLE = {
     bumpMap: { bumpMap: tex() }, aoMap: { aoMap: tex() }, emissiveMap: { emissiveMap: tex() }, lightMap: { lightMap: tex() }, matcap: { matcap: tex() },
     cutout: { alphaTest: 0.5, map: tex() }, glass: { transmission: 0.6 }, clearcoat: { clearcoat: 0.8 }, sheen: { sheen: 0.6 },
     brushed: { anisotropy: 0.6 }, translucent: { translucency: 0.5 }, toon: { toon: 4 }, flat: { flatShading: true }, double: { doubleSided: true },
+    iridescent: { iridescence: 1 }, iridescenceThicknessMap: { iridescence: 1, iridescenceThicknessMap: tex() },
     triplanar: { triplanar: 2, normalMap: tex() }, vcolor: { vertexColors: true },
     additive: { blending: 'additive', transparent: true, opacity: 0.6 }, multiply: { blending: 'multiply', transparent: true, opacity: 0.6 },
   },
@@ -138,9 +139,10 @@ function dress(scene, frame) {
 }
 
 /** Draw one variant in one frame, every pass it has; returns the error, if any. */
-async function draw(/** @type {string} */ name, /** @type {() => any} */ make, /** @type {'plain' | 'full' | 'linear'} */ frame) {
+async function draw(/** @type {string} */ name, /** @type {() => any} */ make, /** @type {'plain' | 'full' | 'linear'} */ frame, /** @type {(scene: Scene) => void} */ light = () => {}) {
   const scene = new Scene()
   dress(scene, frame)
+  light(scene)
   const f = FRAMES[frame]
   const holder = scene.add(new Group(f.effects ? { clip: { normal: [0, 0, 1], offset: 0.2, cap: '#ff0000' } } : {}))
   const node = holder.add(make())
@@ -201,7 +203,35 @@ try {
   variants.push(['mesh uv2', () => drawable('mesh', ['map'], { uv2: true })])
   variants.push(['mesh uv2+triplanar+cutout', () => drawable('mesh', ['triplanar', 'cutout'], { uv2: true })])
 
-  const total = variants.length * Object.keys(FRAMES).length
+  // Lights whose code is compiled only when a scene has them - rect-area lights, soft shadows - drawn
+  // once each in the full frame, with only the features their code meets, rather than added to every
+  // variant above (each would compile their code again: minutes more for nothing new).
+  const rect = (/** @type {object} */ o = {}) => (/** @type {Scene} */ scene) => scene.add(new RectAreaLight({ position: [1, 3, -1], width: 1.5, height: 0.8, target: [0, 0, 0], ...o }))
+  const soft = (/** @type {Scene} */ scene) => {
+    for (const light of scene.children) if (/** @type {any} */ (light).castShadow && /** @type {any} */ (light).lightKind) /** @type {any} */ (light).shadowSoftness = 0.5
+  }
+  // the features the rect light's code has its own paths for
+  const meets = ['clearcoat', 'sheen', 'toon', 'translucent', 'brushed', 'iridescent', 'double', 'flat']
+  const everything = featuresOf('mesh').filter((f) => f !== 'unlit' && f !== 'multiply')
+  /** @type {[string, () => any, (scene: Scene) => void][]} */
+  const lit = [
+    ['rect', () => drawable('mesh', [], {}), rect()],
+    ...meets.map((f) => /** @type {[string, () => any, (scene: Scene) => void]} */ ([`rect ${f}`, () => drawable('mesh', [f], {}), rect()])),
+    ['rect everything', () => drawable('mesh', everything, {}), rect()],
+    ['rect hooks+everything', () => drawable('mesh', everything, { hooks: true }), rect()],
+    ['rect instanced', () => drawable('mesh', [], { instanced: true }), rect()],
+    // its shadow: the soft spot lookup, beside the plain spot light's
+    ['rect shadow', () => drawable('mesh', [], {}), rect({ castShadow: true })],
+    ['rect shadow translucent', () => drawable('mesh', ['translucent'], {}), rect({ castShadow: true })],
+    ['rect shadow everything', () => drawable('mesh', everything, {}), rect({ castShadow: true })],
+    // soft shadows from the sun, the spot and the point light
+    ['soft shadows', () => drawable('mesh', [], {}), soft],
+    ['soft shadows translucent', () => drawable('mesh', ['translucent'], {}), soft],
+    ['soft shadows everything', () => drawable('mesh', everything, {}), soft],
+    ['soft shadows and rect shadow everything', () => drawable('mesh', everything, {}), (scene) => { soft(scene); rect({ castShadow: true })(scene) }],
+  ]
+
+  const total = variants.length * Object.keys(FRAMES).length + lit.length
   let n = 0
   for (const [name, make] of variants) {
     for (const frame of /** @type {const} */ (['plain', 'full', 'linear'])) {
@@ -212,6 +242,10 @@ try {
         await new Promise((r) => setTimeout(r, 0))
       }
     }
+  }
+  for (const [name, make, light] of lit) {
+    const error = await draw(name, make, 'full', light)
+    out.results.push({ name: `${name} (full)`, ok: !error, error })
   }
   out.programs = renderer.info.programs
   const failed = out.results.filter((r) => !r.ok)

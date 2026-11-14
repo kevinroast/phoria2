@@ -12,6 +12,7 @@ import { TargetPool } from './targets.js'
 /** @import { Picker } from './picking.js' */
 /** @import { Bloom } from './bloom.js' */
 /** @import { Effects } from './effects.js' */
+/** @import { Ltc } from './ltc.js' */
 /** @import { Scene } from '../scene/Scene.js' */
 
 /** @typedef {{ onReady: (() => void) | null }} ContextUser */
@@ -34,6 +35,8 @@ export class GLContext {
   bloom = null
   /** Ambient occlusion, ground shadows and FXAA - loaded the first time a renderer asks for one. @type {Effects | null} */
   effects = null
+  /** Rect-area lights' lookup tables - loaded the first time a frame has one. @type {Ltc | null} */
+  ltc = null
   lost = false
   /** Counts frames across every renderer, so programs know when their per-frame uniforms are stale. */
   frame = 0
@@ -47,6 +50,7 @@ export class GLContext {
     picker: lazy('GPU picking', () => import('./picking.js')),
     bloom: lazy('bloom', () => import('./bloom.js')),
     effects: lazy('ambient occlusion, ground shadows and FXAA', () => import('./effects.js')),
+    ltc: lazy('rect-area lights', () => import('./ltc.js')),
   }
   /** @type {() => void} */ #removeListeners
 
@@ -143,7 +147,7 @@ export class GLContext {
 
   /** The modules loaded so far, for resetting after a lost context and freeing at the end. */
   #loaded() {
-    return [this.passes, this.picker, this.bloom, this.effects].filter((m) => m !== null)
+    return [this.passes, this.picker, this.bloom, this.effects, this.ltc].filter((m) => m !== null)
   }
 
   /**
@@ -205,6 +209,20 @@ export class GLContext {
     if (this.effects) return this.effects
     this.#load.effects(({ Effects }) => {
       this.effects = new Effects(this.gl, this.programs, this.targets)
+      this.#ready()
+    })
+    return null
+  }
+
+  /**
+   * Rect-area lights' tables, once loaded; the first call starts loading them, and every renderer
+   * on this context is told when they arrive (until then, rect-area lights are left out).
+   * @returns {Ltc | null}
+   */
+  loadLtc() {
+    if (this.ltc) return this.ltc
+    this.#load.ltc(({ Ltc }) => {
+      this.ltc = new Ltc(this.gl)
       this.#ready()
     })
     return null

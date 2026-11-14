@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   AmbientLight, DirectionalLight, Geometry, Group, HemisphereLight, InstancedMesh, Label, Lines, Material, Mesh, Node,
-  OrthographicCamera, PerspectiveCamera, PointLight, Points, Scene, SpotLight, Texture, box, create,
+  OrthographicCamera, PerspectiveCamera, PointLight, Points, RectAreaLight, Scene, SpotLight, Texture, box, create,
 } from '../src/index.js'
 import { GEOMETRY_TYPES } from '../src/describe.js'
 import { GENERATOR_OPTIONS } from '../src/geometry/generators.js'
@@ -61,7 +61,7 @@ describe('the scene description schema', () => {
 
   it('allows exactly each node type\'s options, less its handlers', () => {
     const classes = [Node, Group, Scene, Mesh, Points, Lines, InstancedMesh, Label, PerspectiveCamera, OrthographicCamera,
-      AmbientLight, HemisphereLight, DirectionalLight, PointLight, SpotLight]
+      AmbientLight, HemisphereLight, DirectionalLight, PointLight, SpotLight, RectAreaLight]
     const types = defs.node.anyOf.map((v) => v.properties.type.const)
     expect(types).toEqual([...classes.map((C) => C.type), 'chart'])
     for (const C of classes) {
@@ -106,10 +106,11 @@ describe('the scene description schema', () => {
       new DirectionalLight({ direction: [-1, -2, -1], castShadow: true }),
       new PointLight({ range: 10, color: 'red' }),
       new SpotLight({ target: [0, 0, 0], angle: 0.4, penumbra: 0.3, range: 20 }),
+      new RectAreaLight({ position: [0, 3, 0], width: 2, height: 0.5, castShadow: true }),
     )
     const json = JSON.parse(JSON.stringify(scene.toJSON()))
     // every part made it into the description
-    expect(json.children.length).toBe(12)
+    expect(json.children.length).toBe(13)
     expect(json.children[0].children[0].material.map).toEqual({ url: 'crate.png', repeat: [2, 2] })
     expect(json.children[0].children[1].geometry.indices).toEqual([0, 1, 2])
     expect(validate(json)).toEqual([])

@@ -15,12 +15,24 @@ import { blit } from './targets.js'
 const SOFT_SPREAD = 0.2
 /** A light's shadowSoftness, held to 0-1 - set on the light directly it isn't checked. @param {{ shadowSoftness?: number }} light */
 const softnessOf = (light) => Math.min(1, Math.max(0, light.shadowSoftness ?? 0))
+/**
+ * A spot shadow tile's edge: how far it spreads a unit of gap from caster to surface - or, for a
+ * rect-area light, minus the radius of a disc as big as the light, the edge then as wide as that
+ * light makes it (the gap times the radius, over the distance from the light to the caster).
+ * @param {FrameLight} light
+ */
+function spotSpread(light) {
+  if (light.kind !== 'rect') return softnessOf(light) * SOFT_SPREAD
+  const hw = /** @type {Vec3} */ (light.halfWidth), hh = /** @type {Vec3} */ (light.halfHeight)
+  return -Math.sqrt(4 * hw.len() * hh.len() / Math.PI)
+}
 
 /** @import { Programs } from './programs.js' */
 /** @import { Target, TargetPool } from './targets.js' */
 /** @import { Resources } from './resources.js' */
 /** @import { Texture, DataImage } from '../material/Texture.js' */
-/** @import { FrameDescription, ShadowFrame, SpotShadowFrame, PointShadowFrame, DrawItem, FrameOutline } from '../frame.js' */
+/** @import { FrameDescription, FrameLight, ShadowFrame, SpotShadowFrame, PointShadowFrame, DrawItem, FrameOutline } from '../frame.js' */
+/** @import { Vec3 } from '../value/Vec3.js' */
 
 
 
@@ -487,13 +499,13 @@ export class Passes {
       matrices.set(mat4.multiply(new Float32Array(16), toTile, spot.viewProjection), spot.tile * 16)
       tiles.set([x * 0.5, y * 0.5, x * 0.5 + 0.5, y * 0.5 + 0.5], spot.tile * 4)
       bias[spot.tile] = spot.texelAngle * 1.5
-      // contact-hardening: how far the edge spreads a unit of gap (0 for the plain edge), the view's
+      // contact-hardening: how far the edge spreads a unit of gap (0 for the plain edge; spotSpread), the view's
       // near and far planes to turn the map's depths into distances, and the map's coordinates a
       // world unit at a distance of 1
-      soft.set([softnessOf(spot.light) * SOFT_SPREAD, spot.near, spot.far, 1 / SPOT_ATLAS_SIZE / spot.texelAngle], spot.tile * 4)
+      soft.set([spotSpread(spot.light), spot.near, spot.far, 1 / SPOT_ATLAS_SIZE / spot.texelAngle], spot.tile * 4)
     }
     this.#endDepth()
-    const anySoft = spots.some((s) => softnessOf(s.light) > 0)
+    const anySoft = spots.some((s) => spotSpread(s.light) !== 0)
     return {
       define: 'SPOT_SHADOWS', sampler: 'uSpotShadowMap', texture: this.#spotShadow.texture,
       uniforms: { uSpotShadowMatrix: matrices, uSpotShadowTile: tiles, uSpotShadowBias: bias, uSpotShadowTexel: 1 / SPOT_ATLAS_SIZE, ...(anySoft ? { uSpotShadowSoft: soft } : {}) },

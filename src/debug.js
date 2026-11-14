@@ -21,7 +21,7 @@ import { Vec3 } from './value/Vec3.js'
  * for what is under the pointer.
  * @typedef {object} DebugOptions
  * @property {boolean} [lights] each light: an arrow for directional ones, a small sphere and its range
- *   for point lights, a cone for spot lights - in the light's colour
+ *   for point lights, a cone for spot lights, an outline for rect-area lights - in the light's colour
  * @property {boolean | 'texels'} [shadows] the box or cone each shadow is drawn from - the usual reason a
  *   shadow is cut off or soft. 'texels' also lays the shadow map's texels over everything that receives
  *   it, as a checkerboard: big squares mean the map is spread thin - its edges blur or step - and a
@@ -83,6 +83,20 @@ const LIGHT_SHAPES = {
     pen.circle(end, u, v, r, c, 32)
     for (const s of [u, v, u.clone().negate(), v.clone().negate()]) pen.segment(p, moved(end, s, r), c)
     pen.segment(p, end, c)
+  },
+  // its outline, crossed, and an arrow out of the face it shines from
+  rect: (l, pen, c, size) => {
+    if (!l.position || !l.direction || !l.halfWidth || !l.halfHeight) return
+    const p = new Vec3().copy(l.position), d = new Vec3().copy(l.direction).normalize()
+    const corner = (/** @type {number} */ a, /** @type {number} */ b) => p.clone().add(l.halfWidth.clone().multiplyScalar(a)).add(l.halfHeight.clone().multiplyScalar(b))
+    const corners = [corner(1, -1), corner(-1, -1), corner(-1, 1), corner(1, 1)]
+    for (let i = 0; i < 4; i++) pen.segment(corners[i], corners[(i + 1) % 4], c)
+    pen.segment(corners[0], corners[2], c)
+    pen.segment(corners[1], corners[3], c)
+    const to = moved(p, d, size * 0.25)
+    pen.segment(p, to, c)
+    const [u, v] = across(d)
+    for (const s of [u, v, u.clone().negate(), v.clone().negate()]) pen.segment(to, moved(moved(to, d, -size * 0.05), s, size * 0.025), c)
   },
 }
 

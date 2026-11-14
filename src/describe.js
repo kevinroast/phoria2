@@ -9,7 +9,7 @@ import { Node, Group } from './scene/Node.js'
 import { Scene } from './scene/Scene.js'
 import { InstancedMesh, Label, Lines, Mesh, Points } from './scene/drawables.js'
 import { OrthographicCamera, PerspectiveCamera } from './scene/cameras.js'
-import { AmbientLight, DirectionalLight, HemisphereLight, PointLight, SpotLight } from './scene/lights.js'
+import { AmbientLight, DirectionalLight, HemisphereLight, PointLight, RectAreaLight, SpotLight } from './scene/lights.js'
 import { registeredTypes } from './registry.js'
 
 /** Generator types usable in geometry descriptions: { type: 'box', size: 2 }. */
@@ -21,7 +21,7 @@ let types = null
 const typeMap = () => {
   types ??= new Map([
     Node, Group, Scene, Mesh, InstancedMesh, Points, Lines, Label, PerspectiveCamera, OrthographicCamera,
-    AmbientLight, HemisphereLight, DirectionalLight, PointLight, SpotLight,
+    AmbientLight, HemisphereLight, DirectionalLight, PointLight, SpotLight, RectAreaLight,
   ].map((Class) => [Class.type, Class]))
   // plus types registered by sub-paths, such as 'chart' from phoria2/charts
   for (const [type, Class] of registeredTypes()) types.set(type, Class)
@@ -33,7 +33,7 @@ const THREE_TYPES = {
   Mesh: 'mesh', Group: 'group', Object3D: 'node', Points: 'points', LineSegments: 'lines', Line: 'lines',
   InstancedMesh: 'instanced-mesh', PerspectiveCamera: 'perspective-camera', OrthographicCamera: 'orthographic-camera',
   AmbientLight: 'ambient-light', HemisphereLight: 'hemisphere-light', DirectionalLight: 'directional-light',
-  PointLight: 'point-light', SpotLight: 'spot-light', Scene: 'scene', light: 'directional-light', camera: 'perspective-camera',
+  PointLight: 'point-light', SpotLight: 'spot-light', RectAreaLight: 'rect-area-light', Scene: 'scene', light: 'directional-light', camera: 'perspective-camera',
 }
 // sub-path types that aren't registered until their module is imported
 const SUBPATH_TYPES = { chart: "import { chart } from 'phoria2/charts' first, which registers 'chart'", emitter: "'emitter' descriptions aren't supported yet - use new Emitter() from 'phoria2/particles'" }

@@ -383,7 +383,8 @@ void main() {
 
 // ---- The lights, a chunk a kind of light: its uniforms, and a loop over its group's array working
 // out each light's direction (l) and the light arriving (radiance), which LIGHT_CONTRIBUTION adds to
-// the surface. Light counts are compiled in (NUM_DIRECTIONAL, NUM_PUNCTUAL), so a simply lit scene
+// the surface (rect-area lights, RECT_LIGHTS, integrate over their shape instead). Light counts are
+// compiled in (NUM_DIRECTIONAL, NUM_PUNCTUAL, NUM_RECT), so a simply lit scene
 // runs only the loops it needs. A new kind of light is a chunk here, its uniforms packed by the
 // renderer (LIGHT_ARRAYS, LIGHT_PACKING in WebGLRenderer.js) and its entry made by its class.
 
@@ -480,6 +481,110 @@ ${throughLight(`vec3 light = uPunctualColor[i] * falloff * cone;
 #ifdef POINT_SHADOW
       if (float(i) == uPointShadowIndex) light *= pointShadowAt(uPunctualPosition[i], -surfaceNormal, d);
 #endif`)}
+  }
+#endif`
+
+// rect-area lights: glowing rectangles. Their light, and their reflection, integrated over the
+// rectangle with linearly transformed cosines (Heitz, Dupuy, Hill and Neubelt 2016; after three.js's
+// code): a cosine lobe, turned by a matrix looked up by roughness and view angle into the shape of
+// the surface's highlight, has a form factor over a polygon that is exact - so a rough surface shows
+// a soft glow, a polished one the light's own shape. The tables load with the first rect light.
+const RECT_UNIFORMS = /* glsl */ `
+#if NUM_RECT > 0
+uniform vec3 uRectPosition[NUM_RECT];    // its middle
+uniform vec3 uRectColor[NUM_RECT];       // what its face gives off: colour x intensity x PI / area
+uniform vec3 uRectHalfWidth[NUM_RECT];   // half its width, along it
+uniform vec3 uRectHalfHeight[NUM_RECT];  // half its height, along it - width x height points against the way it shines
+uniform sampler2D uLtcMatrix;            // the lobe's transform (inverted), by roughness and view angle
+uniform sampler2D uLtcAmplitude;         // the highlight's size, and its Fresnel part
+#ifdef SPOT_SHADOWS
+uniform float uRectShadow[NUM_RECT];     // which spot shadow tile is its, or -1
+#endif
+
+// one edge's part of the polygon's vector form factor - a fit to theta / sin(theta) (Hill and Heitz)
+vec3 ltcEdge(vec3 a, vec3 b) {
+  float x = dot(a, b);
+  float y = abs(x);
+  float t = (0.8543985 + (0.4965155 + 0.0145206 * y) * y) / (3.4175940 + (4.1616724 + y) * y);
+  float thetaOverSin = x > 0.0 ? t : 0.5 * inversesqrt(max(1.0 - x * x, 1e-7)) - t;
+  return cross(a, b) * thetaOverSin;
+}
+
+// the rectangle seen through a cosine lobe transformed by mInv: its corners into the lobe's space
+// round the normal, onto the sphere, and the form factor of the part above the horizon
+float ltcIntegral(vec3 n, vec3 v, mat3 mInv, vec3 corners[4]) {
+  vec3 t = v - n * dot(v, n);
+  // looking straight down the normal: any way across it will do
+  t = dot(t, t) > 1e-8 ? normalize(t) : normalize(cross(n, abs(n.z) < 0.9 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0)));
+  mat3 m = mInv * transpose(mat3(t, -cross(n, t), n));
+  vec3 c0 = normalize(m * (corners[0] - vWorldPosition));
+  vec3 c1 = normalize(m * (corners[1] - vWorldPosition));
+  vec3 c2 = normalize(m * (corners[2] - vWorldPosition));
+  vec3 c3 = normalize(m * (corners[3] - vWorldPosition));
+  vec3 f = ltcEdge(c0, c1) + ltcEdge(c1, c2) + ltcEdge(c2, c3) + ltcEdge(c3, c0);
+  // clipped to the horizon: a sphere's form factor as an approximation (Hill and Heitz)
+  float l = length(f);
+  return max((l * l + f.z) / (l + 1.0), 0.0);
+}
+#endif
+`
+
+// rect-area lights, after the punctual ones. Toon tones, cloth's sheen and light let through use
+// the light as if it were a point light at its middle; the rest integrates over its shape.
+const RECT_LIGHTS = /* glsl */ `
+#if NUM_RECT > 0
+  {
+    // the lobe for this roughness and view angle - tables of 64 x 64, read at their texels' middles
+    vec2 ltcUv = vec2(roughness, sqrt(1.0 - clamp(dot(n, v), 0.0, 1.0))) * (63.0 / 64.0) + 0.5 / 64.0;
+    vec4 t1 = texture(uLtcMatrix, ltcUv);
+    vec2 t2 = texture(uLtcAmplitude, ltcUv).xy;
+    mat3 glossLobe = mat3(vec3(t1.x, 0.0, t1.y), vec3(0.0, 1.0, 0.0), vec3(t1.z, 0.0, t1.w));
+    // the highlight's Fresnel, over the lobe (Hill)
+    vec3 rectF = f0 * t2.x + (f90 - f0) * t2.y;
+#ifdef CLEARCOAT
+    vec2 coatUv = vec2(coatRoughness, sqrt(1.0 - clamp(dot(surfaceNormal, v), 0.0, 1.0))) * (63.0 / 64.0) + 0.5 / 64.0;
+    vec4 c1 = texture(uLtcMatrix, coatUv);
+    vec2 c2 = texture(uLtcAmplitude, coatUv).xy;
+    mat3 coatLobe = mat3(vec3(c1.x, 0.0, c1.y), vec3(0.0, 1.0, 0.0), vec3(c1.z, 0.0, c1.w));
+    float coatF = 0.04 * c2.x + 0.96 * c2.y;
+#endif
+    for (int i = 0; i < NUM_RECT; i++) {
+      vec3 hw = uRectHalfWidth[i], hh = uRectHalfHeight[i];
+      vec3 toLight = uRectPosition[i] - vWorldPosition;
+      vec3 facing = normalize(cross(hh, hw));
+      vec3 corners[4];
+      corners[0] = uRectPosition[i] + hw - hh;
+      corners[1] = uRectPosition[i] - hw - hh;
+      corners[2] = uRectPosition[i] - hw + hh;
+      corners[3] = uRectPosition[i] + hw + hh;
+      float d = length(toLight);
+      vec3 l = toLight / max(d, 1e-4);
+      // it shines from its front face only - chosen, not branched round, so the shadow lookup below
+      // stays in uniform control flow (a branch there makes D3D's compiler flatten it, slowly)
+      vec3 emitted = dot(toLight, facing) < 0.0 ? uRectColor[i] : vec3(0.0);
+      vec3 radiance = emitted;
+#ifdef SPOT_SHADOWS
+      float tile = uRectShadow[i];
+      if (tile >= 0.0) radiance *= spotShadowAt(int(tile), surfaceNormal, d);
+#endif
+      // as a point light at its middle: its whole face's light, falling off with the square of the distance
+      float asPoint = 4.0 * length(hw) * length(hh) / PI * max(dot(-l, facing), 0.0) / max(d * d, 1e-4);
+#ifdef TOON
+      color += shade(n, v, l, radiance * asPoint, diffuse, f0, f90, a);
+#else
+      color += radiance * (diffuse * (1.0 - rectF) * ltcIntegral(n, v, mat3(1.0), corners) + rectF * ltcIntegral(n, v, glossLobe, corners));
+#endif
+#ifdef CLEARCOAT
+      coat += radiance * coatF * ltcIntegral(surfaceNormal, v, coatLobe, corners);
+#endif
+#ifdef SHEEN
+      sheen += sheenShade(n, v, l, radiance * asPoint, sheenRoughness * sheenRoughness);
+#endif
+${throughLight(`vec3 light = emitted * asPoint;
+#ifdef SPOT_SHADOWS
+      if (tile >= 0.0) light *= spotShadowAt(int(tile), -surfaceNormal, d);
+#endif`)}
+    }
   }
 #endif`
 
@@ -611,6 +716,7 @@ uniform float uEnvIntensity;
 #endif
 ${DIRECTIONAL_UNIFORMS}
 ${PUNCTUAL_UNIFORMS}
+${RECT_UNIFORMS}
 
 #ifdef SHADOW
 uniform sampler2DShadow uShadowMap; // the first directional light's depth
@@ -628,10 +734,12 @@ uniform mat4 uSpotShadowMatrix[4];           // world to a tile's coordinates an
 uniform vec4 uSpotShadowTile[4];             // each tile's bounds in the map: x0, y0, x1, y1
 uniform float uSpotShadowBias[4];            // world units a unit of distance, to push the lookup out along the normal
 uniform float uSpotShadowTexel;              // 1 / map size
+#if NUM_PUNCTUAL > 0
 uniform float uPunctualShadow[NUM_PUNCTUAL]; // which tile a point or spot light's shadow is in, or -1
+#endif
 #ifdef SPOT_SHADOWS_SOFT
 uniform highp sampler2D uSpotShadowDepth;    // the same map read as depths
-uniform vec4 uSpotShadowSoft[4];             // each tile's edge spread a unit of gap (0 for plain), near, far, map coordinates a world unit at distance 1
+uniform vec4 uSpotShadowSoft[4];             // each tile's edge spread a unit of gap (0 for plain; minus a rect light's radius), near, far, map coordinates a world unit at distance 1
 #endif
 #endif
 #ifdef POINT_SHADOW
@@ -1057,7 +1165,7 @@ float spotShadowAt(int k, vec3 n, float distance) {
   vec2 lo = tile.xy + uSpotShadowTexel, hi = tile.zw - uSpotShadowTexel;
 #ifdef SPOT_SHADOWS_SOFT
   vec4 softness = uSpotShadowSoft[k];
-  if (softness.x > 0.0) {
+  if (softness.x != 0.0) {
     vec4 s = uSpotShadowMatrix[k] * vec4(mix(vWorldPosition, p, SOFT_PUSH), 1.0);
     vec3 c = s.xyz / s.w;
     float spin = softSpin();
@@ -1071,8 +1179,9 @@ float spotShadowAt(int k, vec3 n, float distance) {
     // no steeper than about 80 degrees: depth a world unit along the light, over coordinates a world unit across it
     float depthPerWorld = softness.y * softness.z / ((softness.z - softness.y) * here * here);
     vec2 slope = softSlope(n, a, b, g, 6.0 * depthPerWorld * here / softness.w);
-    // the widest edge it could have, at the most a caster right at the light
-    float reach = clamp(softness.x * softness.w, uSpotShadowTexel * 1.5, uSpotShadowTexel * 64.0);
+    // the widest edge it could have, at the most a caster right at the light - or, for a rect light
+    // (softness.x minus its radius), one a quarter of the way from it
+    float reach = clamp((softness.x > 0.0 ? softness.x : -3.0 * softness.x / here) * softness.w, uSpotShadowTexel * 1.5, uSpotShadowTexel * 64.0);
     float tiny = 2.5 * uSpotShadowTexel * here / softness.w;
     float gaps[SOFT_SEARCH + 1];
     for (int i = 0; i <= SOFT_SEARCH; i++) {
@@ -1084,7 +1193,9 @@ float spotShadowAt(int k, vec3 n, float distance) {
     }
     float gap = softGap(gaps);
     if (gap > 0.0) {
-    float radius = clamp(gap * softness.x * softness.w / here, uSpotShadowTexel * 1.5, uSpotShadowTexel * 64.0);
+    // a rect light's edge as wide as its size makes it: the gap over the distance from the light to what casts
+    float spread = softness.x > 0.0 ? softness.x : -softness.x / max(here - gap, 1e-3);
+    float radius = clamp(gap * spread * softness.w / here, uSpotShadowTexel * 1.5, uSpotShadowTexel * 64.0);
     float soft = 0.0;
     for (int i = 0; i < SOFT_FILTER; i++) {
       vec2 o = softTap(i, SOFT_FILTER, spin + 1.7) * radius;
@@ -1389,6 +1500,7 @@ void main() {
   vec3 color = vec3(0.0);
 ${DIRECTIONAL_LIGHTS}
 ${PUNCTUAL_LIGHTS}
+${RECT_LIGHTS}
 
   // ambient: flat, hemisphere and environment light
   vec3 irradiance = irradianceAt(n);

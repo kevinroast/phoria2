@@ -763,17 +763,18 @@ Mistakes to avoid:
 | `DirectionalLight` | `color`, `intensity`, `direction` (the way it travels, e.g. `[-1, -2, -1]`), `castShadow`, `shadowBounds`, `shadowSoftness` |
 | `PointLight` | `color`, `intensity`, `position`, `range` - inverse-square falloff, so intensity ~ distance squared (30 lights things ~5 m away); `castShadow`, `shadowSoftness` |
 | `SpotLight` | point light options plus `direction`, `angle`, `penumbra` |
+| `RectAreaLight` | `color`, `intensity`, `position`, `direction` or `target`, `width`, `height`, `castShadow` - a glowing rectangle: softboxes, panels, windows, screens |
 
 Intensity 1 on a directional light lights a white surface facing it to white.
 
-**Light limits**: a scene draws at most 2 directional lights and 4 point and spot lights together -
-the first found in scene order; hidden ones don't count. Any more are ignored, with a console warning,
+**Light limits**: a scene draws at most 2 directional lights, 4 point and spot lights together and 4
+rect-area lights - the first found in scene order; hidden ones don't count. Any more are ignored, with a console warning,
 so a fifth lamp simply doesn't light anything. For a room of lamps, light it broadly with
 `scene.environment` or a `HemisphereLight` (no limit), use real lights for the few that matter most -
 near the camera, or casting shadows - and give the rest emissive materials so they still glow.
 Toggle `visible` to move the real lights to where the action is.
 
-**Shadows**: one directional light, up to four spot lights and one point light with `castShadow: true`;
+**Shadows**: one directional light, up to four spot and rect-area lights and one point light with `castShadow: true`;
 meshes opt in with `castShadow` and `receiveShadow`. No shadow camera to set up. A spot light's own
 lamp - anything whose bounds hold the light - doesn't block it, so a lamp's shade can cast shadows of
 its own. A point light casts all round, and everything that casts blocks it, around it too: a candle in
@@ -789,9 +790,20 @@ caster to surface - a large studio light; 0.2-0.5 is subtler. Thin things far ab
 soft smudge near 1, as they would. It costs more per pixel near shadow edges, most on
 phones, so it's off unless set.
 
+**Rect-area lights**: `RectAreaLight` is light from a whole rectangle - a softbox, a ceiling panel, a
+window. Polished things reflect its shape, rough ones show a broad soft highlight. It shines from its
+front face, the way `direction` says (or towards `target`); `width` runs across, level with the
+ground, `height` the other way. `intensity` is a point light's - face on, from a distance, it lights
+as a point light of that intensity would - so making it bigger softens it without brightening it. Its
+`castShadow` shadow comes from its middle, as soft as the light is big (no `shadowSoftness`): sharp
+where things touch, wider away; it shares the four spot light shadows, covering what is within about
+66 degrees of straight ahead. Its lookup tables (about 47 KB) load with the first one. Draw the panel
+yourself, as an emissive mesh, if it should be seen.
+
 ```js
 scene.add(new PointLight({ position: [0, 0.1, 0], intensity: 0.5, range: 4, castShadow: true }))  // a candle in a jack-o'-lantern
 scene.add(new DirectionalLight({ direction: [-1, -2, -1], castShadow: true, shadowSoftness: 1 }))  // a studio light's soft shadows
+scene.add(new RectAreaLight({ position: [-2, 3, 1], target: [0, 0.5, 0], width: 2, height: 1.2, intensity: 30, castShadow: true }))  // a softbox
 ```
 
 **Product viewer passes** - three View options, each loading its code the first time it's on:

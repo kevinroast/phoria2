@@ -13,7 +13,7 @@ export { Node, Group } from './scene/Node.js'
 export { Scene } from './scene/Scene.js'
 export { Drawable, Mesh, InstancedMesh, Points, Lines, Label } from './scene/drawables.js'
 export { Camera, PerspectiveCamera, OrthographicCamera } from './scene/cameras.js'
-export { Light, AmbientLight, HemisphereLight, DirectionalLight, PointLight, SpotLight } from './scene/lights.js'
+export { Light, AmbientLight, HemisphereLight, DirectionalLight, PointLight, SpotLight, RectAreaLight } from './scene/lights.js'
 
 // geometry, materials, textures
 export { Geometry } from './geometry/Geometry.js'

@@ -24,6 +24,8 @@ import { drawKind } from '../scene/kinds.js'
 /** @import { Occlusion } from './effects.js' */
 /** @import { Target } from './targets.js' */
 /** @import { RenderTexture } from '../material/RenderTexture.js' */
+/** @import { Ltc } from './ltc.js' */
+/** @import { Vec3 } from '../value/Vec3.js' */
 
 /**
  * What one frame is drawn with - worked out at its start and passed down, not kept on the renderer,
@@ -37,6 +39,7 @@ import { drawKind } from '../scene/kinds.js'
  * @property {Record<string, any>} lights the lights' uniforms
  * @property {string[]} lightDefines the light counts and environment, compiled into lit programs
  * @property {boolean} studio lit by the built-in studio environment
+ * @property {Ltc | null} ltc rect-area lights' tables, once loaded - when the frame has one
  * @property {Occlusion | null} occlusion ambient occlusion, for the lit opaque meshes
  */
 
@@ -197,6 +200,7 @@ const CAP_NODE = /** @type {any} */ ({ drawMode: 'triangles', receiveShadow: tru
 const LIGHT_ARRAYS = {
   directional: { uDirectionalDirection: [3, 0], uDirectionalColor: [3, 0] },
   punctual: { uPunctualPosition: [3, 0], uPunctualColor: [3, 0], uPunctualRange: [1, 0], uPunctualDirection: [3, 0], uPunctualCone: [2, 0], uPunctualShadow: [1, -1] },
+  rect: { uRectPosition: [3, 0], uRectColor: [3, 0], uRectHalfWidth: [3, 0], uRectHalfHeight: [3, 0], uRectShadow: [1, -1] },
 }
 
 /** A light's colour times its intensity, added into `out` at `at`. @param {ArrayLike<number> & { [i: number]: number }} out @param {number} at @param {FrameLight} l @param {ArrayLike<number>} [c] */
@@ -238,6 +242,17 @@ const LIGHT_PACKING = {
     u.uPunctualShadow[i] = l.shadowTile ?? -1
     const angle = /** @type {number} */ (l.angle)
     u.uPunctualCone.set([Math.cos(angle), Math.cos(angle * (1 - (l.penumbra ?? 0)))], i * 2)
+  },
+  rect: (l, u, i) => {
+    const hw = /** @type {Vec3} */ (l.halfWidth), hh = /** @type {Vec3} */ (l.halfHeight)
+    u.uRectPosition.set(/** @type {ArrayLike<number>} */ (l.position), i * 3)
+    u.uRectHalfWidth.set(hw, i * 3)
+    u.uRectHalfHeight.set(hh, i * 3)
+    // what its face gives off: a point light's intensity spread over its area (and PI, as the
+    // shader's form factors are a fraction of the half sphere), so its size softens it, not brightens
+    const area = 4 * hw.len() * hh.len()
+    addColor(u.uRectColor, i * 3, l, l.color.map((c) => c * Math.PI / Math.max(area, 1e-6)))
+    u.uRectShadow[i] = l.shadowTile ?? -1
   },
 }
 
@@ -742,20 +757,23 @@ export class WebGLRenderer {
    * lights in it - the programs are compiled for exactly that many - and each kind fills its slot
    * (LIGHT_PACKING); light from all round adds to its sums.
    * @param {FrameDescription} frame
-   * @returns {{ lights: Record<string, any>, lightDefines: string[], studio: boolean }}
+   * @returns {{ lights: Record<string, any>, lightDefines: string[], studio: boolean, ltc: Ltc | null }}
    */
   #lightsOf(frame) {
     /** @type {Record<string, any>} */
     const lights = { uAmbient: [0, 0, 0], uHemisphereSky: [0, 0, 0], uHemisphereGround: [0, 0, 0], uPointShadowIndex: -1 }
     const defines = []
+    // rect-area lights' tables load with the first one; until they arrive, those lights are left out
+    const ltc = frame.lights.some((l) => l.group === 'rect') ? this.#gpu.loadLtc() : null
+    const used = ltc ? frame.lights : frame.lights.filter((l) => l.group !== 'rect')
     for (const [group, arrays] of Object.entries(LIGHT_ARRAYS)) {
-      const n = frame.lights.filter((l) => l.group === group).length
+      const n = used.filter((l) => l.group === group).length
       for (const [name, [size, fill]] of Object.entries(arrays)) lights[name] = new Float32Array(n * size).fill(fill)
       defines.push(`NUM_${group.toUpperCase()} ${n}`)
     }
-    const next = { directional: 0, punctual: 0 }
-    for (const l of frame.lights) LIGHT_PACKING[l.kind](l, lights, l.group ? next[l.group]++ : 0, frame)
-    return { lights, lightDefines: defines, studio: frame.environment === 'studio' }
+    const next = { directional: 0, punctual: 0, rect: 0 }
+    for (const l of used) LIGHT_PACKING[l.kind](l, lights, l.group ? next[l.group]++ : 0, frame)
+    return { lights, lightDefines: defines, studio: frame.environment === 'studio', ltc }
   }
 
   /** @param {DrawItem} item @param {FrameDescription} frame @param {boolean} transparent @param {FrameState} state */
@@ -836,6 +854,10 @@ export class WebGLRenderer {
     // ordinary texture makes the draw fail
     if (kind === 'mesh' && !material.unlit) {
       if (state.environment) program.set('uEnvMap', state.environment.prefiltered)
+      if (state.ltc) {
+        program.set('uLtcMatrix', state.ltc.matrix)
+        program.set('uLtcAmplitude', state.ltc.amplitude)
+      }
       for (const shadow of shadows) {
         program.set(shadow.sampler, shadow.texture)
         if (shadow.soft) program.set(shadow.soft.sampler, shadow.soft.value)
