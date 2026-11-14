@@ -97,7 +97,7 @@ export const SPOT_TILES = 4
  * @param {ArrayLike<number>} position @param {ArrayLike<number>} direction
  * @param {number} angle the cone's half-angle @param {number} range 0 for unlimited
  * @param {Box3[]} casters @param {Box3[]} receivers
- * @returns {{ viewProjection: Mat4, texelAngle: number } | null} texelAngle: a shadow map texel's size at a distance of 1
+ * @returns {{ viewProjection: Mat4, texelAngle: number, near: number, far: number } | null} texelAngle: a shadow map texel's size at a distance of 1
  */
 export function fitSpotShadow(position, direction, angle, range, casters, receivers) {
   const boxes = casters.filter((b) => !b.isEmpty())
@@ -125,7 +125,7 @@ export function fitSpotShadow(position, direction, angle, range, casters, receiv
   const projection = mat4.perspective(mat4.create(), fov, 1, near, far)
   const viewProjection = new Mat4()
   mat4.multiply(viewProjection, projection, view)
-  return { viewProjection, texelAngle: 2 * Math.tan(fov / 2) / (SPOT_ATLAS_SIZE / 2) }
+  return { viewProjection, texelAngle: 2 * Math.tan(fov / 2) / (SPOT_ATLAS_SIZE / 2), near, far }
 }
 
 /** A point light's shadow: a cube of six square faces, each this many texels across. */

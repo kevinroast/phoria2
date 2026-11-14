@@ -252,15 +252,30 @@ function samplerTarget(gl, type) {
   }
 }
 
+/** Texture units with a sampler object bound, per context: the next plain texture bound there unbinds it. @type {WeakMap<WebGL2RenderingContext, Set<number>>} */
+const samplerUnits = new WeakMap()
+
 /**
- * A sampler's setter: binds the texture to the sampler's own unit, on its target.
+ * A sampler's setter: binds the texture to the sampler's own unit, on its target - or, given
+ * { texture, sampler }, with a sampler object of its own, to read the texture another way than its
+ * own settings say (a shadow map's depths, say, beside the comparisons its texture is set up for).
  * @param {WebGL2RenderingContext} gl @param {number} target @param {WebGLUniformLocation | null} loc @param {number} unit
- * @returns {(texture: WebGLTexture) => void}
+ * @returns {(value: WebGLTexture | { texture: WebGLTexture, sampler: WebGLSampler }) => void}
  */
 function bindTo(gl, target, loc, unit) {
-  return (texture) => {
+  return (value) => {
+    const paired = /** @type {any} */ (value)?.sampler ? /** @type {{ texture: WebGLTexture, sampler: WebGLSampler }} */ (value) : null
     gl.activeTexture(gl.TEXTURE0 + unit)
-    gl.bindTexture(target, texture)
+    gl.bindTexture(target, paired ? paired.texture : /** @type {WebGLTexture} */ (value))
+    let units = samplerUnits.get(gl)
+    if (paired) {
+      if (!units) samplerUnits.set(gl, units = new Set())
+      gl.bindSampler(unit, paired.sampler)
+      units.add(unit)
+    } else if (units?.has(unit)) {
+      gl.bindSampler(unit, null)
+      units.delete(unit)
+    }
     gl.uniform1i(loc, unit)
   }
 }

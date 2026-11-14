@@ -22,6 +22,10 @@ const LIGHT_HINTS = {
   decay: 'falloff is physical (inverse square), as in glTF - limit it with range',
   attenuation: "use 'range' - falloff is physical (inverse square)",
   shadow: "use 'castShadow: true' (directional, spot and point lights)",
+  shadowRadius: "use 'shadowSoftness' - 0 is the plain edge, larger a bigger, softer light",
+  shadowBlur: "use 'shadowSoftness' - 0 is the plain edge, larger a bigger, softer light",
+  softShadows: "use 'shadowSoftness: 1' - contact-hardening soft shadows",
+  lightSize: "use 'shadowSoftness' - how soft the shadow's edge grows away from the caster",
 }
 
 /**
@@ -219,17 +223,25 @@ export class DirectionalLight extends AimedLight {
   static kind = 'directional'
   /** @internal @type {LightGroup} */
   static group = 'directional'
-  static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'castShadow', 'shadowBounds'] }
+  static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'castShadow', 'shadowBounds', 'shadowSoftness'] }
 
   castShadow = false
+  /**
+   * Contact-hardening shadows: sharp where its shadow meets what casts it, softening further away, as
+   * under a large light. 0 (the default) keeps the plain filtered edge. At 1 the edge widens by about
+   * four tenths of the distance from the caster to the surface - a large studio light; 0.2-0.5 is
+   * subtler. Costs more per pixel near shadow edges - most on phones.
+   */
+  shadowSoftness = 0
   /** @type {Box3 | null} */
   #shadowBounds = null
 
-  /** @param {AimedLightOptions & { castShadow?: boolean, shadowBounds?: Box3Input | null }} [options] */
+  /** @param {AimedLightOptions & { castShadow?: boolean, shadowBounds?: Box3Input | null, shadowSoftness?: number }} [options] */
   constructor(options = {}) {
     super(options)
     if (options.castShadow !== undefined) this.castShadow = !!options.castShadow
     if (options.shadowBounds !== undefined) this.#setShadowBounds(options.shadowBounds)
+    if (options.shadowSoftness !== undefined) this.shadowSoftness = softnessOf(this.constructor.name, options.shadowSoftness)
   }
 
   /**
@@ -247,7 +259,7 @@ export class DirectionalLight extends AimedLight {
 
   /** @internal @returns {FrameLight} */
   toFrameLight() {
-    return { ...super.toFrameLight(), direction: this.worldDirection, castShadow: this.castShadow }
+    return { ...super.toFrameLight(), direction: this.worldDirection, castShadow: this.castShadow, shadowSoftness: this.shadowSoftness }
   }
 
   /** @param {Box3Input | null} v */
@@ -267,14 +279,15 @@ export class DirectionalLight extends AimedLight {
 
   /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
-    return { ...super.cloneOptions(), castShadow: this.castShadow, shadowBounds: this.#shadowBounds }
+    return { ...super.cloneOptions(), castShadow: this.castShadow, shadowBounds: this.#shadowBounds, shadowSoftness: this.shadowSoftness }
   }
 
   /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
     const b = this.#shadowBounds
     return { ...super.jsonOptions(), ...(this.castShadow ? { castShadow: true } : {}),
-      ...(b ? { shadowBounds: { min: Array.from(b.min), max: Array.from(b.max) } } : {}) }
+      ...(b ? { shadowBounds: { min: Array.from(b.min), max: Array.from(b.max) } } : {}),
+      ...(this.shadowSoftness ? { shadowSoftness: this.shadowSoftness } : {}) }
   }
 }
 
@@ -285,7 +298,7 @@ export class PointLight extends Light {
   static kind = 'point'
   /** @internal @type {LightGroup} */
   static group = 'punctual'
-  static get OPTIONS() { return [...LIGHT_OPTIONS, 'range', 'castShadow'] }
+  static get OPTIONS() { return [...LIGHT_OPTIONS, 'range', 'castShadow', 'shadowSoftness'] }
 
   /** Distance where the light fades to nothing; 0 for unlimited. */
   range = 0
@@ -295,27 +308,36 @@ export class PointLight extends Light {
    * a bulb or flame drawn at the light castShadow: false.
    */
   castShadow = false
+  /**
+   * Contact-hardening shadows: sharp where its shadow meets what casts it, softening further away, as
+   * under a large light. 0 (the default) keeps the plain filtered edge. At 1 the edge widens by about
+   * four tenths of the distance from the caster to the surface - a large studio light; 0.2-0.5 is
+   * subtler. Costs more per pixel near shadow edges - most on phones.
+   */
+  shadowSoftness = 0
 
-  /** @param {LightOptions & { range?: number, castShadow?: boolean }} [options] */
+  /** @param {LightOptions & { range?: number, castShadow?: boolean, shadowSoftness?: number }} [options] */
   constructor(options = {}) {
     super(options)
     if (options.range !== undefined) this.range = rangeOf(this.constructor.name, options.range)
     if (options.castShadow !== undefined) this.castShadow = !!options.castShadow
+    if (options.shadowSoftness !== undefined) this.shadowSoftness = softnessOf(this.constructor.name, options.shadowSoftness)
   }
 
   /** @internal @returns {FrameLight} */
   toFrameLight() {
-    return { ...super.toFrameLight(), position: this.worldPosition, range: this.range, castShadow: this.castShadow }
+    return { ...super.toFrameLight(), position: this.worldPosition, range: this.range, castShadow: this.castShadow, shadowSoftness: this.shadowSoftness }
   }
 
   /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
-    return { ...super.cloneOptions(), range: this.range, castShadow: this.castShadow }
+    return { ...super.cloneOptions(), range: this.range, castShadow: this.castShadow, shadowSoftness: this.shadowSoftness }
   }
 
   /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
-    return { ...super.jsonOptions(), ...(this.range ? { range: this.range } : {}), ...(this.castShadow ? { castShadow: true } : {}) }
+    return { ...super.jsonOptions(), ...(this.range ? { range: this.range } : {}), ...(this.castShadow ? { castShadow: true } : {}),
+      ...(this.shadowSoftness ? { shadowSoftness: this.shadowSoftness } : {}) }
   }
 }
 
@@ -326,20 +348,28 @@ export class SpotLight extends AimedLight {
   static kind = 'spot'
   /** @internal @type {LightGroup} */
   static group = 'punctual'
-  static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'range', 'angle', 'penumbra', 'castShadow'] }
+  static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'range', 'angle', 'penumbra', 'castShadow', 'shadowSoftness'] }
 
   range = 0
   /** Cast shadows: up to four spot lights a scene can. Anything round the light itself - its own lamp - doesn't block it. */
   castShadow = false
   /** Half-angle of the cone in radians. */
   angle = Math.PI / 6
-  /** Softness of the edge, 0 (hard) to 1. */
+  /** Softness of the cone's edge, 0 (hard) to 1. */
   penumbra = 0.1
+  /**
+   * Contact-hardening shadows: sharp where its shadow meets what casts it, softening further away, as
+   * under a large light. 0 (the default) keeps the plain filtered edge. At 1 the edge widens by about
+   * four tenths of the distance from the caster to the surface - a large studio light; 0.2-0.5 is
+   * subtler. Costs more per pixel near shadow edges - most on phones.
+   */
+  shadowSoftness = 0
 
-  /** @param {AimedLightOptions & { range?: number, angle?: number, penumbra?: number, castShadow?: boolean }} [options] */
+  /** @param {AimedLightOptions & { range?: number, angle?: number, penumbra?: number, castShadow?: boolean, shadowSoftness?: number }} [options] */
   constructor(options = {}) {
     super(options)
     if (options.castShadow !== undefined) this.castShadow = !!options.castShadow
+    if (options.shadowSoftness !== undefined) this.shadowSoftness = softnessOf('SpotLight', options.shadowSoftness)
     if (options.range !== undefined) this.range = rangeOf('SpotLight', options.range)
     if (options.angle !== undefined) {
       this.angle = checkNumber('SpotLight', 'angle', options.angle)
@@ -354,12 +384,12 @@ export class SpotLight extends AimedLight {
   /** @internal @returns {FrameLight} */
   toFrameLight() {
     return { ...super.toFrameLight(), position: this.worldPosition, direction: this.worldDirection, range: this.range,
-      angle: this.angle, penumbra: this.penumbra, castShadow: this.castShadow, shadowTile: -1 }
+      angle: this.angle, penumbra: this.penumbra, castShadow: this.castShadow, shadowSoftness: this.shadowSoftness, shadowTile: -1 }
   }
 
   /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
-    return { ...super.cloneOptions(), range: this.range, angle: this.angle, penumbra: this.penumbra, castShadow: this.castShadow }
+    return { ...super.cloneOptions(), range: this.range, angle: this.angle, penumbra: this.penumbra, castShadow: this.castShadow, shadowSoftness: this.shadowSoftness }
   }
 
   /** @internal @returns {Record<string, unknown>} */
@@ -370,8 +400,16 @@ export class SpotLight extends AimedLight {
     if (this.angle !== Math.PI / 6) json.angle = this.angle
     if (this.penumbra !== 0.1) json.penumbra = this.penumbra
     if (this.castShadow) json.castShadow = true
+    if (this.shadowSoftness) json.shadowSoftness = this.shadowSoftness
     return json
   }
+}
+
+/** @param {string} owner @param {unknown} v */
+function softnessOf(owner, v) {
+  const s = checkNumber(owner, 'shadowSoftness', v)
+  if (s < 0) fail(owner, `'shadowSoftness' can't be negative (0 is the plain edge), got ${s}`)
+  return s
 }
 
 /** @param {string} owner @param {unknown} v */

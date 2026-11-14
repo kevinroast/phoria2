@@ -346,6 +346,11 @@
             "castShadow": {
               "type": "boolean"
             },
+            "shadowSoftness": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Contact-hardening soft shadows: 0 (the default) the plain edge; at 1 the edge widens about four tenths of the gap from caster to surface - a large studio light."
+            },
             "shadowBounds": {
               "type": ["object", "null"],
               "description": "The part of the world, in world units, that has shadows; null (the default) follows what casts.",
@@ -379,6 +384,11 @@
             },
             "castShadow": {
               "type": "boolean"
+            },
+            "shadowSoftness": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Contact-hardening soft shadows: 0 (the default) the plain edge; at 1 the edge widens about four tenths of the gap from caster to surface - a large studio light."
             }
           },
           "unevaluatedProperties": false
@@ -420,6 +430,11 @@
             },
             "castShadow": {
               "type": "boolean"
+            },
+            "shadowSoftness": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Contact-hardening soft shadows: 0 (the default) the plain edge; at 1 the edge widens about four tenths of the gap from caster to surface - a large studio light."
             }
           },
           "unevaluatedProperties": false

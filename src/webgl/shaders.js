@@ -617,6 +617,10 @@ uniform sampler2DShadow uShadowMap; // the first directional light's depth
 uniform mat4 uShadowMatrix;         // world to shadow map [0, 1] coordinates and depth
 uniform float uShadowTexel;         // 1 / map size
 uniform float uShadowBias;          // world units to push the lookup out along the normal
+#ifdef SHADOW_SOFT
+uniform highp sampler2D uShadowDepth; // the same map read as depths, for soft shadows' blocker search
+uniform vec3 uShadowSoft;          // how far the edge spreads a unit of gap, world units a unit of map depth, map coordinates a world unit
+#endif
 #endif
 #ifdef SPOT_SHADOWS
 uniform sampler2DShadow uSpotShadowMap;      // spot lights' depth, a tile each
@@ -625,6 +629,10 @@ uniform vec4 uSpotShadowTile[4];             // each tile's bounds in the map: x
 uniform float uSpotShadowBias[4];            // world units a unit of distance, to push the lookup out along the normal
 uniform float uSpotShadowTexel;              // 1 / map size
 uniform float uPunctualShadow[NUM_PUNCTUAL]; // which tile a point or spot light's shadow is in, or -1
+#ifdef SPOT_SHADOWS_SOFT
+uniform highp sampler2D uSpotShadowDepth;    // the same map read as depths
+uniform vec4 uSpotShadowSoft[4];             // each tile's edge spread a unit of gap (0 for plain), near, far, map coordinates a world unit at distance 1
+#endif
 #endif
 #ifdef POINT_SHADOW
 uniform samplerCubeShadow uPointShadowMap; // a point light's depth all round it, a cube face each way
@@ -632,6 +640,10 @@ uniform float uPointShadowIndex;           // which punctual light it is
 uniform vec2 uPointShadowNearFar;          // its faces' near and far planes
 uniform float uPointShadowTexel;           // a texel's size at a distance of 1
 uniform float uPointShadowBias;            // world units a unit of distance, to push the lookup out along the normal
+#ifdef POINT_SHADOW_SOFT
+uniform highp samplerCube uPointShadowDepth; // the same cube read as depths
+uniform float uPointShadowSoft;            // how far the edge spreads a unit of gap
+#endif
 #endif
 #endif
 
@@ -911,6 +923,45 @@ vec3 perturbNormal(vec3 n, vec3 m, vec2 uv) {
 }
 #endif
 
+#if defined(SHADOW_SOFT) || defined(SPOT_SHADOWS_SOFT) || defined(POINT_SHADOW_SOFT)
+// Contact-hardening soft shadows (PCSS): look round for what casts the shadow and how far above the
+// surface it is, then filter the edge that much wider - sharp where an object meets what it stands
+// on, soft further off. Points over a disc (a Vogel spiral). The search uses them as they are, so
+// neighbouring pixels agree on how wide the edge is; the filter turns them by a random angle at each
+// pixel, so its few samples blur to an even grain rather than banding.
+const int SOFT_SEARCH = 16;
+const int SOFT_FILTER = 32;
+vec2 softTap(int i, int count, float spin) {
+  float r = sqrt((float(i) + 0.5) / float(count));
+  float a = float(i) * 2.39996323 + spin;
+  return vec2(cos(a), sin(a)) * r;
+}
+// a random angle a pixel (Hoskins' hash: no lines or pattern for the eye to find)
+float softSpin() {
+  vec3 p = fract(gl_FragCoord.xyx * 0.1031);
+  p += dot(p, p.yzx + 33.33);
+  return 6.2831853 * fract((p.x + p.y) * p.z);
+}
+// a perspective map's depth (0-1) as a distance from the light
+float softDistance(float d, float near, float far) {
+  return near * far / (far - d * (far - near));
+}
+// How the surface's depth in the map changes across the map, so a sample beside this point is
+// compared at the surface's depth there, not this point's: without it the wide filter sees a sloped
+// or curved surface shadow itself, as fine hatching. From the normal and how world space maps to the
+// map's coordinates (a, b) and depth (g) here - no screen derivatives, so it is safe inside the light
+// loops - and capped at the steepest slope worth trusting.
+vec2 softSlope(vec3 n, vec3 a, vec3 b, vec3 g, float limit) {
+  vec3 e1 = normalize(cross(n, abs(n.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
+  vec3 e2 = cross(n, e1);
+  mat2 j = mat2(dot(a, e1), dot(b, e1), dot(a, e2), dot(b, e2));
+  if (abs(determinant(j)) < 1e-14) return vec2(0.0);
+  vec2 slope = transpose(inverse(j)) * vec2(dot(g, e1), dot(g, e2));
+  float len = length(slope);
+  return len > limit ? slope * (limit / len) : slope;
+}
+#endif
+
 #ifdef SHADOW
 // 0 in shadow to 1 lit: nine hardware-filtered comparisons, for a soft edge a few texels wide
 float shadowAt(vec3 n, vec3 l) {
@@ -919,11 +970,43 @@ float shadowAt(vec3 n, vec3 l) {
   vec4 s = uShadowMatrix * vec4(p, 1.0);
   vec3 c = s.xyz / s.w;
   if (c.x <= 0.0 || c.x >= 1.0 || c.y <= 0.0 || c.y >= 1.0 || c.z >= 1.0) return 1.0;
+#ifdef SHADOW_SOFT
+  float spin = softSpin();
+  // the map is orthographic: its coordinates and depth change with world position by its matrix's rows
+  vec3 a = vec3(uShadowMatrix[0][0], uShadowMatrix[1][0], uShadowMatrix[2][0]);
+  vec3 b = vec3(uShadowMatrix[0][1], uShadowMatrix[1][1], uShadowMatrix[2][1]);
+  vec3 g = vec3(uShadowMatrix[0][2], uShadowMatrix[1][2], uShadowMatrix[2][2]);
+  // no steeper than about 80 degrees: depth units a unit of the map's coordinates
+  vec2 slope = softSlope(n, a, b, g, 6.0 / (uShadowSoft.y * uShadowSoft.z));
+  // the casters that could shade this point lie within the widest edge it could have
+  float reach = clamp(c.z * uShadowSoft.y * uShadowSoft.x * uShadowSoft.z, uShadowTexel * 1.5, uShadowTexel * 64.0);
+  float found = 0.0, sum = 0.0;
+  for (int i = 0; i < SOFT_SEARCH; i++) {
+    vec2 o = softTap(i, SOFT_SEARCH, 0.0) * reach;
+    float z = c.z + dot(slope, o);
+    float d = texture(uShadowDepth, c.xy + o).r;
+    if (d < z) {
+      sum += z - d;
+      found += 1.0;
+    }
+  }
+  if (found == 0.0) return 1.0;
+  // how far above the surface they are, in world units - and the edge that much wider
+  float gap = sum / found * uShadowSoft.y;
+  float radius = clamp(gap * uShadowSoft.x * uShadowSoft.z, uShadowTexel * 1.5, uShadowTexel * 64.0);
+  float soft = 0.0;
+  for (int i = 0; i < SOFT_FILTER; i++) {
+    vec2 o = softTap(i, SOFT_FILTER, spin + 1.7) * radius;
+    soft += texture(uShadowMap, vec3(c.xy + o, c.z + dot(slope, o)));
+  }
+  return soft / float(SOFT_FILTER);
+#else
   float lit = 0.0;
   for (int x = -1; x <= 1; x++) {
     for (int y = -1; y <= 1; y++) lit += texture(uShadowMap, vec3(c.xy + vec2(x, y) * uShadowTexel * 1.5, c.z));
   }
   return lit / 9.0;
+#endif
 }
 #endif
 #ifdef SPOT_SHADOWS
@@ -938,6 +1021,43 @@ float spotShadowAt(int k, vec3 n, float distance) {
   if (c.x <= tile.x || c.x >= tile.z || c.y <= tile.y || c.y >= tile.w || c.z >= 1.0) return 1.0;
   // nine filtered comparisons, kept inside the tile so a neighbour's shadow doesn't bleed in
   vec2 lo = tile.xy + uSpotShadowTexel, hi = tile.zw - uSpotShadowTexel;
+#ifdef SPOT_SHADOWS_SOFT
+  vec4 softness = uSpotShadowSoft[k];
+  if (softness.x > 0.0) {
+    float spin = softSpin();
+    float here = softDistance(c.z, softness.y, softness.z);
+    // a perspective map: how its coordinates and depth change with world position here
+    mat4 m = uSpotShadowMatrix[k];
+    vec3 r3 = vec3(m[0][3], m[1][3], m[2][3]);
+    vec3 a = (vec3(m[0][0], m[1][0], m[2][0]) - c.x * r3) / s.w;
+    vec3 b = (vec3(m[0][1], m[1][1], m[2][1]) - c.y * r3) / s.w;
+    vec3 g = (vec3(m[0][2], m[1][2], m[2][2]) - c.z * r3) / s.w;
+    // no steeper than about 80 degrees: depth a world unit along the light, over coordinates a world unit across it
+    float depthPerWorld = softness.y * softness.z / ((softness.z - softness.y) * here * here);
+    vec2 slope = softSlope(n, a, b, g, 6.0 * depthPerWorld * here / softness.w);
+    // the widest edge it could have, at the most a caster right at the light
+    float reach = clamp(softness.x * softness.w, uSpotShadowTexel * 1.5, uSpotShadowTexel * 64.0);
+    float found = 0.0, sum = 0.0;
+    for (int i = 0; i < SOFT_SEARCH; i++) {
+      vec2 o = softTap(i, SOFT_SEARCH, 0.0) * reach;
+      float z = c.z + dot(slope, o);
+      float d = texture(uSpotShadowDepth, clamp(c.xy + o, lo, hi)).r;
+      if (d < z) {
+        sum += softDistance(z, softness.y, softness.z) - softDistance(d, softness.y, softness.z);
+        found += 1.0;
+      }
+    }
+    if (found == 0.0) return 1.0;
+    float gap = sum / found;
+    float radius = clamp(gap * softness.x * softness.w / here, uSpotShadowTexel * 1.5, uSpotShadowTexel * 64.0);
+    float soft = 0.0;
+    for (int i = 0; i < SOFT_FILTER; i++) {
+      vec2 o = softTap(i, SOFT_FILTER, spin + 1.7) * radius;
+      soft += texture(uSpotShadowMap, vec3(clamp(c.xy + o, lo, hi), c.z + dot(slope, o)));
+    }
+    return soft / float(SOFT_FILTER);
+  }
+#endif
   float lit = 0.0;
   for (int x = -1; x <= 1; x++) {
     for (int y = -1; y <= 1; y++) lit += texture(uSpotShadowMap, vec3(clamp(c.xy + vec2(x, y) * uSpotShadowTexel * 1.5, lo, hi), c.z));
@@ -960,6 +1080,39 @@ float pointShadowAt(vec3 light, vec3 n, float distance) {
   vec3 dir = d / length(d);
   vec3 u = normalize(cross(dir, abs(dir.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
   vec3 w = cross(dir, u);
+#ifdef POINT_SHADOW_SOFT
+  {
+    // across the way from the light, in units of the direction: a world unit at distance z is 1 / z.
+    // Each sample is compared at the surface's own distance along its ray - where that ray meets
+    // the plane the surface lies in here - so a sloped or curved surface doesn't shadow itself
+    float spin = softSpin();
+    float facing = dot(n, dir);
+    float reach = clamp(uPointShadowSoft, uPointShadowTexel * 1.5, uPointShadowTexel * 64.0);
+    float found = 0.0, sum = 0.0;
+    for (int i = 0; i < SOFT_SEARCH; i++) {
+      vec2 t = softTap(i, SOFT_SEARCH, 0.0) * reach;
+      vec3 ray = dir + u * t.x + w * t.y;
+      float zt = z * clamp(facing / dot(n, normalize(ray)), 0.5, 2.0);
+      float b = texture(uPointShadowDepth, ray).r;
+      float bz = softDistance(b, near, far);
+      if (bz < zt) {
+        sum += zt - bz;
+        found += 1.0;
+      }
+    }
+    if (found == 0.0) return 1.0;
+    float gap = sum / found;
+    float radius = clamp(gap * uPointShadowSoft / z, uPointShadowTexel * 1.5, uPointShadowTexel * 64.0);
+    float soft = 0.0;
+    for (int i = 0; i < SOFT_FILTER; i++) {
+      vec2 t = softTap(i, SOFT_FILTER, spin + 1.7) * radius;
+      vec3 ray = dir + u * t.x + w * t.y;
+      float zt = z * clamp(facing / dot(n, normalize(ray)), 0.5, 2.0);
+      soft += texture(uPointShadowMap, vec4(ray, 0.5 * ((far + near) / (far - near) - 2.0 * far * near / ((far - near) * zt)) + 0.5));
+    }
+    return soft / float(SOFT_FILTER);
+  }
+#endif
   float spread = uPointShadowTexel * 1.5;
   float lit = 0.0;
   for (int x = -1; x <= 1; x++) {

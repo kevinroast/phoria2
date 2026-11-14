@@ -770,7 +770,10 @@ export class WebGLRenderer {
     // placed and cut as every pass draws it, then the material's features and the frame's lights
     const defines = [...placementDefines(item), ...this.#defines(kind, material, geometry, state)]
     if (kind === 'points' && /** @type {any} */ (node).drawsSprites) defines.push('SPRITES')
-    for (const shadow of shadows) defines.push(shadow.define)
+    for (const shadow of shadows) {
+      defines.push(shadow.define)
+      if (shadow.soft) defines.push(shadow.soft.define)
+    }
     const fog = material.fog ? frame.fog : null
     if (fog) {
       defines.push('FOG')
@@ -832,7 +835,10 @@ export class WebGLRenderer {
     // ordinary texture makes the draw fail
     if (kind === 'mesh' && !material.unlit) {
       if (state.environment) program.set('uEnvMap', state.environment.prefiltered)
-      for (const shadow of shadows) program.set(shadow.sampler, shadow.texture)
+      for (const shadow of shadows) {
+        program.set(shadow.sampler, shadow.texture)
+        if (shadow.soft) program.set(shadow.soft.sampler, shadow.soft.value)
+      }
     }
     if (ssao) {
       program.set('uSsao', ssao.texture)

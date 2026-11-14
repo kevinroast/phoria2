@@ -46,6 +46,7 @@ const OVER_LIMIT = {
  * @property {number} [angle] spot
  * @property {number} [penumbra] spot
  * @property {boolean} [castShadow] directional, spot, point
+ * @property {number} [shadowSoftness] directional, spot, point: contact-hardening soft shadows, 0 for the plain edge
  * @property {number} [shadowTile] spot: which spot shadow is its, or -1
  */
 
@@ -120,6 +121,8 @@ const OVER_LIMIT = {
  * @property {number} tile 0 - 3
  * @property {Mat4} viewProjection world to the light's clip space
  * @property {number} texelAngle a shadow map texel's size at a distance of 1, for the bias
+ * @property {number} near its view's near plane
+ * @property {number} far its view's far plane
  * @property {DrawItem[]} casters what it draws, culled to the light's view
  */
 
@@ -328,7 +331,7 @@ export function collect(scene, camera, { display = true } = {}) {
         return sphereInFrustum(planes, box.getCenter(), box.getRadius())
       })
       light.shadowTile = frame.spotShadows.length
-      frame.spotShadows.push({ light, tile: light.shadowTile, viewProjection: fit.viewProjection, texelAngle: fit.texelAngle, casters: seen })
+      frame.spotShadows.push({ light, tile: light.shadowTile, viewProjection: fit.viewProjection, texelAngle: fit.texelAngle, near: fit.near, far: fit.far, casters: seen })
     }
   }
   if (items.length && sun >= 0) {

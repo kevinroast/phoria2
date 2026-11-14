@@ -10,6 +10,10 @@ import { setHookUniforms } from './hooks.js'
 import { setShapeUniforms, shapeDefines } from './shape.js'
 import { blit } from './targets.js'
 
+// soft shadows: at shadowSoftness 1 the edge spreads this much of the gap from caster to surface
+// either way - four tenths across, a large studio light
+const SOFT_SPREAD = 0.2
+
 /** @import { Programs } from './programs.js' */
 /** @import { Target, TargetPool } from './targets.js' */
 /** @import { Resources } from './resources.js' */
@@ -284,7 +288,10 @@ const ENV_LEVELS = 6
  * A shadow ready for the lit shader, the same shape for every kind: the define that turns its code
  * on, the uniforms it reads once a frame, and the depth texture it samples. A new kind of shadow is
  * a pass that returns one of these.
- * @typedef {{ define: string, uniforms: Record<string, unknown>, sampler: string, texture: WebGLTexture }} ShadowMap
+ * @typedef {{ define: string, uniforms: Record<string, unknown>, sampler: string, texture: WebGLTexture,
+ *   soft: { define: string, sampler: string, value: { texture: WebGLTexture, sampler: WebGLSampler } } | null }} ShadowMap
+ *   soft: for contact-hardening shadows, the define that turns them on and the map read as depths -
+ *   its own sampler object, as the texture itself is set up to compare
  */
 
 /**
@@ -300,6 +307,7 @@ export class Passes {
   cameraPosition = [0, 0, 0]
   /** @type {WeakMap<Texture, Environment>} */ #environments = new WeakMap()
   /** @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #shadow = null
+  /** @type {WebGLSampler | null} */ #depthSampler = null
   /** Spot lights' shadows, a tile each. @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #spotShadow = null
   /** A point light's shadow: a depth cube, a framebuffer a face. @type {{ texture: WebGLTexture, framebuffers: WebGLFramebuffer[] } | null} */ #pointShadow = null
   /** Rendering to float textures, which environments need. */
@@ -318,6 +326,7 @@ export class Passes {
   reset() {
     this.#environments = new WeakMap()
     this.#shadow = null
+    this.#depthSampler = null
     this.#spotShadow = null
     this.#pointShadow = null
     this.floatTargets = !!this.gl.getExtension('EXT_color_buffer_float')
@@ -432,14 +441,24 @@ export class Passes {
     this.#endDepth()
     // clip space to [0, 1] texture coordinates and depth
     const toTexture = new Float32Array([0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 0.5, 0, 0.5, 0.5, 0.5, 1])
+    const softness = shadow.light.shadowSoftness ?? 0
+    /** @type {Record<string, unknown>} */
+    const uniforms = {
+      uShadowMatrix: mat4.multiply(new Float32Array(16), toTexture, shadow.viewProjection),
+      uShadowTexel: 1 / SHADOW_MAP_SIZE,
+      // pushed out along the normal by a texel and a half
+      uShadowBias: shadow.texelSize * 1.5,
+    }
+    if (softness > 0) {
+      // how far the edge spreads a unit of gap; the world units a unit of the map's depth spans -
+      // the light's view is orthographic, so its depth is (far - near) times the map's, and the
+      // depth row of its matrix is 2 / (far - near) long; and the map's coordinates a world unit
+      const vp = shadow.viewProjection
+      uniforms.uShadowSoft = [softness * SOFT_SPREAD, 2 / Math.hypot(vp[2], vp[6], vp[10]), 1 / SHADOW_MAP_SIZE / shadow.texelSize]
+    }
     return {
-      define: 'SHADOW', sampler: 'uShadowMap', texture: this.#shadow.texture,
-      uniforms: {
-        uShadowMatrix: mat4.multiply(new Float32Array(16), toTexture, shadow.viewProjection),
-        uShadowTexel: 1 / SHADOW_MAP_SIZE,
-        // pushed out along the normal by a texel and a half
-        uShadowBias: shadow.texelSize * 1.5,
-      },
+      define: 'SHADOW', sampler: 'uShadowMap', texture: this.#shadow.texture, uniforms,
+      soft: softness > 0 ? { define: 'SHADOW_SOFT', sampler: 'uShadowDepth', value: { texture: this.#shadow.texture, sampler: this.#depthReader() } } : null,
     }
   }
 
@@ -455,7 +474,7 @@ export class Passes {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.#spotShadow.framebuffer)
     gl.viewport(0, 0, SPOT_ATLAS_SIZE, SPOT_ATLAS_SIZE)
     this.#beginDepth()
-    const matrices = new Float32Array(16 * 4), tiles = new Float32Array(4 * 4), bias = new Float32Array(4)
+    const matrices = new Float32Array(16 * 4), tiles = new Float32Array(4 * 4), bias = new Float32Array(4), soft = new Float32Array(4 * 4)
     const half = SPOT_ATLAS_SIZE / 2
     for (const spot of spots) {
       const x = spot.tile % 2, y = Math.floor(spot.tile / 2)
@@ -466,11 +485,17 @@ export class Passes {
       matrices.set(mat4.multiply(new Float32Array(16), toTile, spot.viewProjection), spot.tile * 16)
       tiles.set([x * 0.5, y * 0.5, x * 0.5 + 0.5, y * 0.5 + 0.5], spot.tile * 4)
       bias[spot.tile] = spot.texelAngle * 1.5
+      // contact-hardening: how far the edge spreads a unit of gap (0 for the plain edge), the view's
+      // near and far planes to turn the map's depths into distances, and the map's coordinates a
+      // world unit at a distance of 1
+      soft.set([(spot.light.shadowSoftness ?? 0) * SOFT_SPREAD, spot.near, spot.far, 1 / SPOT_ATLAS_SIZE / spot.texelAngle], spot.tile * 4)
     }
     this.#endDepth()
+    const anySoft = spots.some((s) => (s.light.shadowSoftness ?? 0) > 0)
     return {
       define: 'SPOT_SHADOWS', sampler: 'uSpotShadowMap', texture: this.#spotShadow.texture,
-      uniforms: { uSpotShadowMatrix: matrices, uSpotShadowTile: tiles, uSpotShadowBias: bias, uSpotShadowTexel: 1 / SPOT_ATLAS_SIZE },
+      uniforms: { uSpotShadowMatrix: matrices, uSpotShadowTile: tiles, uSpotShadowBias: bias, uSpotShadowTexel: 1 / SPOT_ATLAS_SIZE, ...(anySoft ? { uSpotShadowSoft: soft } : {}) },
+      soft: anySoft ? { define: 'SPOT_SHADOWS_SOFT', sampler: 'uSpotShadowDepth', value: { texture: this.#spotShadow.texture, sampler: this.#depthReader() } } : null,
     }
   }
 
@@ -489,9 +514,12 @@ export class Passes {
       this.drawDepth(face.casters, face.viewProjection)
     })
     this.#endDepth()
+    const softness = point.light.shadowSoftness ?? 0
     return {
       define: 'POINT_SHADOW', sampler: 'uPointShadowMap', texture: this.#pointShadow.texture,
-      uniforms: { uPointShadowNearFar: [point.near, point.far], uPointShadowTexel: point.texelAngle, uPointShadowBias: point.texelAngle * 1.5 },
+      uniforms: { uPointShadowNearFar: [point.near, point.far], uPointShadowTexel: point.texelAngle, uPointShadowBias: point.texelAngle * 1.5,
+        ...(softness > 0 ? { uPointShadowSoft: softness * SOFT_SPREAD } : {}) },
+      soft: softness > 0 ? { define: 'POINT_SHADOW_SOFT', sampler: 'uPointShadowDepth', value: { texture: this.#pointShadow.texture, sampler: this.#depthReader() } } : null,
     }
   }
 
@@ -680,6 +708,23 @@ export class Passes {
       // two multisampled targets drawn at once: the mask, and its coverage
       msaa: smooth ? this.targets.get('outline-msaa', { width, height, color: [gl.RGBA8, gl.R8], samples: Math.min(4, gl.getParameter(gl.MAX_SAMPLES) || 4) }) : null,
     }
+  }
+
+  /**
+   * A sampler object that reads a shadow map's depths as numbers - for the blocker search of soft
+   * shadows - though its texture is set up to compare: no comparing, and the nearest texel (depth
+   * textures can't be filtered otherwise). One serves the 2D maps and the cube.
+   * @returns {WebGLSampler}
+   */
+  #depthReader() {
+    if (this.#depthSampler) return this.#depthSampler
+    const gl = this.gl
+    const s = /** @type {WebGLSampler} */ (gl.createSampler())
+    gl.samplerParameteri(s, gl.TEXTURE_COMPARE_MODE, gl.NONE)
+    gl.samplerParameteri(s, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.samplerParameteri(s, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    for (const wrap of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.samplerParameteri(s, wrap, gl.CLAMP_TO_EDGE)
+    return (this.#depthSampler = s)
   }
 
   /** A depth texture to draw shadows into and compare against. @param {number} size */

@@ -225,3 +225,58 @@ describe('point light shadows', () => {
     expect(new PointLight().toJSON()).not.toHaveProperty('castShadow')
   })
 })
+
+describe('soft shadows (shadowSoftness)', () => {
+  /** The ground, a box and a ball above it, lit by one shadow-casting light. @param {import('../src/index.js').Light} light */
+  const scene = (light) => {
+    const s = new Scene()
+    s.add(new Mesh({ geometry: plane(20), receiveShadow: true }))
+    s.add(new Mesh({ geometry: box(1), position: [0, 0.5, 0], castShadow: true }))
+    s.add(new Mesh({ geometry: sphere(0.5), position: [2, 2, 0], castShadow: true }))
+    s.add(light)
+    s.updateWorldTree()
+    return s
+  }
+  /** The defines of the programs a scene compiles, once its shadow code has loaded. @param {Scene} s */
+  const compiled = async (s) => {
+    const { renderer, defines } = recording()
+    let ready = 0
+    renderer.onReady = () => ready++
+    renderer.render(s, camera())
+    await vi.waitFor(() => expect(ready).toBeGreaterThan(0))
+    defines()
+    renderer.render(s, camera())
+    return defines().flat()
+  }
+
+  it('turns on the soft lookup for each kind of light only when it is set', async () => {
+    for (const [make, plain, soft] of /** @type {const} */ ([
+      [(o) => new DirectionalLight({ direction: [-1, -2, -1], castShadow: true, ...o }), 'SHADOW', 'SHADOW_SOFT'],
+      [(o) => new SpotLight({ position: [0, 6, 0], direction: [0, -1, 0], angle: 0.6, castShadow: true, ...o }), 'SPOT_SHADOWS', 'SPOT_SHADOWS_SOFT'],
+      [(o) => new PointLight({ position: [0, 5, 0], range: 20, castShadow: true, ...o }), 'POINT_SHADOW', 'POINT_SHADOW_SOFT'],
+    ])) {
+      const hard = await compiled(scene(make({})))
+      expect(hard).toContain(plain)
+      expect(hard).not.toContain(soft)
+      expect(await compiled(scene(make({ shadowSoftness: 1 })))).toContain(soft)
+    }
+  })
+
+  it('reaches the frame, and is a change to watch', () => {
+    const light = new DirectionalLight({ direction: [0, -1, 0], castShadow: true, shadowSoftness: 0.5 })
+    const s = scene(light)
+    expect(collect(s, camera()).shadow?.light.shadowSoftness).toBe(0.5)
+    const watch = new ChangeWatch()
+    watch.changed(s, camera())
+    light.shadowSoftness = 1
+    expect(watch.changed(s, camera())).toBe(true)
+  })
+
+  it('keeps shadowSoftness through clone and JSON, and leaves it out at 0', () => {
+    for (const light of [new DirectionalLight({ shadowSoftness: 2 }), new SpotLight({ shadowSoftness: 2 }), new PointLight({ shadowSoftness: 2 })]) {
+      expect(light.clone().shadowSoftness).toBe(2)
+      expect(light.toJSON()).toMatchObject({ shadowSoftness: 2 })
+    }
+    expect(new DirectionalLight().toJSON()).not.toHaveProperty('shadowSoftness')
+  })
+})

@@ -5,7 +5,8 @@ import {
 import { teapot } from './data/teapot.js'
 
 // Lights on a small set - a teapot among columns - in two moods. Sunset: a low warm sun with long
-// shadows. Neon: coloured point lights circling in the dark. Throughout, a lamp swings on an arm: its spot light is the lamp head's
+// shadows, soft ones - sharp where the columns meet the floor, blurring along their length
+// (shadowSoftness). Neon: coloured point lights circling in the dark. Throughout, a lamp swings on an arm: its spot light is the lamp head's
 // child, so it follows the swing - parenting, with no maths.
 
 /** A soft round glow for light bulbs, drawn once into a canvas. */
@@ -59,7 +60,7 @@ export default function run({ canvas, gui }) {
   // the moods' own lights, switched on and off as a mood is chosen
   const sky = scene.add(new HemisphereLight({ sky: '#dfe8ff', ground: '#3a3530' }))
   const ambient = scene.add(new AmbientLight({ color: '#1a1030' }))
-  const sun = scene.add(new DirectionalLight({ castShadow: true }))
+  const sun = scene.add(new DirectionalLight({ castShadow: true, shadowSoftness: 0.30 }))
   const neon = ['#ff2bd6', '#2be8ff', '#ffd52b'].map((color, i) => {
     const orbit = scene.add(new Group({ rotation: [0, (i / 3) * Math.PI * 2, 0] }))
     const light = orbit.add(new PointLight({ color, position: [3, 1.6 + i * 0.5, 0], range: 14 }))
@@ -93,6 +94,7 @@ export default function run({ canvas, gui }) {
   gui.add(settings, 'mood', Object.keys(MOODS)).onChange(setMood)
   gui.add(settings, 'speed', 0, 3, 0.1).name('neon speed')
   gui.add(settings, 'swing', 0, 1, 0.05).name('lamp swing')
+  gui.add(sun, 'shadowSoftness', 0, 2, 0.05).name('sun shadow softness')
 
   return view.start((dt, t) => {
     pivot.rotation.z = Math.sin(t * 1.1) * settings.swing * 0.6
