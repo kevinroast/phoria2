@@ -43,7 +43,7 @@ export default function run({ canvas, gui }) {
   })
   const scene = view.scene
 
-  const settings = { keyWidth: 2.4, keyHeight: 1.6, keyIntensity: 36, floorGloss: 0.85, shadows: true, move: true }
+  const settings = { keyWidth: 2.4, keyHeight: 0.8, keyIntensity: 75, floorGloss: 0.85, shadows: true, bounce: true, move: true }
 
   // the set: a dark floor, polished, faintly mottled like sealed concrete - and behind it a matt sweep,
   // curving up from the floor into the wall, as a photographer's backdrop paper does
@@ -109,7 +109,7 @@ normal = normalize(normal + (vec3(hash(f.z), hash(f.z + 0.37), hash(f.z + 0.71))
     material: { color: '#1f4fb8', metalness: 0.5, roughness: 0.38, clearcoat: 1, clearcoatRoughness: 0.04, shader: flakes },
     position: [-0.2, 0.13, 1.25], castShadow: true, receiveShadow: true }))
 
-  // a little light from all round, so the shadows aren't black
+  // a little light from all round, so nothing is quite black
   scene.add(new HemisphereLight({ sky: '#9aa4b8', ground: '#2a2826', intensity: 0.12 }))
 
   // the light: a warm softbox above and to the left
@@ -126,6 +126,12 @@ normal = normalize(normal + (vec3(hash(f.z), hash(f.z + 0.37), hash(f.z + 0.71))
   }
   const glowing = (/** @type {string} */ color) => ({ color: '#000000', emissive: color, emissiveIntensity: 3, doubleSided: true })
   const keyPanel = scene.add(new Mesh({ geometry: panelOf(key), material: glowing('#fff1de'), castShadow: false, receiveShadow: false }))
+  // a bounce card on the far side, as a photographer would stand one: a white board catching the
+  // softbox and throwing a little of it back into the shadow side - a dim rect light of its own, no
+  // shadow, and the board drawn where it is, so its soft reflection in the glossy things makes sense
+  const bounce = scene.add(new RectAreaLight({ color: '#fff4e8', width: 1.6, height: 1.2, intensity: 6, position: [2.7, 0.9, 2.3], target: [0, 0.4, 0.4] }))
+  const card = scene.add(new Mesh({ geometry: panelOf(bounce), castShadow: false, receiveShadow: false,
+    material: { color: '#d9d5cd', roughness: 0.95, emissive: '#fff4e8', emissiveIntensity: 0.35, doubleSided: true } }))
 
   let swing = 0
   // the key swings slowly round the front left, always aimed at the subjects
@@ -141,15 +147,18 @@ normal = normalize(normal + (vec3(hash(f.z), hash(f.z + 0.37), hash(f.z + 0.71))
     key.height = settings.keyHeight
     key.intensity = settings.keyIntensity
     key.castShadow = settings.shadows
+    bounce.intensity = settings.bounce ? 6 : 0
+    card.visible = settings.bounce
     floor.material.roughness = 1 - settings.floorGloss
     placeKey()
   }
 
   gui.add(settings, 'keyWidth', 0.2, 4, 0.05).name('softbox width').onChange(apply)
   gui.add(settings, 'keyHeight', 0.2, 3, 0.05).name('softbox height').onChange(apply)
-  gui.add(settings, 'keyIntensity', 0, 100, 1).name('softbox intensity').onChange(apply)
+  gui.add(settings, 'keyIntensity', 0, 200, 1).name('softbox intensity').onChange(apply)
   gui.add(settings, 'floorGloss', 0, 1, 0.05).name('floor gloss').onChange(apply)
   gui.add(settings, 'shadows').onChange(apply)
+  gui.add(settings, 'bounce').name('bounce card').onChange(apply)
   gui.add(settings, 'move').name('move the softbox')
   apply()
 

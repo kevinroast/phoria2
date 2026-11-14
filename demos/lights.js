@@ -93,7 +93,7 @@ export default function run({ canvas, gui }) {
     sunset: { background: '#2a1e2e', environment: 'none', sky: 0.35, ambient: 0.4, sun: { color: '#ff9a52', intensity: 2.2, direction: [-0.723, -0.28, -0.775] }, neon: 0, lamp: 10 },
     neon: { background: '#07060c', environment: 'none', sky: 0.04, ambient: 0.6, sun: { color: '#ffffff', intensity: 0, direction: [0, -1, 0] }, neon: 22, lamp: 26 },
   }
-  const settings = { mood: 'sunset', speed: 1, swing: 0.5 }
+  const settings = { mood: 'sunset', speed: 1, swing: 0.75 }
   const setMood = () => {
     const m = MOODS[settings.mood]
     scene.background = m.background
