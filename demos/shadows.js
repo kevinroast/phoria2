@@ -43,14 +43,15 @@ function fbm(x, z, octaves = 4, period = 0) {
   return sum / total
 }
 
-// the ground's height: broad, low mounds and a little roughness, settled flat where things stand
-const SETTLE = [[-1.7, 0.4, 1.6], [1.4, 0.9, 0.7], [0.7, -1.5, 0.4], [3.0, -2.3, 0.4], [-0.6, 2.0, 0.5]]
+// the ground's height: broad, low mounds and a little roughness, levelled to 0 where things stand -
+// wide enough for every foot of them, so nothing floats with light under it
+const SETTLE = [[-1.7, 0.4, 2.4], [1.4, 0.9, 0.8], [0.7, -1.5, 0.7], [3.0, -2.3, 0.6], [-0.6, 2.0, 0.6]]
 /** @param {number} x @param {number} z */
 function heightAt(x, z) {
   let h = (fbm(x * 0.22 + 7, z * 0.22 + 3, 3) - 0.5) * 0.5 + (fbm(x * 1.6, z * 1.6, 3) - 0.5) * 0.06
   for (const [cx, cz, r] of SETTLE) {
     const d = Math.hypot(x - cx, z - cz) / r
-    if (d < 1.4) h *= Math.min(1, Math.max(0.25, (d - 0.4) / 1))
+    if (d < 1.3) h *= Math.min(1, Math.max(0, (d - 0.6) / 0.7))
   }
   return h
 }
@@ -213,7 +214,8 @@ export default function run({ canvas, gui, info }) {
   const pergola = scene.add(new Group({ position: [-1.7, heightAt(-1.7, 0.4), 0.4], rotation: [0, 0.3, 0] }))
   const W = 1.1, D = 0.8, H = 2.3
   for (const [x, z] of [[-W, -D], [W, -D], [-W, D], [W, D]]) {
-    pergola.add(new Mesh({ geometry: box({ width: 0.13, height: H, depth: 0.13 }), material: planks, position: [x, H / 2, z], castShadow: true, receiveShadow: true }))
+    // sunk 0.2 into the ground, as posts are
+    pergola.add(new Mesh({ geometry: box({ width: 0.13, height: H + 0.2, depth: 0.13 }), material: planks, position: [x, H / 2 - 0.1, z], castShadow: true, receiveShadow: true }))
   }
   for (const z of [-D, D]) pergola.add(new Mesh({ geometry: box({ width: W * 2 + 0.6, height: 0.16, depth: 0.09 }), material: planks, position: [0, H + 0.04, z], castShadow: true, receiveShadow: true }))
   const SLATS = 11
@@ -265,7 +267,7 @@ export default function run({ canvas, gui, info }) {
 
   // ---- the lamp post: an iron pole, an arm, a shade - and its spot light, aimed at the middle
   const post = scene.add(new Group({ position: [3.0, heightAt(3.0, -2.3), -2.3] }))
-  post.add(new Mesh({ geometry: cylinder({ radius: 0.09, radiusTop: 0.05, height: 0.3 }), material: iron, position: [0, 0.15, 0], castShadow: true, receiveShadow: true }))
+  post.add(new Mesh({ geometry: cylinder({ radius: 0.09, radiusTop: 0.05, height: 0.45 }), material: iron, position: [0, 0.075, 0], castShadow: true, receiveShadow: true }))
   post.add(new Mesh({ geometry: cylinder({ radius: 0.045, height: 3.4 }), material: iron, position: [0, 1.7, 0], castShadow: true, receiveShadow: true }))
   // the arm reaches towards the middle of the garden: turned about y so its +x points there
   const toward = Math.atan2(-2.3, -3.0)
@@ -281,7 +283,7 @@ export default function run({ canvas, gui, info }) {
 
   // ---- the lantern: a candle in an iron cage on a short post; its bars throw shadows all round
   const lantern = scene.add(new Group({ position: [-0.6, heightAt(-0.6, 2.0), 2.0] }))
-  lantern.add(new Mesh({ geometry: cylinder({ radius: 0.05, height: 0.9 }), material: iron, position: [0, 0.45, 0], castShadow: true, receiveShadow: true }))
+  lantern.add(new Mesh({ geometry: cylinder({ radius: 0.05, height: 1.1 }), material: iron, position: [0, 0.35, 0], castShadow: true, receiveShadow: true }))
   lantern.add(new Mesh({ geometry: box({ width: 0.3, height: 0.03, depth: 0.3 }), material: iron, position: [0, 0.915, 0], castShadow: true, receiveShadow: true }))
   for (const [x, z] of [[-0.13, -0.13], [0.13, -0.13], [-0.13, 0.13], [0.13, 0.13], [0, -0.13], [0, 0.13], [-0.13, 0], [0.13, 0]]) {
     lantern.add(new Mesh({ geometry: cylinder({ radius: 0.008, height: 0.36 }), material: iron, position: [x, 1.11, z], castShadow: true }))

@@ -927,10 +927,16 @@ vec3 perturbNormal(vec3 n, vec3 m, vec2 uv) {
 // Contact-hardening soft shadows (PCSS): look round for what casts the shadow and how far above the
 // surface it is, then filter the edge that much wider - sharp where an object meets what it stands
 // on, soft further off. Points over a disc (a Vogel spiral). The search uses them as they are, so
-// neighbouring pixels agree on how wide the edge is; the filter turns them by a random angle at each
-// pixel, so its few samples blur to an even grain rather than banding.
-const int SOFT_SEARCH = 16;
+// neighbouring pixels agree on how wide the edge is, and counts each less the further out it is - so
+// a caster coming into reach eases the estimate along rather than jumping it, which shows as bands
+// down a long shadow; the filter turns them by a random angle at each pixel, so its few samples blur
+// to an even grain rather than banding.
+const int SOFT_SEARCH = 24;
 const int SOFT_FILTER = 32;
+// how much a search sample counts: 1 at the middle, fading to nothing at the edge
+float softWeight(int i) {
+  return 1.0 - (float(i) + 0.5) / float(SOFT_SEARCH);
+}
 vec2 softTap(int i, int count, float spin) {
   float r = sqrt((float(i) + 0.5) / float(count));
   float a = float(i) * 2.39996323 + spin;
@@ -986,8 +992,9 @@ float shadowAt(vec3 n, vec3 l) {
     float z = c.z + dot(slope, o);
     float d = texture(uShadowDepth, c.xy + o).r;
     if (d < z) {
-      sum += z - d;
-      found += 1.0;
+      float k = softWeight(i);
+      sum += (z - d) * k;
+      found += k;
     }
   }
   if (found == 0.0) return 1.0;
@@ -1043,8 +1050,9 @@ float spotShadowAt(int k, vec3 n, float distance) {
       float z = c.z + dot(slope, o);
       float d = texture(uSpotShadowDepth, clamp(c.xy + o, lo, hi)).r;
       if (d < z) {
-        sum += softDistance(z, softness.y, softness.z) - softDistance(d, softness.y, softness.z);
-        found += 1.0;
+        float k = softWeight(i);
+        sum += (softDistance(z, softness.y, softness.z) - softDistance(d, softness.y, softness.z)) * k;
+        found += k;
       }
     }
     if (found == 0.0) return 1.0;
@@ -1096,8 +1104,9 @@ float pointShadowAt(vec3 light, vec3 n, float distance) {
       float b = texture(uPointShadowDepth, ray).r;
       float bz = softDistance(b, near, far);
       if (bz < zt) {
-        sum += zt - bz;
-        found += 1.0;
+        float k = softWeight(i);
+        sum += (zt - bz) * k;
+        found += k;
       }
     }
     if (found == 0.0) return 1.0;
