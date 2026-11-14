@@ -304,9 +304,9 @@ export default function run({ canvas, gui, info }) {
 
   // ---- the three lights, each with its time of day: the sky, the fog, the fill, the bulbs
   const MOODS = {
-    sun: { name: 'Sun', background: '#c9ab8c', fog: 0.02, sky: ['#cfd8ff', '#4a3a2c', 0.32], env: 0.12, softness: 0.25 },
-    spot: { name: 'Spot', background: '#1d2433', fog: 0.035, sky: ['#40506e', '#14120f', 0.2], env: 0.06, softness: 0.8 },
-    lantern: { name: 'Lantern', background: '#0b0c14', fog: 0.04, sky: ['#1c2440', '#080706', 0.08], env: 0.02, softness: 0.5 },
+    sun: { name: 'Sun', background: '#c9ab8c', fog: 0.02, sky: ['#cfd8ff', '#4a3a2c', 0.32], env: 0.12, softness: 0.15 },
+    spot: { name: 'Spot', background: '#1d2433', fog: 0.035, sky: ['#40506e', '#14120f', 0.2], env: 0.06, softness: 0.3 },
+    lantern: { name: 'Lantern', background: '#0b0c14', fog: 0.04, sky: ['#1c2440', '#080706', 0.08], env: 0.02, softness: 0.4 },
   }
   /** @typedef {keyof typeof MOODS} Mood */
   const lights = { sun, spot, lantern: candle }
@@ -369,9 +369,9 @@ export default function run({ canvas, gui, info }) {
     apply()
   })
   gui.add(settings, 'soft').name('soft shadows').onChange(apply)
-  gui.add(settings, 'softness', 0, 2, 0.05).name('shadow softness').onChange(apply)
+  gui.add(settings, 'softness', 0, 1, 0.05).name('shadow softness').onChange(apply)
   gui.add(settings, 'move').name('move the light')
-  gui.add(settings, 'time', 0, 1, 0.01).name('time of day').onChange(placeSun)
+  gui.add(settings, 'time', 0, 0.99, 0.01).name('time of day').onChange(placeSun)
 
   placeSun()
   apply()
@@ -396,7 +396,7 @@ export default function run({ canvas, gui, info }) {
     t += dt
     if (settings.move) {
       if (settings.light === 'sun') {
-        settings.time = (settings.time + dt * 0.01) % 1
+        settings.time = (settings.time + dt * 0.01) % 0.99
         placeSun()
       }
       // the lamp head nods slowly, its pool of light sweeping the stones

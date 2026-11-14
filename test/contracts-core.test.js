@@ -145,7 +145,7 @@ nodeContract(HemisphereLight, (o) => new HemisphereLight(o), {
 nodeContract(DirectionalLight, (o) => new DirectionalLight(o), {
   ...lightRows(), ...aimRows(),
   castShadow: { value: true, read: (l) => l.castShadow, default: false },
-  shadowSoftness: { value: 1.5, read: (l) => l.shadowSoftness, default: 0, bad: -1, error: 'shadowSoftness' },
+  shadowSoftness: { value: 0.8, read: (l) => l.shadowSoftness, default: 0, bad: 1.5, error: 'shadowSoftness' },
   shadowBounds: { value: { min: [-5, 0, -5], max: [5, 3, 5] }, read: (l) => l.shadowBounds && [Array.from(l.shadowBounds.min), Array.from(l.shadowBounds.max)],
     expect: [[-5, 0, -5], [5, 3, 5]], default: null, bad: { min: [1, 0, 0], max: [0, 1, 1] }, error: 'shadowBounds' },
 })
@@ -153,7 +153,7 @@ nodeContract(PointLight, (o) => new PointLight(o), {
   ...lightRows(),
   range: { value: 5, read: (l) => l.range, default: 0, bad: -1, error: 'range' },
   castShadow: { value: true, read: (l) => l.castShadow, default: false },
-  shadowSoftness: { value: 1.5, read: (l) => l.shadowSoftness, default: 0, bad: -1, error: 'shadowSoftness' },
+  shadowSoftness: { value: 0.8, read: (l) => l.shadowSoftness, default: 0, bad: 1.5, error: 'shadowSoftness' },
 })
 nodeContract(SpotLight, (o) => new SpotLight(o), {
   ...lightRows(), ...aimRows(),
@@ -161,7 +161,7 @@ nodeContract(SpotLight, (o) => new SpotLight(o), {
   angle: { value: 0.4, read: (l) => l.angle, default: Math.PI / 6, bad: 2, error: 'angle' },
   penumbra: { value: 0.5, read: (l) => l.penumbra, default: 0.1, bad: 2, error: 'penumbra' },
   castShadow: { value: true, read: (l) => l.castShadow, default: false },
-  shadowSoftness: { value: 1.5, read: (l) => l.shadowSoftness, default: 0, bad: -1, error: 'shadowSoftness' },
+  shadowSoftness: { value: 0.8, read: (l) => l.shadowSoftness, default: 0, bad: 1.5, error: 'shadowSoftness' },
 })
 
 // --- materials and textures

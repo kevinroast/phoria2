@@ -22,9 +22,9 @@ const LIGHT_HINTS = {
   decay: 'falloff is physical (inverse square), as in glTF - limit it with range',
   attenuation: "use 'range' - falloff is physical (inverse square)",
   shadow: "use 'castShadow: true' (directional, spot and point lights)",
-  shadowRadius: "use 'shadowSoftness' - 0 is the plain edge, larger a bigger, softer light",
-  shadowBlur: "use 'shadowSoftness' - 0 is the plain edge, larger a bigger, softer light",
-  softShadows: "use 'shadowSoftness: 1' - contact-hardening soft shadows",
+  shadowRadius: "use 'shadowSoftness' - 0-1: 0 is the plain edge, 1 a large, soft light",
+  shadowBlur: "use 'shadowSoftness' - 0-1: 0 is the plain edge, 1 a large, soft light",
+  softShadows: "use 'shadowSoftness' (0-1) - contact-hardening soft shadows",
   lightSize: "use 'shadowSoftness' - how soft the shadow's edge grows away from the caster",
 }
 
@@ -228,9 +228,9 @@ export class DirectionalLight extends AimedLight {
   castShadow = false
   /**
    * Contact-hardening shadows: sharp where its shadow meets what casts it, softening further away, as
-   * under a large light. 0 (the default) keeps the plain filtered edge. At 1 the edge widens by about
-   * four tenths of the distance from the caster to the surface - a large studio light; 0.2-0.5 is
-   * subtler. Costs more per pixel near shadow edges - most on phones.
+   * under a large light. 0-1: 0 (the default) keeps the plain filtered edge; at 1, the most, the edge
+   * widens by about four tenths of the distance from the caster to the surface - a large studio light;
+   * 0.2-0.5 is subtler. Costs more per pixel near shadow edges - most on phones.
    */
   shadowSoftness = 0
   /** @type {Box3 | null} */
@@ -310,9 +310,9 @@ export class PointLight extends Light {
   castShadow = false
   /**
    * Contact-hardening shadows: sharp where its shadow meets what casts it, softening further away, as
-   * under a large light. 0 (the default) keeps the plain filtered edge. At 1 the edge widens by about
-   * four tenths of the distance from the caster to the surface - a large studio light; 0.2-0.5 is
-   * subtler. Costs more per pixel near shadow edges - most on phones.
+   * under a large light. 0-1: 0 (the default) keeps the plain filtered edge; at 1, the most, the edge
+   * widens by about four tenths of the distance from the caster to the surface - a large studio light;
+   * 0.2-0.5 is subtler. Costs more per pixel near shadow edges - most on phones.
    */
   shadowSoftness = 0
 
@@ -359,9 +359,9 @@ export class SpotLight extends AimedLight {
   penumbra = 0.1
   /**
    * Contact-hardening shadows: sharp where its shadow meets what casts it, softening further away, as
-   * under a large light. 0 (the default) keeps the plain filtered edge. At 1 the edge widens by about
-   * four tenths of the distance from the caster to the surface - a large studio light; 0.2-0.5 is
-   * subtler. Costs more per pixel near shadow edges - most on phones.
+   * under a large light. 0-1: 0 (the default) keeps the plain filtered edge; at 1, the most, the edge
+   * widens by about four tenths of the distance from the caster to the surface - a large studio light;
+   * 0.2-0.5 is subtler. Costs more per pixel near shadow edges - most on phones.
    */
   shadowSoftness = 0
 
@@ -408,7 +408,7 @@ export class SpotLight extends AimedLight {
 /** @param {string} owner @param {unknown} v */
 function softnessOf(owner, v) {
   const s = checkNumber(owner, 'shadowSoftness', v)
-  if (s < 0) fail(owner, `'shadowSoftness' can't be negative (0 is the plain edge), got ${s}`)
+  if (s < 0 || s > 1) fail(owner, `'shadowSoftness' must be 0-1 (0 the plain edge, 1 a large studio light), got ${s}`)
   return s
 }
 

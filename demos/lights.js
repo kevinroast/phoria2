@@ -94,7 +94,7 @@ export default function run({ canvas, gui }) {
   gui.add(settings, 'mood', Object.keys(MOODS)).onChange(setMood)
   gui.add(settings, 'speed', 0, 3, 0.1).name('neon speed')
   gui.add(settings, 'swing', 0, 1, 0.05).name('lamp swing')
-  gui.add(sun, 'shadowSoftness', 0, 2, 0.05).name('sun shadow softness')
+  gui.add(sun, 'shadowSoftness', 0, 1, 0.05).name('sun shadow softness')
 
   return view.start((dt, t) => {
     pivot.rotation.z = Math.sin(t * 1.1) * settings.swing * 0.6

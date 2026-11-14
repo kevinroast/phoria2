@@ -349,7 +349,8 @@
             "shadowSoftness": {
               "type": "number",
               "minimum": 0,
-              "description": "Contact-hardening soft shadows: 0 (the default) the plain edge; at 1 the edge widens about four tenths of the gap from caster to surface - a large studio light."
+              "maximum": 1,
+              "description": "Contact-hardening soft shadows, 0-1: 0 (the default) the plain edge; at 1 the edge widens about four tenths of the gap from caster to surface - a large studio light."
             },
             "shadowBounds": {
               "type": ["object", "null"],
@@ -388,7 +389,8 @@
             "shadowSoftness": {
               "type": "number",
               "minimum": 0,
-              "description": "Contact-hardening soft shadows: 0 (the default) the plain edge; at 1 the edge widens about four tenths of the gap from caster to surface - a large studio light."
+              "maximum": 1,
+              "description": "Contact-hardening soft shadows, 0-1: 0 (the default) the plain edge; at 1 the edge widens about four tenths of the gap from caster to surface - a large studio light."
             }
           },
           "unevaluatedProperties": false
@@ -434,7 +436,8 @@
             "shadowSoftness": {
               "type": "number",
               "minimum": 0,
-              "description": "Contact-hardening soft shadows: 0 (the default) the plain edge; at 1 the edge widens about four tenths of the gap from caster to surface - a large studio light."
+              "maximum": 1,
+              "description": "Contact-hardening soft shadows, 0-1: 0 (the default) the plain edge; at 1 the edge widens about four tenths of the gap from caster to surface - a large studio light."
             }
           },
           "unevaluatedProperties": false

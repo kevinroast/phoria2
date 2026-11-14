@@ -273,9 +273,9 @@ describe('soft shadows (shadowSoftness)', () => {
   })
 
   it('keeps shadowSoftness through clone and JSON, and leaves it out at 0', () => {
-    for (const light of [new DirectionalLight({ shadowSoftness: 2 }), new SpotLight({ shadowSoftness: 2 }), new PointLight({ shadowSoftness: 2 })]) {
-      expect(light.clone().shadowSoftness).toBe(2)
-      expect(light.toJSON()).toMatchObject({ shadowSoftness: 2 })
+    for (const light of [new DirectionalLight({ shadowSoftness: 0.7 }), new SpotLight({ shadowSoftness: 0.7 }), new PointLight({ shadowSoftness: 0.7 })]) {
+      expect(light.clone().shadowSoftness).toBe(0.7)
+      expect(light.toJSON()).toMatchObject({ shadowSoftness: 0.7 })
     }
     expect(new DirectionalLight().toJSON()).not.toHaveProperty('shadowSoftness')
   })

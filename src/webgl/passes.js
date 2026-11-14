@@ -13,6 +13,8 @@ import { blit } from './targets.js'
 // soft shadows: at shadowSoftness 1 the edge spreads this much of the gap from caster to surface
 // either way - four tenths across, a large studio light
 const SOFT_SPREAD = 0.2
+/** A light's shadowSoftness, held to 0-1 - set on the light directly it isn't checked. @param {{ shadowSoftness?: number }} light */
+const softnessOf = (light) => Math.min(1, Math.max(0, light.shadowSoftness ?? 0))
 
 /** @import { Programs } from './programs.js' */
 /** @import { Target, TargetPool } from './targets.js' */
@@ -441,7 +443,7 @@ export class Passes {
     this.#endDepth()
     // clip space to [0, 1] texture coordinates and depth
     const toTexture = new Float32Array([0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 0.5, 0, 0.5, 0.5, 0.5, 1])
-    const softness = shadow.light.shadowSoftness ?? 0
+    const softness = softnessOf(shadow.light)
     /** @type {Record<string, unknown>} */
     const uniforms = {
       uShadowMatrix: mat4.multiply(new Float32Array(16), toTexture, shadow.viewProjection),
@@ -488,10 +490,10 @@ export class Passes {
       // contact-hardening: how far the edge spreads a unit of gap (0 for the plain edge), the view's
       // near and far planes to turn the map's depths into distances, and the map's coordinates a
       // world unit at a distance of 1
-      soft.set([(spot.light.shadowSoftness ?? 0) * SOFT_SPREAD, spot.near, spot.far, 1 / SPOT_ATLAS_SIZE / spot.texelAngle], spot.tile * 4)
+      soft.set([softnessOf(spot.light) * SOFT_SPREAD, spot.near, spot.far, 1 / SPOT_ATLAS_SIZE / spot.texelAngle], spot.tile * 4)
     }
     this.#endDepth()
-    const anySoft = spots.some((s) => (s.light.shadowSoftness ?? 0) > 0)
+    const anySoft = spots.some((s) => softnessOf(s.light) > 0)
     return {
       define: 'SPOT_SHADOWS', sampler: 'uSpotShadowMap', texture: this.#spotShadow.texture,
       uniforms: { uSpotShadowMatrix: matrices, uSpotShadowTile: tiles, uSpotShadowBias: bias, uSpotShadowTexel: 1 / SPOT_ATLAS_SIZE, ...(anySoft ? { uSpotShadowSoft: soft } : {}) },
@@ -514,7 +516,7 @@ export class Passes {
       this.drawDepth(face.casters, face.viewProjection)
     })
     this.#endDepth()
-    const softness = point.light.shadowSoftness ?? 0
+    const softness = softnessOf(point.light)
     return {
       define: 'POINT_SHADOW', sampler: 'uPointShadowMap', texture: this.#pointShadow.texture,
       uniforms: { uPointShadowNearFar: [point.near, point.far], uPointShadowTexel: point.texelAngle, uPointShadowBias: point.texelAngle * 1.5,

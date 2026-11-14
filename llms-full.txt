@@ -781,9 +781,9 @@ the world area that gets shadows - so the map stays sharp there.
 
 **Soft shadows**: `shadowSoftness` on any shadow-casting light gives contact-hardening shadows - sharp
 where an object meets what it stands on, softening further off, as under a large light. 0 (the
-default) is the plain filtered edge; at 1 the edge widens about four tenths of the gap from caster
-to surface - a large studio light; 0.2-0.5 is subtler. Thin things far above a surface fade to a
-soft smudge at high values, as they would. It costs more per pixel near shadow edges, most on
+default) is the plain filtered edge; at 1, the most, the edge widens about four tenths of the gap from
+caster to surface - a large studio light; 0.2-0.5 is subtler. Thin things far above a surface fade to a
+soft smudge near 1, as they would. It costs more per pixel near shadow edges, most on
 phones, so it's off unless set.
 
 ```js
