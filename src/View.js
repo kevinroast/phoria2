@@ -614,6 +614,7 @@ export class View {
     if (this.autoLight && frame.lights.length === 0) this.#addAutoLights(frame)
     frame.time = this.time
     frame.highlight = this.#highlightFor(this.#hovered)
+    frame.shadowTexels = this.#debug?.shadows === 'texels'
     this.#occlude(frame)
     // debug helpers go on the end of the frame for drawing, and come off again after: never picked,
     // explained or kept in lastFrame
@@ -1641,6 +1642,7 @@ function debugOptions(v) {
     const value = /** @type {any} */ (v)[key]
     if (value === undefined) o[key] = false
     else if (key === 'bounds' || key === 'normals') o[key] = value === 'hovered' ? 'hovered' : checkBool(key, value, "true, false or 'hovered'")
+    else if (key === 'shadows') o[key] = value === 'texels' ? 'texels' : checkBool(key, value, "true, false or 'texels'")
     else if (key === 'stats') o[key] = value === true ? 'top-left' : value === false ? false : checkOneOf('View', 'debug.stats', value, CORNERS)
     else o[key] = checkBool(key, value, 'true or false')
   }

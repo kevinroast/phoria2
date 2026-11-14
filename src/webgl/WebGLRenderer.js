@@ -774,6 +774,7 @@ export class WebGLRenderer {
       defines.push(shadow.define)
       if (shadow.soft) defines.push(shadow.soft.define)
     }
+    if (shadows.length && frame.shadowTexels) defines.push('DEBUG_SHADOW_TEXELS')
     const fog = material.fog ? frame.fog : null
     if (fog) {
       defines.push('FOG')

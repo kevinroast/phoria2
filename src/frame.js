@@ -166,6 +166,7 @@ const OVER_LIMIT = {
  * @property {{ drawn: number, culled: number }} stats
  * @property {number} [time] the View's clock in seconds, for shader hooks that read uTime
  * @property {FrameHighlight | null} highlight set by the View for hover highlighting
+ * @property {boolean} [shadowTexels] set by the View for debug.shadows: 'texels' - shadow map texels drawn over what receives them
  * @property {any[]} overlays HTML elements carried by the nodes drawn (node.overlay)
  * @property {boolean} interactive some node has a tooltip, highlight or pointer handler
  * @property {boolean} draggable some node has an onDrag handler

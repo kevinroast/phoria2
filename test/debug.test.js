@@ -39,6 +39,20 @@ describe('view.debug', () => {
     view.debug = false
     expect(view.debug).toBe(false)
     expect(viewOf({ debug: { axes: true } }).debug).toMatchObject({ axes: true, lights: false })
+    view.debug = { shadows: 'texels' }
+    expect(view.debug).toMatchObject({ shadows: 'texels' })
+  })
+
+  it("lays the shadow map's texels over what receives it with shadows: 'texels' - a shader mode, only while it is on", async () => {
+    const view = viewOf()
+    view.scene.add(new DirectionalLight({ direction: [0, -1, 0], castShadow: true }))
+    view.scene.add(new Mesh({ geometry: box(1), castShadow: true }))
+    view.scene.add(new Mesh({ geometry: plane(6), receiveShadow: true }))
+    expect(view.render().shadowTexels).toBe(false)
+    view.debug = { shadows: 'texels' }
+    expect(view.render().shadowTexels).toBe(true)
+    view.debug = { shadows: true }
+    expect(view.render().shadowTexels).toBe(false)
   })
 
   it('says what it takes when given something else', () => {
@@ -46,6 +60,7 @@ describe('view.debug', () => {
     expect(() => { view.debug = /** @type {any} */ ('on') }).toThrow("'debug' is true, false or {")
     expect(() => { view.debug = /** @type {any} */ ({ normals: 'all' }) }).toThrow("debug.normals is true, false or 'hovered'")
     expect(() => { view.debug = /** @type {any} */ ({ stats: 'middle' }) }).toThrow('debug.stats')
+    expect(() => { view.debug = /** @type {any} */ ({ shadows: 'boxes' }) }).toThrow("debug.shadows is true, false or 'texels'")
     expect(() => { view.debug = /** @type {any} */ ({ fps: true }) }).toThrow("use 'stats: true'")
   })
 

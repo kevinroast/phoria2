@@ -22,8 +22,11 @@ import { Vec3 } from './value/Vec3.js'
  * @typedef {object} DebugOptions
  * @property {boolean} [lights] each light: an arrow for directional ones, a small sphere and its range
  *   for point lights, a cone for spot lights - in the light's colour
- * @property {boolean} [shadows] the box or cone each shadow is drawn from - the usual reason a shadow
- *   is cut off or soft
+ * @property {boolean | 'texels'} [shadows] the box or cone each shadow is drawn from - the usual reason a
+ *   shadow is cut off or soft. 'texels' also lays the shadow map's texels over everything that receives
+ *   it, as a checkerboard: big squares mean the map is spread thin - its edges blur or step - and a
+ *   tighter shadowBounds (or a smaller scene) sharpens them. Shown only where a texel is three
+ *   pixels or more across: zoom in on an edge that looks soft
  * @property {boolean | 'hovered'} [bounds] world bounding boxes - what culling and view.frame() see
  * @property {boolean | 'hovered'} [normals] short lines along vertex normals (meshes up to 5,000
  *   vertices each when all are shown)

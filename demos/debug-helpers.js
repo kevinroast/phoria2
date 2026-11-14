@@ -1,11 +1,13 @@
 import { DirectionalLight, HemisphereLight, InstancedMesh, Mesh, PointLight, SpotLight, View, box, cylinder, icosphere, plane, sphere, torus } from 'phoria2'
 
 // The View's debug drawing, over a small scene with something for each helper: a sun whose shadow
-// box swings round as it moves across the sky, a lamp's spot light swaying on its post, a coloured
+// box swings round as it moves across the sky, a lamp's spot light swaying on its post - its shadows
+// soft (shadowSoftness), sharp where they touch - a coloured
 // point light circling with its range, shapes to box and to show the normals of, and a ring of
 // instances, each boxed on its own when hovered. view.debug is one option - each checkbox below
-// changes one part of it - and none of what it draws is part of the scene: hovering, framing and
-// explain() see only the scene.
+// changes one part of it, and shadows 'texels' lays each shadow map's texels over the ground as a
+// checkerboard, to see how finely it is spread - and none of what it draws is part of the scene:
+// hovering, framing and explain() see only the scene.
 
 export default function run({ canvas, gui }) {
   const view = new View({ canvas, orbit: { maxPitch: 1.3 }, background: '#14161b', camera: { position: [7.7, 7.6, 12.1], target: [0, 1, 0] } })
@@ -31,18 +33,18 @@ export default function run({ canvas, gui }) {
 
   // a lamp: a post with a spot light hanging from its arm, swaying
   scene.add(new Mesh({ geometry: cylinder({ radius: 0.07, height: 4 }), position: [-4.4, 2, -2.6], material: { color: '#6b6f78', metalness: 0.8, roughness: 0.3 }, castShadow: true, pickable: false }))
-  const lamp = scene.add(new SpotLight({ color: '#ffd59a', intensity: 30, position: [-3.2, 3.8, -2.6], range: 8, angle: 0.45, penumbra: 0.3, castShadow: true, target: [-1.5, 0, -0.5] }))
+  const lamp = scene.add(new SpotLight({ color: '#ffd59a', intensity: 30, position: [-3.2, 3.8, -2.6], range: 8, angle: 0.45, penumbra: 0.3, castShadow: true, shadowSoftness: 0.5, target: [-1.5, 0, -0.5] }))
   // a coloured point light circling, its range showing as a ring
   const bulb = scene.add(new PointLight({ color: '#ff4fd8', intensity: 6, range: 4.5, position: [2, 1.8, 2] }))
   scene.add(new Mesh({ geometry: icosphere({ radius: 0.08, detail: 1 }), material: { unlit: true, color: '#ff8fe8' }, pickable: false })).onUpdate((m) => m.position.copy(bulb.position))
 
   // ---- debug: on from the start, each part a checkbox; the stats readout bottom left, where this
   // demo leaves room for it
-  const settings = { animate: true, lights: true, shadows: true, bounds: 'hovered', normals: 'hovered', axes: false, camera: false, stats: true }
+  const settings = { animate: true, lights: true, shadows: 'boxes', bounds: 'hovered', normals: 'hovered', axes: false, camera: false, stats: true }
   const apply = () => {
     const pick = (v) => (v === 'all' ? true : v === 'off' ? false : v)
     view.debug = {
-      lights: settings.lights, shadows: settings.shadows, bounds: pick(settings.bounds), normals: pick(settings.normals),
+      lights: settings.lights, shadows: settings.shadows === 'boxes' ? true : settings.shadows === 'texels' ? 'texels' : false, bounds: pick(settings.bounds), normals: pick(settings.normals),
       axes: settings.axes, camera: settings.camera, stats: settings.stats ? 'bottom-left' : false,
     }
   }
@@ -50,7 +52,7 @@ export default function run({ canvas, gui }) {
   gui.add(settings, 'animate')
   const f = gui.addFolder('view.debug')
   f.add(settings, 'lights').onChange(apply)
-  f.add(settings, 'shadows').onChange(apply)
+  f.add(settings, 'shadows', { boxes: 'boxes', 'boxes and texels': 'texels', off: 'off' }).onChange(apply)
   f.add(settings, 'bounds', ['all', 'hovered', 'off']).onChange(apply)
   f.add(settings, 'normals', ['hovered', 'all', 'off']).onChange(apply)
   f.add(settings, 'axes').onChange(apply)

@@ -1162,6 +1162,66 @@ float pointShadowAt(vec3 light, vec3 n, float distance) {
 }
 #endif
 
+
+#ifdef DEBUG_SHADOW_TEXELS
+// view.debug.shadows: 'texels' - the texel of a shadow map this point falls in, as a checkerboard tint:
+// the sun's map first, then a spot light's tile, then the point light's cube. Big squares mean the map
+// is spread thin, so its edges blur or step.
+vec3 shadowTexels(vec3 color) {
+  // where it is in the map, in texels
+  vec2 at = vec2(0.0);
+  bool found = false;
+#ifdef SHADOW
+  {
+    vec4 s = uShadowMatrix * vec4(vWorldPosition, 1.0);
+    vec2 c = s.xy / s.w;
+    if (c.x > 0.0 && c.x < 1.0 && c.y > 0.0 && c.y < 1.0) {
+      at = c / uShadowTexel;
+      found = true;
+    }
+  }
+#endif
+#ifdef SPOT_SHADOWS
+  for (int k = 0; k < 4; k++) {
+    if (found) break;
+    vec4 s = uSpotShadowMatrix[k] * vec4(vWorldPosition, 1.0);
+    if (s.w <= 0.0) continue;
+    vec2 c = s.xy / s.w;
+    vec4 tile = uSpotShadowTile[k];
+    if (c.x > tile.x && c.x < tile.z && c.y > tile.y && c.y < tile.w) {
+      at = c / uSpotShadowTexel;
+      found = true;
+    }
+  }
+#endif
+#ifdef POINT_SHADOW
+  for (int i = 0; i < NUM_PUNCTUAL; i++) {
+    if (found || float(i) != uPointShadowIndex) continue;
+    // the cube face it falls on, and where on that face
+    vec3 d = vWorldPosition - uPunctualPosition[i];
+    vec3 a = abs(d);
+    vec2 uv = a.x >= a.y && a.x >= a.z ? d.yz / a.x : a.y >= a.z ? d.xz / a.y : d.xy / a.z;
+    float face = a.x >= a.y && a.x >= a.z ? 0.0 : a.y >= a.z ? 1.0 : 2.0;
+    at = (uv * 0.5 + 0.5) * (2.0 / uPointShadowTexel) + face * 4096.0;
+    found = true;
+  }
+#endif
+  // texels smaller than three pixels or so would alias into moire or hatching - and are fine anyway:
+  // shown only where a texel is big enough to see as a square
+  vec2 perPixel = fwidth(at);
+  float shown = 1.0 - smoothstep(0.22, 0.36, max(perPixel.x, perPixel.y));
+  if (!found || shown <= 0.0) return color;
+  vec2 cell = floor(at);
+  float odd = mod(cell.x + cell.y, 2.0);
+  // the surface repainted in strong blue and orange squares at its own brightness - the orange a
+  // little lighter, so they differ in tone as well as hue - with a little light of their own, so they
+  // show in the dark and deep in shadow
+  vec3 square = mix(vec3(0.1, 0.4, 1.0) * 0.8, vec3(1.0, 0.5, 0.1) * 1.25, odd);
+  float tone = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  return mix(color, square * (tone * 1.5 + 0.05), 0.8 * shown);
+}
+#endif
+
 #ifdef MATCAP
 // A matcap - a picture of a lit sphere - looked up by the normal as the camera sees it, turned to
 // face along the line of sight so it doesn't stretch towards the edges of the view
@@ -1379,6 +1439,9 @@ ${PUNCTUAL_LIGHTS}
   // most of what is behind glass shows through face on; towards its edges, where it reflects nearly
   // everything (Fresnel), less and less
   coverage *= mix(1.0, clamp(max(brdf.r, max(brdf.g, brdf.b)), 0.0, 1.0), uTransmission);
+#endif
+#ifdef DEBUG_SHADOW_TEXELS
+  color = shadowTexels(color);
 #endif
   color = toneMap(color);
 #endif

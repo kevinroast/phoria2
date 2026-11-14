@@ -157,7 +157,10 @@ Methods:
   - `lights`: an arrow for each directional light (over the scene's middle, the way it shines), a
     small sphere and a ring at its range for point lights, a cone for spot lights - in the light's colour.
   - `shadows`: the box (directional) or cone (spot) each shadow map is drawn from, in yellow - the
-    usual reason a shadow is cut off, blocky or soft.
+    usual reason a shadow is cut off, blocky or soft. `'texels'` also lays the shadow map's texels over
+    everything that receives it, as a blue and orange checkerboard: big squares mean the map is spread
+    thin, so its edges blur or step - give the light a tighter `shadowBounds`. Squares show only where a
+    texel is three pixels or more across, so zoom in on an edge that looks soft.
   - `bounds`: each drawable's world box, in cyan - what culling, `view.frame()` and shadow fitting
     see. `'hovered'`: only what is under the pointer (an instance's own box).
   - `normals`: a short magenta line along each vertex normal - for lighting that looks wrong on
