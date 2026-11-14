@@ -7,3 +7,6 @@ PHORIA2.md
 API-DESIGN.md
 REVIEW.md
 eval/
+
+# experiments that are not part of the library or the demos yet
+experiments/

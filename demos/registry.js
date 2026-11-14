@@ -59,8 +59,9 @@ export const DEMOS = [
   { name: 'periodic table', title: 'the 118 elements - bars by category and atom animation on click', hint: 'Hover an element · click for its atom · zoom in for names' },
   { name: 'galaxy', title: 'a spiral galaxy - 200,000 additive stars, old and young, round a glowing core' },
   { name: 'fireworks', title: 'fireworks over a city across the water - rockets with physics, four burst shapes, reflections' },
-  { name: 'paint', title: 'a paint cannon - spray the wall! paint splats and drips on the canvas texture', hint: 'Drag on the wall to spray · drag floor to orbit' },
   { name: 'explosion', title: 'a fuel tank blown up - fuel cloud first, then the flame front, a rising fireball, soot and a blast wave', hint: 'Detonate or space · drag to orbit' },
+  { name: 'paint', title: 'a paint cannon - spray the wall! paint splats and drips on the canvas texture', hint: 'Drag on the wall to spray · drag floor to orbit' },
+  { name: 'gears', title: 'drawing with gears - roll a toothed wheel round a ring and the pen draws a pattern', orbit: false, hint: 'Drag round the ring to draw · tap a hole to move the pen' },
 
   { section: 'Integrations', name: 'physics', title: 'a brick tower - integrated with Rapier a WebAssembly physics engine', hint: 'Click to fire a ball, or a bomb · hover a brick' },
   { name: 'cloth', title: 'a tablecloth draped and blown - integrated with Rapier soft bodies', hint: 'Drag the cloth to lift it · drag what is on the table' },

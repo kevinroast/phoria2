@@ -2664,7 +2664,7 @@ button.demo-legend-item {
   }
 }
 
-/* ---- paint: aiming at the wall, and the bar along the bottom - palettes, colour speed, a clean wall ---- */
+/* ---- paint: aiming at the wall, and the bar along the bottom - palettes, colour speed, a clean wall (gears uses the bar too, for its pens) ---- */
 /* aiming: a crosshair drawn white over a dark outline, so it shows on any colour - the system one
    inverts what is under it, which on Windows looks odd over paint and brick - with its hot spot in
    the middle */
@@ -2772,6 +2772,47 @@ button.demo-legend-item {
 
   .paint-gap {
     margin: 4px 3px;
+  }
+}
+
+/* gears: the bar in two rows - the pens and the wheel's size, then the buttons */
+.paint-bar.gears-bar {
+  /* as wide as its rows, up to the screen's width - not the half the centring leaves */
+  width: max-content;
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 4px;
+}
+
+.gears-break {
+  flex-basis: 100%;
+  height: 0;
+}
+
+.paint-bar .gears-step {
+  padding: 7px 8px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.paint-bar .gears-step:disabled {
+  opacity: 0.3;
+  cursor: default;
+  background: transparent;
+}
+
+.gears-wheel {
+  min-width: 60px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+@media (max-width: 520px) {
+  .gears-wheel {
+    min-width: 52px;
+    font-size: 12px;
   }
 }
 
