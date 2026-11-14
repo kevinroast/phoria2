@@ -24,7 +24,7 @@ function glowSprite() {
 }
 
 export default function run({ canvas, gui }) {
-  const view = new View({ canvas, orbit: { maxPitch: 1.3 }, camera: { position: [7, 4.5, 9], target: [0, 1.2, 0] } })
+  const view = new View({ canvas, orbit: { maxPitch: 1.3 }, camera: { position: [-3.22, 3.7, 10.09], target: [0, 1.55, 0] } })
   const scene = view.scene
   const glow = glowSprite()
   /** A bulb that glows: an unlit sphere and an additive halo. @param {string} color */
@@ -52,9 +52,28 @@ export default function run({ canvas, gui }) {
   pivot.add(new Mesh({ geometry: cylinder({ radius: 0.03, height: 2.4 }), material: { color: '#222' }, position: [0, -1.2, 0] }))
   const head = pivot.add(new Group({ position: [0, -2.4, 0] }))
   // the shade, turned: in under its crown, down the inside, round the rim and back up the outside
-  const shade = [[0, 0.16], [0.06, 0.16], [0.33, -0.2], [0.36, -0.2], [0.09, 0.2], [0, 0.2]]
-  head.add(new Mesh({ geometry: lathe({ points: shade, segments: 48 }), material: { color: '#2b2b30', roughness: 0.4, metalness: 0.6 }, castShadow: true }))
-  head.add(bulb('#fff2d0', 0.1)).position.set(0, -0.1, 0)
+  // in two parts: the outside dark metal; the inside pale enamel, glowing warm from the bulb - brightest
+  // at the crown beside it, dimming towards the rim (a gradient as its emissive map, down the profile)
+  const outside = [[0.33, -0.2], [0.36, -0.2], [0.09, 0.2], [0, 0.2]]
+  const inside = [[0, 0.16], [0.06, 0.16], [0.33, -0.2]]
+  head.add(new Mesh({ geometry: lathe({ points: outside, segments: 48 }), material: { color: '#2b2b30', roughness: 0.4, metalness: 0.6 }, castShadow: true }))
+  const fade = document.createElement('canvas')
+  fade.width = 4
+  fade.height = 64
+  const fg = /** @type {CanvasRenderingContext2D} */ (fade.getContext('2d'))
+  const ramp = fg.createLinearGradient(0, 0, 0, 64)
+  ramp.addColorStop(0, '#2a1a0c')
+  ramp.addColorStop(0.55, '#a8743c')
+  ramp.addColorStop(1, '#ffffff')
+  fg.fillStyle = ramp
+  fg.fillRect(0, 0, 4, 64)
+  head.add(new Mesh({
+    geometry: lathe({ points: inside, segments: 48 }),
+    material: { color: '#efe4cc', roughness: 0.7, emissive: '#ffcf8a', emissiveIntensity: 1.1, emissiveMap: new Texture({ image: fade }), doubleSided: true },
+    castShadow: true,
+  }))
+  // the bulb alone, no halo: a flat glow wider than the shade would show round it from every side
+  head.add(new Mesh({ geometry: sphere({ radius: 0.1 }), material: { color: '#fff2d0', unlit: true }, position: [0, -0.1, 0] }))
   const lamp = head.add(new SpotLight({ color: '#fff2d0', direction: [0, -1, 0], angle: 0.55, penumbra: 0.5, range: 12, position: [0, -0.2, 0] }))
 
   // the moods' own lights, switched on and off as a mood is chosen
@@ -68,8 +87,10 @@ export default function run({ canvas, gui }) {
     return { orbit, light }
   })
 
+  // the sunset sun along a line from one column to another across the ring, so their shadows fall on
+  // the columns opposite - a good test of soft shadows on what they land on
   const MOODS = {
-    sunset: { background: '#2a1e2e', environment: 'none', sky: 0.35, ambient: 0.4, sun: { color: '#ff9a52', intensity: 2.2, direction: [-1, -0.28, -0.35] }, neon: 0, lamp: 10 },
+    sunset: { background: '#2a1e2e', environment: 'none', sky: 0.35, ambient: 0.4, sun: { color: '#ff9a52', intensity: 2.2, direction: [-0.723, -0.28, -0.775] }, neon: 0, lamp: 10 },
     neon: { background: '#07060c', environment: 'none', sky: 0.04, ambient: 0.6, sun: { color: '#ffffff', intensity: 0, direction: [0, -1, 0] }, neon: 22, lamp: 26 },
   }
   const settings = { mood: 'sunset', speed: 1, swing: 0.5 }
