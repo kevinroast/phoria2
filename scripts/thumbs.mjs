@@ -56,6 +56,11 @@ const PREPARE = {
     const { position: p, target: t } = view.camera, d = p.distanceTo(t), l = Math.hypot(2.4, 1.6, 3.2)
     p.set(t[0] + 2.4 / l * d, t[1] + 1.6 / l * d, t[2] + 3.2 / l * d)
     view.invalidate()`,
+  // the shadows demo by its lamp post's spot light, at dusk - its shaders compiled at load, so it shows at once
+  shadows: `(async () => {
+    document.querySelector('[data-light="spot"]').click()
+    await new Promise((r) => setTimeout(r, 1500))
+  })()`,
   planner: `const table = furniture.children.find((n) => n.userData.kind === 'meeting')
     select(table)
     handle.onChange(table, 'move')

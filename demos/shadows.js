@@ -301,7 +301,10 @@ export default function run({ canvas, gui, info }) {
   const candle = lantern.add(new PointLight({ position: [0, 1.07, 0], color: '#ffa860', range: 9 }))
 
   // ---- the sun
-  const sun = scene.add(new DirectionalLight({ color: '#ffd09a', shadowBounds: { min: [-7, -0.6, -7], max: [7, 3.2, 7] } }))
+  // its shadow map spread only over where things stand - the set pieces and the boulders, up to the
+  // lamp's head - so its texels are small and the edges crisp; the ground beyond still gets shadows,
+  // from wherever they fall, just coarser
+  const sun = scene.add(new DirectionalLight({ color: '#ffd09a', shadowBounds: { min: [-4.6, -0.6, -3.9], max: [3.9, 3.7, 3.2] } }))
   const sky = scene.add(new HemisphereLight())
 
   // ---- the three lights, each with its time of day: the sky, the fog, the fill, the bulbs
