@@ -5,7 +5,9 @@ import { Box3, DirectionalLight, Label, Mesh, PointLight, Texture, View, plane, 
 // keeps them - and clearcoat, one red metallic paint under no coat, half a coat, a full one and a
 // satin one; sheen, the soft bright rim of cloth, and reflectance, how strongly a non-metal reflects
 // from its ior; brushed metal, highlights drawn out along the brushing, and translucency - paper
-// lanterns lit from inside. Bright stripes behind everything show what the glass lets through.
+// lanterns lit from inside; and at the front, iridescence - a thin film's colours shifting with the
+// angle: a soap bubble, oil on water, anodised titanium and a beetle's shell. Bright stripes behind
+// everything show what the glass lets through.
 
 /** Bright diagonal stripes, to see through the glass. */
 function stripes() {
@@ -26,6 +28,31 @@ function stripes() {
     g.stroke()
   }
   return new Texture({ image: c, wrap: 'repeat' })
+}
+
+/**
+ * A soap film's thickness, for iridescenceThicknessMap: swirling bands, thinner towards the top as
+ * the soap drains down. The sphere's UVs run round it in u - every wave a whole number of times
+ * round, so it meets itself - and from top to bottom in v.
+ */
+function swirl() {
+  const W = 256, H = 128, c = document.createElement('canvas')
+  c.width = W
+  c.height = H
+  const g = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'))
+  const img = g.createImageData(W, H)
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const u = (x / W) * Math.PI * 2, v = y / H
+      const flow = Math.sin(v * 14 + 2.2 * Math.sin(u * 2 + v * 5) + 1.3 * Math.sin(u * 3 - v * 9))
+      const t = Math.min(1, Math.max(0, 0.15 + 0.6 * v + 0.25 * flow))
+      const i = (y * W + x) * 4
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = Math.round(t * 255)
+      img.data[i + 3] = 255
+    }
+  }
+  g.putImageData(img, 0, 0)
+  return new Texture({ image: c, colorSpace: 'linear' })
 }
 
 /** A dark checked floor. */
@@ -50,10 +77,11 @@ const ROWS = {
   reflectance: { title: 'Reflectance', x: 7, z: 0 },
   brushed: { title: 'Brushed metal', x: -7, z: 6.5 },
   translucency: { title: 'Translucency', x: 7, z: 6.5 },
+  iridescence: { title: 'Iridescence', x: 0, z: 13 },
 }
 // all of them, and one up close
 // wider to the right, clear of the controls
-const ALL = { box: [[-12.5, 0, -7.5], [17, 2.6, 8.2]], direction: [0, 1.3, 1], padding: 0.02 }
+const ALL = { box: [[-12.5, 0, -7.5], [17, 2.6, 14.7]], direction: [0, 1.3, 1], padding: 0.02 }
 /** @param {keyof typeof ROWS} key */
 const closeUp = (key) => {
   const { x, z } = ROWS[key]
@@ -64,18 +92,23 @@ const CLOTH = { color: '#1f2d6e', roughness: 0.9, sheenColor: '#9fb0ff' }
 const ENAMEL = { color: '#1d5c44', roughness: 0.12 }
 const STEEL = { color: '#c9ccd2', metalness: 1, roughness: 0.3 }
 const PAPER = { color: '#f2e4c4', roughness: 0.8 }
+const OIL = { color: '#0b0d10', roughness: 0.05, iridescence: 1, iridescenceIor: 1.8, iridescenceThicknessMin: 250, iridescenceThickness: 650 }
 
 export default function run({ canvas, gui }) {
   const view = new View({ canvas, orbit: true, background: '#121216' })
   const { scene } = view
-  // a photographed studio: its windows show as sharp reflections in the glass, the coats and the metal
+  // a photographed studio: its windows show as sharp reflections in the glass, the coats and the metal.
+  // Its windows are far brighter than the built-in studio's light, so it is turned down to about
+  // match it - at full strength every glass edge, coat and sheen rim glares
   const hdr = new Texture({ url: 'hdr/studio_small_09_1k.hdr', colorSpace: 'linear', mipmaps: false })
+  const STRENGTH = { 'built-in studio': 1, 'HDR studio': 0.55, none: 1 }
   scene.environment = hdr
+  scene.environmentIntensity = STRENGTH['HDR studio']
   scene.add(new DirectionalLight({ direction: [0.5, -1, -0.6], intensity: 1.6 }))
 
   const floor = checks()
-  floor.repeat = [20, 12]
-  scene.add(new Mesh({ geometry: plane({ width: 40, depth: 24 }), position: [0, 0, 0.5], material: { map: floor, roughness: 0.7 } }))
+  floor.repeat = [20, 16]
+  scene.add(new Mesh({ geometry: plane({ width: 40, depth: 32 }), position: [0, 0, 4.5], material: { map: floor, roughness: 0.7 } }))
   const backdrop = stripes()
   backdrop.repeat = [8.75, 1.4]
   scene.add(new Mesh({ name: 'backdrop', geometry: plane({ width: 40, depth: 6 }), rotation: [Math.PI / 2, 0, 0], position: [0, 3, -10.5], material: { map: backdrop, unlit: true } }))
@@ -136,6 +169,14 @@ export default function run({ canvas, gui }) {
   // range keeps each bulb's light inside its lantern
   const bulbs = lanterns.map((l) => scene.add(new PointLight({ position: [l.position[0], 1, l.position[2]], color: '#ffa04d', intensity: 6, range: 1.3 })))
   const lantern = lanterns[2]
+  // thin films: their colours shift as the view turns - the bubble's and the oil's swirling in thickness
+  const film = swirl()
+  const [, oil] = row('iridescence', [
+    [{ color: '#ffffff', transmission: 1, roughness: 0.02, iridescence: 1, iridescenceIor: 1.33, iridescenceThicknessMin: 200, iridescenceThickness: 700, iridescenceThicknessMap: film }, 'soap bubble\nthickness map'],
+    [{ ...OIL, iridescenceThicknessMap: film }, 'oil on water\nfilm ior 1.8'],
+    [{ color: '#b9bdc6', metalness: 1, roughness: 0.22, iridescence: 1, iridescenceIor: 2.2, iridescenceThickness: 280 }, 'anodised titanium\nior 2.2'],
+    [{ color: '#1d7a45', metalness: 1, roughness: 0.25, iridescence: 1, iridescenceIor: 1.6, iridescenceThickness: 520 }, 'beetle shell\nthickness 520'],
+  ])
 
   // ---- the view: everything, or a row up close
   /** @param {{ box: number[][], direction: number[], padding: number }} shot @param {number} [duration] */
@@ -147,7 +188,11 @@ export default function run({ canvas, gui }) {
   const lighting = { environment: 'HDR studio', show: 'everything', bulbs: 6 }
   f.add(lighting, 'environment', ['built-in studio', 'HDR studio', 'none']).onChange((v) => {
     scene.environment = v === 'HDR studio' ? hdr : v === 'none' ? 'none' : 'studio'
+    // each its own strength to start from
+    scene.environmentIntensity = STRENGTH[/** @type {keyof typeof STRENGTH} */ (v)]
+    strength.updateDisplay()
   })
+  const strength = f.add(scene, 'environmentIntensity', 0, 2, 0.05).name('environment strength')
   f.add(view.controls, 'autoRotate').name('turn')
   /** @type {Record<string, any>} */
   const folders = {}
@@ -197,6 +242,16 @@ export default function run({ canvas, gui }) {
   f.add(lantern.material, 'translucency', 0, 1, 0.01)
   f.add(lanternStyle, 'light', { white: '#ffffff', orange: '#ff8a3c', red: '#ff4d4d', green: '#7dff8a' }).name('colour through').onChange((v) => lantern.material.translucencyColor.set(v))
   f.add(lighting, 'bulbs', 0, 30, 0.1).name('bulbs').onChange((v) => { for (const b of bulbs) b.intensity = v })
+
+  f = folders.iridescence = gui.addFolder('Oil on water').close()
+  const oilStyle = { color: OIL.color }
+  f.add(oil.material, 'iridescence', 0, 1, 0.01)
+  f.add(oil.material, 'iridescenceThickness', 0, 1200, 10).name('thickest (nm)')
+  f.add(oil.material, 'iridescenceThicknessMin', 0, 1200, 10).name('thinnest (nm)')
+  f.add(oil.material, 'iridescenceIor', 1, 2.5, 0.01).name('film ior')
+  f.add(oil.material, 'roughness', 0, 1, 0.01)
+  f.add(oil.material, 'metalness', 0, 1, 0.01)
+  f.add(oilStyle, 'color', { black: OIL.color, white: '#f2f2f2', 'deep blue': '#0b1a4a', red: '#5a0b12' }).onChange((v) => oil.material.color.set(v))
 
   return view.start()
 }

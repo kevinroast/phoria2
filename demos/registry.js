@@ -29,7 +29,7 @@ export const DEMOS = [
   { name: 'scene-json', title: 'a scene as plain JSON - edit it, add to it, rebuild it, export it' },
   { name: 'custom element', title: 'the <phoria-view> tag - model scenes in plain HTML - with example markup', hint: 'Drag to orbit, zoom wheel · click a part of the truck' },
   { name: 'materials', title: 'roughness and metalness under a movable light and the studio environment' },
-  { name: 'advanced materials', title: 'glass, clearcoat, cloth sheen, reflectance, brushed metal and paper lanterns' },
+  { name: 'advanced materials', title: 'glass, clearcoat, cloth sheen, reflectance, brushed metal, paper lanterns and iridescent films' },
   { name: 'stylised materials', title: 'matcaps and toon shading - stylised looks' },
   { name: 'lights', title: 'lights in two moods - sunset and neon - and a swinging lamp that carries its spot light' },
   { name: 'debug helpers', title: 'view.debug - lights, shadow cameras, bounds, normals, axis, stats readout', hint: 'Hover a shape for its box and normals · drag to orbit' },

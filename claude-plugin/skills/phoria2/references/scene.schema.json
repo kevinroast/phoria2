@@ -860,6 +860,17 @@
             }
           ]
         },
+        "iridescenceThicknessMap": {
+          "description": "The iridescent film's thickness across the surface in its green channel, from iridescenceThicknessMin at 0 to iridescenceThickness at 1 - a soap bubble's bands.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/texture"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "matcap": {
           "description": "A picture of a lit sphere that gives the whole look - clay, wax, chrome - picked by which way the surface faces the camera; lights are ignored.",
           "anyOf": [
@@ -1033,6 +1044,27 @@
           "description": "A thin bright rim at 0, a broad soft glow at 1.",
           "minimum": 0,
           "maximum": 1
+        },
+        "iridescence": {
+          "type": "number",
+          "description": "0-1: a thin film over the surface whose colours shift with the angle - soap bubbles, oil on water, beetle shells, anodised metal, dichroic glass.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "iridescenceIor": {
+          "type": "number",
+          "description": "The film's index of refraction: soap 1.33 (default 1.3).",
+          "minimum": 1
+        },
+        "iridescenceThickness": {
+          "type": "number",
+          "description": "The film's thickness in nanometres - about 200-800 shows colours; with a thickness map, the thickest (default 400).",
+          "minimum": 0
+        },
+        "iridescenceThicknessMin": {
+          "type": "number",
+          "description": "With a thickness map, the film's thinnest in nanometres, where the map is 0 (default 100).",
+          "minimum": 0
         },
         "ior": {
           "type": "number",

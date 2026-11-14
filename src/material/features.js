@@ -45,6 +45,7 @@ export const MAPS = /** @type {const} */ ([
   { slot: 'aoMap', uniform: 'uAoMap', define: 'AO_MAP', lit: true },
   { slot: 'emissiveMap', uniform: 'uEmissiveMap', define: 'EMISSIVE_MAP', lit: false },
   { slot: 'lightMap', uniform: 'uLightMap', define: 'LIGHT_MAP', lit: true },
+  { slot: 'iridescenceThicknessMap', uniform: 'uIridescenceThicknessMap', define: 'IRIDESCENCE_THICKNESS_MAP', lit: true },
   { slot: 'matcap', uniform: 'uMatcap', define: 'MATCAP', lit: true },
 ])
 /** A map slot's sampler. */
@@ -103,6 +104,10 @@ export const FEATURES = [
       set('uSheenColor', [c[0] * k, c[1] * k, c[2] * k])
       set('uSheenRoughness', m.sheenRoughness)
     },
+  },
+  {
+    name: 'iridescent', define: 'IRIDESCENCE', kinds: MESH, lit: true, when: (m) => m.iridescence > 0,
+    uniforms: (m, { set }) => set('uIridescence', [m.iridescence, m.iridescenceIor, m.iridescenceThicknessMin, m.iridescenceThickness]),
   },
   {
     name: 'brushed', define: 'ANISOTROPY', kinds: MESH, lit: true, when: (m) => m.anisotropy > 0,

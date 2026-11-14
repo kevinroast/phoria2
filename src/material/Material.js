@@ -79,6 +79,14 @@ import { Texture } from './Texture.js'
  * @property {number} [sheen] 0-1: the soft bright rim of cloth at grazing angles - velvet, felt, upholstery (default 0)
  * @property {ColorInput} [sheenColor] the sheen's colour (default white)
  * @property {number} [sheenRoughness] 0-1: a thin bright rim at 0, a broad soft glow at 1 (default 0.5)
+ * @property {number} [iridescence] 0-1: a thin film over the surface whose colours shift with the angle it is seen
+ *   at - soap bubbles, oil on water, beetle shells, anodised metal, dichroic glass (default 0)
+ * @property {number} [iridescenceIor] the film's index of refraction, 1 or more: soap 1.33 (default 1.3)
+ * @property {number} [iridescenceThickness] the film's thickness in nanometres - about 200-800 shows colours, thinner
+ *   fades to clear; with a thickness map, the thickest (default 400)
+ * @property {number} [iridescenceThicknessMin] with a thickness map, the thinnest, where the map is 0 (default 100)
+ * @property {MapInput | null} [iridescenceThicknessMap] the film's thickness across the surface in its green channel,
+ *   from iridescenceThicknessMin at 0 to iridescenceThickness at 1 - the swirling bands of a soap bubble
  * @property {number} [ior] index of refraction, 1 or more: how strongly a non-metal reflects - water 1.33, glass and
  *   plastic 1.5 (the default), diamond 2.4
  * @property {number} [specularIntensity] 0-1: scales a non-metal's reflections, 0 for none - chalk, clay (default 1)
@@ -114,13 +122,14 @@ import { Texture } from './Texture.js'
  */
 
 // the matcap last: the first map's repeat and offset are every map's, and a matcap has none
-const MAPS = ['map', 'roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap', 'emissiveMap', 'lightMap', 'matcap']
+const MAPS = ['map', 'roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap', 'emissiveMap', 'lightMap', 'iridescenceThicknessMap', 'matcap']
 // data maps hold numbers, not colours
-const LINEAR_MAPS = new Set(['roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap'])
+const LINEAR_MAPS = new Set(['roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap', 'iridescenceThicknessMap'])
 const FLAGS = ['unlit', 'flatShading', 'doubleSided', 'vertexColors', 'depthWrite', 'depthTest', 'sizeAttenuation', 'transparent', 'fog']
 const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiveIntensity: [0, Infinity], size: [0, Infinity], width: [0, Infinity],
   alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1], triplanar: [0, Infinity], bumpScale: [-Infinity, Infinity],
   transmission: [0, 1], clearcoat: [0, 1], clearcoatRoughness: [0, 1], sheen: [0, 1], sheenRoughness: [0, 1], ior: [1, Infinity],
+  iridescence: [0, 1], iridescenceIor: [1, Infinity], iridescenceThickness: [0, Infinity], iridescenceThicknessMin: [0, Infinity],
   specularIntensity: [0, 1], anisotropy: [0, 1], anisotropyRotation: [-Infinity, Infinity], translucency: [0, 1], toon: [0, 16],
   lightMapIntensity: [0, Infinity], environmentIntensity: [0, Infinity], dash: [0, Infinity], gap: [0, Infinity],
   dashOffset: [-Infinity, Infinity] }
@@ -129,6 +138,7 @@ const COLORS = { color: 0xffffff, emissive: 0x000000, sheenColor: 0xffffff, spec
 const DEFAULTS = {
   name: '', opacity: 1, alphaTest: 0, roughness: 0.5, metalness: 0, normalScale: 1, bumpScale: 1, aoMapIntensity: 1, triplanar: 0, emissiveIntensity: 1,
   transmission: 0, clearcoat: 0, clearcoatRoughness: 0, sheen: 0, sheenRoughness: 0.5, ior: 1.5, specularIntensity: 1, anisotropy: 0,
+  iridescence: 0, iridescenceIor: 1.3, iridescenceThickness: 400, iridescenceThicknessMin: 100,
   anisotropyRotation: 0, translucency: 0, toon: 0, lightMapIntensity: 1, environmentIntensity: 1, unlit: false, flatShading: false,
   doubleSided: false, vertexColors: false, blending: 'normal', depthWrite: true, depthTest: true, fog: true,
   size: 1, sizeAttenuation: true, width: 1, dash: 0, gap: 0, dashOffset: 0,
@@ -158,6 +168,10 @@ const HINTS = {
   diffuseTransmission: "use 'translucency'",
   subsurface: "use 'translucency' for light through thin surfaces",
   colour: "use 'color'",
+  iridescenceIOR: "use 'iridescenceIor'",
+  iridescenceThicknessRange: "use 'iridescenceThicknessMin' and 'iridescenceThickness' (the thickest), in nanometres",
+  iridescenceThicknessTexture: "use 'iridescenceThicknessMap'",
+  thinFilm: "use 'iridescence' - a thin film's shifting colours",
   emissiveColor: "use 'emissive'",
   alpha: "use 'opacity'",
   onBeforeCompile: "use 'shader': { vertex, fragment, lit, uniforms } - GLSL run inside phoria2's own shader",
@@ -191,6 +205,10 @@ export class Material {
   /** How glossy the coat is, 0 a mirror. @type {number} */ clearcoatRoughness
   /** The soft bright rim of cloth: 0-1. @type {number} */ sheen
   /** A thin bright rim at 0, a broad soft glow at 1. @type {number} */ sheenRoughness
+  /** A thin film's shifting colours over the surface: 0-1. @type {number} */ iridescence
+  /** The film's index of refraction (1.3). @type {number} */ iridescenceIor
+  /** The film's thickness in nanometres - with a thickness map, the thickest (400). @type {number} */ iridescenceThickness
+  /** With a thickness map, the film's thinnest, in nanometres (100). @type {number} */ iridescenceThicknessMin
   /** Index of refraction: how strongly a non-metal reflects (1.5). @type {number} */ ior
   /** Scales a non-metal's reflections, 0-1. @type {number} */ specularIntensity
   /** Brushed metal: 0-1. @type {number} */ anisotropy
@@ -327,13 +345,18 @@ export class Material {
   get lightMap() { return this.#maps.lightMap }
   /** @param {MapInput | null} v */
   set lightMap(v) { this.setMap('lightMap', v) }
+  /** The iridescent film's thickness across the surface, in its green channel. @returns {Texture | null} */
+  get iridescenceThicknessMap() { return this.#maps.iridescenceThicknessMap }
+  /** @param {MapInput | null} v */
+  set iridescenceThicknessMap(v) { this.setMap('iridescenceThicknessMap', v) }
   /** A picture of a lit sphere that gives the whole look. @returns {Texture | null} */
   get matcap() { return this.#maps.matcap }
   /** @param {MapInput | null} v */
   set matcap(v) { this.setMap('matcap', v) }
 
   /** @internal
-   * @param {string} slot one of map, roughnessMap, metalnessMap, normalMap, bumpMap, aoMap, emissiveMap, lightMap, matcap
+   * @param {string} slot one of map, roughnessMap, metalnessMap, normalMap, bumpMap, aoMap, emissiveMap, lightMap,
+   *   iridescenceThicknessMap, matcap
    * @param {MapInput | null} value
    */
   setMap(slot, value) {

@@ -575,6 +575,12 @@ uniform float uTransmission;
 uniform float uClearcoat;
 uniform float uClearcoatRoughness;
 #endif
+#ifdef IRIDESCENCE
+uniform vec4 uIridescence;     // amount, the film's ior, its thinnest and thickest in nanometres
+#endif
+#ifdef IRIDESCENCE_THICKNESS_MAP
+uniform sampler2D uIridescenceThicknessMap;
+#endif
 uniform vec4 uSpecular;      // a non-metal's reflectance face on (from its ior), and at grazing angles
 #ifdef MATCAP
 uniform sampler2D uMatcap;
@@ -655,6 +661,71 @@ float V_SmithGGXCorrelated(float NoV, float NoL, float a) {
 vec3 F_Schlick(float VoH, vec3 f0, float f90) {
   return f0 + (f90 - f0) * pow(1.0 - VoH, 5.0);
 }
+
+#ifdef IRIDESCENCE
+// A thin film's interference (Belcour and Barla 2017, as KHR_materials_iridescence and three.js
+// have it): the film's reflectance at an angle, over a base of reflectance f0 - the colours of soap
+// bubbles and oil on water. Thicknesses in nanometres.
+const mat3 XYZ_TO_REC709 = mat3(
+   3.2404542, -0.9692660,  0.0556434,
+  -1.5371385,  1.8760108, -0.2040259,
+  -0.4985314,  0.0415560,  1.0572252);
+
+float filmSchlick(float f0, float c) {
+  return f0 + (1.0 - f0) * pow(1.0 - c, 5.0);
+}
+
+// the eye's response to a path difference, as an RGB colour: a fit to the CIE colour matching functions
+vec3 filmSensitivity(float opd, vec3 shift) {
+  float phase = 2.0 * PI * opd * 1.0e-9;
+  vec3 val = vec3(5.4856e-13, 4.4201e-13, 5.2481e-13);
+  vec3 pos = vec3(1.6810e+06, 1.7953e+06, 2.2084e+06);
+  vec3 spread = vec3(4.3278e+09, 9.3046e+09, 6.6121e+09);
+  vec3 xyz = val * sqrt(2.0 * PI * spread) * cos(pos * phase + shift) * exp(-phase * phase * spread);
+  xyz.x += 9.7470e-14 * sqrt(2.0 * PI * 4.5282e+09) * cos(2.2399e+06 * phase + shift.x) * exp(-4.5282e+09 * phase * phase);
+  return XYZ_TO_REC709 * (xyz / 1.0685e-7);
+}
+
+vec3 filmFresnel(float filmIor, float cosTheta1, float thickness, vec3 baseF0) {
+  // a film too thin to see fades to none
+  float eta = mix(1.0, filmIor, smoothstep(0.0, 0.03, thickness));
+  float sin2 = (1.0 - cosTheta1 * cosTheta1) / (eta * eta);
+  float cos2Sq = 1.0 - sin2;
+  if (cos2Sq < 0.0) return vec3(1.0);
+  float cosTheta2 = sqrt(cos2Sq);
+  // air to film
+  float r12 = filmSchlick(pow((eta - 1.0) / (eta + 1.0), 2.0), cosTheta1);
+  float t121 = 1.0 - r12;
+  float phi12 = eta < 1.0 ? PI : 0.0;
+  float phi21 = PI - phi12;
+  // film to base: the base's index from its reflectance
+  vec3 s = sqrt(clamp(baseF0, 0.0, 0.9999));
+  vec3 baseIor = (1.0 + s) / (1.0 - s);
+  vec3 r1 = pow((baseIor - eta) / (baseIor + eta), vec3(2.0));
+  vec3 r23 = r1 + (1.0 - r1) * pow(1.0 - cosTheta2, 5.0);
+  vec3 phi23 = vec3(baseIor.x < eta ? PI : 0.0, baseIor.y < eta ? PI : 0.0, baseIor.z < eta ? PI : 0.0);
+  float opd = 2.0 * eta * thickness * cosTheta2;
+  vec3 phi = vec3(phi21) + phi23;
+  vec3 r123 = clamp(r12 * r23, 1e-5, 0.9999);
+  vec3 sr123 = sqrt(r123);
+  vec3 rs = t121 * t121 * r23 / (1.0 - r123);
+  vec3 result = r12 + rs;
+  vec3 cm = rs - t121;
+  for (int m = 1; m <= 2; m++) {
+    cm *= sr123;
+    result += cm * 2.0 * filmSensitivity(float(m) * opd, float(m) * phi);
+  }
+  return max(result, vec3(0.0));
+}
+
+// the reflectance face on that Schlick's curve would need to give f at this angle - so the film's
+// colours ride through the lights and the environment as f0 does
+vec3 filmF0(vec3 f, float f90, float c) {
+  float x = clamp(1.0 - c, 0.0, 1.0);
+  float x5 = clamp(x * x * x * x * x, 0.0, 0.9999);
+  return clamp((f - f90 * x5) / (1.0 - x5), 0.0, 1.0);
+}
+#endif
 
 #ifdef ANISOTROPY
 // brushed metal: the brushing's direction, the way across it, and roughness along and across it
@@ -1021,6 +1092,20 @@ void main() {
   // a cartoon's metal is its colour too, with a highlight of that colour
   diffuse = base.rgb;
   toonHighlight = mix(vec3(uSpecular.a), base.rgb, metalness) * (1.0 - roughness);
+#endif
+#ifdef IRIDESCENCE
+  {
+    // a thin film over the surface: its reflectance at this angle, as an f0 the lights and the
+    // environment use as they would the surface's own
+    float filmNoV = clamp(abs(dot(n, v)), 1e-4, 1.0);
+#ifdef IRIDESCENCE_THICKNESS_MAP
+    float thickness = mix(uIridescence.z, uIridescence.w, uIridescenceThicknessMapTexel.g);
+#else
+    float thickness = uIridescence.w;
+#endif
+    vec3 film = filmFresnel(uIridescence.y, filmNoV, thickness, f0);
+    f0 = mix(f0, filmF0(film, f90, filmNoV), uIridescence.x);
+  }
 #endif
 #ifdef TRANSMISSION
   // glass: what passes through isn't scattered back, so less diffuse colour - and the reflections

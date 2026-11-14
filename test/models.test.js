@@ -388,6 +388,22 @@ describe('glass and clearcoat from glTF', () => {
     warn.mockRestore()
   })
 
+  it('reads iridescence: its factor, ior, thickness range and thickness texture', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const json = sampleGLTF()
+    json.extensionsUsed = [...(json.extensionsUsed ?? []), 'KHR_materials_iridescence']
+    json.materials[0].extensions = {
+      ...json.materials[0].extensions,
+      KHR_materials_iridescence: { iridescenceFactor: 0.8, iridescenceIor: 1.4, iridescenceThicknessMinimum: 150, iridescenceThicknessMaximum: 600, iridescenceThicknessTexture: { index: 0 } },
+    }
+    const model = await parseGLTF(json, { baseUrl: 'https://example.com/models/', waitForTextures: false })
+    const { material: m } = /** @type {Mesh} */ (model.find('Triangle'))
+    expect([m.iridescence, m.iridescenceIor, m.iridescenceThicknessMin, m.iridescenceThickness]).toEqual([0.8, 1.4, 150, 600])
+    expect(m.iridescenceThicknessMap?.colorSpace).toBe('linear')
+    expect(warn.mock.calls.some(([w]) => String(w).includes('KHR_materials_iridescence'))).toBe(false)
+    warn.mockRestore()
+  })
+
   it('reads sheen, ior, specular, anisotropy and diffuse transmission by their factors', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const json = sampleGLTF()
