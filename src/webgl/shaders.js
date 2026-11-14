@@ -947,19 +947,26 @@ vec2 softTap(int i, int count, float spin) {
 vec2 softSearchTap(int i, float reach) {
   return i == SOFT_SEARCH ? vec2(0.0) : softTap(i, SOFT_SEARCH, 0.0) * reach;
 }
-// The gap to size the edge by: the average of what the search found (world units, 0 where it found
-// nothing), each sample counting less the further out it was - 0 when nothing was found.
+// The gap to size the edge by: the average of what the spiral found (world units, 0 where it found
+// nothing), each sample counting less the further out it was. The pixel's own spot only says whether
+// a caster is there - counted in the average, its depth (read a whole texel at a time) would step the
+// edge's width from texel to texel - and gives the gap only when the spiral missed a thin caster
+// altogether. 0 when nothing was found.
 float softGap(float gaps[SOFT_SEARCH + 1]) {
   float sum = 0.0, weight = 0.0;
-  for (int i = 0; i <= SOFT_SEARCH; i++) {
+  for (int i = 0; i < SOFT_SEARCH; i++) {
     if (gaps[i] > 0.0) {
-      float k = i == SOFT_SEARCH ? 1.0 : softWeight(i);
+      float k = softWeight(i);
       sum += gaps[i] * k;
       weight += k;
     }
   }
-  return weight > 0.0 ? sum / weight : 0.0;
+  return weight > 0.0 ? sum / weight : gaps[SOFT_SEARCH];
 }
+// how much of the push along the normal the soft lookups use: they compare each sample along the
+// surface's slope, which already keeps it from shadowing itself, and the full push lifts a shadow
+// off a contact a few millimetres tall (a gnomon on its dial)
+const float SOFT_PUSH = 0.25;
 // a random angle a pixel (Hoskins' hash: no lines or pattern for the eye to find)
 float softSpin() {
   vec3 p = fract(gl_FragCoord.xyx * 0.1031);
@@ -995,6 +1002,8 @@ float shadowAt(vec3 n, vec3 l) {
   vec3 c = s.xyz / s.w;
   if (c.x <= 0.0 || c.x >= 1.0 || c.y <= 0.0 || c.y >= 1.0 || c.z >= 1.0) return 1.0;
 #ifdef SHADOW_SOFT
+  {
+  vec3 c = (uShadowMatrix * vec4(mix(vWorldPosition, p, SOFT_PUSH), 1.0)).xyz;
   float spin = softSpin();
   // the map is orthographic: its coordinates and depth change with world position by its matrix's rows
   vec3 a = vec3(uShadowMatrix[0][0], uShadowMatrix[1][0], uShadowMatrix[2][0]);
@@ -1025,6 +1034,7 @@ float shadowAt(vec3 n, vec3 l) {
     }
     return soft / float(SOFT_FILTER);
   }
+  }
 #endif
   float lit = 0.0;
   for (int x = -1; x <= 1; x++) {
@@ -1048,6 +1058,8 @@ float spotShadowAt(int k, vec3 n, float distance) {
 #ifdef SPOT_SHADOWS_SOFT
   vec4 softness = uSpotShadowSoft[k];
   if (softness.x > 0.0) {
+    vec4 s = uSpotShadowMatrix[k] * vec4(mix(vWorldPosition, p, SOFT_PUSH), 1.0);
+    vec3 c = s.xyz / s.w;
     float spin = softSpin();
     float here = softDistance(c.z, softness.y, softness.z);
     // a perspective map: how its coordinates and depth change with world position here
@@ -1109,6 +1121,12 @@ float pointShadowAt(vec3 light, vec3 n, float distance) {
     // across the way from the light, in units of the direction: a world unit at distance z is 1 / z.
     // Each sample is compared at the surface's own distance along its ray - where that ray meets
     // the plane the surface lies in here - so a sloped or curved surface doesn't shadow itself
+    vec3 d = vWorldPosition + n * uPointShadowBias * distance * SOFT_PUSH - light;
+    vec3 a = abs(d);
+    float z = max(a.x, max(a.y, a.z));
+    vec3 dir = d / length(d);
+    vec3 u = normalize(cross(dir, abs(dir.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
+    vec3 w = cross(dir, u);
     float spin = softSpin();
     float facing = dot(n, dir);
     float reach = clamp(uPointShadowSoft, uPointShadowTexel * 1.5, uPointShadowTexel * 64.0);
