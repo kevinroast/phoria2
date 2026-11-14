@@ -154,7 +154,7 @@ export default function run({ canvas, gui, info }) {
   const rand = random(11)
   const view = new View({
     canvas, background: '#c9ab8c',
-    camera: { position: [5.8, 3.3, 7.6], target: [-0.2, 0.9, 0.2], fov: 40 },
+    camera: { position: [4.35, 4.1, 7.4], target: [-0.3, 0.9, -0.3], fov: 40 },
     orbit: { minDistance: 2.5, maxDistance: 16, minPitch: 0.06, maxPitch: 1.35 },
     ambientOcclusion: true,
     bloom: { strength: 0.7, radius: 0.5, threshold: 0.95 },
@@ -257,7 +257,9 @@ export default function run({ canvas, gui, info }) {
     const a = (h / 12) * Math.PI * 2
     dial.add(new Mesh({ geometry: box({ width: h % 3 ? 0.012 : 0.02, height: 0.008, depth: h % 3 ? 0.05 : 0.08 }), material: bronze, position: [Math.sin(a) * 0.27, 0.833, Math.cos(a) * 0.27], rotation: [0, a, 0], castShadow: true, receiveShadow: true }))
   }
-  dial.add(new Mesh({ geometry: extrude({ shape: [[0, 0], [0.27, 0], [0.02, 0.2], [0, 0.2]], depth: 0.014 }), material: bronze, position: [-0.12, 0.83, 0], rotation: [0, Math.PI / 2, 0], castShadow: true, receiveShadow: true }))
+  // the gnomon across the middle of the dial: turned a quarter so its base runs along the dial's z, from
+  // +0.135 to -0.135 - centred on the dial, its tall end at one side, sloping down to the other
+  dial.add(new Mesh({ geometry: extrude({ shape: [[0, 0], [0.27, 0], [0.02, 0.2], [0, 0.2]], depth: 0.014 }), material: bronze, position: [0, 0.83, 0.135], rotation: [0, Math.PI / 2, 0], castShadow: true, receiveShadow: true }))
 
   // ---- a stone ball on a squat plinth
   const orb = scene.add(new Group({ position: [0.7, heightAt(0.7, -1.5), -1.5] }))
@@ -333,10 +335,11 @@ export default function run({ canvas, gui, info }) {
     showBar()
     gui.updateDisplay()
   }
-  // the sun low over the far side of the garden, coming round as the time moves - so its shadows
-  // stretch across the ground towards the camera, not away behind what casts them
+  // the sun from over the far side of the garden, coming round as the time moves - so its shadows
+  // stretch across the ground towards the camera, not away behind what casts them. Low at either end
+  // of the day; at midday (0.5) nearly overhead, about 75 degrees up, for short shadows under things
   const placeSun = () => {
-    const az = 0.15 + settings.time * 1.3, el = 0.42 + 0.32 * Math.sin(settings.time * Math.PI)
+    const az = 0.15 + settings.time * 1.3, el = 0.36 + 0.95 * Math.sin(settings.time * Math.PI)
     sun.direction.set(Math.cos(el) * Math.cos(az), -Math.sin(el), Math.cos(el) * Math.sin(az))
   }
 
@@ -371,7 +374,7 @@ export default function run({ canvas, gui, info }) {
   gui.add(settings, 'soft').name('soft shadows').onChange(apply)
   gui.add(settings, 'softness', 0, 1, 0.05).name('shadow softness').onChange(apply)
   gui.add(settings, 'move').name('move the light')
-  gui.add(settings, 'time', 0, 0.99, 0.01).name('time of day').onChange(placeSun)
+  gui.add(settings, 'time', 0, 1, 0.01).name('time of day').onChange(placeSun)
 
   placeSun()
   apply()
@@ -392,11 +395,18 @@ export default function run({ canvas, gui, info }) {
   }, 1200)
 
   let t = 0
+  // which way the sun is moving through the day: on, or back
+  let sunWay = 1
   return view.start((dt) => {
     t += dt
     if (settings.move) {
       if (settings.light === 'sun') {
-        settings.time = (settings.time + dt * 0.01) % 0.99
+        // the sun goes on to evening, then back towards morning - never jumping from one to the other
+        settings.time += dt * 0.01 * sunWay
+        if (settings.time >= 1 || settings.time <= 0) {
+          settings.time = Math.min(1, Math.max(0, settings.time))
+          sunWay = -sunWay
+        }
         placeSun()
       }
       // the lamp head nods slowly, its pool of light sweeping the stones
