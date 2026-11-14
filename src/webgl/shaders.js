@@ -942,6 +942,24 @@ vec2 softTap(int i, int count, float spin) {
   float a = float(i) * 2.39996323 + spin;
   return vec2(cos(a), sin(a)) * r;
 }
+// Where the search looks: its spiral, and last the pixel's own spot - so a caster thinner than the
+// spiral's spacing (a gnomon, a pole) is never missed right under it.
+vec2 softSearchTap(int i, float reach) {
+  return i == SOFT_SEARCH ? vec2(0.0) : softTap(i, SOFT_SEARCH, 0.0) * reach;
+}
+// The gap to size the edge by: the average of what the search found (world units, 0 where it found
+// nothing), each sample counting less the further out it was - 0 when nothing was found.
+float softGap(float gaps[SOFT_SEARCH + 1]) {
+  float sum = 0.0, weight = 0.0;
+  for (int i = 0; i <= SOFT_SEARCH; i++) {
+    if (gaps[i] > 0.0) {
+      float k = i == SOFT_SEARCH ? 1.0 : softWeight(i);
+      sum += gaps[i] * k;
+      weight += k;
+    }
+  }
+  return weight > 0.0 ? sum / weight : 0.0;
+}
 // a random angle a pixel (Hoskins' hash: no lines or pattern for the eye to find)
 float softSpin() {
   vec3 p = fract(gl_FragCoord.xyx * 0.1031);
@@ -986,34 +1004,33 @@ float shadowAt(vec3 n, vec3 l) {
   vec2 slope = softSlope(n, a, b, g, 6.0 / (uShadowSoft.y * uShadowSoft.z));
   // the casters that could shade this point lie within the widest edge it could have
   float reach = clamp(c.z * uShadowSoft.y * uShadowSoft.x * uShadowSoft.z, uShadowTexel * 1.5, uShadowTexel * 64.0);
-  float found = 0.0, sum = 0.0;
-  for (int i = 0; i < SOFT_SEARCH; i++) {
-    vec2 o = softTap(i, SOFT_SEARCH, 0.0) * reach;
+  // how far above the surface what it finds is, in world units: under a couple of texels is the
+  // surface's own relief, not a caster
+  float tiny = 2.5 * uShadowTexel / uShadowSoft.z;
+  float gaps[SOFT_SEARCH + 1];
+  for (int i = 0; i <= SOFT_SEARCH; i++) {
+    vec2 o = softSearchTap(i, reach);
     float z = c.z + dot(slope, o);
-    float d = texture(uShadowDepth, c.xy + o).r;
-    if (d < z) {
-      float k = softWeight(i);
-      sum += (z - d) * k;
-      found += k;
+    float gi = (z - texture(uShadowDepth, c.xy + o).r) * uShadowSoft.y;
+    gaps[i] = gi > tiny ? gi : 0.0;
+  }
+  // the edge as wide as the nearest casters are far - or, finding none, the plain lookup below
+  float gap = softGap(gaps);
+  if (gap > 0.0) {
+    float radius = clamp(gap * uShadowSoft.x * uShadowSoft.z, uShadowTexel * 1.5, uShadowTexel * 64.0);
+    float soft = 0.0;
+    for (int i = 0; i < SOFT_FILTER; i++) {
+      vec2 o = softTap(i, SOFT_FILTER, spin + 1.7) * radius;
+      soft += texture(uShadowMap, vec3(c.xy + o, c.z + dot(slope, o)));
     }
+    return soft / float(SOFT_FILTER);
   }
-  if (found == 0.0) return 1.0;
-  // how far above the surface they are, in world units - and the edge that much wider
-  float gap = sum / found * uShadowSoft.y;
-  float radius = clamp(gap * uShadowSoft.x * uShadowSoft.z, uShadowTexel * 1.5, uShadowTexel * 64.0);
-  float soft = 0.0;
-  for (int i = 0; i < SOFT_FILTER; i++) {
-    vec2 o = softTap(i, SOFT_FILTER, spin + 1.7) * radius;
-    soft += texture(uShadowMap, vec3(c.xy + o, c.z + dot(slope, o)));
-  }
-  return soft / float(SOFT_FILTER);
-#else
+#endif
   float lit = 0.0;
   for (int x = -1; x <= 1; x++) {
     for (int y = -1; y <= 1; y++) lit += texture(uShadowMap, vec3(c.xy + vec2(x, y) * uShadowTexel * 1.5, c.z));
   }
   return lit / 9.0;
-#endif
 }
 #endif
 #ifdef SPOT_SHADOWS
@@ -1044,19 +1061,17 @@ float spotShadowAt(int k, vec3 n, float distance) {
     vec2 slope = softSlope(n, a, b, g, 6.0 * depthPerWorld * here / softness.w);
     // the widest edge it could have, at the most a caster right at the light
     float reach = clamp(softness.x * softness.w, uSpotShadowTexel * 1.5, uSpotShadowTexel * 64.0);
-    float found = 0.0, sum = 0.0;
-    for (int i = 0; i < SOFT_SEARCH; i++) {
-      vec2 o = softTap(i, SOFT_SEARCH, 0.0) * reach;
+    float tiny = 2.5 * uSpotShadowTexel * here / softness.w;
+    float gaps[SOFT_SEARCH + 1];
+    for (int i = 0; i <= SOFT_SEARCH; i++) {
+      vec2 o = softSearchTap(i, reach);
       float z = c.z + dot(slope, o);
       float d = texture(uSpotShadowDepth, clamp(c.xy + o, lo, hi)).r;
-      if (d < z) {
-        float k = softWeight(i);
-        sum += (softDistance(z, softness.y, softness.z) - softDistance(d, softness.y, softness.z)) * k;
-        found += k;
-      }
+      float gi = d < z ? softDistance(z, softness.y, softness.z) - softDistance(d, softness.y, softness.z) : 0.0;
+      gaps[i] = gi > tiny ? gi : 0.0;
     }
-    if (found == 0.0) return 1.0;
-    float gap = sum / found;
+    float gap = softGap(gaps);
+    if (gap > 0.0) {
     float radius = clamp(gap * softness.x * softness.w / here, uSpotShadowTexel * 1.5, uSpotShadowTexel * 64.0);
     float soft = 0.0;
     for (int i = 0; i < SOFT_FILTER; i++) {
@@ -1064,6 +1079,7 @@ float spotShadowAt(int k, vec3 n, float distance) {
       soft += texture(uSpotShadowMap, vec3(clamp(c.xy + o, lo, hi), c.z + dot(slope, o)));
     }
     return soft / float(SOFT_FILTER);
+    }
   }
 #endif
   float lit = 0.0;
@@ -1096,21 +1112,17 @@ float pointShadowAt(vec3 light, vec3 n, float distance) {
     float spin = softSpin();
     float facing = dot(n, dir);
     float reach = clamp(uPointShadowSoft, uPointShadowTexel * 1.5, uPointShadowTexel * 64.0);
-    float found = 0.0, sum = 0.0;
-    for (int i = 0; i < SOFT_SEARCH; i++) {
-      vec2 t = softTap(i, SOFT_SEARCH, 0.0) * reach;
+    float tiny = 2.5 * uPointShadowTexel * z;
+    float gaps[SOFT_SEARCH + 1];
+    for (int i = 0; i <= SOFT_SEARCH; i++) {
+      vec2 t = softSearchTap(i, reach);
       vec3 ray = dir + u * t.x + w * t.y;
       float zt = z * clamp(facing / dot(n, normalize(ray)), 0.5, 2.0);
-      float b = texture(uPointShadowDepth, ray).r;
-      float bz = softDistance(b, near, far);
-      if (bz < zt) {
-        float k = softWeight(i);
-        sum += (zt - bz) * k;
-        found += k;
-      }
+      float gi = zt - softDistance(texture(uPointShadowDepth, ray).r, near, far);
+      gaps[i] = gi > tiny ? gi : 0.0;
     }
-    if (found == 0.0) return 1.0;
-    float gap = sum / found;
+    float gap = softGap(gaps);
+    if (gap > 0.0) {
     float radius = clamp(gap * uPointShadowSoft / z, uPointShadowTexel * 1.5, uPointShadowTexel * 64.0);
     float soft = 0.0;
     for (int i = 0; i < SOFT_FILTER; i++) {
@@ -1120,6 +1132,7 @@ float pointShadowAt(vec3 light, vec3 n, float distance) {
       soft += texture(uPointShadowMap, vec4(ray, 0.5 * ((far + near) / (far - near) - 2.0 * far * near / ((far - near) * zt)) + 0.5));
     }
     return soft / float(SOFT_FILTER);
+    }
   }
 #endif
   float spread = uPointShadowTexel * 1.5;
