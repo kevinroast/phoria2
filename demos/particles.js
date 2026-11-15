@@ -50,7 +50,10 @@ const PRESETS = {
 }
 
 export default function run({ canvas, gui, info }) {
-  const view = new View({ canvas, orbit: { maxPitch: 1.25 }, background: '#0b0d13', camera: { position: [0, 4, 11], target: [0, 1.5, 0] } })
+  // bloom: additive flames pile past white where they crowd, and glow most there; the coals and
+  // windows, emissive, glow a little
+  const BLOOM = { strength: 0.6, radius: 0.6, threshold: 0.8 }
+  const view = new View({ canvas, orbit: { maxPitch: 1.25 }, background: '#0b0d13', bloom: { ...BLOOM }, camera: { position: [0, 4, 11], target: [0, 1.5, 0] } })
   const scene = view.scene
   scene.add(new HemisphereLight({ sky: '#2a3550', ground: '#0d0d10', intensity: 0.7 }))
   scene.add(new DirectionalLight({ color: '#b8c8ff', direction: [-0.4, -1, -0.6], intensity: 0.35, castShadow: true }))
@@ -103,7 +106,7 @@ export default function run({ canvas, gui, info }) {
   const soft = glow()
   const emitter = scene.add(new Emitter({ max: 6000, material: { map: soft } }))
   const sets = { fountain, flame: brazier, snow: village }
-  const settings = { preset: 'flame', burst: () => emitter.burst(400, { velocitySpread: 5 }) }
+  const settings = { preset: 'flame', bloom: true, burst: () => emitter.burst(400, { velocitySpread: 5 }) }
   const apply = () => {
     const { size, blending, ...options } = PRESETS[settings.preset]
     emitter.set(options)
@@ -129,6 +132,7 @@ export default function run({ canvas, gui, info }) {
   f.add(emitter.gravity, 'y', -15, 5, 0.1).name('gravity')
   f.add(emitter.material, 'size', 0.03, 1.5, 0.01)
   f.add(settings, 'burst')
+  gui.add(settings, 'bloom').onChange((on) => { view.bloom = on ? { ...BLOOM } : false })
 
   let shown = -1
   return view.start((dt, t) => {

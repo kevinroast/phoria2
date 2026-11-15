@@ -26,27 +26,24 @@ import { COMMON, FULLSCREEN_VERTEX, TONE_MAP } from './shaders.js'
 const UNTONE = /* glsl */ `
 ${TONE_MAP}
 const float BLOOM_PEAK = 16.0;
-// the light a surface's tone map turned into this colour (scaled by the exposure)
+// the light a surface's tone map turned into this colour (scaled by the exposure). Only its brightness
+// is run backwards - its brightest channel - and the colour scaled to it, keeping the hue it shows:
+// undoing the maps' hue shifts too (Neutral's desaturation, ACES a channel at a time) pulls channels
+// near white apart - a pale window's soft edge would glow pure red
 vec3 untone(vec3 c) {
   c = max(c, 0.0);
   float top = max(c.r, max(c.g, c.b));
+  if (top <= 0.0) return c;
   if (uToneMapping == 1) {
     // ACES (Narkowicz) runs to 1.033: white exactly, or past that, wasn't mapped
     if (abs(top - 1.0) < 1e-3 || top >= 1.0329) return c;
-    // its rational curve solved for the light, a channel at a time
-    vec3 o = min(c, 1.0329);
-    vec3 a = min(2.43 * o - 2.51, -1e-4), b = 0.59 * o - 0.03, k = 0.14 * o;
-    return min((-b - sqrt(max(b * b - 4.0 * a * k, 0.0))) / (2.0 * a), BLOOM_PEAK);
+    // its rational curve solved for the light
+    float a = min(2.43 * top - 2.51, -1e-4), b = 0.59 * top - 0.03, k = 0.14 * top;
+    return c * (min((-b - sqrt(max(b * b - 4.0 * a * k, 0.0))) / (2.0 * a), BLOOM_PEAK) / top);
   } else if (uToneMapping == 2) {
     // Khronos PBR Neutral, backwards: its highlight compression, then its toe
     if (top >= 0.999) return c;
-    float newPeak = top;
-    if (newPeak > 0.8) {
-      float peak = min(0.6 + 0.04 / (1.0 - newPeak), BLOOM_PEAK);
-      newPeak = 1.0 - 0.04 / (peak - 0.6);
-      float g = 1.0 - 1.0 / (0.15 * (peak - newPeak) + 1.0);
-      c = max((min(c, vec3(newPeak)) - g * newPeak) / (1.0 - g), 0.0) * (peak / newPeak);
-    }
+    if (top > 0.8) c *= min(0.6 + 0.04 / (1.0 - top), BLOOM_PEAK) / top;
     float y = min(c.r, min(c.g, c.b));
     return c + (y < 0.04 ? 0.4 * sqrt(y) - y : 0.04);
   }
