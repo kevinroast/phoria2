@@ -128,7 +128,7 @@ export default defineConfig(({ mode }) => ({
             // renderer's environment and shadow passes, bloom, the product viewer's effects, GPU
             // picking) keep chunks of their own - a new one must be named here too, or it is bundled
             // into core
-            manualChunks: (id) => (/[\\/]src[\\/](?!particles|charts|gltf|motion|edit|element|explain|snapshot|tooltip|keyboard|debug|hdr|irradiance|webgl[\\/](?:passes|picking|bloom|effects|ltc))/.test(id) ? 'core' : undefined),
+            manualChunks: (id) => (/[\\/]src[\\/](?!particles|charts|gltf|motion|edit|element|explain|snapshot|tooltip|keyboard|debug|hdr|irradiance|webgl[\\/](?:passes|picking|bloom|effects|ltc|blue-noise))/.test(id) ? 'core' : undefined),
             chunkFileNames: '[name].js',
           },
         },

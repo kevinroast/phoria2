@@ -9,6 +9,7 @@ import { CLIP, CLIP_ONLY_FRAGMENT, COMMON, CUTOUT, EQUIRECT, FULLSCREEN_VERTEX, 
 import { setHookUniforms } from './hooks.js'
 import { setShapeUniforms, shapeDefines } from './shape.js'
 import { blit } from './targets.js'
+import { BLUE_NOISE } from './blue-noise-data.js'
 
 // soft shadows: at shadowSoftness 1 the edge spreads this much of the gap from caster to surface
 // either way - four tenths across, a large studio light
@@ -303,9 +304,10 @@ const ENV_LEVELS = 6
  * on, the uniforms it reads once a frame, and the depth texture it samples. A new kind of shadow is
  * a pass that returns one of these.
  * @typedef {{ define: string, uniforms: Record<string, unknown>, sampler: string, texture: WebGLTexture,
- *   soft: { define: string, sampler: string, value: { texture: WebGLTexture, sampler: WebGLSampler } } | null }} ShadowMap
+ *   soft: { define: string, sampler: string, value: { texture: WebGLTexture, sampler: WebGLSampler }, noise: WebGLTexture } | null }} ShadowMap
  *   soft: for contact-hardening shadows, the define that turns them on and the map read as depths -
- *   its own sampler object, as the texture itself is set up to compare
+ *   its own sampler object, as the texture itself is set up to compare - and the blue noise each
+ *   pixel turns its samples by (uBlueNoise)
  */
 
 /**
@@ -322,6 +324,7 @@ export class Passes {
   /** @type {WeakMap<Texture, Environment>} */ #environments = new WeakMap()
   /** @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #shadow = null
   /** @type {WebGLSampler | null} */ #depthSampler = null
+  /** @type {WebGLTexture | null} */ #blueNoise = null
   /** Spot lights' shadows, a tile each. @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #spotShadow = null
   /** A point light's shadow: a depth cube, a framebuffer a face. @type {{ texture: WebGLTexture, framebuffers: WebGLFramebuffer[] } | null} */ #pointShadow = null
   /** Rendering to float textures, which environments need. */
@@ -341,6 +344,7 @@ export class Passes {
     this.#environments = new WeakMap()
     this.#shadow = null
     this.#depthSampler = null
+    this.#blueNoise = null
     this.#spotShadow = null
     this.#pointShadow = null
     this.floatTargets = !!this.gl.getExtension('EXT_color_buffer_float')
@@ -472,7 +476,7 @@ export class Passes {
     }
     return {
       define: 'SHADOW', sampler: 'uShadowMap', texture: this.#shadow.texture, uniforms,
-      soft: softness > 0 ? { define: 'SHADOW_SOFT', sampler: 'uShadowDepth', value: { texture: this.#shadow.texture, sampler: this.#depthReader() } } : null,
+      soft: softness > 0 ? { define: 'SHADOW_SOFT', sampler: 'uShadowDepth', value: { texture: this.#shadow.texture, sampler: this.#depthReader() }, noise: this.#noise() } : null,
     }
   }
 
@@ -509,7 +513,7 @@ export class Passes {
     return {
       define: 'SPOT_SHADOWS', sampler: 'uSpotShadowMap', texture: this.#spotShadow.texture,
       uniforms: { uSpotShadowMatrix: matrices, uSpotShadowTile: tiles, uSpotShadowBias: bias, uSpotShadowTexel: 1 / SPOT_ATLAS_SIZE, ...(anySoft ? { uSpotShadowSoft: soft } : {}) },
-      soft: anySoft ? { define: 'SPOT_SHADOWS_SOFT', sampler: 'uSpotShadowDepth', value: { texture: this.#spotShadow.texture, sampler: this.#depthReader() } } : null,
+      soft: anySoft ? { define: 'SPOT_SHADOWS_SOFT', sampler: 'uSpotShadowDepth', value: { texture: this.#spotShadow.texture, sampler: this.#depthReader() }, noise: this.#noise() } : null,
     }
   }
 
@@ -533,7 +537,7 @@ export class Passes {
       define: 'POINT_SHADOW', sampler: 'uPointShadowMap', texture: this.#pointShadow.texture,
       uniforms: { uPointShadowNearFar: [point.near, point.far], uPointShadowTexel: point.texelAngle, uPointShadowBias: point.texelAngle * 1.5,
         ...(softness > 0 ? { uPointShadowSoft: softness * SOFT_SPREAD } : {}) },
-      soft: softness > 0 ? { define: 'POINT_SHADOW_SOFT', sampler: 'uPointShadowDepth', value: { texture: this.#pointShadow.texture, sampler: this.#depthReader() } } : null,
+      soft: softness > 0 ? { define: 'POINT_SHADOW_SOFT', sampler: 'uPointShadowDepth', value: { texture: this.#pointShadow.texture, sampler: this.#depthReader() }, noise: this.#noise() } : null,
     }
   }
 
@@ -739,6 +743,27 @@ export class Passes {
     gl.samplerParameteri(s, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
     for (const wrap of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.samplerParameteri(s, wrap, gl.CLAMP_TO_EDGE)
     return (this.#depthSampler = s)
+  }
+
+  /**
+   * A 64 x 64 tile of blue noise (blue-noise-data.js), one byte a texel, for soft shadows: each pixel
+   * reads its own texel, tiled across the screen, for the angle it turns its sample discs by.
+   * @returns {WebGLTexture}
+   */
+  #noise() {
+    if (this.#blueNoise) return this.#blueNoise
+    const gl = this.gl
+    const text = atob(BLUE_NOISE)
+    const bytes = new Uint8Array(text.length)
+    for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i)
+    const texture = /** @type {WebGLTexture} */ (gl.createTexture())
+    gl.activeTexture(gl.TEXTURE15)
+    gl.bindTexture(gl.TEXTURE_2D, texture)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, 64, 64, 0, gl.RED, gl.UNSIGNED_BYTE, bytes)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    gl.bindTexture(gl.TEXTURE_2D, null)
+    return (this.#blueNoise = texture)
   }
 
   /** A depth texture to draw shadows into and compare against. @param {number} size */

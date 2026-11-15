@@ -166,9 +166,12 @@ describe('hooks in the renderer', () => {
     scene.add(new DirectionalLight({ direction: [0, -1, 0], castShadow: true }))
     scene.add(new Mesh({ geometry: plane(2), material: { shader: wave }, castShadow: true }))
     scene.add(new Mesh({ geometry: box(1), position: [0, -1, 0], receiveShadow: true }))
+    // the shadow passes' code loads on first use: wait until it has arrived, not a fixed time (a busy
+    // machine can take longer than any guess)
+    let ready = 0
+    renderer.onReady = () => ready++
     renderer.render(scene, camera())
-    // the shadow passes' code loads on first use
-    await new Promise((r) => setTimeout(r, 50))
+    await vi.waitFor(() => expect(ready).toBeGreaterThan(0))
     renderer.render(scene, camera())
     const hooked = sources.filter((s) => s.includes(wave.vertex))
     // a vertex shader for the colour pass, and one for the shadow map's depth pass

@@ -860,7 +860,10 @@ export class WebGLRenderer {
       }
       for (const shadow of shadows) {
         program.set(shadow.sampler, shadow.texture)
-        if (shadow.soft) program.set(shadow.soft.sampler, shadow.soft.value)
+        if (shadow.soft) {
+          program.set(shadow.soft.sampler, shadow.soft.value)
+          program.set('uBlueNoise', shadow.soft.noise)
+        }
       }
     }
     if (ssao) {

@@ -1100,11 +1100,12 @@ float softGap(float gaps[SOFT_SEARCH + 1]) {
 // surface's slope, which already keeps it from shadowing itself, and the full push lifts a shadow
 // off a contact a few millimetres tall (a gnomon on its dial)
 const float SOFT_PUSH = 0.25;
-// a random angle a pixel (Hoskins' hash: no lines or pattern for the eye to find)
+// A pixel's own angle to turn the sample discs by, from a 64 x 64 tile of blue noise repeated across
+// the screen: neighbours' angles as different as can be, with no clumps (white noise) and no axis or
+// lattice (interleaved gradient noise, R2) - so the samples' error shows as fine, even grain.
+uniform sampler2D uBlueNoise;
 float softSpin() {
-  vec3 p = fract(gl_FragCoord.xyx * 0.1031);
-  p += dot(p, p.yzx + 33.33);
-  return 6.2831853 * fract((p.x + p.y) * p.z);
+  return 6.2831853 * texelFetch(uBlueNoise, ivec2(gl_FragCoord.xy) & 63, 0).r;
 }
 // a perspective map's depth (0-1) as a distance from the light
 float softDistance(float d, float near, float far) {
