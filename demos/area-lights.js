@@ -212,12 +212,34 @@ normal = normalize(normal + (vec3(hash(f.z), hash(f.z + 0.37), hash(f.z + 0.71))
 
   let swing = 0
   // the key swings slowly round the front left, always aimed at the subjects
+  // The light reaching the card from the softbox, as a point light of its intensity would give it:
+  // facing each other or not, over the distance squared
+  const onCard = () => {
+    scene.updateWorldTree()
+    const kp = key.worldPosition, kd = key.worldDirection, bp = bounce.worldPosition, bd = bounce.worldDirection
+    const l = [kp[0] - bp[0], kp[1] - bp[1], kp[2] - bp[2]], d2 = l[0] * l[0] + l[1] * l[1] + l[2] * l[2], len = Math.sqrt(d2)
+    const card = Math.max(0, (bd[0] * l[0] + bd[1] * l[1] + bd[2] * l[2]) / len), box = Math.max(0, -(kd[0] * l[0] + kd[1] * l[1] + kd[2] * l[2]) / len)
+    return key.intensity * card * box / d2
+  }
+  // the card sends back what reaches it: none with the softbox off, more as it swings round to face it -
+  // as much as at the start (intensity 6) for the light the card got then. And more from a bigger
+  // softbox: by the square root of its area against the starting 2.4 x 0.8 m - gently - up to twice.
+  // (Staging, not physics: intensity is a point light's, so a bigger softbox is softer, not brighter)
+  let onCardAtStart = 0
   const placeKey = () => {
     const a = 2.35 + Math.sin(swing) * 0.45
     key.position.set(Math.cos(a) * 3.2, 3.1, Math.sin(a) * -3.2 + 1.2)
     key.target = [0, 0.4, 0.2]
     keyPanel.geometry = diffuserOf(key)
     keyBody.geometry = bodyOf(key)
+    if (!onCardAtStart) {
+      const was = key.intensity
+      key.intensity = 75
+      onCardAtStart = onCard()
+      key.intensity = was
+    }
+    const size = Math.min(2, Math.sqrt((key.width * key.height) / 1.92))
+    bounce.intensity = settings.bounce && onCardAtStart ? 6 * size * onCard() / onCardAtStart : 0
   }
 
   const apply = () => {
@@ -228,7 +250,6 @@ normal = normalize(normal + (vec3(hash(f.z), hash(f.z + 0.37), hash(f.z + 0.71))
     // starting 75 over 2.4 x 0.8 m)
     keyPanel.material.emissiveIntensity = 8 * (settings.keyIntensity / 75) * (1.92 / (settings.keyWidth * settings.keyHeight))
     key.castShadow = settings.shadows
-    bounce.intensity = settings.bounce ? 6 : 0
     rig.visible = settings.bounce
     floor.material.roughness = 1 - settings.floorGloss
     placeKey()
