@@ -39,9 +39,9 @@ export default function run({ canvas, gui }) {
     canvas, background: '#0b0c10',
     camera: { position: [2.6, 2.3, 6.6], target: [-0.3, 1.0, -0.3], fov: 40 },
     orbit: { minDistance: 3, maxDistance: 14, minPitch: 0.05, maxPitch: 1.2 },
-    // the picture bloom sees is tone mapped - white at most - so its threshold sits a little below
-    // white: the softbox's face and its bright reflections glow, the lit card just doesn't
-    bloom: { strength: 1.0, radius: 0.8, threshold: 0.8 },
+    // bloom works in light: past 1.5 - half as bright again as a white surface in full light - the
+    // softbox's face and its reflections glow, more the brighter it is; the lit marble and card don't
+    bloom: { strength: 0.3, radius: 0.7, threshold: 2.0 },
   })
   const scene = view.scene
 

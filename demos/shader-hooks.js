@@ -91,7 +91,7 @@ export default function run({ canvas, gui, info }) {
   const view = new View({
     canvas, orbit: { maxPitch: 1.2 }, background: '#0d0f14',
     camera: { position: [0, 15, 12], target: [0, 0.2, 0] },
-    bloom: { strength: 0.85, radius: 0.5, threshold: 0.7 },
+    bloom: { strength: 0.3, radius: 0.5, threshold: 0.75 },
   })
   const { scene } = view
   // the studio for the metal's reflections, turned down so it doesn't flatten the colours; a warm key

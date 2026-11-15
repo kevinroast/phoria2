@@ -130,6 +130,28 @@ describe('a frame drawn in linear light', () => {
     expect(steps.map((d) => d.framebuffer === null)).toEqual([false, false, true])
   })
 
+  it('is not what bloom needs: it reads a float sRGB picture, blended as the canvas would be, and works out the light behind it', async () => {
+    const { gl, drawLog } = floatGL()
+    const formats = /** @type {number[]} */ ([])
+    const spy = new Proxy(gl, {
+      get: (t, k) => (k === 'texStorage2D' || k === 'renderbufferStorageMultisample' || k === 'texImage2D'
+        ? (/** @type {any[]} */ ...args) => { formats.push(k === 'renderbufferStorageMultisample' ? args[2] : k === 'texStorage2D' ? args[2] : args[2]); return t[k](...args) }
+        : t[k]),
+    })
+    const { renderer, s } = await loaded({ bloom: true }, spy)
+    drawLog.length = 0
+    renderer.renderFrame(collect(s, camera()))
+    const scenePass = drawLog.find((d) => d.call !== 'drawArrays')
+    expect(definesOf(/** @type {any} */ (scenePass).program)).not.toContain('LINEAR_OUTPUT')
+    expect(formats).toContain(gl.RGBA16F)
+    // bloom draws straight onto the canvas: no encode
+    const steps = drawLog.filter((d) => d.call === 'drawArrays' && d.viewport[2] === 64)
+    expect(steps.map((d) => d.program.shaders[1].source.includes('uBloom'))).toEqual([true])
+    expect(definesOf(steps[0].program)).not.toContain('LINEAR_INPUT')
+    const bright = drawLog.find((d) => d.call === 'drawArrays' && d.program.shaders[1].source.includes('uThreshold'))
+    expect(/** @type {any} */ (bright).program.shaders[1].source).toContain('untone(shownAt(c))')
+  })
+
   it('without float targets, is drawn as any other frame', () => {
     const { gl, drawLog } = fakeGL()
     const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })

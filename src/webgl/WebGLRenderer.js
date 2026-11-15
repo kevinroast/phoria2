@@ -63,7 +63,10 @@ import { drawKind } from '../scene/kinds.js'
  * @typedef {object} BloomOptions
  * @property {number} [strength] how much glow is added (default 1)
  * @property {number} [radius] 0 - 1: how far it spreads (default 0.6)
- * @property {number} [threshold] 0 - 1: how bright a colour has to be to glow (default 0.6)
+ * @property {number} [threshold] how bright the light behind a colour has to be for it to glow, after
+ *   the exposure: 1 is a white surface in full light (default 0.6). Above it the glow grows with the
+ *   light - an emissive at 8 glows more than one at 2, though both show near white. Colours that
+ *   aren't lit (unlit materials, points, lines) count as they show: white is 1
  */
 
 /**
@@ -101,7 +104,7 @@ const HINTS = { alpha: 'the canvas is always transparent where the scene has no 
  */
 export function bloomSettings(owner, value) {
   // bloom has always taken any number and clamped it when drawing: out of range is said, not thrown
-  return effectSettings(owner, 'bloom', value, BLOOM, BLOOM_HINTS, { strength: [0, Infinity], radius: [0, 1], threshold: [0, 1] }, true)
+  return effectSettings(owner, 'bloom', value, BLOOM, BLOOM_HINTS, { strength: [0, Infinity], radius: [0, 1], threshold: [0, Infinity] }, true)
 }
 /**
  * Shading in the creases: ambient and environment light dimmed where surfaces close in on each other
@@ -571,10 +574,11 @@ export class WebGLRenderer {
       passes.time = frame.time ?? 0
       passes.cameraPosition = frame.camera.position
     }
+    const glows = !!this.#bloom && !plain, float = !!gl.getExtension('EXT_color_buffer_float')
     /** @type {FrameState} */
     const state = {
       // in linear light: into float targets encoded at the end, or into a target that encodes itself
-      wait, linear: (linear && !!gl.getExtension('EXT_color_buffer_float')) || !!target?.srgb, width, height,
+      wait, linear: (linear && float) || !!target?.srgb, width, height,
       environment: passes && typeof env === 'object' ? passes.environment(env) : null, shadows: [], occlusion: null, ...this.#lightsOf(frame),
     }
     if (passes && typeof env === 'object' && env.image && !state.environment) {
@@ -600,17 +604,20 @@ export class WebGLRenderer {
 
     // the post chain, always in this order: bloom (drawn plainly while its code loads), the encode
     // out of linear light, FXAA. With any step, the scene is drawn into a picture of its own first
-    const bloom = this.#bloom && !plain ? gpu.loadBloom() : null
+    const bloom = glows ? gpu.loadBloom() : null
     const fxaa = this.fxaa && !plain ? effects : null
     /** @type {PostStep[]} */
     const steps = []
     const bloomSettings = this.#bloom
-    if (bloom && bloomSettings) steps.push({ run: (picture, output) => bloom.apply(picture, output, width, height, bloomSettings, state.linear), linear: state.linear })
+    if (bloom && bloomSettings) steps.push({ run: (picture, output) => bloom.apply(picture, output, width, height, bloomSettings, { exposure: this.exposure, toneMapping: TONE_MAPPING[this.toneMapping], linear: state.linear }), linear: state.linear })
     // (a target that encodes itself needs no step for it)
     if (state.linear && !target?.srgb) steps.push({ run: (picture, output) => this.#encode(picture, output, width, height), linear: false })
     if (fxaa) steps.push({ run: (picture, output) => fxaa.fxaa(picture, output, width, height), linear: false })
     const output = target ? target.framebuffer : null
-    const scene = steps.length ? this.#sceneTargets(width, height, state.linear) : null
+    // bloom works in light, so what is brighter than white glows more: the picture it reads is drawn into
+    // a float target - as sRGB, blended as on the canvas, unless the frame is linear - to keep what
+    // is past white (additive points piling up) and the tone maps' last steps to white apart
+    const scene = steps.length ? this.#sceneTargets(width, height, state.linear || (!!bloom && float)) : null
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, scene ? scene.draw.framebuffer : output)
     gl.viewport(0, 0, width, height)

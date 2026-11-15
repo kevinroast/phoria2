@@ -3,7 +3,7 @@
 // halves them in size again and again, blurring as they go, adds them back up the chain, and draws
 // the picture with its glow wherever the chain says - the canvas, or the next step's target. Loaded
 // the first time a view asks for bloom.
-import { COMMON, FULLSCREEN_VERTEX } from './shaders.js'
+import { COMMON, FULLSCREEN_VERTEX, TONE_MAP } from './shaders.js'
 
 /** @import { Programs } from './programs.js' */
 /** @import { TargetPool } from './targets.js' */
@@ -12,12 +12,50 @@ import { COMMON, FULLSCREEN_VERTEX } from './shaders.js'
  * @typedef {object} BloomSettings
  * @property {number} strength how much glow is added
  * @property {number} radius 0 - 1: how far it spreads (how much the wider, blurrier levels count)
- * @property {number} threshold 0 - 1: how bright a colour has to be to glow
+ * @property {number} threshold how bright the light behind a colour has to be to glow (1: a white surface in full light)
  */
 
+// Bloom works in light: from each colour as the surfaces' tone map left it, it works out the light
+// behind it again - the tone map run backwards - so what is brighter glows more, past white: an
+// emissive panel at 8 glows more than one at 2, though both show near white. The picture is sRGB (a
+// float target where it can be drawn to, blended just as the canvas would be) or, with LINEAR_INPUT,
+// linear light. The tone maps never quite reach white, so a colour at white or past it wasn't mapped
+// - unlit colours, additive points piling up - and counts as it is: a pure red label is 1, not a
+// light. What maps nearer white than BLOOM_PEAK counts as BLOOM_PEAK (half floats can't tell it
+// apart); without float targets, nearer than 8 bits can.
+const UNTONE = /* glsl */ `
+${TONE_MAP}
+const float BLOOM_PEAK = 16.0;
+// the light a surface's tone map turned into this colour (scaled by the exposure)
+vec3 untone(vec3 c) {
+  c = max(c, 0.0);
+  float top = max(c.r, max(c.g, c.b));
+  if (uToneMapping == 1) {
+    // ACES (Narkowicz) runs to 1.033: white exactly, or past that, wasn't mapped
+    if (abs(top - 1.0) < 1e-3 || top >= 1.0329) return c;
+    // its rational curve solved for the light, a channel at a time
+    vec3 o = min(c, 1.0329);
+    vec3 a = min(2.43 * o - 2.51, -1e-4), b = 0.59 * o - 0.03, k = 0.14 * o;
+    return min((-b - sqrt(max(b * b - 4.0 * a * k, 0.0))) / (2.0 * a), BLOOM_PEAK);
+  } else if (uToneMapping == 2) {
+    // Khronos PBR Neutral, backwards: its highlight compression, then its toe
+    if (top >= 0.999) return c;
+    float newPeak = top;
+    if (newPeak > 0.8) {
+      float peak = min(0.6 + 0.04 / (1.0 - newPeak), BLOOM_PEAK);
+      newPeak = 1.0 - 0.04 / (peak - 0.6);
+      float g = 1.0 - 1.0 / (0.15 * (peak - newPeak) + 1.0);
+      c = max((min(c, vec3(newPeak)) - g * newPeak) / (1.0 - g), 0.0) * (peak / newPeak);
+    }
+    float y = min(c.r, min(c.g, c.b));
+    return c + (y < 0.04 ? 0.4 * sqrt(y) - y : 0.04);
+  }
+  return c;
+}
+`
+
 // halve the picture, sampling a 4 x 4 block round each texel - the first time picking out what is
-// bright enough to glow, with a soft knee so it doesn't switch on at a hard edge. The picture is
-// sRGB, or with LINEAR_INPUT already in linear light
+// bright enough to glow, with a soft knee so it doesn't switch on at a hard edge
 const DOWN_FRAGMENT = /* glsl */ `
 precision highp float;
 in vec2 vUv;
@@ -26,13 +64,21 @@ uniform vec2 uTexel;        // one source texel
 uniform float uThreshold;   // < 0: no threshold (every level after the first)
 out vec4 fragColor;
 ${COMMON}
-vec3 tap(vec2 uv) {
-  vec3 c = texture(uSource, uv).rgb;
+${UNTONE}
+// a colour of the picture, in linear light, not premultiplied
+vec3 shownAt(vec4 c) {
+  if (c.a <= 0.0) return vec3(0.0);
 #ifdef LINEAR_INPUT
-  return c;
+  return c.rgb / c.a;
 #else
-  return uThreshold < 0.0 ? c : srgbToLinear(c);
+  return srgbToLinear(c.rgb / c.a);
 #endif
+}
+vec3 tap(vec2 uv) {
+  vec4 c = texture(uSource, uv);
+  if (uThreshold < 0.0) return c.rgb;
+  // premultiplied: the light of the colour itself, faded again by its cover
+  return untone(shownAt(c)) * c.a;
 }
 void main() {
   vec3 c = (tap(vUv + uTexel * vec2(-1.0, -1.0)) + tap(vUv + uTexel * vec2(1.0, -1.0)) +
@@ -66,8 +112,10 @@ void main() {
 }
 `
 
-// the picture with its glow added, in linear light - back out as premultiplied sRGB, or with
-// LINEAR_INPUT left linear for the chain to encode at its end
+// the picture with its glow. The glow is light: added to the light behind each colour and the sum
+// tone mapped, so it rolls off into white as a lens's does, and a pixel it doesn't reach is exactly
+// as it was - bloom at strength 0 is no bloom. Out as premultiplied sRGB, or with LINEAR_INPUT left
+// linear for the chain to encode at its end
 const COMPOSITE_FRAGMENT = /* glsl */ `
 precision highp float;
 in vec2 vUv;
@@ -76,9 +124,20 @@ uniform sampler2D uBloom;
 uniform float uStrength;
 out vec4 fragColor;
 ${COMMON}
+${UNTONE}
+vec3 shownAt(vec4 c) {
+  if (c.a <= 0.0) return vec3(0.0);
+#ifdef LINEAR_INPUT
+  return c.rgb / c.a;
+#else
+  return srgbToLinear(c.rgb / c.a);
+#endif
+}
 void main() {
   vec4 scene = texture(uScene, vUv);
   vec3 glow = texture(uBloom, vUv).rgb * uStrength;
+  vec3 light = untone(shownAt(scene));
+  glow = max(toneCurve(light + glow) - toneCurve(light), 0.0);
   // where the canvas is see-through, the glow brings its own cover
   float a = clamp(scene.a + max(glow.r, max(glow.g, glow.b)), 0.0, 1.0);
 #ifdef LINEAR_INPUT
@@ -118,11 +177,13 @@ export class Bloom {
    * @param {WebGLFramebuffer | null} output null: the canvas
    * @param {number} width @param {number} height
    * @param {BloomSettings} settings
-   * @param {boolean} linear the picture is in linear light, and the glow stays so
+   * @param {{ exposure: number, toneMapping: number, linear: boolean }} tone the surfaces' tone map, run
+   *   backwards to find the light behind the picture; linear: the picture is in linear light, and the
+   *   glow stays so (otherwise sRGB)
    */
-  apply(picture, output, width, height, settings, linear) {
+  apply(picture, output, width, height, settings, tone) {
     const gl = this.gl
-    const defines = linear ? ['LINEAR_INPUT'] : []
+    const defines = tone.linear ? ['LINEAR_INPUT'] : []
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.CULL_FACE)
     gl.disable(gl.BLEND)
@@ -148,6 +209,10 @@ export class Bloom {
       down.set('uSource', source)
       down.set('uTexel', [1 / sw, 1 / sh])
       down.set('uThreshold', i === 0 ? Math.max(0, settings.threshold) : -1)
+      if (i === 0) {
+        down.set('uExposure', tone.exposure)
+        down.set('uToneMapping', tone.toneMapping)
+      }
       this.programs.drawFullscreen()
       source = /** @type {WebGLTexture} */ (level.texture)
       sw = level.width
@@ -179,6 +244,8 @@ export class Bloom {
     composite.set('uScene', picture)
     composite.set('uBloom', levels[0].texture)
     composite.set('uStrength', Math.max(0, settings.strength))
+    composite.set('uExposure', tone.exposure)
+    composite.set('uToneMapping', tone.toneMapping)
     this.programs.drawFullscreen()
 
     gl.depthMask(true)

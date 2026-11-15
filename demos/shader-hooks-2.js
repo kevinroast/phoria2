@@ -83,7 +83,7 @@ export default function run({ canvas, gui }) {
   const view = new View({
     canvas, orbit: { maxPitch: 1.2 }, background: '#0b0c11',
     camera: { position: [0, 7, 15], target: [0, 1.2, 0] },
-    bloom: { strength: 0.8, radius: 0.5, threshold: 0.75 },
+    bloom: { strength: 0.3, radius: 0.5, threshold: 0.75 },
   })
   const { scene } = view
   scene.environment = 'studio'

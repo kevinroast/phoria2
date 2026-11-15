@@ -192,8 +192,10 @@ export const COMMON = /* glsl */ `
 vec3 srgbToLinear(vec3 c) {
   return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
 }
+// not clamped to white: what is written is clamped by the target (8 bits, the canvas), and a float
+// target keeps what is past white, for bloom
 vec3 linearToSrgb(vec3 c) {
-  c = clamp(c, 0.0, 1.0);
+  c = max(c, 0.0);
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
 }
 // what a shader writes: premultiplied - the colour faded by its opacity, and how much of what is
@@ -249,11 +251,13 @@ export const TONE_MAP = /* glsl */ `
 uniform float uExposure;
 uniform int uToneMapping;    // 0 none, 1 aces, 2 neutral
 
-vec3 toneMap(vec3 c) {
-  c *= uExposure;
+// the curve alone, on light already scaled by the exposure (bloom adds its glow in light and maps
+// the sum with it)
+vec3 toneCurve(vec3 c) {
   if (uToneMapping == 1) {
-    // ACES filmic, Narkowicz's fit
-    c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0);
+    // ACES filmic, Narkowicz's fit - up to 1.033, not clamped to 1, so bloom can tell its highlights
+    // from white (sRGB clamps what shows)
+    c = max((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0);
   } else if (uToneMapping == 2) {
     // Khronos PBR Neutral
     float x = min(c.r, min(c.g, c.b));
@@ -269,6 +273,10 @@ vec3 toneMap(vec3 c) {
     }
   }
   return c;
+}
+
+vec3 toneMap(vec3 c) {
+  return toneCurve(c * uExposure);
 }
 `
 
