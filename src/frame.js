@@ -82,14 +82,15 @@ function across(d) {
 /**
  * A refine sample's view of a casting light: moved to a point across its size, its shadow sharp
  * from there. Averaged over the samples, the shadows make the penumbra a light that size casts -
- * exactly, where soft shadows estimate it. A rect light's own size; a sun, spot or point light's
- * from its shadowSoftness (none: it stays sharp). Its shading moves with it, as a light that size
- * would light; a rect light's doesn't - it is lit from all of it already.
+ * exactly, where soft shadows estimate it. A rect light's own size; a sun's from its shadowSoftness,
+ * an angle (none: it stays sharp), its direction tilted with it. A spot or point light keeps its soft
+ * shadow: its edge spreads with the gap whatever the distance to what casts - no one size of light
+ * does that (sized for the garden, a lantern's own bars, a hand's width from the flame, blurred
+ * away) - and the samples average its grain away instead (the View shifts the blue noise).
  * @param {FrameLight} light changed in place - a frame's own copy
  * @param {[number, number]} sample in the unit square
- * @param {Vec3} casters the middle of what casts, for how far a lamp's light has to spread
  */
-function sampleLight(light, [u, v], casters) {
+function sampleLight(light, [u, v]) {
   if (light.kind === 'rect') {
     const hw = /** @type {Vec3} */ (light.halfWidth), hh = /** @type {Vec3} */ (light.halfHeight)
     light.shadowFrom = /** @type {Vec3} */ (light.position).clone().add(hw.clone().multiplyScalar(2 * u - 1)).add(hh.clone().multiplyScalar(2 * v - 1))
@@ -97,19 +98,11 @@ function sampleLight(light, [u, v], casters) {
     return
   }
   const softness = Math.min(1, Math.max(0, light.shadowSoftness ?? 0))
-  if (!(softness > 0)) return
+  if (light.kind !== 'directional' || !(softness > 0)) return
   light.shadowSoftness = 0
   const [x, y] = onDisc(u, v)
-  if (light.kind === 'directional') {
-    const d = /** @type {Vec3} */ (light.direction), [a, b] = across(d), r = SOFT_SPREAD * softness
-    light.direction = d.clone().add(a.multiplyScalar(x * r)).add(b.multiplyScalar(y * r)).normalize()
-  } else {
-    const p = /** @type {Vec3} */ (light.position), to = casters.clone().sub(p)
-    const r = SOFT_SPREAD * softness * to.len()
-    if (!(r > 0)) return
-    const [a, b] = across(to.normalize())
-    light.position = p.clone().add(a.multiplyScalar(x * r)).add(b.multiplyScalar(y * r))
-  }
+  const d = /** @type {Vec3} */ (light.direction), [a, b] = across(d), r = SOFT_SPREAD * softness
+  light.direction = d.clone().add(a.multiplyScalar(x * r)).add(b.multiplyScalar(y * r)).normalize()
 }
 
 /**
@@ -248,6 +241,7 @@ function coneOver(at, direction, boxes) {
  * @property {number} [time] the View's clock in seconds, for shader hooks that read uTime
  * @property {FrameHighlight | null} highlight set by the View for hover highlighting
  * @property {boolean} [shadowTexels] set by the View for debug.shadows: 'texels' - shadow map texels drawn over what receives them
+ * @property {[number, number]} [noiseShift] a refine sample's shift of soft shadows' blue-noise tile, in texels
  * @property {any[]} overlays HTML elements carried by the nodes drawn (node.overlay)
  * @property {boolean} interactive some node has a tooltip, highlight or pointer handler
  * @property {boolean} draggable some node has an onDrag handler
@@ -385,10 +379,7 @@ export function collect(scene, camera, { display = true, lightSample = null } = 
   const spots = frame.lights.filter((l) => (l.kind === 'spot' || l.kind === 'rect') && l.castShadow)
   const points = frame.lights.filter((l) => l.kind === 'point' && l.castShadow)
   const items = sun >= 0 || spots.length || points.length ? /** @type {DrawItem[]} */ (casters.map(([n, clip]) => drawItem(n, view, null, clip)).filter(Boolean)) : []
-  if (lightSample && items.length) {
-    const casters = items.reduce((box, c) => c.node.expandBounds(box), new Box3()).getCenter()
-    for (const light of [...(sun >= 0 ? [frame.lights[sun]] : []), ...spots, ...points]) sampleLight(light, lightSample, casters)
-  }
+  if (lightSample && items.length) for (const light of [...(sun >= 0 ? [frame.lights[sun]] : []), ...spots]) sampleLight(light, lightSample)
   if (spots.length > SPOT_TILES) warnOnce(scene, `more than ${SPOT_TILES} spot and rect-area lights cast shadows - the extras don't`)
   if (points.length > 1) warnOnce(scene, 'more than one point light casts shadows - only the first does')
   if (items.length && points.length) {

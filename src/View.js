@@ -6,7 +6,7 @@ import { EASES } from './ease.js'
 import { Raycaster } from './Raycaster.js'
 import { pickArea } from './area.js'
 import { ChangeWatch } from './watch.js'
-import { REVEAL, defaultSamples, jitterFrame, lightSample } from './refine.js'
+import { REVEAL, defaultSamples, jitterFrame, lightSample, noiseShift } from './refine.js'
 import { Box3 } from './value/Box3.js'
 import { Color } from './value/Color.js'
 import { Vec3 } from './value/Vec3.js'
@@ -382,6 +382,7 @@ export class View {
     if (this.autoLight && frame.lights.length === 0) this.#addAutoLights(frame)
     frame.time = this.time
     frame.highlight = this.#highlightFor(this.#hovered)
+    frame.noiseShift = noiseShift(n)
     jitterFrame(frame, n, this.canvas.width, this.canvas.height)
     this.renderer.renderFrame(frame, { wait, accumulate: { index: n, show: show || n + 1 >= REVEAL } })
     return this.renderer.info.compiling === 0

@@ -194,6 +194,8 @@ export function groundShadowSettings(owner, value) {
 }
 
 const TONE_MAPPING = { none: 0, aces: 1, neutral: 2 }
+// soft shadows' blue noise, where a plain frame reads it
+const NO_SHIFT = [0, 0]
 // as bloom's (bloom.js): what maps nearer white than this counts as this
 const LIGHT_PEAK = 16
 
@@ -983,6 +985,7 @@ export class WebGLRenderer {
         if (shadow.soft) {
           program.set(shadow.soft.sampler, shadow.soft.value)
           program.set('uBlueNoise', shadow.soft.noise)
+          program.set('uBlueNoiseShift', frame.noiseShift ?? NO_SHIFT)
         }
       }
     }

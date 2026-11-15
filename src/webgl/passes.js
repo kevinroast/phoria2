@@ -16,10 +16,16 @@ import { BLUE_NOISE } from './blue-noise-data.js'
 const SOFT_SPREAD = 0.2
 /** A light's shadowSoftness, held to 0-1 - set on the light directly it isn't checked. @param {{ shadowSoftness?: number }} light */
 const softnessOf = (light) => Math.min(1, Math.max(0, light.shadowSoftness ?? 0))
+// a rect light's filter is an ellipse this much bigger than its half width and height: an evenly lit
+// rectangle and an evenly filled ellipse spread an edge alike when their spreads (second moments)
+// match - its half width over root 3, the ellipse's semi-axis over 2
+const RECT_TO_ELLIPSE = 2 / Math.sqrt(3)
+
 /**
  * A spot shadow tile's edge: how far it spreads a unit of gap from caster to surface - or, for a
- * rect-area light, minus the radius of a disc as big as the light, the edge then as wide as that
- * light makes it (the gap times the radius, over the distance from the light to the caster).
+ * rect-area light, minus the longer semi-axis of the ellipse that stands for it (spotShape), the edge
+ * then as wide as that light makes it (the gap times the semi-axis, over the distance from the light
+ * to the caster).
  * @param {FrameLight} light
  */
 function spotSpread(light) {
@@ -27,7 +33,30 @@ function spotSpread(light) {
   if (light.hardShadow) return 0
   if (light.kind !== 'rect') return softnessOf(light) * SOFT_SPREAD
   const hw = /** @type {Vec3} */ (light.halfWidth), hh = /** @type {Vec3} */ (light.halfHeight)
-  return -Math.sqrt(4 * hw.len() * hh.len() / Math.PI)
+  return -RECT_TO_ELLIPSE * Math.max(hw.len(), hh.len())
+}
+
+/**
+ * The shape of a spot shadow tile's soft edge, in the tile's own coordinates: which way the light's
+ * width lies there (x, y), and its width and height over the longer of them (z, w) - a rect light's
+ * ellipse, wide along its width; a spot light's a circle (1, 0, 1, 1).
+ * @param {FrameLight} light @param {Float32Array | number[]} viewProjection the tile's view
+ * @returns {number[]}
+ */
+function spotShape(light, viewProjection) {
+  if (light.kind !== 'rect' || light.hardShadow) return [1, 0, 1, 1]
+  const hw = /** @type {Vec3} */ (light.halfWidth), hh = /** @type {Vec3} */ (light.halfHeight)
+  const w = hw.len(), h = hh.len(), long = Math.max(w, h, 1e-6)
+  // a point a unit in front of the light, and one a little way along its width from there, on the map
+  const p = /** @type {Vec3} */ (light.position), d = /** @type {Vec3} */ (light.direction), m = viewProjection
+  const onMap = (/** @type {number[]} */ q) => {
+    const cw = m[3] * q[0] + m[7] * q[1] + m[11] * q[2] + m[15]
+    return [(m[0] * q[0] + m[4] * q[1] + m[8] * q[2] + m[12]) / cw, (m[1] * q[0] + m[5] * q[1] + m[9] * q[2] + m[13]) / cw]
+  }
+  const a = [p[0] + d[0], p[1] + d[1], p[2] + d[2]], s = 0.01 / Math.max(w, 1e-6)
+  const [x0, y0] = onMap(a), [x1, y1] = onMap([a[0] + hw[0] * s, a[1] + hw[1] * s, a[2] + hw[2] * s])
+  const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy) || 1
+  return [dx / len, dy / len, w / long, h / long]
 }
 
 /** @import { Programs } from './programs.js' */
@@ -494,7 +523,7 @@ export class Passes {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.#spotShadow.framebuffer)
     gl.viewport(0, 0, SPOT_ATLAS_SIZE, SPOT_ATLAS_SIZE)
     this.#beginDepth()
-    const matrices = new Float32Array(16 * 4), tiles = new Float32Array(4 * 4), bias = new Float32Array(4), soft = new Float32Array(4 * 4)
+    const matrices = new Float32Array(16 * 4), tiles = new Float32Array(4 * 4), bias = new Float32Array(4), soft = new Float32Array(4 * 4), shape = new Float32Array(4 * 4)
     const half = SPOT_ATLAS_SIZE / 2
     for (const spot of spots) {
       const x = spot.tile % 2, y = Math.floor(spot.tile / 2)
@@ -509,12 +538,13 @@ export class Passes {
       // near and far planes to turn the map's depths into distances, and the map's coordinates a
       // world unit at a distance of 1
       soft.set([spotSpread(spot.light), spot.near, spot.far, 1 / SPOT_ATLAS_SIZE / spot.texelAngle], spot.tile * 4)
+      shape.set(spotShape(spot.light, spot.viewProjection), spot.tile * 4)
     }
     this.#endDepth()
     const anySoft = spots.some((s) => spotSpread(s.light) !== 0)
     return {
       define: 'SPOT_SHADOWS', sampler: 'uSpotShadowMap', texture: this.#spotShadow.texture,
-      uniforms: { uSpotShadowMatrix: matrices, uSpotShadowTile: tiles, uSpotShadowBias: bias, uSpotShadowTexel: 1 / SPOT_ATLAS_SIZE, ...(anySoft ? { uSpotShadowSoft: soft } : {}) },
+      uniforms: { uSpotShadowMatrix: matrices, uSpotShadowTile: tiles, uSpotShadowBias: bias, uSpotShadowTexel: 1 / SPOT_ATLAS_SIZE, ...(anySoft ? { uSpotShadowSoft: soft, uSpotShadowShape: shape } : {}) },
       soft: anySoft ? { define: 'SPOT_SHADOWS_SOFT', sampler: 'uSpotShadowDepth', value: { texture: this.#spotShadow.texture, sampler: this.#depthReader() }, noise: this.#noise() } : null,
     }
   }

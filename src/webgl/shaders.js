@@ -753,7 +753,8 @@ uniform float uPunctualShadow[NUM_PUNCTUAL]; // which tile a point or spot light
 #endif
 #ifdef SPOT_SHADOWS_SOFT
 uniform highp sampler2D uSpotShadowDepth;    // the same map read as depths
-uniform vec4 uSpotShadowSoft[4];             // each tile's edge spread a unit of gap (0 for plain; minus a rect light's radius), near, far, map coordinates a world unit at distance 1
+uniform vec4 uSpotShadowSoft[4];             // each tile's edge spread a unit of gap (0 for plain; minus a rect light's longer semi-axis), near, far, map coordinates a world unit at distance 1
+uniform vec4 uSpotShadowShape[4];            // its soft edge's shape on the map: the light's width that way (x, y), width and height over the longer (z, w)
 #endif
 #endif
 #ifdef POINT_SHADOW
@@ -1116,10 +1117,13 @@ float softGap(float gaps[SOFT_SEARCH + 1]) {
 const float SOFT_PUSH = 0.25;
 // A pixel's own angle to turn the sample discs by, from a 64 x 64 tile of blue noise repeated across
 // the screen: neighbours' angles as different as can be, with no clumps (white noise) and no axis or
-// lattice (interleaved gradient noise, R2) - so the samples' error shows as fine, even grain.
+// lattice (interleaved gradient noise, R2) - so the samples' error shows as fine, even grain. A refine
+// sample shifts the tile (uBlueNoiseShift), so each pixel's angle differs from sample to sample and
+// the grain averages away.
 uniform sampler2D uBlueNoise;
+uniform ivec2 uBlueNoiseShift;
 float softSpin() {
-  return 6.2831853 * texelFetch(uBlueNoise, ivec2(gl_FragCoord.xy) & 63, 0).r;
+  return 6.2831853 * texelFetch(uBlueNoise, (ivec2(gl_FragCoord.xy) + uBlueNoiseShift) & 63, 0).r;
 }
 // a perspective map's depth (0-1) as a distance from the light
 float softDistance(float d, float near, float far) {
@@ -1212,6 +1216,9 @@ float spotShadowAt(int k, vec3 n, float distance) {
     vec3 c = s.xyz / s.w;
     float spin = softSpin();
     float here = softDistance(c.z, softness.y, softness.z);
+    // a rect light's samples spread as it does: an ellipse along its width and height (a spot's a circle)
+    vec4 shape = uSpotShadowShape[k];
+    mat2 shaped = mat2(shape.xy * shape.z, vec2(-shape.y, shape.x) * shape.w);
     // a perspective map: how its coordinates and depth change with world position here
     mat4 m = uSpotShadowMatrix[k];
     vec3 r3 = vec3(m[0][3], m[1][3], m[2][3]);
@@ -1229,7 +1236,7 @@ float spotShadowAt(int k, vec3 n, float distance) {
     float tiny = 2.5 * uSpotShadowTexel * here / softness.w;
     float gaps[SOFT_SEARCH + 1];
     for (int i = 0; i <= SOFT_SEARCH; i++) {
-      vec2 o = softSearchTap(i, reach, spin);
+      vec2 o = shaped * softSearchTap(i, reach, spin);
       float z = c.z + dot(slope, o);
       float d = texture(uSpotShadowDepth, clamp(c.xy + o, lo, hi)).r;
       float gi = d < z ? softDistance(z, softness.y, softness.z) - softDistance(d, softness.y, softness.z) : 0.0;
@@ -1244,7 +1251,7 @@ float spotShadowAt(int k, vec3 n, float distance) {
     float soft = 0.0;
     for (int i = 0; i < SOFT_FILTER_MAX; i++) {
       if (i >= taps) break;
-      vec2 o = softTap(i, taps, spin + 1.7) * radius;
+      vec2 o = shaped * (softTap(i, taps, spin + 1.7) * radius);
       soft += texture(uSpotShadowMap, vec3(clamp(c.xy + o, lo, hi), c.z + dot(slope, o)));
     }
     return soft / float(taps);

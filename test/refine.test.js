@@ -4,7 +4,7 @@
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { DirectionalLight, Mesh, PerspectiveCamera, RectAreaLight, Scene, SpotLight, View, box, plane } from '../src/index.js'
 import { collect } from '../src/frame.js'
-import { REVEAL, halton, jitterFrame, lightSample, pixelShift, tent } from '../src/refine.js'
+import { REVEAL, halton, jitterFrame, lightSample, noiseShift, pixelShift, tent } from '../src/refine.js'
 import { fakePage } from './fakes.js'
 
 describe('refine samples', () => {
@@ -59,7 +59,7 @@ describe('a refine sample of a frame', () => {
     expect(sampled.shadowFrom?.distanceTo(light.worldPosition)).toBeCloseTo(Math.hypot(1, 0.5))
   })
 
-  it('moves a soft sun or spot across the size its softness gives it, sharp from there - and leaves a sharp one be', () => {
+  it("tilts a soft sun across the angle its softness gives it, sharp from there - and leaves a spot's soft shadow be", () => {
     const s = scene()
     s.add(new DirectionalLight({ direction: [0, -1, 0], castShadow: true, shadowSoftness: 0.5 }))
     s.add(new SpotLight({ position: [0, 5, 0], direction: [0, -1, 0], castShadow: true, shadowSoftness: 1 }))
@@ -69,10 +69,13 @@ describe('a refine sample of a frame', () => {
     // the disc's edge: tilted by the spread, 0.2 at softness 1
     expect(Math.atan2(Math.hypot(/** @type {any} */ (sun.direction)[0], sun.direction?.[2] ?? 0), -(/** @type {any} */ (sun.direction)[1]))).toBeCloseTo(Math.atan(0.1))
     expect(sun.shadowSoftness).toBe(0)
-    // a lamp's size is the spread times its distance to what casts (the box's middle, 4.5 below)
-    expect(soft.position?.distanceTo(new (/** @type {any} */ (soft.position).constructor)(0, 5, 0))).toBeCloseTo(0.2 * 4.5)
-    expect(soft.shadowSoftness).toBe(0)
+    // a spot's edge spreads with the gap whatever the distance - no one size of light does that, so it
+    // keeps its soft shadow, the samples averaging its grain away
+    expect([...(/** @type {any} */ (soft.position))]).toEqual([0, 5, 0])
+    expect(soft.shadowSoftness).toBe(1)
     expect([...(/** @type {any} */ (sharp.position))]).toEqual([3, 5, 0])
+    // and each sample reads the blue noise somewhere else
+    expect(new Set(Array.from({ length: 16 }, (_, n) => noiseShift(n).join())).size).toBe(16)
   })
 })
 

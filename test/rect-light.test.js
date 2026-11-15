@@ -179,11 +179,15 @@ describe('rect-area lights in the renderer', () => {
     expect(tile.light.shadowTile).toBe(0)
 
     const fake = await drawn(scene)
-    // compiled with the soft lookup, the light's radius given as a negative spread: a disc as big
+    // compiled with the soft lookup, the light's size given as a negative spread: the longer semi-axis of
+    // the ellipse that spreads an edge as the rectangle does (its half width x 2 / root 3), and its shape -
+    // a square light's a circle
     expect(fake.sources.some((s) => s.includes('#define SPOT_SHADOWS_SOFT'))).toBe(true)
     const program = litProgram(fake)
     expect(program.values.uRectShadow[0]).toBe(0)
-    expect(program.values.uSpotShadowSoft[0]).toBeCloseTo(-Math.sqrt(4 / Math.PI), 4)
+    expect(program.values.uSpotShadowSoft[0]).toBeCloseTo(-2 / Math.sqrt(3), 4)
+    expect([...program.values.uSpotShadowShape.slice(2, 4)]).toEqual([1, 1])
+    expect(Math.hypot(program.values.uSpotShadowShape[0], program.values.uSpotShadowShape[1])).toBeCloseTo(1, 4)
     fake.renderer.dispose(scene)
   })
 

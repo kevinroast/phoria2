@@ -3,8 +3,10 @@
 // with soft shadows exact rather than estimated. What differs from one sample to the next:
 //   - where in its pixel the camera looks: the projection shifted by under a pixel, spread by a tent
 //     filter (a picture's resolve, not a box's hard edge), and
-//   - where on each casting light its shadow is drawn from (frame.js sampleLight).
-// Each comes from its own Halton sequence (bases 2 and 3 for the pixel, 5 and 7 for the light), so
+//   - where on each casting light its shadow is drawn from (frame.js sampleLight) - a sun's or a
+//     rect light's; a spot or point light keeps its soft shadow, and
+//   - where soft shadows read their blue noise, so their grain averages away.
+// Each comes from its own Halton sequence (2 and 3 the pixel, 5 and 7 the light, 11 and 13 the noise), so
 // they never fall into step: one sequence shared between them would draw the same lattice every time,
 // and averaging never removes a lattice.
 
@@ -49,6 +51,16 @@ export function tent(u) {
  */
 export function lightSample(n) {
   return [halton(n + 1, 5), halton(n + 1, 7)]
+}
+
+/**
+ * Sample n's shift of soft shadows' 64 x 64 blue-noise tile, in texels: from Halton (11, 13), its own
+ * sequences again.
+ * @param {number} n from 0
+ * @returns {[number, number]}
+ */
+export function noiseShift(n) {
+  return [Math.floor(halton(n + 1, 11) * 64), Math.floor(halton(n + 1, 13) * 64)]
 }
 
 /**
