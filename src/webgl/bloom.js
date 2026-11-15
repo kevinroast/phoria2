@@ -59,6 +59,7 @@ in vec2 vUv;
 uniform sampler2D uSource;
 uniform vec2 uTexel;        // one source texel
 uniform float uThreshold;   // < 0: no threshold (every level after the first)
+uniform float uRange;       // how far past the threshold the glow keeps growing before it levels off
 out vec4 fragColor;
 ${COMMON}
 ${UNTONE}
@@ -71,21 +72,36 @@ vec3 shownAt(vec4 c) {
   return srgbToLinear(c.rgb / c.a);
 #endif
 }
-vec3 tap(vec2 uv) {
-  vec4 c = texture(uSource, uv);
-  if (uThreshold < 0.0) return c.rgb;
-  // premultiplied: the light of the colour itself, faded again by its cover
+// one of the picture's own pixels, as light - premultiplied: the light of the colour itself, faded
+// again by its cover
+vec3 lightAt(ivec2 p, ivec2 size) {
+  vec4 c = texelFetch(uSource, clamp(p, ivec2(0), size - 1), 0);
   return untone(shownAt(c)) * c.a;
 }
 void main() {
-  vec3 c = (tap(vUv + uTexel * vec2(-1.0, -1.0)) + tap(vUv + uTexel * vec2(1.0, -1.0)) +
-            tap(vUv + uTexel * vec2(-1.0, 1.0)) + tap(vUv + uTexel * vec2(1.0, 1.0))) * 0.25;
+  vec3 c;
+  if (uThreshold >= 0.0) {
+    // the first level: the same 4 x 4 block, a pixel at a time - each turned to light before they are
+    // averaged. Filtering first would blend a white window into the night round it to 0.99, which
+    // the tone map, run backwards, reads as five times white
+    ivec2 size = textureSize(uSource, 0), at = ivec2(gl_FragCoord.xy) * 2 - 1;
+    c = vec3(0.0);
+    for (int y = 0; y < 4; y++) for (int x = 0; x < 4; x++) c += lightAt(at + ivec2(x, y), size);
+    c /= 16.0;
+  } else {
+    // light already: four filtered taps, each the mean of a 2 x 2
+    c = (texture(uSource, vUv + uTexel * vec2(-1.0, -1.0)).rgb + texture(uSource, vUv + uTexel * vec2(1.0, -1.0)).rgb +
+         texture(uSource, vUv + uTexel * vec2(-1.0, 1.0)).rgb + texture(uSource, vUv + uTexel * vec2(1.0, 1.0)).rgb) * 0.25;
+  }
   if (uThreshold >= 0.0) {
     float bright = max(c.r, max(c.g, c.b));
     float knee = uThreshold * 0.5 + 1e-4;
     float soft = clamp(bright - uThreshold + knee, 0.0, 2.0 * knee);
     soft = soft * soft / (4.0 * knee);
-    c *= max(soft, bright - uThreshold) / max(bright, 1e-4);
+    // what is past the threshold, with diminishing returns: brighter still glows more, but a polished
+    // surface mirroring the key light (16 or more) can't swamp the picture
+    float past = max(soft, bright - uThreshold);
+    c *= past / (1.0 + past / uRange) / max(bright, 1e-4);
   }
   fragColor = vec4(c, 1.0);
 }
@@ -150,6 +166,9 @@ const UP = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, UP_FRAGMENT])
 const COMPOSITE = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, COMPOSITE_FRAGMENT])
 // levels down the chain: the last is 1/64 of the picture across, or as small as is still 8 pixels
 const LEVELS = 6
+// the glow's growth past the threshold levels off towards this much light: a mirror-like crown
+// catching the key light (16 past it) glows about 3, a softbox at 8 (6.5 past) about 2.5
+const BLOOM_RANGE = 4
 
 export class Bloom {
   #float = false
@@ -207,6 +226,7 @@ export class Bloom {
       down.set('uTexel', [1 / sw, 1 / sh])
       down.set('uThreshold', i === 0 ? Math.max(0, settings.threshold) : -1)
       if (i === 0) {
+        down.set('uRange', BLOOM_RANGE)
         down.set('uExposure', tone.exposure)
         down.set('uToneMapping', tone.toneMapping)
       }

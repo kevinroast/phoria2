@@ -41,7 +41,7 @@ export default function run({ canvas, gui }) {
     orbit: { minDistance: 3, maxDistance: 14, minPitch: 0.05, maxPitch: 1.2 },
     // bloom works in light: past 1.5 - half as bright again as a white surface in full light - the
     // softbox's face and its reflections glow, more the brighter it is; the lit marble and card don't
-    bloom: { strength: 0.3, radius: 0.7, threshold: 2.0 },
+    bloom: { strength: 0.42, radius: 0.7, threshold: 1.5 },
   })
   const scene = view.scene
 

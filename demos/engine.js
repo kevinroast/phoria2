@@ -226,7 +226,7 @@ const EXHAUST = [rad(140), rad(380)], INTAKE = [rad(340), rad(580)]
 
 export default function run({ canvas, gui, info }) {
   const view = new View({
-    canvas, background: '#16181b', bloom: { strength: 0.9, radius: 0.5, threshold: 0.85 },
+    canvas, background: '#16181b', bloom: { strength: 0.9, radius: 0.5, threshold: 2.5 },
     orbit: { minDistance: 5, maxDistance: 22, maxPitch: 1.4 },
     camera: { position: [6.5, 4.6, 8.4], target: [0, 0.9, 0], fov: 38 }, highlight: '#ffd36b',
     tooltip: (hit) => ABOUT[hit?.node?.userData.part] ?? null,
@@ -298,7 +298,7 @@ export default function run({ canvas, gui, info }) {
     callout(cutaway, 'Sump', [-1.2, -1.3, 0], 'left'),
   ]
 
-  const state = { rpm: 40, cut: 0, cutaway: true, labels: true, time: 0, angle: 0, reveal: 0 }
+  const state = { rpm: 40, cut: -0.6, cutaway: true, labels: true, time: 0, angle: 0, reveal: 0 }
   gui.add(state, 'rpm', 0, 240, 1).name('speed (rpm)')
   gui.add(state, 'cut', -0.6, 1.2, 0.01).name('section plane').onChange(() => { state.reveal = 1 })
   gui.add(state, 'cutaway').name('cut away')

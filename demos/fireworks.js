@@ -16,7 +16,7 @@ export default function run({ canvas, gui, info }) {
   info.textContent = 'Click or press space to launch a firework'
   // bloom: sparks are additive, so where they crowd - a burst's heart, the trails - they go past white
   // and glow most; a lone spark glows a little, the city's windows softly
-  const view = new View({ canvas, orbit: { maxPitch: 0.5 }, background: sky(), bloom: { strength: 0.9, radius: 0.6, threshold: 0.8 }, camera: { position: [0, 5, 58], target: [0, 15, -10], far: 3000 } })
+  const view = new View({ canvas, orbit: { maxPitch: 0.5 }, background: sky(), bloom: { strength: 1.5, radius: 3.0, threshold: 2.5 }, camera: { position: [0, 5, 58], target: [0, 15, -10], far: 3000 } })
   const { scene } = view
   scene.add(starfield(1500, 700))
   scene.add(new HemisphereLight({ sky: '#28305a', ground: '#05060a', intensity: 0.35 }))

@@ -67,7 +67,8 @@ import { drawKind } from '../scene/kinds.js'
  * @property {number} [radius] 0 - 1: how far it spreads (default 0.6)
  * @property {number} [threshold] how bright the light behind a colour has to be for it to glow, after
  *   the exposure: 1 is a white surface in full light (default 0.6). Above it the glow grows with the
- *   light - an emissive at 8 glows more than one at 2, though both show near white. Colours that
+ *   light, levelling off - an emissive at 8 glows more than one at 2, though both show near white,
+ *   and a polished surface mirroring a light doesn't swamp the picture. Colours that
  *   aren't lit (unlit materials, points, lines) count as they show: white is 1
  */
 
