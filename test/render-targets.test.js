@@ -152,6 +152,23 @@ describe('a frame drawn in linear light', () => {
     expect(/** @type {any} */ (bright).program.shaders[1].source).toContain('untone(shownAt(c))')
   })
 
+  it("isn't how a refine sample is drawn: as the plain frame, sRGB - glass blending as on the canvas - averaged in linear light", () => {
+    const { gl, drawLog } = floatGL()
+    const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
+    renderer.setSize(64, 48)
+    renderer.renderFrame(collect(scene(), camera()), { accumulate: { index: 0, show: true } })
+    const [box3, average, encode] = drawLog
+    expect(definesOf(box3.program)).not.toContain('LINEAR_OUTPUT')
+    // into the average: decoded, then out through the encode
+    expect(average.program.shaders[1].source).toContain('srgbToLinear(c.rgb / c.a) * c.a')
+    expect(definesOf(average.program)).not.toContain('LINEAR_INPUT')
+    expect([encode.framebuffer, encode.program.shaders[1].source.includes('linearToSrgb(c.rgb / c.a)')]).toEqual([null, true])
+    // held: nothing on the canvas
+    drawLog.length = 0
+    renderer.renderFrame(collect(scene(), camera()), { accumulate: { index: 1, show: false } })
+    expect(drawLog.some((d) => d.framebuffer === null)).toBe(false)
+  })
+
   it('without float targets, is drawn as any other frame', () => {
     const { gl, drawLog } = fakeGL()
     const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })

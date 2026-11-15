@@ -9,6 +9,10 @@ import { PhoriaError } from './validate.js'
  * @property {string} [type] 'image/png' (default), 'image/jpeg' or 'image/webp'
  * @property {number} [quality] 0-1 for jpeg and webp
  * @property {boolean} [labels] paint the visible labels into the image (default true)
+ * @property {number} [samples] refine it first: this many pictures averaged, each from a slightly
+ *   different point in each pixel and with each shadow from a different point across its light -
+ *   antialiased edges and exact soft shadows (default 1: the picture as drawn). Needs float render
+ *   targets; without them, the picture as drawn
  */
 
 /**

@@ -42,10 +42,13 @@ export default function run({ canvas, gui }) {
     // bloom works in light: past 1.5 - half as bright again as a white surface in full light - the
     // softbox's face and its reflections glow, more the brighter it is; the lit marble and card don't
     bloom: { strength: 0.42, radius: 0.7, threshold: 1.5 },
+    // still (the softbox not moving), the picture refines: antialiased, and the softbox's shadows
+    // exact - each sample's from a different point on it
+    refine: true,
   })
   const scene = view.scene
 
-  const settings = { keyWidth: 2.4, keyHeight: 0.8, keyIntensity: 75, floorGloss: 0.85, shadows: true, bounce: true, move: true }
+  const settings = { keyWidth: 2.4, keyHeight: 0.8, keyIntensity: 75, floorGloss: 0.85, shadows: true, bounce: true, place: 0, move: false }
 
   // the set: a dark floor, polished, faintly mottled like sealed concrete - and behind it a matt sweep,
   // curving up from the floor into the wall, as a photographer's backdrop paper does
@@ -210,8 +213,9 @@ normal = normalize(normal + (vec3(hash(f.z), hash(f.z + 0.37), hash(f.z + 0.71))
     }
   }
 
+  // the key's place on its arc round the front left, -1 to 1 - set by its slider, or swinging slowly
+  // back and forth; always aimed at the subjects
   let swing = 0
-  // the key swings slowly round the front left, always aimed at the subjects
   // The light reaching the card from the softbox, as a point light of its intensity would give it:
   // facing each other or not, over the distance squared
   const onCard = () => {
@@ -227,7 +231,7 @@ normal = normalize(normal + (vec3(hash(f.z), hash(f.z + 0.37), hash(f.z + 0.71))
   // (Staging, not physics: intensity is a point light's, so a bigger softbox is softer, not brighter)
   let onCardAtStart = 0
   const placeKey = () => {
-    const a = 2.35 + Math.sin(swing) * 0.45
+    const a = 2.35 + settings.place * 0.45
     key.position.set(Math.cos(a) * 3.2, 3.1, Math.sin(a) * -3.2 + 1.2)
     key.target = [0, 0.4, 0.2]
     keyPanel.geometry = diffuserOf(key)
@@ -261,12 +265,20 @@ normal = normalize(normal + (vec3(hash(f.z), hash(f.z + 0.37), hash(f.z + 0.71))
   gui.add(settings, 'floorGloss', 0, 1, 0.05).name('floor gloss').onChange(apply)
   gui.add(settings, 'shadows').onChange(apply)
   gui.add(settings, 'bounce').name('bounce card').onChange(apply)
+  const place = gui.add(settings, 'place', -1, 1, 0.01).name('softbox position').onChange(() => {
+    // moving on from here when it swings again
+    swing = Math.asin(settings.place)
+    placeKey()
+  })
   gui.add(settings, 'move').name('move the softbox')
+  gui.add({ refine: true }, 'refine').name('refine when still').onChange((on) => { view.refine = on })
   apply()
 
   return view.start((dt) => {
     if (!settings.move) return
     swing += dt * 0.25
+    settings.place = Math.sin(swing)
+    place.updateDisplay()
     placeKey()
   })
 }

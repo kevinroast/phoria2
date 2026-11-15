@@ -37,6 +37,7 @@ contract('View', {
     ambientOcclusion: { value: { strength: 2 }, read: (v) => v.ambientOcclusion?.strength, expect: 2, bad: 'on', error: 'ambientOcclusion' },
     groundShadow: { value: { opacity: 0.3 }, read: (v) => v.groundShadow?.opacity, expect: 0.3, bad: 'on', error: 'groundShadow' },
     fxaa: { value: true, read: (v) => v.fxaa, default: false },
+    refine: { value: { samples: 64 }, read: (v) => v.refine?.samples ?? null, expect: 64, default: null, bad: 'yes', error: 'refine' },
     autoLight: { value: false, read: (v) => v.autoLight, default: true },
     maxDelta: { value: 0.05, read: (v) => v.maxDelta, default: 0.1, bad: 'slow', error: 'maxDelta' },
     reducedMotion: { value: true, read: (v) => v.reducedMotion, default: false, bad: 'yes', error: 'reducedMotion' },

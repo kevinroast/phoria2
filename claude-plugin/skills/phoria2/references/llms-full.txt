@@ -116,6 +116,7 @@ const view = new View({ canvas: '#c', orbit: true })
 | `ambientOcclusion` | off | shading in the creases: `true` or `{ strength, radius }`; also `view.ambientOcclusion` - see Product viewer passes |
 | `groundShadow` | off | a soft shadow on the ground under the solids, no light needed: `true` or `{ opacity, softness, height, y, size }`; also `view.groundShadow` |
 | `fxaa` | `false` | smooth jagged edges with a pass over the finished picture; also `view.fxaa` |
+| `refine` | `false` | while nothing changes, keep drawing and show the average once 16 samples are in: edges antialiased far past multisampling, soft shadows exact (each sample's from a point across the light; a rect light's own size, a sun's, spot's or point's from `shadowSoftness`). `true` (256 samples; 32 on touch screens) or `{ samples }`; any change starts again; needs float render targets. Also `view.refine` |
 | `autoLight` | `true` | light a scene that has no lights (a chart needs none of its own); `false` to leave it dark |
 | `pixelRatio` | `min(devicePixelRatio, 2)` | |
 | `context` | `'auto'` | WebGL context: own for the first four views on a page, then one shared context - so a page can hold any number of views |
@@ -149,7 +150,7 @@ Methods:
 - `rayAt(x, y)` / `rayAt(event)` - the world `Ray` through a canvas position, for placing things:
   `ray.at(ray.intersectPlane([0, 1, 0], [0, 0, 0]))` is the point on the floor under the pointer
   (`intersectPlane` returns null when the ray runs along the plane or away from it).
-- `await view.toImage()` - a PNG `Blob` of the picture, labels included.
+- `await view.toImage()` - a PNG `Blob` of the picture, labels included. `toImage({ samples: 64 })` refines it first, as `refine` does - antialiased, soft shadows exact - whether or not the view refines.
 - `await view.explain()` - a plain-text report of what is drawn, with warnings ("nothing in view",
   "no lights", labels hidden...). Use it to debug a blank or wrong picture.
 - `view.debug` (or the `debug` option) - pictures for a person checking a scene, drawn over it:

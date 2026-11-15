@@ -51,12 +51,66 @@ const OVER_LIMIT = {
  * @property {boolean} [castShadow] directional, spot, point, rect
  * @property {number} [shadowSoftness] directional, spot, point: contact-hardening soft shadows, 0 for the plain edge
  * @property {number} [shadowTile] spot, rect: which spot shadow is its, or -1
+ * @property {Vec3} [shadowFrom] rect, in a refine sample: where its shadow is drawn from - a point
+ *   on it - rather than its middle
+ * @property {boolean} [hardShadow] rect, in a refine sample: a sharp shadow, not contact-hardening
  */
 
 // A rect-area light's shadow is a spot light's from its middle, its cone just wide enough for what
 // casts in front of it - up to this far off straight ahead (radians, about 66 degrees), as a wider
 // view spreads the map too thin to be worth it.
 const RECT_SHADOW_ANGLE = 1.15
+
+// as passes.js's: at shadowSoftness 1 a soft shadow's edge spreads a fifth of the gap either way -
+// the edge a light this wide (as an angle, a sun; as a size over its distance, a lamp) casts
+const SOFT_SPREAD = 0.2
+
+/** A point on a unit disc, spread evenly over its area, from a point in the unit square (Shirley-Chiu). */
+function onDisc(/** @type {number} */ u, /** @type {number} */ v) {
+  const a = 2 * u - 1, b = 2 * v - 1
+  if (a === 0 && b === 0) return [0, 0]
+  const [r, t] = Math.abs(a) > Math.abs(b) ? [a, (Math.PI / 4) * (b / a)] : [b, Math.PI / 2 - (Math.PI / 4) * (a / b)]
+  return [r * Math.cos(t), r * Math.sin(t)]
+}
+
+/** Two directions square to `d` (unit) and to each other. @param {Vec3} d */
+function across(d) {
+  const a = (Math.abs(d[1]) < 0.9 ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0)).cross(d).normalize()
+  return [a, d.clone().cross(a)]
+}
+
+/**
+ * A refine sample's view of a casting light: moved to a point across its size, its shadow sharp
+ * from there. Averaged over the samples, the shadows make the penumbra a light that size casts -
+ * exactly, where soft shadows estimate it. A rect light's own size; a sun, spot or point light's
+ * from its shadowSoftness (none: it stays sharp). Its shading moves with it, as a light that size
+ * would light; a rect light's doesn't - it is lit from all of it already.
+ * @param {FrameLight} light changed in place - a frame's own copy
+ * @param {[number, number]} sample in the unit square
+ * @param {Vec3} casters the middle of what casts, for how far a lamp's light has to spread
+ */
+function sampleLight(light, [u, v], casters) {
+  if (light.kind === 'rect') {
+    const hw = /** @type {Vec3} */ (light.halfWidth), hh = /** @type {Vec3} */ (light.halfHeight)
+    light.shadowFrom = /** @type {Vec3} */ (light.position).clone().add(hw.clone().multiplyScalar(2 * u - 1)).add(hh.clone().multiplyScalar(2 * v - 1))
+    light.hardShadow = true
+    return
+  }
+  const softness = Math.min(1, Math.max(0, light.shadowSoftness ?? 0))
+  if (!(softness > 0)) return
+  light.shadowSoftness = 0
+  const [x, y] = onDisc(u, v)
+  if (light.kind === 'directional') {
+    const d = /** @type {Vec3} */ (light.direction), [a, b] = across(d), r = SOFT_SPREAD * softness
+    light.direction = d.clone().add(a.multiplyScalar(x * r)).add(b.multiplyScalar(y * r)).normalize()
+  } else {
+    const p = /** @type {Vec3} */ (light.position), to = casters.clone().sub(p)
+    const r = SOFT_SPREAD * softness * to.len()
+    if (!(r > 0)) return
+    const [a, b] = across(to.normalize())
+    light.position = p.clone().add(a.multiplyScalar(x * r)).add(b.multiplyScalar(y * r))
+  }
+}
 
 /**
  * The half-angle of the cone from `at`, looking along `direction`, that takes in every corner of
@@ -208,13 +262,15 @@ function coneOver(at, direction, boxes) {
  * What to draw: everything visible, culled to the camera's view, sorted for drawing. Expects world
  * matrices to be current (scene.update() or scene.updateWorld()); the camera is brought up to date
  * here, since it often isn't in the scene. A frame drawn off screen - into a render texture - takes
- * `display: false`: no labels, overlays, outlines or interaction, only what is drawn.
+ * `display: false`: no labels, overlays, outlines or interaction, only what is drawn. A refine
+ * sample takes `lightSample`, a point in the unit square: each casting light is moved there across
+ * its size, its shadow sharp (sampleLight).
  * @param {Scene} scene
  * @param {Camera} camera
- * @param {{ display?: boolean }} [options]
+ * @param {{ display?: boolean, lightSample?: [number, number] | null }} [options]
  * @returns {FrameDescription}
  */
-export function collect(scene, camera, { display = true } = {}) {
+export function collect(scene, camera, { display = true, lightSample = null } = {}) {
   camera.updateWorld()
   const view = camera.viewMatrix
   const projection = camera.projectionMatrix
@@ -329,6 +385,10 @@ export function collect(scene, camera, { display = true } = {}) {
   const spots = frame.lights.filter((l) => (l.kind === 'spot' || l.kind === 'rect') && l.castShadow)
   const points = frame.lights.filter((l) => l.kind === 'point' && l.castShadow)
   const items = sun >= 0 || spots.length || points.length ? /** @type {DrawItem[]} */ (casters.map(([n, clip]) => drawItem(n, view, null, clip)).filter(Boolean)) : []
+  if (lightSample && items.length) {
+    const casters = items.reduce((box, c) => c.node.expandBounds(box), new Box3()).getCenter()
+    for (const light of [...(sun >= 0 ? [frame.lights[sun]] : []), ...spots, ...points]) sampleLight(light, lightSample, casters)
+  }
   if (spots.length > SPOT_TILES) warnOnce(scene, `more than ${SPOT_TILES} spot and rect-area lights cast shadows - the extras don't`)
   if (points.length > 1) warnOnce(scene, 'more than one point light casts shadows - only the first does')
   if (items.length && points.length) {
@@ -348,7 +408,7 @@ export function collect(scene, camera, { display = true } = {}) {
     const boxes = items.map((c) => c.node.expandBounds(new Box3()))
     const receiving = receivers.map((n) => n.expandBounds(new Box3()))
     for (const light of spots.slice(0, SPOT_TILES)) {
-      const at = /** @type {Vec3} */ (light.position)
+      const at = /** @type {Vec3} */ (light.shadowFrom ?? light.position)
       // the light's own fitting - a lamp round it - doesn't shadow it
       const own = boxes.map((b) => b.containsPoint(at))
       const direction = /** @type {Vec3} */ (light.direction), casting = boxes.filter((_, i) => !own[i])

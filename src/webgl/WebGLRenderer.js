@@ -2,7 +2,7 @@ import * as mat3 from '../math/mat3.js'
 import * as mat4 from '../math/mat4.js'
 import { Geometry } from '../geometry/Geometry.js'
 import { Material } from '../material/Material.js'
-import { CLIP_ONLY_FRAGMENT, ENCODE_FRAGMENT, FULLSCREEN_VERTEX, MESH_VERTEX } from './shaders.js'
+import { CLIP_ONLY_FRAGMENT, COMMON, ENCODE_FRAGMENT, FULLSCREEN_VERTEX, MESH_VERTEX } from './shaders.js'
 import { hookFailed, hookFor, setHookUniforms } from './hooks.js'
 import { placementDefines, setShapeUniforms, shapeDefines } from './shape.js'
 import { featureDefines, secondUvDefines, setFeatureUniforms } from '../material/features.js'
@@ -49,6 +49,13 @@ import { drawKind } from '../scene/kinds.js'
  * Where a frame is drawn instead of the canvas: a framebuffer, and its size. An `srgb` target encodes
  * what is written into it itself (SRGB8_ALPHA8), so the frame is drawn in linear light into it.
  * @typedef {{ framebuffer: WebGLFramebuffer, width: number, height: number, srgb?: boolean }} RenderTarget
+ */
+
+/**
+ * A refine sample: one of the pictures a still view averages. `index` counts from 0, the first
+ * replacing what the average held; `show` draws the average, through the post chain, where the
+ * frame would have been drawn - otherwise what is there stays.
+ * @typedef {{ index: number, show: boolean }} Accumulate
  */
 
 /**
@@ -226,6 +233,25 @@ export function lightBehind(c, toneMapping, exposure) {
 const NO_SHADOWS = []
 // the step out of linear light, at the end of a linear frame's chain
 const ENCODE = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, ENCODE_FRAGMENT])
+// a refine sample into the running average, the blend unit weighting it: in linear light, so edges
+// and penumbrae average as light does. The sample was drawn as the plain frame is, as sRGB - glass
+// and other see-through things blending just as they do on the canvas - unless the frame is linear
+// (LINEAR_INPUT); premultiplied in, premultiplied out
+const ACCUMULATE = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, /* glsl */ `
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uSource;
+out vec4 fragColor;
+${COMMON}
+void main() {
+  vec4 c = texture(uSource, vUv);
+#ifdef LINEAR_INPUT
+  fragColor = c;
+#else
+  fragColor = c.a > 0.0 ? vec4(srgbToLinear(c.rgb / c.a) * c.a, c.a) : vec4(0.0);
+#endif
+}
+`])
 // counting a cap's faces into the stencil: the solids' surfaces, colour and depth left alone
 const CLIP_MASK = /** @type {[string, string]} */ ([MESH_VERTEX, CLIP_ONLY_FRAGMENT])
 // a cap: a square on the plane, two units across, facing +Y until it is placed
@@ -504,11 +530,13 @@ export class WebGLRenderer {
    * is set, for a frame that must be complete, such as an image export. Drawn onto the canvas, or
    * into `target`; with `linear`, in linear light into float targets and encoded to sRGB at the end
    * (where float targets can be drawn to) - the same picture, but blending in linear light.
+   * With `accumulate`, a refine sample: drawn in linear light and averaged in, the average shown
+   * when it says (see Accumulate) - only where float targets can be drawn to (canRefine).
    * @param {FrameDescription} frame
-   * @param {{ wait?: boolean, target?: RenderTarget | null, linear?: boolean }} [options]
+   * @param {{ wait?: boolean, target?: RenderTarget | null, linear?: boolean, accumulate?: Accumulate | null }} [options]
    * @returns {FrameDescription}
    */
-  renderFrame(frame, { wait = false, target = null, linear = false } = {}) {
+  renderFrame(frame, { wait = false, target = null, linear = false, accumulate = null } = {}) {
     const gpu = this.#gpu
     if (gpu.lost) return frame
     // what this frame touches counts as this renderer's, for freeing a shared context's copies
@@ -519,10 +547,11 @@ export class WebGLRenderer {
     this.info.renderTextures = 0
     // the render textures the frame shows, each drawn from its own camera first
     this.#renderTextures(frame, wait)
-    this.#drawFrame(frame, { wait, target, linear, plain: false })
+    const acc = accumulate && this.canRefine ? accumulate : null
+    this.#drawFrame(frame, { wait, target, linear, plain: false, accumulate: acc })
 
     if (this.info.compiling) gpu.whenCompiled()
-    if (this.#copy && !target) {
+    if (this.#copy && !target && (!acc || acc.show)) {
       // the picture is the buffer's bottom-left corner; as an image, y runs down from the top
       const copy = this.#copy, source = gpu.canvas, width = this.canvas.width, height = this.canvas.height
       copy.globalCompositeOperation = 'copy'
@@ -589,9 +618,9 @@ export class WebGLRenderer {
    * Draw one frame - the view's, or a render texture's - into the canvas or `target`. `plain`: none
    * of the view's effects (a render texture's frame).
    * @param {FrameDescription} frame
-   * @param {{ wait: boolean, target: RenderTarget | null, linear: boolean, plain: boolean }} options
+   * @param {{ wait: boolean, target: RenderTarget | null, linear: boolean, plain: boolean, accumulate?: Accumulate | null }} options
    */
-  #drawFrame(frame, { wait, target, linear, plain }) {
+  #drawFrame(frame, { wait, target, linear, plain, accumulate = null }) {
     const gpu = this.#gpu
     const gl = gpu.gl
     // a frame of its own, for programs' once-a-frame uniforms (each frame has its own camera)
@@ -643,20 +672,26 @@ export class WebGLRenderer {
 
     // the post chain, always in this order: bloom (drawn plainly while its code loads), the encode
     // out of linear light, FXAA. With any step, the scene is drawn into a picture of its own first
-    const bloom = glows ? gpu.loadBloom() : null
-    const fxaa = this.fxaa && !plain ? effects : null
+    // a refine sample shows its average through the chain, or nothing; jittered samples antialias it,
+    // so no FXAA
+    const shows = !accumulate || accumulate.show
+    const bloom = glows && shows ? gpu.loadBloom() : null
+    const fxaa = this.fxaa && !plain && !accumulate ? effects : null
     /** @type {PostStep[]} */
     const steps = []
     const bloomSettings = this.#bloom
-    if (bloom && bloomSettings) steps.push({ run: (picture, output) => bloom.apply(picture, output, width, height, bloomSettings, { exposure: this.exposure, toneMapping: TONE_MAPPING[this.toneMapping], linear: state.linear }), linear: state.linear })
+    // a refine sample's average is in linear light, whatever its samples were drawn in
+    const chainLinear = state.linear || !!accumulate
+    if (bloom && bloomSettings) steps.push({ run: (picture, output) => bloom.apply(picture, output, width, height, bloomSettings, { exposure: this.exposure, toneMapping: TONE_MAPPING[this.toneMapping], linear: chainLinear }), linear: chainLinear })
     // (a target that encodes itself needs no step for it)
-    if (state.linear && !target?.srgb) steps.push({ run: (picture, output) => this.#encode(picture, output, width, height), linear: false })
+    if (chainLinear && !target?.srgb && shows) steps.push({ run: (picture, output) => this.#encode(picture, output, width, height), linear: false })
     if (fxaa) steps.push({ run: (picture, output) => fxaa.fxaa(picture, output, width, height), linear: false })
     const output = target ? target.framebuffer : null
     // bloom works in light, so what is brighter than white glows more: the picture it reads is drawn into
     // a float target - as sRGB, blended as on the canvas, unless the frame is linear - to keep what
     // is past white (additive points piling up) and the tone maps' last steps to white apart
-    const scene = steps.length ? this.#sceneTargets(width, height, state.linear || (!!bloom && float)) : null
+    // float to keep what is past white: for bloom, and for a refine sample's light
+    const scene = steps.length || accumulate ? this.#sceneTargets(width, height, state.linear || ((!!bloom || !!accumulate) && float)) : null
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, scene ? scene.draw.framebuffer : output)
     gl.viewport(0, 0, width, height)
@@ -693,7 +728,48 @@ export class WebGLRenderer {
     gl.depthMask(true)
     gl.disable(gl.BLEND)
     gl.bindVertexArray(null)
-    if (scene) this.#post(scene, steps, output, width, height)
+    if (!scene) return
+    if (scene.draw !== scene.picture) blit(gl, scene.draw, scene.picture)
+    let picture = /** @type {WebGLTexture} */ (scene.picture.texture)
+    if (accumulate) {
+      picture = this.#accumulate(picture, accumulate.index, width, height, state.linear)
+      if (!accumulate.show) return
+    }
+    this.#post(picture, steps, output, width, height)
+  }
+
+  /** Can refine samples be averaged here - can float targets be drawn to? */
+  get canRefine() {
+    return !this.#gpu.lost && !!this.gl.getExtension('EXT_color_buffer_float')
+  }
+
+  /**
+   * Blend a refine sample into the running average, in the blend unit: weighted 1 / (index + 1)
+   * against what the average holds - the first replacing it. Returns the average.
+   * @param {WebGLTexture} picture @param {number} index @param {number} width @param {number} height
+   * @param {boolean} linear the sample is in linear light already (otherwise sRGB)
+   * @returns {WebGLTexture}
+   */
+  #accumulate(picture, index, width, height, linear) {
+    const gl = this.gl
+    const average = this.#gpu.targets.get('refine', { width, height, color: gl.RGBA16F })
+    gl.bindFramebuffer(gl.FRAMEBUFFER, average.framebuffer)
+    gl.viewport(0, 0, width, height)
+    gl.disable(gl.DEPTH_TEST)
+    gl.disable(gl.CULL_FACE)
+    gl.depthMask(false)
+    gl.enable(gl.BLEND)
+    gl.blendColor(0, 0, 0, 1 / (index + 1))
+    gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA)
+    const program = this.#gpu.programs.ready('accumulate', linear ? ['LINEAR_INPUT'] : [], ACCUMULATE)
+    gl.useProgram(program.program)
+    program.set('uSource', picture)
+    this.#gpu.programs.drawFullscreen()
+    gl.disable(gl.BLEND)
+    gl.depthMask(true)
+    gl.enable(gl.DEPTH_TEST)
+    gl.bindVertexArray(null)
+    return /** @type {WebGLTexture} */ (average.texture)
   }
 
   /**
@@ -713,15 +789,13 @@ export class WebGLRenderer {
   }
 
   /**
-   * Run the post chain over the scene's picture: each step reads the last one's picture and draws
-   * into a target of its own - float while still in linear light - and the last into `output`.
-   * @param {{ draw: Target, picture: Target }} scene @param {PostStep[]} steps
+   * Run the post chain over the picture: each step reads the last one's picture and draws into a
+   * target of its own - float while still in linear light - and the last into `output`.
+   * @param {WebGLTexture} picture @param {PostStep[]} steps
    * @param {WebGLFramebuffer | null} output @param {number} width @param {number} height
    */
-  #post(scene, steps, output, width, height) {
+  #post(picture, steps, output, width, height) {
     const gl = this.gl, pool = this.#gpu.targets
-    if (scene.draw !== scene.picture) blit(gl, scene.draw, scene.picture)
-    let picture = /** @type {WebGLTexture} */ (scene.picture.texture)
     steps.forEach((step, i) => {
       if (i === steps.length - 1) return step.run(picture, output)
       // two pictures between steps, taken in turn

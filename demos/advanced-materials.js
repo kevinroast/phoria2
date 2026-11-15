@@ -95,6 +95,7 @@ const PAPER = { color: '#f2e4c4', roughness: 0.8 }
 const OIL = { color: '#0b0d10', roughness: 0.05, iridescence: 1, iridescenceIor: 1.8, iridescenceThicknessMin: 250, iridescenceThickness: 650 }
 
 export default function run({ canvas, gui }) {
+  // still, the picture refines: glass and iridescent edges antialiased far past multisampling
   const view = new View({ canvas, orbit: true, background: '#121216' })
   const { scene } = view
   // a photographed studio: its windows show as sharp reflections in the glass, the coats and the metal.

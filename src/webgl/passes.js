@@ -23,6 +23,8 @@ const softnessOf = (light) => Math.min(1, Math.max(0, light.shadowSoftness ?? 0)
  * @param {FrameLight} light
  */
 function spotSpread(light) {
+  // a refine sample's: sharp, from a point on the light (frame.js sampleLight)
+  if (light.hardShadow) return 0
   if (light.kind !== 'rect') return softnessOf(light) * SOFT_SPREAD
   const hw = /** @type {Vec3} */ (light.halfWidth), hh = /** @type {Vec3} */ (light.halfHeight)
   return -Math.sqrt(4 * hw.len() * hh.len() / Math.PI)

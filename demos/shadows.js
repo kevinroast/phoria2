@@ -158,6 +158,9 @@ export default function run({ canvas, gui, info }) {
     orbit: { minDistance: 2.5, maxDistance: 16, minPitch: 0.06, maxPitch: 1.35 },
     ambientOcclusion: true,
     bloom: { strength: 0.8, radius: 0.55, threshold: 1.5 },
+    // still, the picture refines: antialiased, and soft shadows exact - each sample's from a point
+    // across the light
+    refine: true,
   })
   const scene = view.scene
   scene.environment = 'hdr/studio_small_09_1k.hdr'
@@ -295,7 +298,7 @@ export default function run({ canvas, gui, info }) {
       lantern.add(new Mesh({ geometry: box({ width: w, height: 0.012, depth: d }), material: iron, position: [x, y, z], castShadow: true }))
     }
   }
-  lantern.add(new Mesh({ geometry: lathe({ points: [[0, 0.36], [0.06, 0.34], [0.22, 0.22], [0.22, 0.2], [0, 0.2]], segments: 4 }), material: iron, position: [0, 1.09, 0], rotation: [0, Math.PI / 4, 0], castShadow: true }))
+  lantern.add(new Mesh({ geometry: lathe({ points: [[0, 0.2], [0.22, 0.2], [0.22, 0.22], [0.06, 0.34], [0, 0.36]], segments: 4 }), material: iron, position: [0, 1.09, 0], rotation: [0, Math.PI / 4, 0], castShadow: true }))
   lantern.add(new Mesh({ geometry: cylinder({ radius: 0.035, height: 0.1 }), material: { color: '#efe6d2', roughness: 0.7, translucency: 0.6, translucencyColor: '#ffb070' }, position: [0, 0.98, 0], castShadow: true }))
   const flame = lantern.add(new Mesh({ geometry: sphere({ radius: 0.022 }), material: { color: '#000', emissive: '#ffb050', emissiveIntensity: 9 }, position: [0, 1.06, 0], scale: [1, 1.7, 1], pickable: false }))
   const candle = lantern.add(new PointLight({ position: [0, 1.07, 0], color: '#ffa860', range: 9 }))
@@ -376,7 +379,8 @@ export default function run({ canvas, gui, info }) {
   })
   gui.add(settings, 'soft').name('soft shadows').onChange(apply)
   gui.add(settings, 'softness', 0, 1, 0.05).name('shadow softness').onChange(apply)
-  gui.add(settings, 'move').name('move the light')
+  gui.add(settings, 'move').name('animate the light')
+  gui.add({ refine: true }, 'refine').name('refine when still').onChange((on) => { view.refine = on })
   gui.add(settings, 'time', 0, 1, 0.01).name('time of day').onChange(placeSun)
 
   placeSun()
@@ -419,11 +423,12 @@ export default function run({ canvas, gui, info }) {
         head.rotation.z = -0.35 + Math.sin(t * 0.27) * 0.12
       }
     }
-    // a candle flickers
+    // a candle flickers - or, with the light not moving, burns steady, so the view goes still (and refines)
     if (settings.light === 'lantern') {
-      const f = 0.85 + 0.1 * Math.sin(t * 13.1) + 0.06 * Math.sin(t * 29.7 + 1.3)
-      candle.intensity = 5 * f
-      flame.scale.set(1, 1.7 * (0.9 + 0.15 * f), 1)
+      const f = settings.move ? 0.85 + 0.1 * Math.sin(t * 13.1) + 0.06 * Math.sin(t * 29.7 + 1.3) : 0.85
+      // set only when it changes: a value set again, even the same, is a change to redraw for
+      if (candle.intensity !== 5 * f) candle.intensity = 5 * f
+      if (Math.abs(flame.scale[1] - 1.7 * (0.9 + 0.15 * f)) > 1e-5) flame.scale.set(1, 1.7 * (0.9 + 0.15 * f), 1)
     }
   })
 }

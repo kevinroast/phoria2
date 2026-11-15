@@ -6,6 +6,7 @@ import { EASES } from './ease.js'
 import { Raycaster } from './Raycaster.js'
 import { pickArea } from './area.js'
 import { ChangeWatch } from './watch.js'
+import { REVEAL, defaultSamples, jitterFrame, lightSample } from './refine.js'
 import { Box3 } from './value/Box3.js'
 import { Color } from './value/Color.js'
 import { Vec3 } from './value/Vec3.js'
@@ -74,6 +75,11 @@ import { isInstanced } from './scene/kinds.js'
  *   with no light needed - the product viewer's floor shadow (default off). true, or
  *   { opacity, softness, height, y, size }
  * @property {boolean} [fxaa] smooth jagged edges with a pass over the finished picture (default off)
+ * @property {boolean | RefineOptions} [refine] while nothing changes, keep drawing the scene and show
+ *   the average: edges antialiased far past multisampling, and soft shadows exact - each sample's
+ *   shadows drawn from a different point across the light. It shows once 16 samples are in, improves
+ *   until `samples` (default 256; 32 on touch screens), then the GPU rests; any change starts it
+ *   again. Needs float render targets (nearly every device); without them, the plain frame. Default off
  * @property {boolean} [autoLight] light a scene that has no lights, with one console note (default true)
  * @property {number} [maxDelta] longest frame step in seconds, so a background tab doesn't jump (default 0.1)
  * @property {'auto' | boolean} [reducedMotion] cut motion short, for people it makes unwell: frame() jumps rather
@@ -89,11 +95,16 @@ import { isInstanced } from './scene/kinds.js'
  *   normals, axes, the orbit target and a stats readout. true shows all but normals. Default false
  */
 
+/**
+ * @typedef {object} RefineOptions
+ * @property {number} [samples] how many to average before resting (default 256; 32 on touch screens)
+ */
+
 /** @typedef {'click' | 'hover'} ViewEvent */
 /** @typedef {(hit: Hit | null, event: PointerEvent | MouseEvent | null) => void} ViewHandler */
 
 const OPTIONS = ['canvas', 'scene', 'camera', 'orbit', 'background', 'renderMode', 'framing', 'highlight', 'tooltip', 'pixelRatio',
-  'antialias', 'outlineAntialias', 'context', 'toneMapping', 'exposure', 'bloom', 'ambientOcclusion', 'groundShadow', 'fxaa', 'autoLight', 'maxDelta', 'reducedMotion',
+  'antialias', 'outlineAntialias', 'context', 'toneMapping', 'exposure', 'bloom', 'ambientOcclusion', 'groundShadow', 'fxaa', 'refine', 'autoLight', 'maxDelta', 'reducedMotion',
   'keyboard', 'description', 'debug']
 // what debug: true shows - everything but normals, which bristle on a big model
 /** @type {Required<DebugOptions>} */
@@ -198,6 +209,9 @@ export class View {
   // debug drawing: its code loads when turned on; the helpers are added to each frame, then taken out
   /** @type {Required<DebugOptions> | null} */ #debug = null
   /** @type {DebugDraw | null} */ #debugDraw = null
+  // refining a still view: its settings, and how many samples the average holds since the last change
+  /** @type {Required<RefineOptions> | null} */ #refine = null
+  #samples = 0
   // the code of the tooltip, keyboard use and debug drawing, each loaded the first time it is wanted
   #load = {
     tooltip: lazy('tooltips', () => import('./tooltip.js')),
@@ -306,6 +320,7 @@ export class View {
       changed: () => this.invalidate(),
     })
     if (options.debug !== undefined) this.debug = options.debug
+    if (options.refine !== undefined) this.#setRefine(options.refine)
 
     if (options.framing !== undefined) {
       // 'both' is short for { keep: 'both' }
@@ -320,6 +335,56 @@ export class View {
     this.resize()
     this.#listen()
     this.#schedule()
+  }
+
+  /**
+   * Refining a still view: null for off, or its settings. Set true, false or { samples }. While nothing
+   * changes the view keeps drawing the scene, each time from a slightly different point in each pixel
+   * and with each shadow from a different point across its light, and shows the average once 16 are
+   * in - antialiased edges and exact soft shadows - until `samples`.
+   * @returns {Required<RefineOptions> | null}
+   */
+  get refine() { return this.#refine }
+  /** @param {boolean | RefineOptions | null} v */
+  set refine(v) {
+    this.#setRefine(v)
+  }
+
+  /** @param {boolean | RefineOptions | null} v */
+  #setRefine(v) {
+    if (v === false || v === null) {
+      this.#refine = null
+    } else if (v === true) {
+      this.#refine = { samples: defaultSamples() }
+    } else if (typeof v === 'object' && !Array.isArray(v)) {
+      checkOptions('View refine', v, ['samples'], { count: "use 'samples'", passes: "use 'samples'", frames: "use 'samples'" })
+      const samples = v.samples === undefined ? defaultSamples() : checkRange('View', 'refine.samples', v.samples, 1, 4096)
+      this.#refine = { samples: Math.round(samples) }
+    } else {
+      fail('View', `'refine' must be true, false or { samples }, got ${describe(v)}`)
+    }
+    this.invalidate()
+  }
+
+  /** Is the view still refining - on, with samples to go, and able to? */
+  #refining() {
+    return !!this.#refine && this.#samples < this.#refine.samples && this.renderMode !== 'always' && !this.#debug && this.renderer.canRefine
+  }
+
+  /**
+   * Draw refine sample n into the average - shown once REVEAL are in, or when `show`.
+   * @param {number} n from 0 @param {boolean} wait complete: wait for shaders @param {boolean} [show]
+   * @returns {boolean} whether it was drawn complete (nothing still compiling)
+   */
+  #refineSample(n, wait, show = false) {
+    this.scene.updateWorldTree()
+    const frame = collect(this.scene, this.camera, { lightSample: lightSample(n) })
+    if (this.autoLight && frame.lights.length === 0) this.#addAutoLights(frame)
+    frame.time = this.time
+    frame.highlight = this.#highlightFor(this.#hovered)
+    jitterFrame(frame, n, this.canvas.width, this.canvas.height)
+    this.renderer.renderFrame(frame, { wait, accumulate: { index: n, show: show || n + 1 >= REVEAL } })
+    return this.renderer.info.compiling === 0
   }
 
   /**
@@ -640,6 +705,8 @@ export class View {
     if (frame.tooltips && !this.#tooltip) this.#loadTooltip()
     this.lastFrame = frame
     this.#dirty = false
+    // a new picture: the average starts again from it
+    this.#samples = 0
     // remember what was drawn - including what drawing changed, such as fitting the camera - so
     // the next frame compares against it and doesn't draw the same picture again
     if (this.renderMode === 'auto') this.#watch.changed(this.scene, this.camera, this.time)
@@ -1072,6 +1139,13 @@ export class View {
     // draw - complete, shaders and all - and read back in the same task, while the drawing
     // buffer is still there
     this.#render(true)
+    const samples = options?.samples === undefined ? 1 : Math.round(checkRange('View', 'toImage samples', options.samples, 1, 4096))
+    if (samples > 1 && this.renderer.canRefine) {
+      // refined: that many samples averaged, the last shown
+      for (let n = 0; n < samples; n++) this.#refineSample(n, true, n === samples - 1)
+      // what the view shows now is that average; refining carries on from it
+      this.#samples = samples
+    }
     return snapshot(this.canvas, this.#labels.shown, options ?? {}, this.#labels.leaders)
   }
 
@@ -1152,7 +1226,7 @@ export class View {
   // manual mode) while there is nothing to do.
   #schedule() {
     if (this.#rafId || this.#disposed || !this.#onScreen) return
-    if (this.renderMode === 'manual' && !(this.#running && this.#onFrame) && !this.#dirty && !this.#pickPending) return
+    if (this.renderMode === 'manual' && !(this.#running && this.#onFrame) && !this.#dirty && !this.#pickPending && !this.#refining()) return
     this.#rafId = requestAnimationFrame(this.#tick)
   }
 
@@ -1172,11 +1246,17 @@ export class View {
       if (this.#pickPending) this.#updateHover()
       const draw = this.#dirty || this.renderMode === 'always' ||
         (this.renderMode === 'auto' && this.#watch.changed(this.scene, this.camera, this.time))
-      if (draw) this.render()
+      if (draw) {
+        this.render()
+      } else if (this.#refining()) {
+        // still: one more sample - or, if some of it was still compiling, the average starts again
+        const n = this.#samples
+        this.#samples = this.#refineSample(n, false, n + 1 === /** @type {Required<RefineOptions>} */ (this.#refine).samples) ? n + 1 : 0
+      }
     } finally {
       // the next frame comes even if this one threw - the error still reaches the console, but one
       // bad handler doesn't freeze the view. In manual mode, sleep until something asks for a frame
-      if (this.renderMode !== 'manual' || (this.#running && this.#onFrame) || this.#dirty || this.#pickPending) this.#schedule()
+      if (this.renderMode !== 'manual' || (this.#running && this.#onFrame) || this.#dirty || this.#pickPending || this.#refining()) this.#schedule()
     }
   }
 

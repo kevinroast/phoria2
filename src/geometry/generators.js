@@ -378,8 +378,10 @@ export function icosphere(options) {
  * A profile turned about the Y axis (or `axis`, with y up the profile becoming that axis), as on a
  * lathe: pistons, bottles, bolts, vases, pulleys. Corners sharper
  * than about 30 degrees stay sharp; gentler ones are shaded smooth. A profile that starts or ends
- * on the axis (radius 0) closes over it. u runs around from +Z and v along the profile from its
- * last point to its first - top to bottom, as on cylinder().
+ * on the axis (radius 0) closes over it. Give the profile from the bottom up round the outside, as in
+ * the examples: the other way round its faces face inwards, and a closed shape draws inside out (or
+ * give it `doubleSided` material, for a shell seen from both sides). u runs around from +Z and v
+ * along the profile from its last point to its first - top to bottom, as on cylinder().
  * @example lathe({ points: [[0, 0], [1, 0], [1, 2], [0.6, 2.4], [0, 2.4]] }) // a closed can with a shoulder
  * @example lathe({ points: outline.arc({ radius: 1, from: -Math.PI / 2, to: Math.PI / 2 }), axis: 'x' }) // a ball on an x axle
  * @param {LatheOptions} options
