@@ -39,7 +39,9 @@ export default function run({ canvas, gui }) {
     canvas, background: '#0b0c10',
     camera: { position: [2.6, 2.3, 6.6], target: [-0.3, 1.0, -0.3], fov: 40 },
     orbit: { minDistance: 3, maxDistance: 14, minPitch: 0.05, maxPitch: 1.2 },
-    bloom: { strength: 0.35, radius: 0.5, threshold: 0.95 },
+    // the picture bloom sees is tone mapped - white at most - so its threshold sits a little below
+    // white: the softbox's face and its bright reflections glow, the lit card just doesn't
+    bloom: { strength: 1.0, radius: 0.8, threshold: 0.8 },
   })
   const scene = view.scene
 
@@ -188,7 +190,7 @@ normal = normalize(normal + (vec3(hash(f.z), hash(f.z + 0.37), hash(f.z + 0.71))
     const front = corners.map(([a, b]) => at(a, b, 0.01)), back = corners.map(([a, b]) => at(a, b, 0.03))
     const edges = corners.map((_, i) => [front[i], front[(i + 1) % 4], back[(i + 1) % 4], back[i]])
     rig.add(new Mesh({ geometry: solid([front, back, ...edges]), castShadow: false, receiveShadow: true,
-      material: { color: '#eceae4', roughness: 0.9 } }))
+      material: { color: '#cdcac3', roughness: 0.9 } }))
     // the stand: a pole up behind the board's lower edge, a clamp holding it, three legs splayed from a hub
     const foot = at(0, -1, 0.06)
     const metal = { color: '#2a2b2e', metalness: 0.8, roughness: 0.35 }
@@ -222,6 +224,9 @@ normal = normalize(normal + (vec3(hash(f.z), hash(f.z + 0.37), hash(f.z + 0.71))
     key.width = settings.keyWidth
     key.height = settings.keyHeight
     key.intensity = settings.keyIntensity
+    // its face as bright as the light it gives: with the intensity, spread over its area (8 at the
+    // starting 75 over 2.4 x 0.8 m)
+    keyPanel.material.emissiveIntensity = 8 * (settings.keyIntensity / 75) * (1.92 / (settings.keyWidth * settings.keyHeight))
     key.castShadow = settings.shadows
     bounce.intensity = settings.bounce ? 6 : 0
     rig.visible = settings.bounce

@@ -157,7 +157,7 @@ export default function run({ canvas, gui, info }) {
     camera: { position: [4.35, 4.1, 7.4], target: [-0.3, 0.9, -0.3], fov: 40 },
     orbit: { minDistance: 2.5, maxDistance: 16, minPitch: 0.06, maxPitch: 1.35 },
     ambientOcclusion: true,
-    bloom: { strength: 0.7, radius: 0.5, threshold: 0.95 },
+    bloom: { strength: 0.8, radius: 0.55, threshold: 0.8 },
   })
   const scene = view.scene
   scene.environment = 'hdr/studio_small_09_1k.hdr'
