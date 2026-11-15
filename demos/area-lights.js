@@ -1,4 +1,4 @@
-import { Geometry, HemisphereLight, Mesh, RectAreaLight, View, box, lathe, plane, sphere, torus } from 'phoria2'
+import { Geometry, Group, HemisphereLight, Mesh, Quat, RectAreaLight, View, box, cylinder, lathe, plane, sphere, torus } from 'phoria2'
 
 // A rect-area light in a small photo studio: a softbox over to one side. Light from a whole
 // rectangle, not a point: the glossy floor reflects its shape, a glazed vase and a marble block show
@@ -115,23 +115,98 @@ normal = normalize(normal + (vec3(hash(f.z), hash(f.z + 0.37), hash(f.z + 0.71))
   // the light: a warm softbox above and to the left
   const key = scene.add(new RectAreaLight({ color: '#fff1de', castShadow: true }))
 
-  /** The light's panel, glowing where it is: its four corners, facing the way it shines. @param {RectAreaLight} light */
-  const panelOf = (light) => {
+  /**
+   * A light's rectangle as world points: `at(a, b)` is its middle plus a halves of its width and b of
+   * its height, `back` world units behind its face. @param {RectAreaLight} light
+   */
+  const frameOf = (light) => {
     scene.updateWorldTree()
     const [hw, hh] = light.worldEdges
     const p = light.worldPosition, d = light.worldDirection
-    // just behind the light's face, so it doesn't stand in its own light
-    const at = (/** @type {number} */ a, /** @type {number} */ b) => [0, 1, 2].map((i) => p[i] + hw[i] * a + hh[i] * b - d[i] * 0.01)
-    return new Geometry({ positions: [...at(1, -1), ...at(-1, -1), ...at(-1, 1), ...at(1, 1)], indices: [0, 1, 2, 0, 2, 3] })
+    return (/** @type {number} */ a, /** @type {number} */ b, back = 0, /** @type {number} */ s = 1) =>
+      [0, 1, 2].map((i) => p[i] + (hw[i] * a + hh[i] * b) * s - d[i] * back)
   }
-  const glowing = (/** @type {string} */ color) => ({ color: '#000000', emissive: color, emissiveIntensity: 3, doubleSided: true })
-  const keyPanel = scene.add(new Mesh({ geometry: panelOf(key), material: glowing('#fff1de'), castShadow: false, receiveShadow: false }))
-  // a bounce card on the far side, as a photographer would stand one: a white board catching the
-  // softbox and throwing a little of it back into the shadow side - a dim rect light of its own, no
-  // shadow, and the board drawn where it is, so its soft reflection in the glossy things makes sense
-  const bounce = scene.add(new RectAreaLight({ color: '#fff4e8', width: 1.6, height: 1.2, intensity: 6, position: [2.7, 0.9, 2.3], target: [0, 0.4, 0.4] }))
-  const card = scene.add(new Mesh({ geometry: panelOf(bounce), castShadow: false, receiveShadow: false,
-    material: { color: '#d9d5cd', roughness: 0.95, emissive: '#fff4e8', emissiveIntensity: 0.35, doubleSided: true } }))
+  /**
+   * A closed solid from its faces, each four corners: flat shaded, every face wound to face outwards
+   * (away from the middle of all its corners).
+   * @param {number[][][]} faces
+   */
+  const solid = (faces) => {
+    const all = faces.flat(), mid = [0, 1, 2].map((i) => all.reduce((t, c) => t + c[i], 0) / all.length)
+    const positions = [], normals = [], indices = []
+    for (let [a, b, c, d] of faces) {
+      const u = [0, 1, 2].map((i) => b[i] - a[i]), v = [0, 1, 2].map((i) => d[i] - a[i])
+      let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
+      const out = [0, 1, 2].reduce((t, i) => t + n[i] * ((a[i] + c[i]) / 2 - mid[i]), 0)
+      if (out < 0) {
+        ;[b, d] = [d, b]
+        n = n.map((x) => -x)
+      }
+      const len = Math.hypot(...n) || 1
+      const base = positions.length / 3
+      for (const corner of [a, b, c, d]) {
+        positions.push(...corner)
+        normals.push(...n.map((x) => x / len))
+      }
+      indices.push(base, base + 1, base + 2, base, base + 2, base + 3)
+    }
+    return new Geometry({ positions, normals, indices })
+  }
+
+  // the softbox: its diffuser glowing - bright enough to bloom - in front of a black fabric body
+  // tapering back to where it would mount, so it reads as a light, not a pale board
+  const diffuserOf = (/** @type {RectAreaLight} */ light) => {
+    const at = frameOf(light)
+    return new Geometry({ positions: [...at(1, -1, 0.01), ...at(-1, -1, 0.01), ...at(-1, 1, 0.01), ...at(1, 1, 0.01)], indices: [0, 1, 2, 0, 2, 3] })
+  }
+  const bodyOf = (/** @type {RectAreaLight} */ light) => {
+    const at = frameOf(light)
+    // the rim just round the diffuser, the back a third the size, half a metre behind
+    const rim = (/** @type {number} */ a, /** @type {number} */ b) => at(a, b, 0.012, 1.03), rear = (/** @type {number} */ a, /** @type {number} */ b) => at(a, b, 0.5, 0.35)
+    const corners = /** @type {[number, number][]} */ ([[1, -1], [-1, -1], [-1, 1], [1, 1]])
+    const sides = corners.map(([a, b], i) => {
+      const [c, d] = corners[(i + 1) % 4]
+      return [rim(a, b), rim(c, d), rear(c, d), rear(a, b)]
+    })
+    return solid([...sides, corners.map(([a, b]) => rear(a, b))])
+  }
+  const keyPanel = scene.add(new Mesh({ geometry: diffuserOf(key), castShadow: false, receiveShadow: false, pickable: false,
+    material: { color: '#000000', emissive: '#fff1de', emissiveIntensity: 8, doubleSided: true } }))
+  const keyBody = scene.add(new Mesh({ geometry: bodyOf(key), castShadow: false, receiveShadow: false, pickable: false,
+    material: { color: '#141416', roughness: 0.85 } }))
+
+  // a bounce card on the far side, as a photographer would stand one: a white foam board on a little
+  // tripod, catching the softbox and throwing some of it back into the shadow side. The board doesn't
+  // glow - it is only as bright as the softbox lights it; the light it sends back is a dim rect light
+  // at its face, with no shadow
+  const bounce = scene.add(new RectAreaLight({ color: '#fff4e8', width: 1.92, height: 1.44, intensity: 6, position: [2.9, 1.15, 0.4], target: [0, 0.45, 1.2] }))
+  const rig = scene.add(new Group())
+  {
+    const at = frameOf(bounce)
+    // the board, 2 cm thick, just behind the light's face
+    const corners = /** @type {[number, number][]} */ ([[1, -1], [-1, -1], [-1, 1], [1, 1]])
+    const front = corners.map(([a, b]) => at(a, b, 0.01)), back = corners.map(([a, b]) => at(a, b, 0.03))
+    const edges = corners.map((_, i) => [front[i], front[(i + 1) % 4], back[(i + 1) % 4], back[i]])
+    rig.add(new Mesh({ geometry: solid([front, back, ...edges]), castShadow: false, receiveShadow: true,
+      material: { color: '#eceae4', roughness: 0.9 } }))
+    // the stand: a pole up behind the board's lower edge, a clamp holding it, three legs splayed from a hub
+    const foot = at(0, -1, 0.06)
+    const metal = { color: '#2a2b2e', metalness: 0.8, roughness: 0.35 }
+    const hub = 0.32
+    rig.add(new Mesh({ geometry: cylinder({ radius: 0.014, height: foot[1] - hub + 0.1, segments: 12 }), material: metal,
+      position: [foot[0], (foot[1] + hub + 0.1) / 2, foot[2]] }))
+    rig.add(new Mesh({ geometry: box({ width: 0.08, height: 0.05, depth: 0.06 }), material: metal, position: [foot[0], foot[1] + 0.06, foot[2]] }))
+    for (let k = 0; k < 3; k++) {
+      const a = (k / 3) * Math.PI * 2 + 0.4
+      const toe = [foot[0] + Math.cos(a) * 0.3, 0, foot[2] + Math.sin(a) * 0.3]
+      const v = [foot[0] - toe[0], hub, foot[2] - toe[2]], len = Math.hypot(...v)
+      // turned from straight up to lean in from the toe to the hub
+      const axis = [v[2], 0, -v[0]], al = Math.hypot(...axis)
+      const q = new Quat().setFromAxisAngle([axis[0] / al, 0, axis[2] / al], Math.acos(v[1] / len))
+      rig.add(new Mesh({ geometry: cylinder({ radius: 0.01, height: len, segments: 8 }), material: metal, quaternion: q.toArray(),
+        position: [(toe[0] + foot[0]) / 2, hub / 2, (toe[2] + foot[2]) / 2] }))
+    }
+  }
 
   let swing = 0
   // the key swings slowly round the front left, always aimed at the subjects
@@ -139,7 +214,8 @@ normal = normalize(normal + (vec3(hash(f.z), hash(f.z + 0.37), hash(f.z + 0.71))
     const a = 2.35 + Math.sin(swing) * 0.45
     key.position.set(Math.cos(a) * 3.2, 3.1, Math.sin(a) * -3.2 + 1.2)
     key.target = [0, 0.4, 0.2]
-    keyPanel.geometry = panelOf(key)
+    keyPanel.geometry = diffuserOf(key)
+    keyBody.geometry = bodyOf(key)
   }
 
   const apply = () => {
@@ -148,7 +224,7 @@ normal = normalize(normal + (vec3(hash(f.z), hash(f.z + 0.37), hash(f.z + 0.71))
     key.intensity = settings.keyIntensity
     key.castShadow = settings.shadows
     bounce.intensity = settings.bounce ? 6 : 0
-    card.visible = settings.bounce
+    rig.visible = settings.bounce
     floor.material.roughness = 1 - settings.floorGloss
     placeKey()
   }
