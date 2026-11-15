@@ -41,6 +41,8 @@ import { drawKind } from '../scene/kinds.js'
  * @property {boolean} studio lit by the built-in studio environment
  * @property {Ltc | null} ltc rect-area lights' tables, once loaded - when the frame has one
  * @property {Occlusion | null} occlusion ambient occlusion, for the lit opaque meshes
+ * @property {number[] | null} fogLight the light the tone map turns into the fog's colour - lit
+ *   surfaces are fogged in light, towards it
  */
 
 /**
@@ -184,6 +186,41 @@ export function groundShadowSettings(owner, value) {
 }
 
 const TONE_MAPPING = { none: 0, aces: 1, neutral: 2 }
+// as bloom's (bloom.js): what maps nearer white than this counts as this
+const LIGHT_PEAK = 16
+
+/**
+ * The light, before the exposure, that a tone map turns into this colour - the tone maps in shaders.js
+ * run backwards, as bloom's `untone` runs them. A channel at white, which they never quite reach,
+ * counts as LIGHT_PEAK.
+ * @param {ArrayLike<number>} c linear colour @param {number} toneMapping @param {number} exposure
+ * @returns {number[]}
+ */
+export function lightBehind(c, toneMapping, exposure) {
+  let out = [Math.max(0, c[0]), Math.max(0, c[1]), Math.max(0, c[2])]
+  if (toneMapping === 1) {
+    // ACES (Narkowicz): its rational curve solved for the light, a channel at a time
+    out = out.map((o) => {
+      o = Math.min(o, 1.0329)
+      const a = Math.min(2.43 * o - 2.51, -1e-4), b = 0.59 * o - 0.03, k = 0.14 * o
+      return Math.min((-b - Math.sqrt(Math.max(b * b - 4 * a * k, 0))) / (2 * a), LIGHT_PEAK)
+    })
+  } else if (toneMapping === 2) {
+    // Khronos PBR Neutral: its highlight compression, then its toe
+    const top = Math.max(...out)
+    if (top > 0.8) {
+      const peak = top < 1 ? Math.min(0.6 + 0.04 / (1 - top), LIGHT_PEAK) : LIGHT_PEAK
+      const newPeak = 1 - 0.04 / (peak - 0.6)
+      const g = 1 - 1 / (0.15 * (peak - newPeak) + 1)
+      out = out.map((v) => Math.max((Math.min(v, newPeak) - g * newPeak) / (1 - g), 0) * (peak / newPeak))
+    }
+    const y = Math.min(...out)
+    const offset = y < 0.04 ? 0.4 * Math.sqrt(y) - y : 0.04
+    out = out.map((v) => v + offset)
+  }
+  const e = Math.max(exposure, 1e-6)
+  return out.map((v) => v / e)
+}
 /** @type {import('./passes.js').ShadowMap[]} */
 const NO_SHADOWS = []
 // the step out of linear light, at the end of a linear frame's chain
@@ -580,6 +617,7 @@ export class WebGLRenderer {
       // in linear light: into float targets encoded at the end, or into a target that encodes itself
       wait, linear: (linear && float) || !!target?.srgb, width, height,
       environment: passes && typeof env === 'object' ? passes.environment(env) : null, shadows: [], occlusion: null, ...this.#lightsOf(frame),
+      fogLight: frame.fog ? lightBehind(frame.fog.color, TONE_MAPPING[this.toneMapping], this.exposure) : null,
     }
     if (passes && typeof env === 'object' && env.image && !state.environment) {
       warnOnce(env, env.isHDR ? "this device can't render to float textures, which HDR environments need - lighting without it"
@@ -890,6 +928,7 @@ export class WebGLRenderer {
     if (hook) setHookUniforms(program, material, frame.time ?? 0, frame.camera.position, (t) => this.#gpu.resources.texture(t))
     if (fog) {
       program.set('uFogColor', fog.color)
+      if (state.fogLight) program.set('uFogLight', state.fogLight)
       program.set('uFogRange', [fog.near, fog.far])
       program.set('uFogDensity', fog.density)
     }

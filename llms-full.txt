@@ -240,7 +240,7 @@ material), `environmentIntensity`, `backgroundBlur` (0-1, for a panorama backgro
 
 **Fog**: `scene.fog = { color, density }` - exponential, thickening with distance like mist (try 0.02 -
 0.1) - or `{ color, near, far }` for linear. Give `background` the same colour, so distant things melt
-into it. Change it in place (`scene.fog.density = 0.08`); `null` turns it off. Additive glows fade
+into it. Lit surfaces fog in light, so lamps and emissive panels stay bright through it (and bloom). Change it in place (`scene.fog.density = 0.08`); `null` turns it off. Additive glows fade
 out with distance rather than turning fog-coloured; a material with `fog: false` (a sky dome, a far
 backdrop) ignores it.
 

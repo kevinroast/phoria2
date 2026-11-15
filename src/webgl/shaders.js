@@ -41,20 +41,26 @@ void clipAway(vec3 p) {}
 `
 
 // distance fog, applied to the final colour so it meets a background of the same colour; additive
-// glows fade out rather than towards the fog's colour
+// glows fade out rather than towards the fog's colour. Lit surfaces are fogged in light, before their
+// tone map (see the mesh shader), towards uFogLight - the light that tone maps to the fog's colour
 export const FOG = /* glsl */ `
 #ifdef FOG
 uniform vec3 uFogColor;   // linear
+uniform vec3 uFogLight;   // the light the tone map turns into uFogColor
 uniform vec2 uFogRange;   // linear fog: near, far
 uniform float uFogDensity; // exponential fog
 in float vFogDepth;
-vec3 fogged(vec3 c) {
+// how much of the fog lies between the eye and here, 0 - 1
+float fogAmount() {
 #ifdef FOG_LINEAR
-  float f = clamp((vFogDepth - uFogRange.x) / max(uFogRange.y - uFogRange.x, 1e-4), 0.0, 1.0);
+  return clamp((vFogDepth - uFogRange.x) / max(uFogRange.y - uFogRange.x, 1e-4), 0.0, 1.0);
 #else
   float d = uFogDensity * vFogDepth;
-  float f = 1.0 - exp(-d * d);
+  return 1.0 - exp(-d * d);
 #endif
+}
+vec3 fogged(vec3 c) {
+  float f = fogAmount();
 #ifdef FOG_ADD
   return c * (1.0 - f);
 #elif defined(FOG_MULTIPLY)
@@ -1598,7 +1604,19 @@ ${RECT_LIGHTS}
 #ifdef DEBUG_SHADOW_TEXELS
   color = shadowTexels(color);
 #endif
+#if defined(FOG) && !defined(FOG_ADD) && !defined(FOG_MULTIPLY)
+  // fogged in light, before the tone map, as mist dims light: what is bright - a lamp, an emissive
+  // panel - shines on through it, and bloom still finds it bright. Far off it meets the fog's colour
+  // exactly, uFogLight being what tone maps to it. The colour clear of fog goes on to the lit hook and
+  // the highlight; what they change fades into the fog afterwards, as it always has
+  float fogF = fogAmount();
+  vec3 inFog = toneMap(mix(color, uFogLight, fogF));
   color = toneMap(color);
+  vec3 clearOfFog = color;
+#define FOG_IN_LIGHT
+#else
+  color = toneMap(color);
+#endif
 #endif
 #else
   vec3 color = base.rgb + emissive;
@@ -1614,7 +1632,11 @@ ${RECT_LIGHTS}
   color = mix(color, uHighlight.rgb, vHighlight * uHighlight.a);
   // a highlight shows on glass as on anything else
   coverage = mix(coverage, base.a, vHighlight * uHighlight.a);
+#ifdef FOG_IN_LIGHT
+  color = inFog + (color - clearOfFog) * (1.0 - fogF);
+#else
   color = fogged(color);
+#endif
 
   // premultiplied alpha, so the canvas composites correctly over the page. The colour is the light
   // the surface sends back - faded with its opacity; coverage is how much of what is behind it hides

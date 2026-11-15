@@ -1,12 +1,13 @@
-import { DirectionalLight, Geometry, Group, HemisphereLight, InstancedMesh, Mesh, Points, SpotLight, Texture, View, box, curve, cylinder, icosphere, lathe, plane } from 'phoria2'
-import { glow, random } from './kit.js'
+import { DirectionalLight, Group, HemisphereLight, InstancedMesh, Mesh, SpotLight, Texture, View, box, curve, cylinder, icosphere, lathe, plane } from 'phoria2'
+import { random } from './kit.js'
 
 // A harbour on a foggy night. Lamps along the quay are spot lights casting shadows - of the
 // bollards, barrels and crates, and of each other's posts - into fog thick enough to hide the far
 // side; the lighthouse out on the breakwater sweeps its beam, a fourth shadow-casting spot light,
 // across the water and the boats. The moon behind the cloud casts faint shadows of its own. The
 // lamps' cones and the beam are additive, so the fog fades them out with distance rather than
-// greying them. The boats' decks are the flat caps of section planes through their hulls.
+// greying them; the lanterns' glow is bloom, from how bright they are. The boats' decks are the flat
+// caps of section planes through their hulls.
 
 const NIGHT = '#0d141c'
 const QUAY = 1.2 // the quay's top, above the water
@@ -107,7 +108,11 @@ function bands() {
   })
 }
 
-/** A beam fading from the lamp out to its end: lathe() runs v from the profile's last point - the lamp - at the top. */
+/**
+ * A beam fading from the lamp out to its end: lathe() runs v from the profile's last point - the lamp
+ * - at the top. Clamped: repeating, the filtering at the open end would reach round to the bright top
+ * row and draw a ring round the cone's rim.
+ */
 function beamFade() {
   return painted(4, 128, (ctx, w, h) => {
     const g = ctx.createLinearGradient(0, 0, 0, h)
@@ -118,11 +123,11 @@ function beamFade() {
     ctx.fillRect(0, 0, w, h)
     ctx.fillStyle = g
     ctx.fillRect(0, 0, w, h)
-  })
+  }, { wrap: 'clamp' })
 }
 
 /** A street lamp: a turned post, an arm out over the quay's edge, a lantern hanging from it, its light shining down. */
-function streetLamp(x, glowSprite, fade) {
+function streetLamp(x, fade) {
   const g = new Group({ position: [x, QUAY, 1.2] })
   const iron = { color: '#202326', metalness: 0.7, roughness: 0.45 }
   const post = [[0, 0], [0.22, 0], [0.22, 0.12], [0.12, 0.25], [0.09, 0.6], [0.06, 3.9], [0.09, 4.0], [0.05, 4.1], [0, 4.1]]
@@ -132,7 +137,6 @@ function streetLamp(x, glowSprite, fade) {
   const lantern = g.add(new Group({ position: [0, 3.75, -0.85] }))
   lantern.add(new Mesh({ geometry: lathe({ points: [[0, 0.18], [0.2, 0.08], [0.3, 0.08], [0.28, 0.12], [0.08, 0.3], [0, 0.3]], segments: 16 }), material: iron, castShadow: true }))
   lantern.add(new Mesh({ geometry: cylinder({ radius: 0.16, radiusTop: 0.2, height: 0.3, segments: 8 }), position: [0, -0.07, 0], material: { color: '#fff1c8', emissive: WARM, emissiveIntensity: 2.4 } }))
-  lantern.add(new Points({ geometry: new Geometry({ positions: [0, -0.05, 0] }), material: { color: WARM, size: 2.2, map: glowSprite, blending: 'additive', depthWrite: false, opacity: 0.55 }, pickable: false }))
   // the light, and the cone of it the fog shows
   const light = lantern.add(new SpotLight({ color: WARM, intensity: 34, range: 16, angle: 0.85, penumbra: 0.55, direction: [0, -1, 0.12], castShadow: true }))
   // from the wide end up to the lamp, so the profile's last point - where the fade starts - is the lamp
@@ -172,7 +176,7 @@ function boat(paint, deck) {
 }
 
 /** The lighthouse: banded tower, gallery, lantern room and cap, all turned; the beam turns inside. */
-function lighthouse(glowSprite, fade) {
+function lighthouse(fade) {
   const g = new Group({ position: LIGHTHOUSE })
   const rand = random(9)
   // the breakwater it stands on: a concrete plinth in a heap of rocks
@@ -192,21 +196,20 @@ function lighthouse(glowSprite, fade) {
   g.add(new Mesh({ geometry: cylinder({ radius: 0.85, height: 1.4, segments: 24, caps: false }), position: [0, 12.2, 0], material: { color: '#a8c4d8', opacity: 0.25, roughness: 0.05, doubleSided: true } }))
   g.add(new Mesh({ geometry: lathe({ points: [[0, 12.85], [1.05, 12.85], [0.9, 13.3], [0.25, 13.7], [0.1, 14.1], [0, 14.1]], segments: 32 }), material: dark, castShadow: true }))
   // the lamp, and the turning head with its beams and light
-  g.add(new Mesh({ geometry: icosphere({ radius: 0.35, detail: 2 }), position: [0, 12.2, 0], material: { color: '#fff6dc', emissive: '#fff0c0', emissiveIntensity: 4 } }))
-  g.add(new Points({ geometry: new Geometry({ positions: [0, 12.2, 0] }), material: { color: '#fff3d0', size: 7, map: glowSprite, blending: 'additive', depthWrite: false, opacity: 0.7 }, pickable: false }))
+  g.add(new Mesh({ geometry: icosphere({ radius: 0.35, detail: 2 }), position: [0, 12.2, 0], material: { color: '#fff6dc', emissive: '#fff0c0', emissiveIntensity: 16 } }))
   const head = g.add(new Group({ position: [0, 12.2, 0] }))
   // two beams, front and back; the front one is a light that casts
   const beam = lathe({ points: [[6.5, 46], [0.3, 0]], segments: 32, axis: 'x' })
   for (const side of [1, -1]) {
-    head.add(new Mesh({ geometry: beam, rotation: [0, side > 0 ? 0 : Math.PI, 0], pickable: false, material: { color: '#fff1c8', map: fade, blending: 'additive', opacity: 0.38, depthWrite: false, doubleSided: true, unlit: true } }))
+    head.add(new Mesh({ geometry: beam, rotation: [0, side > 0 ? 0 : Math.PI, 0], pickable: false, material: { color: '#fff1c8', map: fade, blending: 'additive', opacity: 0.6, depthWrite: false, doubleSided: true, unlit: true } }))
   }
-  head.add(new SpotLight({ color: '#fff1d0', intensity: 900, range: 70, angle: 0.11, penumbra: 0.4, direction: [1, -0.03, 0], castShadow: true }))
+  head.add(new SpotLight({ color: '#fff1d0', intensity: 1300, range: 70, angle: 0.11, penumbra: 0.4, direction: [1, -0.03, 0], castShadow: true }))
   return { node: g, head }
 }
 
 export default function run({ canvas, gui, info }) {
   const view = new View({
-    canvas, background: NIGHT, bloom: { strength: 0.85, radius: 0.55, threshold: 0.75 },
+    canvas, background: NIGHT, bloom: { strength: 1.0, radius: 0.85, threshold: 1.0 },
     orbit: { minDistance: 6, maxDistance: 45, maxPitch: 1.35, minPitch: 0.05 },
     camera: { position: [14, 5, 8], target: [-6, 3.5, -7], fov: 46 },
   })
@@ -215,7 +218,6 @@ export default function run({ canvas, gui, info }) {
   scene.add(new HemisphereLight({ sky: '#283850', ground: '#0a0c10', intensity: 0.35 }))
   // the moon behind the cloud: faint, cool and high, with soft shadows of its own
   scene.add(new DirectionalLight({ color: '#9fb4d8', intensity: 0.22, direction: [0.5, -1, 0.7], castShadow: true }))
-  const sprite = glow(64)
   const fade = beamFade()
 
   // --- the water: a swelling grid round the harbour, rippled, over a flat sea out to the fog
@@ -237,7 +239,7 @@ export default function run({ canvas, gui, info }) {
   quay.add(new Mesh({ geometry: box({ width: 40, height: 0.18, depth: 0.5 }), position: [-4, QUAY + 0.09, 1.25], castShadow: true, receiveShadow: true, pickable: false, material: { color: '#5d5f62', roughness: 0.8 } }))
 
   const lamps = LAMPS.map((x) => {
-    const lamp = streetLamp(x, sprite, fade)
+    const lamp = streetLamp(x, fade)
     scene.add(lamp.node)
     return lamp
   })
@@ -276,7 +278,7 @@ export default function run({ canvas, gui, info }) {
   }
 
   // --- the lighthouse, out on the breakwater
-  const tower = lighthouse(sprite, fade)
+  const tower = lighthouse(fade)
   scene.add(tower.node)
 
   // a reflection under each lamp and the lighthouse's light: where on the water, how long, how bright
