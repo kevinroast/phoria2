@@ -161,6 +161,9 @@ in vec3 vNormal;
 // ambient occlusion's prepass: each pixel's normal in view space, as the picture shades it
 uniform mat4 uView;
 #endif
+#ifdef GLASS_FILTER
+uniform vec3 uGlassFilter;
+#endif
 #ifdef HOOK_FRAGMENT
 // a fragment hook's discards cut the shadow too - a dissolving thing casts what is left of it
 in vec3 vColor;
@@ -190,6 +193,10 @@ void main() {
   cutOut();
 #ifdef NORMALS
   fragColor = vec4(normalize(mat3(uView) * normal) * 0.5 + 0.5, 1.0);
+#elif defined(GLASS_FILTER)
+  // a glass caster in a shadow map's glass layer: the light it lets through - the layer multiplies
+  // them - and, kept by the nearest, its depth from the light
+  fragColor = vec4(uGlassFilter, gl_FragCoord.z);
 #else
   fragColor = vec4(1.0);
 #endif
@@ -498,12 +505,12 @@ const DIRECTIONAL_LIGHTS = /* glsl */ `
     vec3 l = uDirectionalDirection[i];
     vec3 radiance = uDirectionalColor[i];
 #ifdef SHADOW
-    if (i == 0) radiance *= shadowAt(surfaceNormal, l);
+    if (i == 0) radiance *= sunShadow(surfaceNormal, l);
 #endif
 ${LIGHT_CONTRIBUTION}
 ${throughLight(`vec3 light = uDirectionalColor[i];
 #ifdef SHADOW
-      if (i == 0) light *= shadowAt(-surfaceNormal, l);
+      if (i == 0) light *= sunShadow(-surfaceNormal, l);
 #endif`)}
   }
 #endif`
@@ -524,7 +531,7 @@ const PUNCTUAL_LIGHTS = /* glsl */ `
     vec3 radiance = uPunctualColor[i] * falloff * cone;
 #ifdef SPOT_SHADOWS
     float tile = uPunctualShadow[i];
-    if (tile >= 0.0 && cone > 0.0) radiance *= spotShadowAt(int(tile), surfaceNormal, d);
+    if (tile >= 0.0 && cone > 0.0) radiance *= spotShadow(int(tile), surfaceNormal, d);
 #endif
 #ifdef POINT_SHADOW
     if (float(i) == uPointShadowIndex) radiance *= pointShadowAt(uPunctualPosition[i], surfaceNormal, d);
@@ -532,7 +539,7 @@ const PUNCTUAL_LIGHTS = /* glsl */ `
 ${LIGHT_CONTRIBUTION}
 ${throughLight(`vec3 light = uPunctualColor[i] * falloff * cone;
 #ifdef SPOT_SHADOWS
-      if (tile >= 0.0 && cone > 0.0) light *= spotShadowAt(int(tile), -surfaceNormal, d);
+      if (tile >= 0.0 && cone > 0.0) light *= spotShadow(int(tile), -surfaceNormal, d);
 #endif
 #ifdef POINT_SHADOW
       if (float(i) == uPointShadowIndex) light *= pointShadowAt(uPunctualPosition[i], -surfaceNormal, d);
@@ -621,7 +628,7 @@ const RECT_LIGHTS = /* glsl */ `
       vec3 radiance = emitted;
 #ifdef SPOT_SHADOWS
       float tile = uRectShadow[i];
-      if (tile >= 0.0) radiance *= spotShadowAt(int(tile), surfaceNormal, d);
+      if (tile >= 0.0) radiance *= spotShadow(int(tile), surfaceNormal, d);
 #endif
       // as a point light at its middle: its whole face's light, falling off with the square of the distance
       float asPoint = 4.0 * length(hw) * length(hh) / PI * max(dot(-l, facing), 0.0) / max(d * d, 1e-4);
@@ -638,7 +645,7 @@ const RECT_LIGHTS = /* glsl */ `
 #endif
 ${throughLight(`vec3 light = emitted * asPoint;
 #ifdef SPOT_SHADOWS
-      if (tile >= 0.0) light *= spotShadowAt(int(tile), -surfaceNormal, d);
+      if (tile >= 0.0) light *= spotShadow(int(tile), -surfaceNormal, d);
 #endif`)}
     }
   }
@@ -786,6 +793,9 @@ ${RECT_UNIFORMS}
 
 #ifdef SHADOW
 uniform sampler2DShadow uShadowMap; // the first directional light's depth
+#ifdef SHADOW_GLASS
+uniform sampler2D uShadowGlass;      // what glass between it and a point lets through (rgb), the glass's depth (a)
+#endif
 uniform mat4 uShadowMatrix;         // world to shadow map [0, 1] coordinates and depth
 uniform float uShadowTexel;         // 1 / map size
 uniform float uShadowBias;          // world units to push the lookup out along the normal
@@ -796,6 +806,9 @@ uniform vec3 uShadowSoft;          // how far the edge spreads a unit of gap, wo
 #endif
 #ifdef SPOT_SHADOWS
 uniform sampler2DShadow uSpotShadowMap;      // spot lights' depth, a tile each
+#ifdef SPOT_SHADOWS_GLASS
+uniform sampler2D uSpotShadowGlass;          // their glass layers, tiled the same
+#endif
 uniform mat4 uSpotShadowMatrix[4];           // world to a tile's coordinates and depth
 uniform vec4 uSpotShadowTile[4];             // each tile's bounds in the map: x0, y0, x1, y1
 uniform float uSpotShadowBias[4];            // world units a unit of distance, to push the lookup out along the normal
@@ -1381,6 +1394,41 @@ float pointShadowAt(vec3 light, vec3 n, float distance) {
 }
 #endif
 
+#if defined(SHADOW_GLASS) || defined(SPOT_SHADOWS_GLASS)
+// coloured shadows: what a shadow map's glass layer lets through to a point - its colour where the
+// glass is nearer the light than the point is, all of it elsewhere. c: the point in the map's
+// coordinates and depth; tile: the part of the map that is its light's
+vec3 glassLayer(sampler2D layer, vec3 c, vec4 tile) {
+  if (c.x <= tile.x || c.x >= tile.z || c.y <= tile.y || c.y >= tile.w || c.z >= 1.0) return vec3(1.0);
+  vec4 glass = textureLod(layer, c.xy, 0.0);
+  // (a step of the layer's depth over, for an 8-bit one; read at its own level, as this is often
+  // reached in a branch)
+  return c.z > glass.a + 0.004 ? glass.rgb : vec3(1.0);
+}
+#endif
+#ifdef SHADOW
+// the shadow-casting directional light's share that reaches here, coloured by any glass it came through
+vec3 sunShadow(vec3 n, vec3 l) {
+  float lit = shadowAt(n, l);
+#ifdef SHADOW_GLASS
+  vec4 s = uShadowMatrix * vec4(vWorldPosition + n * uShadowBias, 1.0);
+  return lit * glassLayer(uShadowGlass, s.xyz / s.w, vec4(0.0, 0.0, 1.0, 1.0));
+#else
+  return vec3(lit);
+#endif
+}
+#endif
+#ifdef SPOT_SHADOWS
+// a spot or rect light's share that reaches here, coloured by any glass it came through
+vec3 spotShadow(int k, vec3 n, float distance) {
+  float lit = spotShadowAt(k, n, distance);
+#ifdef SPOT_SHADOWS_GLASS
+  vec4 s = uSpotShadowMatrix[k] * vec4(vWorldPosition + n * uSpotShadowBias[k] * distance, 1.0);
+  if (s.w > 0.0) return lit * glassLayer(uSpotShadowGlass, s.xyz / s.w, uSpotShadowTile[k]);
+#endif
+  return vec3(lit);
+}
+#endif
 
 #ifdef DEBUG_SHADOW_TEXELS
 // view.debug.shadows: 'texels' - the texel of a shadow map this point falls in, as a checkerboard tint:

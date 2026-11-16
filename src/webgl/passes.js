@@ -9,6 +9,7 @@ import { BLUE_NOISE_SIZE, POINT_SHADOW_SIZE, SHADOW_MAP_SIZE, SOFT_SPREAD, softn
 import { CLIP, CLIP_ONLY_FRAGMENT, COMMON, CUTOUT, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
 import { setHookUniforms } from './hooks.js'
 import { setShapeUniforms, shapeDefines } from './shape.js'
+import { glassFilter, isGlass } from '../material/features.js'
 import { blit } from './targets.js'
 import { BLUE_NOISE } from './blue-noise-data.js'
 
@@ -331,11 +332,17 @@ const ENV_LEVELS = 6
  * on, the uniforms it reads once a frame, and the depth texture it samples. A new kind of shadow is
  * a pass that returns one of these.
  * @typedef {{ define: string, uniforms: Record<string, unknown>, sampler: string, texture: WebGLTexture,
- *   soft: { define: string, sampler: string, value: { texture: WebGLTexture, sampler: WebGLSampler }, noise: WebGLTexture } | null }} ShadowMap
+ *   soft: { define: string, sampler: string, value: { texture: WebGLTexture, sampler: WebGLSampler }, noise: WebGLTexture } | null,
+ *   glass: { define: string, sampler: string, texture: WebGLTexture } | null }} ShadowMap
  *   soft: for contact-hardening shadows, the define that turns them on and the map read as depths -
  *   its own sampler object, as the texture itself is set up to compare - and the blue noise each
  *   pixel turns its samples by (uBlueNoise)
+ *   glass: coloured shadows - the map's glass layer, what glass casters let through (#glassLayers)
  */
+
+// a shadow map's glass layer is this much smaller across than its depth: coloured light under glass
+// is soft anyway
+const GLASS_LAYER_SCALE = 2
 
 /**
  * @typedef {{ width: number, height: number, smooth: boolean, mask: Target, wide: Target, coverage: Target | null,
@@ -473,8 +480,13 @@ export class Passes {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.#shadow.framebuffer)
     gl.viewport(0, 0, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE)
     this.#beginDepth()
-    this.drawDepth(shadow.casters, shadow.viewProjection)
+    const [solid, glass] = splitGlass(shadow.casters)
+    this.drawDepth(solid, shadow.viewProjection)
     this.#endDepth()
+    const layer = glass.length ? this.#glassLayers('shadow-glass', SHADOW_MAP_SIZE, (size) => {
+      gl.viewport(0, 0, size, size)
+      this.drawDepth(glass, shadow.viewProjection, { filter: true })
+    }) : null
     // clip space to [0, 1] texture coordinates and depth
     const toTexture = new Float32Array([0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 0.5, 0, 0.5, 0.5, 0.5, 1])
     const softness = softnessOf(shadow.light)
@@ -495,6 +507,7 @@ export class Passes {
     return {
       define: 'SHADOW', sampler: 'uShadowMap', texture: this.#shadow.texture, uniforms,
       soft: softness > 0 ? { define: 'SHADOW_SOFT', sampler: 'uShadowDepth', value: { texture: this.#shadow.texture, sampler: this.#depthReader() }, noise: this.#noise() } : null,
+      glass: layer ? { define: 'SHADOW_GLASS', sampler: 'uShadowGlass', texture: layer } : null,
     }
   }
 
@@ -515,7 +528,7 @@ export class Passes {
     for (const spot of spots) {
       const x = spot.tile % 2, y = Math.floor(spot.tile / 2)
       gl.viewport(x * half, y * half, half, half)
-      this.drawDepth(spot.casters, spot.viewProjection)
+      this.drawDepth(splitGlass(spot.casters)[0], spot.viewProjection)
       // clip space to this tile's part of the map, and depth to [0, 1]
       const toTile = new Float32Array([0.25, 0, 0, 0, 0, 0.25, 0, 0, 0, 0, 0.5, 0, x * 0.5 + 0.25, y * 0.5 + 0.25, 0.5, 1])
       matrices.set(mat4.multiply(new Float32Array(16), toTile, spot.viewProjection), spot.tile * 16)
@@ -528,11 +541,19 @@ export class Passes {
       shape.set(spotShape(spot.light, spot.viewProjection), spot.tile * 4)
     }
     this.#endDepth()
+    const glassy = spots.filter((s) => splitGlass(s.casters)[1].length)
+    const layer = glassy.length ? this.#glassLayers('spot-shadow-glass', SPOT_ATLAS_SIZE, (size) => {
+      for (const spot of glassy) {
+        gl.viewport((spot.tile % 2) * size / 2, Math.floor(spot.tile / 2) * size / 2, size / 2, size / 2)
+        this.drawDepth(splitGlass(spot.casters)[1], spot.viewProjection, { filter: true })
+      }
+    }) : null
     const anySoft = spots.some((s) => spotSpread(s.light) !== 0)
     return {
       define: 'SPOT_SHADOWS', sampler: 'uSpotShadowMap', texture: this.#spotShadow.texture,
       uniforms: { uSpotShadowMatrix: matrices, uSpotShadowTile: tiles, uSpotShadowBias: bias, uSpotShadowTexel: 1 / SPOT_ATLAS_SIZE, ...(anySoft ? { uSpotShadowSoft: soft, uSpotShadowShape: shape } : {}) },
       soft: anySoft ? { define: 'SPOT_SHADOWS_SOFT', sampler: 'uSpotShadowDepth', value: { texture: this.#spotShadow.texture, sampler: this.#depthReader() }, noise: this.#noise() } : null,
+      glass: layer ? { define: 'SPOT_SHADOWS_GLASS', sampler: 'uSpotShadowGlass', texture: layer } : null,
     }
   }
 
@@ -557,7 +578,42 @@ export class Passes {
       uniforms: { uPointShadowNearFar: [point.near, point.far], uPointShadowTexel: point.texelAngle, uPointShadowBias: point.texelAngle * 1.5,
         ...(softness > 0 ? { uPointShadowSoft: softness * SOFT_SPREAD } : {}) },
       soft: softness > 0 ? { define: 'POINT_SHADOW_SOFT', sampler: 'uPointShadowDepth', value: { texture: this.#pointShadow.texture, sampler: this.#depthReader() }, noise: this.#noise() } : null,
+      // (glass casts a point light's shadow as any caster does)
+      glass: null,
     }
+  }
+
+  /**
+   * A shadow map's glass layer: its glass casters drawn from the light, each multiplying in the light
+   * it lets through, the nearest one's depth kept beside - so a point behind glass is lit through its
+   * colour (coloured shadows), and one in front of it isn't. Starts white and far: no glass.
+   * @param {string} name @param {number} mapSize the depth map's size; the layer is smaller
+   * @param {(size: number) => void} draw draws the glass casters, setting the viewport for each light
+   * @returns {WebGLTexture}
+   */
+  #glassLayers(name, mapSize, draw) {
+    const gl = this.gl
+    const size = mapSize / GLASS_LAYER_SCALE
+    // depth wants more than 8 bits; where floats can't be drawn to, a step of 8 bits stands in
+    const target = this.targets.get(name, { width: size, height: size, color: this.targets.float ? gl.RGBA16F : gl.RGBA8 })
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer)
+    gl.viewport(0, 0, size, size)
+    gl.clearColor(1, 1, 1, 1)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    gl.disable(gl.DEPTH_TEST)
+    gl.depthMask(false)
+    // colours multiply; depth keeps the nearest
+    gl.enable(gl.BLEND)
+    gl.blendEquationSeparate(gl.FUNC_ADD, gl.MIN)
+    gl.blendFuncSeparate(gl.DST_COLOR, gl.ZERO, gl.ONE, gl.ONE)
+    draw(size)
+    gl.blendEquation(gl.FUNC_ADD)
+    gl.disable(gl.BLEND)
+    gl.depthMask(true)
+    gl.enable(gl.DEPTH_TEST)
+    gl.disable(gl.CULL_FACE)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    return /** @type {WebGLTexture} */ (target.texture)
   }
 
   #beginDepth() {
@@ -582,11 +638,12 @@ export class Passes {
   /**
    * Draw things' depth from a view - shadow casters from a light, or, with `normals`, the solids
    * from the camera for ambient occlusion: each pixel's view-space normal too, culled as the
-   * picture culls them so the depths match.
+   * picture culls them so the depths match. With `filter`, glass casters into a glass layer: the
+   * light each lets through, by its faces towards the light only - once through solid glass.
    * @param {DrawItem[]} casters @param {ArrayLike<number>} viewProjection
-   * @param {{ normals?: ArrayLike<number> | null }} [options] normals: the view matrix
+   * @param {{ normals?: ArrayLike<number> | null, filter?: boolean }} [options] normals: the view matrix
    */
-  drawDepth(casters, viewProjection, { normals = null } = {}) {
+  drawDepth(casters, viewProjection, { normals = null, filter = false } = {}) {
     const gl = this.gl
     const normalMatrix = normals ? new Float32Array(9) : null
     for (const item of casters) {
@@ -599,17 +656,22 @@ export class Passes {
         if (material.flatShading) defines.push('FLAT_SHADING')
         if (material.doubleSided) defines.push('DOUBLE_SIDED')
       }
+      if (filter) defines.push('GLASS_FILTER')
       const program = this.programs.ready('depth', defines, DEPTH, hook?.source)
       if (program.failed) continue
       gl.useProgram(program.program)
       if (hook) setHookUniforms(program, material, this.time, this.cameraPosition, (t) => this.resources.texture(t))
       program.set('uViewProjection', viewProjection)
       program.set('uModel', item.worldMatrix)
+      if (filter) program.set('uGlassFilter', glassFilter(material, item.worldMatrix))
       if (normals && normalMatrix) {
         program.set('uView', normals)
         if (!mat3.normalFromMat4(normalMatrix, item.worldMatrix)) mat3.identity(normalMatrix)
         program.set('uNormalMatrix', normalMatrix)
-        // the picture's culling, so a back face never stands in front of what is drawn
+      }
+      if (normals || filter) {
+        // the picture's culling, so a back face never stands in front of what is drawn - or, for a
+        // glass layer, so light is tinted once going through solid glass
         gl.frontFace(mat4.determinant(item.worldMatrix) < 0 ? gl.CW : gl.CCW)
         if (item.material.doubleSided) gl.disable(gl.CULL_FACE)
         else {
@@ -846,4 +908,16 @@ export class Passes {
     return texture
   }
 
+}
+
+/**
+ * Shadow casters split: what casts a plain shadow, and glass, which casts a coloured one.
+ * @param {DrawItem[]} casters
+ * @returns {[DrawItem[], DrawItem[]]}
+ */
+function splitGlass(casters) {
+  /** @type {DrawItem[]} */ const solid = []
+  /** @type {DrawItem[]} */ const glass = []
+  for (const c of casters) (isGlass(c.material) && c.node.drawMode === 'triangles' ? glass : solid).push(c)
+  return [solid, glass]
 }

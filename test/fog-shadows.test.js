@@ -303,3 +303,65 @@ describe('soft shadows (shadowSoftness)', () => {
     expect(new DirectionalLight().toJSON()).not.toHaveProperty('shadowSoftness')
   })
 })
+
+describe('coloured shadows', () => {
+  /** A floor, a sun and a spot light, glass casting onto the floor, and a grey crate. */
+  const glassScene = () => {
+    const scene = new Scene()
+    scene.add(new Mesh({ geometry: plane(10), receiveShadow: true }))
+    scene.add(new Mesh({ geometry: sphere(1), position: [0, 1, 0], castShadow: true, material: { color: '#ff0000', transmission: 1, thickness: 2 } }))
+    scene.add(new Mesh({ geometry: box(1), position: [2, 0.5, 0], castShadow: true }))
+    scene.add(new DirectionalLight({ direction: [0, -1, 0], castShadow: true }))
+    scene.add(new SpotLight({ position: [0, 6, 0], direction: [0, -1, 0], angle: 0.6, castShadow: true }))
+    return scene
+  }
+
+  it('lets glass colour the light it casts, sun and spot: a glass layer the receivers read', async () => {
+    const { renderer, defines, drawLog } = recording()
+    let ready = 0
+    renderer.onReady = () => ready++
+    const scene = glassScene()
+    renderer.render(scene, camera())
+    await vi.waitFor(() => expect(ready).toBeGreaterThan(0))
+    defines()
+    drawLog.length = 0
+    renderer.render(scene, camera())
+    const programs = defines()
+    expect(programs.some((d) => d.includes('SHADOW_GLASS') && d.includes('SPOT_SHADOWS_GLASS'))).toBe(true)
+    // the glass layers - the sun's and the spots' - get the glass, red; the depth maps don't
+    const layers = drawLog.filter((d) => d.program.values.uGlassFilter)
+    expect(layers).toHaveLength(2)
+    expect(layers[0].program.values.uGlassFilter.map((/** @type {number} */ v) => +v.toFixed(3))).toEqual([1, 0, 0])
+  })
+
+  it("casts as before without glass, and from a point light (glass's shadow grey there)", async () => {
+    const { renderer, defines } = recording()
+    let ready = 0
+    renderer.onReady = () => ready++
+    const scene = glassScene()
+    scene.children.filter((n) => n.lightKind).forEach((l) => l.removeFromParent())
+    scene.add(new PointLight({ position: [0, 4, 0], castShadow: true }))
+    renderer.render(scene, camera())
+    await vi.waitFor(() => expect(ready).toBeGreaterThan(0))
+    defines()
+    renderer.render(scene, camera())
+    const programs = defines()
+    expect(programs.some((d) => d.includes('POINT_SHADOW'))).toBe(true)
+    expect(programs.some((d) => d.some((x) => x.endsWith('_GLASS')))).toBe(false)
+  })
+
+  it('lets through what glass does: its transmission, tinted by its colour and its body over its thickness', async () => {
+    const { glassFilter } = await import('../src/material/features.js')
+    const { Material } = await import('../src/index.js')
+    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    const round = (/** @type {number[]} */ c) => c.map((v) => +v.toFixed(3))
+    expect(round(glassFilter(new Material({ transmission: 1 }), identity))).toEqual([1, 1, 1])
+    expect(round(glassFilter(new Material({ transmission: 0.5 }), identity))).toEqual([0.5, 0.5, 0.5])
+    // a body that leaves half its red over its distance: through twice that, a quarter
+    const body = new Material({ transmission: 1, thickness: 2, attenuationDistance: 1 })
+    body.attenuationColor.setLinear(0.5, 1, 1)
+    expect(round(glassFilter(body, identity))).toEqual([0.25, 1, 1])
+    // where it is see-through by opacity, all of the light comes by
+    expect(round(glassFilter(new Material({ transmission: 0, opacity: 0.25 }), identity))).toEqual([0.75, 0.75, 0.75])
+  })
+})

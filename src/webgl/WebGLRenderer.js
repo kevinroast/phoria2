@@ -5,7 +5,7 @@ import { Material } from '../material/Material.js'
 import { ACCUMULATE_FRAGMENT, CLIP_ONLY_FRAGMENT, ENCODE_FRAGMENT, FULLSCREEN_VERTEX, MESH_VERTEX } from './shaders.js'
 import { hookFailed, hookFor, setHookUniforms } from './hooks.js'
 import { placementDefines, setShapeUniforms, shapeDefines } from './shape.js'
-import { featureDefines, secondUvDefines, setFeatureUniforms } from '../material/features.js'
+import { featureDefines, isGlass, secondUvDefines, setFeatureUniforms } from '../material/features.js'
 import { collect, solidItems } from '../frame.js'
 import { Box3 } from '../value/Box3.js'
 import { checkNumber, checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '../validate.js'
@@ -201,7 +201,7 @@ const NO_SHIFT = [0, 0]
 /** @type {import('./passes.js').ShadowMap[]} */
 const NO_SHADOWS = []
 /** Glass, which bends what is behind it - its material's lit transmission. @param {DrawItem} item */
-const refracts = (item) => item.material.transmission > 0 && !item.material.unlit && item.node.drawMode === 'triangles'
+const refracts = (item) => isGlass(item.material) && item.node.drawMode === 'triangles'
 // renderers made, so each keeps its own refine average in a shared context's pool
 let renderers = 0
 // the step out of linear light, at the end of a linear frame's chain
@@ -902,6 +902,8 @@ export class WebGLRenderer {
     for (const shadow of shadows) {
       defines.push(shadow.define)
       if (shadow.soft) defines.push(shadow.soft.define)
+      // glass in the light's way colours it
+      if (shadow.glass) defines.push(shadow.glass.define)
     }
     if (shadows.length && frame.shadowTexels) defines.push('DEBUG_SHADOW_TEXELS')
     const fog = material.fog ? frame.fog : null
@@ -975,6 +977,7 @@ export class WebGLRenderer {
       }
       for (const shadow of shadows) {
         program.set(shadow.sampler, shadow.texture)
+        if (shadow.glass) program.set(shadow.glass.sampler, shadow.glass.texture)
         if (shadow.soft) {
           program.set(shadow.soft.sampler, shadow.soft.value)
           program.set('uBlueNoise', shadow.soft.noise)

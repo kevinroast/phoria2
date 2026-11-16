@@ -162,6 +162,26 @@ export const FEATURES = [
 const applies = (f, m, kind, geometry) => f.kinds.includes(/** @type {any} */ (kind)) && (!f.lit || !m.unlit) && f.when(m, geometry)
 
 /**
+ * Glass: a material that lets light through, lit - it bends what is behind it, and colours the light
+ * it casts a shadow with. @param {Material} m
+ */
+export const isGlass = (m) => m.transmission > 0 && !m.unlit
+
+/**
+ * What of a light glass lets through, as its coloured shadow: all of it where it isn't there (1 -
+ * opacity), and where it is, its transmission's share, tinted by its colour and by its body over its
+ * thickness (scaled as the mesh is).
+ * @param {Material} m @param {ArrayLike<number>} worldMatrix
+ * @returns {number[]} linear rgb
+ */
+export function glassFilter(m, worldMatrix) {
+  const scale = Math.hypot(worldMatrix[0], worldMatrix[1], worldMatrix[2])
+  const path = Number.isFinite(m.attenuationDistance) && m.attenuationDistance > 0 ? m.thickness * scale / m.attenuationDistance : 0
+  const a = m.opacity, c = m.color, body = m.attenuationColor
+  return [0, 1, 2].map((i) => 1 - a + a * m.transmission * c[i] * Math.max(body[i], 1e-4) ** path)
+}
+
+/**
  * A material's variant key for a kind of drawable: its features' names, joined. Materials with
  * the same key compile to the same program (geometry and the frame aside).
  * @param {Material} m @param {'mesh' | 'points' | 'lines'} kind
