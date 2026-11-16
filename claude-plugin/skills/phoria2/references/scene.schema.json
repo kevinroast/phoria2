@@ -248,6 +248,16 @@
             "fov": {
               "type": "number",
               "description": "Vertical, in degrees."
+            },
+            "aperture": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Depth of field: the lens radius in world units (0, the default, keeps everything sharp). Shown in refined pictures."
+            },
+            "focusDistance": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "How far ahead the plane in focus is, in world units. Leave it out to focus on the camera target."
             }
           },
           "unevaluatedProperties": false

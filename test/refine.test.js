@@ -4,7 +4,7 @@
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { DirectionalLight, Mesh, PerspectiveCamera, RectAreaLight, Scene, SpotLight, View, box, plane } from '../src/index.js'
 import { collect } from '../src/frame.js'
-import { REVEAL, halton, jitterFrame, lightSample, noiseShift, pixelShift, tent } from '../src/refine.js'
+import { REVEAL, halton, jitterFrame, lensFrame, lensSample, lightSample, noiseShift, pixelShift, tent } from '../src/refine.js'
 import { fakePage } from './fakes.js'
 
 describe('refine samples', () => {
@@ -33,6 +33,52 @@ describe('refine samples', () => {
     expect(x * 100).toBeCloseTo(dx)
     expect(y * 50).toBeCloseTo(dy)
     expect([...camera.projectionMatrix]).toEqual([...before])
+  })
+})
+
+describe('depth of field', () => {
+  /** Where a world point lands on the screen, in normalised device coordinates. @param {any} m @param {number[]} p */
+  const onScreen = (m, [x, y, z]) => {
+    const w = m[3] * x + m[7] * y + m[11] * z + m[15]
+    return [(m[0] * x + m[4] * y + m[8] * z + m[12]) / w, (m[1] * x + m[5] * y + m[9] * z + m[13]) / w]
+  }
+  const frameAt = () => {
+    const camera = new PerspectiveCamera({ position: [0, 0, 10], target: [0, 0, 0], aspect: 1 })
+    return { camera, frame: collect(new Scene(), camera) }
+  }
+
+  it('looks from a point on the lens: the focal plane where it was, nearer and further moved apart', () => {
+    const { frame } = frameAt()
+    const before = frame.camera.viewProjection.slice()
+    // a sample off the lens's middle
+    const n = [...Array(16).keys()].find((i) => Math.hypot(...lensSample(i)) > 0.5) ?? 1
+    lensFrame(frame, n, 0.2, 10)
+    const after = frame.camera.viewProjection
+    // on the focal plane (10 ahead: the origin's plane), every point stays put
+    for (const p of [[0, 0, 0], [1.5, -2, 0], [-3, 1, 0]]) {
+      const [a, b] = [onScreen(before, p), onScreen(after, p)]
+      expect(a[0]).toBeCloseTo(b[0], 5)
+      expect(a[1]).toBeCloseTo(b[1], 5)
+    }
+    // off it, points move - the nearer, the more, and opposite ways either side
+    const near = onScreen(after, [0, 0, 5])[0] - onScreen(before, [0, 0, 5])[0]
+    const far = onScreen(after, [0, 0, -10])[0] - onScreen(before, [0, 0, -10])[0]
+    expect(Math.abs(near)).toBeGreaterThan(1e-3)
+    expect(Math.sign(near)).toBe(-Math.sign(far))
+    // the eye moved across the lens with it
+    expect(frame.camera.position.distanceTo(new (/** @type {any} */ (frame.camera.position).constructor)(0, 0, 10))).toBeCloseTo(0.2 * Math.hypot(...lensSample(n)), 5)
+  })
+
+  it('does nothing without an aperture, or through an orthographic camera; focuses on the target unless told', () => {
+    const { frame } = frameAt()
+    const before = frame.camera
+    lensFrame(frame, 3, 0, 10)
+    expect(frame.camera).toBe(before)
+    const { camera } = frameAt()
+    expect(camera.focus).toBeCloseTo(10)
+    camera.focusDistance = 4
+    expect(camera.focus).toBe(4)
+    expect(new PerspectiveCamera({ aperture: 0.1, focusDistance: 3 }).toJSON()).toMatchObject({ aperture: 0.1, focusDistance: 3 })
   })
 })
 

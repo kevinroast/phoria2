@@ -5,10 +5,15 @@
 //     filter (a picture's resolve, not a box's hard edge), and
 //   - where on each casting light its shadow is drawn from (frame.js sampleLight) - a sun's or a
 //     rect light's; a spot or point light keeps its soft shadow, and
-//   - where soft shadows read their blue noise, so their grain averages away.
-// Each comes from its own Halton sequence (2 and 3 the pixel, 5 and 7 the light, 11 and 13 the noise), so
-// they never fall into step: one sequence shared between them would draw the same lattice every time,
-// and averaging never removes a lattice.
+//   - where soft shadows read their blue noise, so their grain averages away, and
+//   - with a camera's aperture, where on its lens it looks from: a thin lens, the eye moved across it
+//     and the picture sheared to keep the focal plane where it was - sharp there, blurred before and
+//     behind it, as a camera's depth of field.
+// Each comes from its own Halton sequence (2 and 3 the pixel, 5 and 7 the light, 11 and 13 the noise,
+// 17 and 19 the lens), so they never fall into step: one sequence shared between them would draw the
+// same lattice every time, and averaging never removes a lattice.
+import { Mat4 } from './value/Mat4.js'
+import { Vec3 } from './value/Vec3.js'
 
 /** @import { FrameDescription } from './frame.js' */
 
@@ -36,6 +41,58 @@ export function halton(n, base) {
     n = Math.floor(n / base)
   }
   return r
+}
+
+/**
+ * A point on a unit disc, spread evenly over its area, from a point in the unit square (Shirley-Chiu:
+ * squares to rings, so a sequence even over the square stays even over the disc).
+ * @param {number} u @param {number} v
+ * @returns {[number, number]}
+ */
+export function onDisc(u, v) {
+  const a = 2 * u - 1, b = 2 * v - 1
+  if (a === 0 && b === 0) return [0, 0]
+  const [r, t] = Math.abs(a) > Math.abs(b) ? [a, (Math.PI / 4) * (b / a)] : [b, Math.PI / 2 - (Math.PI / 4) * (a / b)]
+  return [r * Math.cos(t), r * Math.sin(t)]
+}
+
+/**
+ * Sample n's point on the lens: on a unit disc.
+ * @param {number} n from 0
+ * @returns {[number, number]}
+ */
+export function lensSample(n) {
+  return onDisc(halton(n + 1, 17), halton(n + 1, 19))
+}
+
+/**
+ * Look at a frame through sample n's point on a thin lens: the eye moved there, across the view, and
+ * the projection sheared so that the plane `focus` ahead lands on the screen just where it did. That
+ * plane stays sharp as the samples average; nearer and further, each sample sees things a little
+ * apart, and they blur - a camera's depth of field. A plane, not a sphere round the eye, as a real
+ * lens focuses: the frame's edges stay as sharp as its middle. Perspective only. The frame's own
+ * camera is replaced, as jitterFrame's is.
+ * @param {FrameDescription} frame @param {number} n from 0
+ * @param {number} aperture the lens's radius, world units @param {number} focus how far ahead the sharp plane is
+ */
+export function lensFrame(frame, n, aperture, focus) {
+  const p = frame.camera.projection
+  // an orthographic projection: nothing to focus
+  if (!(aperture > 0) || !(focus > 0) || p[11] === 0) return
+  const [x, y] = lensSample(n), dx = x * aperture, dy = y * aperture
+  // the eye, moved across the view: its right and up are the view's first two rows
+  const view = frame.camera.view.clone()
+  const position = frame.camera.position.clone()
+    .add(new Vec3(view[0], view[4], view[8]).multiplyScalar(dx)).add(new Vec3(view[1], view[5], view[9]).multiplyScalar(dy))
+  view[12] -= dx
+  view[13] -= dy
+  // ...and the picture moved back by as much at the focal plane: there, w is `focus`
+  const sx = (p[0] * dx) / focus, sy = (p[5] * dy) / focus, projection = p.clone()
+  for (let c = 0; c < 4; c++) {
+    projection[c * 4] += sx * p[c * 4 + 3]
+    projection[c * 4 + 1] += sy * p[c * 4 + 3]
+  }
+  frame.camera = { ...frame.camera, view, projection, viewProjection: new Mat4().multiplyMatrices(projection, view), position }
 }
 
 /** An even 0 - 1 mapped to -1 - 1 by a tent: most samples near the middle, none past a pixel. @param {number} u */

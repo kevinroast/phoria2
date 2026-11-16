@@ -85,6 +85,8 @@ export class ChangeWatch {
     this.#pushAll(camera.quaternion)
     if (camera.target) this.#pushAll(camera.target)
     this.#push(camera.fov ?? camera.height)
+    this.#push(camera.aperture ?? 0)
+    this.#push(camera.focusDistance ?? -1)
     this.#push(camera.near)
     this.#push(camera.far)
     this.#push(camera.aspect)

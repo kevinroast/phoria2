@@ -114,21 +114,51 @@ export class Camera extends Node {
   }
 }
 
+/**
+ * @typedef {CameraOptions & { fov?: number, aperture?: number, focusDistance?: number | null }} PerspectiveCameraOptions
+ */
+
 /** A camera with perspective: things further away look smaller. */
 export class PerspectiveCamera extends Camera {
   static type = 'perspective-camera'
-  static get OPTIONS() { return [...CAMERA_OPTIONS, 'fov'] }
+  static get OPTIONS() { return [...CAMERA_OPTIONS, 'fov', 'aperture', 'focusDistance'] }
+  static HINTS = { ...CAMERA_HINTS, focus: "use 'focusDistance'", focalDistance: "use 'focusDistance'", fStop: "use 'aperture' - the lens's radius in world units", dof: "give 'aperture' (and 'focusDistance')" }
 
   /** Vertical field of view in degrees. */
   fov = 50
+  /**
+   * Depth of field: the lens's radius, in world units - 0 (default) a pinhole, everything sharp.
+   * Wider, what is nearer or further than `focusDistance` blurs. Shown in a refined picture (the
+   * View's `refine`, or toImage({ samples })) - a plain frame is sharp throughout.
+   */
+  aperture = 0
+  /**
+   * How far ahead the plane in focus is, world units - or null (default) for the distance to
+   * `target`, the orbit's pivot, so what it turns about stays sharp.
+   * @type {number | null}
+   */
+  focusDistance = null
 
-  /** @param {CameraOptions & { fov?: number }} [options] */
+  /** @param {PerspectiveCameraOptions} [options] */
   constructor(options = {}) {
     super(options)
     if (options.fov !== undefined) {
       this.fov = checkNumber('PerspectiveCamera', 'fov', options.fov)
       if (this.fov <= 0 || this.fov >= 180) fail('PerspectiveCamera', `'fov' is the vertical angle in degrees, 0-180 exclusive, got ${this.fov}`)
     }
+    if (options.aperture !== undefined) {
+      this.aperture = checkNumber('PerspectiveCamera', 'aperture', options.aperture)
+      if (!(this.aperture >= 0)) fail('PerspectiveCamera', `'aperture' is the lens's radius in world units, 0 or more, got ${this.aperture}`)
+    }
+    if (options.focusDistance !== undefined && options.focusDistance !== null) {
+      this.focusDistance = checkNumber('PerspectiveCamera', 'focusDistance', options.focusDistance)
+      if (!(this.focusDistance > 0)) fail('PerspectiveCamera', `'focusDistance' is how far ahead the sharp plane is, more than 0 (or null for the target's distance), got ${this.focusDistance}`)
+    }
+  }
+
+  /** @internal Where the plane in focus is: focusDistance, or the target's distance (10 without one). */
+  get focus() {
+    return this.focusDistance ?? (this.target ? Math.max(1e-3, this.position.distanceTo(this.target)) : 10)
   }
 
   get projectionMatrix() {
@@ -137,12 +167,13 @@ export class PerspectiveCamera extends Camera {
 
   /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
-    return { ...super.cloneOptions(), fov: this.fov }
+    return { ...super.cloneOptions(), fov: this.fov, aperture: this.aperture, focusDistance: this.focusDistance }
   }
 
   /** @internal @returns {Record<string, unknown>} */
   jsonOptions() {
-    return { ...super.jsonOptions(), ...(this.fov !== 50 ? { fov: this.fov } : {}) }
+    return { ...super.jsonOptions(), ...(this.fov !== 50 ? { fov: this.fov } : {}), ...(this.aperture ? { aperture: this.aperture } : {}),
+      ...(this.focusDistance !== null ? { focusDistance: this.focusDistance } : {}) }
   }
 }
 

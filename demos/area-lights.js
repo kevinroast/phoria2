@@ -48,7 +48,7 @@ export default function run({ canvas, gui }) {
   })
   const scene = view.scene
 
-  const settings = { keyWidth: 2.4, keyHeight: 0.8, keyIntensity: 75, floorGloss: 0.85, shadows: true, bounce: true, place: 0, move: false }
+  const settings = { keyWidth: 2.4, keyHeight: 0.8, keyIntensity: 75, floorGloss: 0.85, shadows: true, bounce: true, place: 0, move: false, aperture: 0, focus: 0 }
 
   // the set: a dark floor, polished, faintly mottled like sealed concrete - and behind it a matt sweep,
   // curving up from the floor into the wall, as a photographer's backdrop paper does
@@ -272,9 +272,19 @@ normal = normalize(normal + (vec3(hash(f.z), hash(f.z + 0.37), hash(f.z + 0.71))
   })
   gui.add(settings, 'move').name('move the softbox')
   gui.add({ refine: true }, 'refine').name('refine when still').onChange((on) => { view.refine = on })
+  // depth of field, shown as the picture refines: the lens's radius, and the focus nearer or further
+  // than the orbit's pivot
+  const camera = /** @type {import('phoria2').PerspectiveCamera} */ (view.camera)
+  const lens = gui.addFolder('Lens (refined)')
+  lens.add(settings, 'aperture', 0, 0.25, 0.005).name('aperture').onChange((v) => { camera.aperture = v })
+  lens.add(settings, 'focus', -3, 3, 0.05).name('focus from pivot')
   apply()
 
   return view.start((dt) => {
+    // the focus follows the pivot as the view orbits and zooms: on it, or the slider's way nearer or further
+    const pivot = camera.target ? camera.position.distanceTo(camera.target) : 10
+    const focus = settings.focus ? Math.max(0.2, pivot + settings.focus) : null
+    if (camera.focusDistance !== focus) camera.focusDistance = focus
     if (!settings.move) return
     swing += dt * 0.25
     settings.place = Math.sin(swing)

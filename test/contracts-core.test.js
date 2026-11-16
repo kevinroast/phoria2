@@ -121,6 +121,8 @@ const cameraRows = () => ({
 nodeContract(PerspectiveCamera, (o) => new PerspectiveCamera(o), {
   ...cameraRows(),
   fov: { value: 30, read: (c) => c.fov, default: 50, bad: 200, error: 'fov' },
+  aperture: { value: 0.05, read: (c) => c.aperture, default: 0, bad: -1, error: 'aperture' },
+  focusDistance: { value: 6, read: (c) => c.focusDistance, default: null, bad: 0, error: 'focusDistance' },
 })
 nodeContract(OrthographicCamera, (o) => new OrthographicCamera(o), {
   ...cameraRows(),

@@ -6,6 +6,7 @@ import { Box3 } from './value/Box3.js'
 import { warnOnce } from './validate.js'
 import { fitPointShadow, fitShadow, fitSpotShadow, SPOT_TILES } from './shadow.js'
 import { worldPlane } from './clip.js'
+import { onDisc } from './refine.js'
 import { hiddenInstance } from './scene/drawables.js'
 import { variantOf } from './material/features.js'
 import { drawKind, isInstanced } from './scene/kinds.js'
@@ -64,14 +65,6 @@ const RECT_SHADOW_ANGLE = 1.15
 // as passes.js's: at shadowSoftness 1 a soft shadow's edge spreads a fifth of the gap either way -
 // the edge a light this wide (as an angle, a sun; as a size over its distance, a lamp) casts
 const SOFT_SPREAD = 0.2
-
-/** A point on a unit disc, spread evenly over its area, from a point in the unit square (Shirley-Chiu). */
-function onDisc(/** @type {number} */ u, /** @type {number} */ v) {
-  const a = 2 * u - 1, b = 2 * v - 1
-  if (a === 0 && b === 0) return [0, 0]
-  const [r, t] = Math.abs(a) > Math.abs(b) ? [a, (Math.PI / 4) * (b / a)] : [b, Math.PI / 2 - (Math.PI / 4) * (a / b)]
-  return [r * Math.cos(t), r * Math.sin(t)]
-}
 
 /** Two directions square to `d` (unit) and to each other. @param {Vec3} d */
 function across(d) {

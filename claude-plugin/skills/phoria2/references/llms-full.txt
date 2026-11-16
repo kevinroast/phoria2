@@ -834,7 +834,10 @@ view.groundShadow = { opacity: 0.5, softness: 0.8 }   // change any time; false 
 
 Cameras: `new PerspectiveCamera({ fov, near, far, position, target })`,
 `new OrthographicCamera({ height, near, far, position, target })` (width follows the aspect). Or
-use a View camera preset: `'isometric'` and `'top'` are orthographic.
+use a View camera preset: `'isometric'` and `'top'` are orthographic. Depth of field: a perspective
+camera's `aperture` (the lens radius, world units; 0 default, all sharp) and `focusDistance` (null
+default: the target's distance) blur what is nearer or further - shown in refined pictures (the
+View's `refine`, or `toImage({ samples })`), not the plain frame.
 
 A plan view and back, for editors and floor plans:
 
