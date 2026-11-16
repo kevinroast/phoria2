@@ -44,6 +44,8 @@ import { lightBehind, TONE_MAPPING } from './tone.js'
  * @property {Occlusion | null} occlusion ambient occlusion, for the lit opaque meshes
  * @property {number[] | null} fogLight the light the tone map turns into the fog's colour - lit
  *   surfaces are fogged in light, towards it
+ * @property {WebGLTexture | null} behind the picture behind the see-through things - the opaque ones
+ *   drawn - mipmapped, for glass to bend; taken when the frame has glass
  */
 
 /**
@@ -198,6 +200,8 @@ export function groundShadowSettings(owner, value) {
 const NO_SHIFT = [0, 0]
 /** @type {import('./passes.js').ShadowMap[]} */
 const NO_SHADOWS = []
+/** Glass, which bends what is behind it - its material's lit transmission. @param {DrawItem} item */
+const refracts = (item) => item.material.transmission > 0 && !item.material.unlit && item.node.drawMode === 'triangles'
 // renderers made, so each keeps its own refine average in a shared context's pool
 let renderers = 0
 // the step out of linear light, at the end of a linear frame's chain
@@ -602,6 +606,7 @@ export class WebGLRenderer {
       wait, linear: (linear && float) || !!target?.srgb, width, height,
       environment: passes && typeof env === 'object' ? passes.environment(env) : null, shadows: [], occlusion: null, ...this.#lightsOf(frame),
       fogLight: frame.fog ? lightBehind(frame.fog.color, TONE_MAPPING[this.toneMapping], this.exposure) : null,
+      behind: null,
     }
     if (passes && typeof env === 'object' && env.image && !state.environment) {
       warnOnce(env, env.isHDR ? "this device can't render to float textures, which HDR environments need - lighting without it"
@@ -646,7 +651,8 @@ export class WebGLRenderer {
     // a float picture, to keep what is past white apart from the tone maps' last steps to it - for bloom,
     // which works in light (what is brighter than white glows more: additive points piling up), and
     // for a refine sample's light. Drawn as sRGB, blended as on the canvas, unless the frame is linear
-    const scene = steps.length || accumulate ? this.#sceneTargets(width, height, state.linear || ((!!bloom || !!accumulate) && float)) : null
+    const sceneFloat = state.linear || ((!!bloom || !!accumulate) && float)
+    const scene = steps.length || accumulate ? this.#sceneTargets(width, height, sceneFloat) : null
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, scene ? scene.draw.framebuffer : output)
     gl.viewport(0, 0, width, height)
@@ -676,6 +682,11 @@ export class WebGLRenderer {
     // the ground shadow over the opaque things - a floor among them - and under anything see-through;
     // not while some are still compiling, or it shows before what casts it
     if (ground && effects && !this.info.compiling) effects.drawGround(ground, frame)
+    // glass bends what is behind it: the picture so far, taken before anything see-through is drawn
+    if (frame.transparent.some(refracts)) {
+      const color = scene ? (sceneFloat ? gl.RGBA16F : gl.RGBA8) : target?.srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8
+      state.behind = this.#behind(scene ? scene.draw.framebuffer : output, width, height, color)
+    }
     gl.enable(gl.BLEND)
     for (const item of frame.transparent) this.#draw(item, frame, true, state)
     // outlines over everything
@@ -691,6 +702,31 @@ export class WebGLRenderer {
       if (!accumulate.show) return
     }
     this.#post(picture, steps, output, width, height)
+  }
+
+  /**
+   * The picture drawn so far, copied out of what is being drawn into (resolved, if that is
+   * multisampled) into a texture with smaller, blurrier levels below it - what glass shows behind it.
+   * Leaves `from` bound again.
+   * @param {WebGLFramebuffer | null} from @param {number} width @param {number} height
+   * @param {number} color the format drawn into - a multisampled picture resolves only into its own
+   * @returns {WebGLTexture}
+   */
+  #behind(from, width, height, color) {
+    const gl = this.gl
+    const levels = Math.floor(Math.log2(Math.max(width, height))) + 1
+    const behind = this.#gpu.targets.get('behind', { width, height, color, levels })
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, from)
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, behind.framebuffer)
+    gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, from)
+    const texture = /** @type {WebGLTexture} */ (behind.texture)
+    // unit 15 is kept for making and uploading, so no draw's sampler is disturbed
+    gl.activeTexture(gl.TEXTURE15)
+    gl.bindTexture(gl.TEXTURE_2D, texture)
+    gl.generateMipmap(gl.TEXTURE_2D)
+    gl.bindTexture(gl.TEXTURE_2D, null)
+    return texture
   }
 
   /** Can refine samples be averaged here - can float targets be drawn to? */
@@ -879,6 +915,9 @@ export class WebGLRenderer {
     // behind them, so the occlusion found there isn't theirs
     const ssao = kind === 'mesh' && !transparent && !material.unlit ? state.occlusion : null
     if (ssao) defines.push('SSAO', ...(ssao.depth ? ['SSAO_DEPTH'] : []))
+    // glass, over the picture behind it: bent and tinted, and blurred where it is rough
+    const behind = transparent && kind === 'mesh' && refracts(item) ? state.behind : null
+    if (behind) defines.push('REFRACTION')
     // a material's own GLSL, spliced into this program
     const hook = hookFor(material)
     if (hook) defines.push(...hook.defines)
@@ -942,6 +981,7 @@ export class WebGLRenderer {
         }
       }
     }
+    if (behind) program.set('uBehind', behind)
     if (ssao) {
       program.set('uSsao', ssao.texture)
       program.set('uSsaoScale', ssao.scale)

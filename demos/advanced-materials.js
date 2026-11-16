@@ -2,7 +2,7 @@ import { Box3, DirectionalLight, Label, Mesh, PointLight, Texture, View, plane, 
 
 // Materials beyond roughness and metalness, a row each so the differences show, in pairs from the
 // back: glass - opacity fades a surface, reflections too, while transmission lets light through and
-// keeps them - and clearcoat, one red metallic paint under no coat, half a coat, a full one and a
+// keeps them, tinted by its colour and bent through its thickness - and clearcoat, one red metallic paint under no coat, half a coat, a full one and a
 // satin one; sheen, the soft bright rim of cloth, and reflectance, how strongly a non-metal reflects
 // from its ior; brushed metal, highlights drawn out along the brushing, and translucency - paper
 // lanterns lit from inside; and at the front, iridescence - a thin film's colours shifting with the
@@ -128,8 +128,8 @@ export default function run({ canvas, gui }) {
   // glass - and plain opacity beside it, for the difference
   const [, , glass] = row('glass', [
     [{ color: '#9fd3ff', opacity: 0.3, roughness: 0.05 }, 'opacity 0.3'],
-    [{ color: '#3d7fd6', transmission: 0.6, roughness: 0.05 }, 'tinted\ntransmission 0.6'],
-    [{ color: '#ffffff', transmission: 1, roughness: 0.05 }, 'clear\ntransmission 1'],
+    [{ color: '#3d7fd6', transmission: 1, roughness: 0.05 }, 'tinted\nby its colour'],
+    [{ color: '#ffffff', transmission: 1, thickness: 1, roughness: 0.05 }, 'solid\nthickness 1'],
     [{ color: '#ffffff', transmission: 1, roughness: 0.45 }, 'frosted\nroughness 0.45'],
   ])
   // one red metallic paint under coats
@@ -205,6 +205,7 @@ export default function run({ canvas, gui }) {
   f = folders.glass = gui.addFolder('Clear glass').close()
   const glassStyle = { color: '#ffffff' }
   f.add(glass.material, 'transmission', 0, 1, 0.01)
+  f.add(glass.material, 'thickness', 0, 2, 0.01)
   f.add(glass.material, 'roughness', 0, 1, 0.01)
   f.add(glass.material, 'ior', 1, 2.5, 0.01)
   f.add(glass.material, 'opacity', 0, 1, 0.01)

@@ -89,7 +89,11 @@ export const FEATURES = [
   { name: null, define: null, kinds: MESH, when: (m) => !!m.bumpMap, uniforms: (m, { set }) => set('uBumpScale', m.bumpScale) },
   { name: null, define: null, kinds: MESH, when: (m) => !!m.lightMap, uniforms: (m, { set }) => set('uLightMapIntensity', m.lightMapIntensity) },
   { name: 'cutout', define: 'ALPHA_TEST', kinds: MESH, when: (m) => m.alphaTest > 0 },
-  { name: 'glass', define: 'TRANSMISSION', kinds: MESH, lit: true, when: (m) => m.transmission > 0, uniforms: (m, { set }) => set('uTransmission', m.transmission) },
+  { name: 'glass', define: 'TRANSMISSION', kinds: MESH, lit: true, when: (m) => m.transmission > 0, uniforms: (m, { set }) => {
+    set('uTransmission', m.transmission)
+    // what bends what is behind it (read where the picture behind is there to bend - REFRACTION)
+    set('uRefraction', [m.ior, m.thickness])
+  } },
   {
     name: 'clearcoat', define: 'CLEARCOAT', kinds: MESH, lit: true, when: (m) => m.clearcoat > 0,
     uniforms: (m, { set }) => {

@@ -73,7 +73,9 @@ import { Texture } from './Texture.js'
  * @property {number} [emissiveIntensity] (default 1)
  * @property {number} [transmission] 0-1: how much light passes through, as through glass (default 0). Unlike
  *   opacity, which fades the whole surface, glass keeps its reflections, and shows less of what is behind it
- *   towards its edges. Its colour shows in proportion to 1 - transmission
+ *   towards its edges. Its colour tints what shows through, as coloured glass does
+ * @property {number} [thickness] how thick glass is, in its own units - what is behind it is bent by its ior over
+ *   this distance, as through a solid lens or a bottle's wall; 0 is a thin shell, which doesn't bend it (default 0)
  * @property {number} [clearcoat] 0-1: a clear glossy layer over the surface - car paint, lacquer, varnish (default 0)
  * @property {number} [clearcoatRoughness] 0-1: how glossy the coat is, 0 a mirror (default 0)
  * @property {number} [sheen] 0-1: the soft bright rim of cloth at grazing angles - velvet, felt, upholstery (default 0)
@@ -128,7 +130,7 @@ const LINEAR_MAPS = new Set(['roughnessMap', 'metalnessMap', 'normalMap', 'bumpM
 const FLAGS = ['unlit', 'flatShading', 'doubleSided', 'vertexColors', 'depthWrite', 'depthTest', 'sizeAttenuation', 'transparent', 'fog']
 const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiveIntensity: [0, Infinity], size: [0, Infinity], width: [0, Infinity],
   alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1], triplanar: [0, Infinity], bumpScale: [-Infinity, Infinity],
-  transmission: [0, 1], clearcoat: [0, 1], clearcoatRoughness: [0, 1], sheen: [0, 1], sheenRoughness: [0, 1], ior: [1, Infinity],
+  transmission: [0, 1], thickness: [0, Infinity], clearcoat: [0, 1], clearcoatRoughness: [0, 1], sheen: [0, 1], sheenRoughness: [0, 1], ior: [1, Infinity],
   iridescence: [0, 1], iridescenceIor: [1, Infinity], iridescenceThickness: [0, Infinity], iridescenceThicknessMin: [0, Infinity],
   specularIntensity: [0, 1], anisotropy: [0, 1], anisotropyRotation: [-Infinity, Infinity], translucency: [0, 1], toon: [0, 16],
   lightMapIntensity: [0, Infinity], environmentIntensity: [0, Infinity], dash: [0, Infinity], gap: [0, Infinity],
@@ -137,7 +139,7 @@ const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiv
 const COLORS = { color: 0xffffff, emissive: 0x000000, sheenColor: 0xffffff, specularColor: 0xffffff, translucencyColor: 0xffffff }
 const DEFAULTS = {
   name: '', opacity: 1, alphaTest: 0, roughness: 0.5, metalness: 0, normalScale: 1, bumpScale: 1, aoMapIntensity: 1, triplanar: 0, emissiveIntensity: 1,
-  transmission: 0, clearcoat: 0, clearcoatRoughness: 0, sheen: 0, sheenRoughness: 0.5, ior: 1.5, specularIntensity: 1, anisotropy: 0,
+  transmission: 0, thickness: 0, clearcoat: 0, clearcoatRoughness: 0, sheen: 0, sheenRoughness: 0.5, ior: 1.5, specularIntensity: 1, anisotropy: 0,
   iridescence: 0, iridescenceIor: 1.3, iridescenceThickness: 400, iridescenceThicknessMin: 100,
   anisotropyRotation: 0, translucency: 0, toon: 0, lightMapIntensity: 1, environmentIntensity: 1, unlit: false, flatShading: false,
   doubleSided: false, vertexColors: false, blending: 'normal', depthWrite: true, depthTest: true, fog: true,
@@ -201,6 +203,7 @@ export class Material {
   /** @type {number} */ metalness
   /** @type {number} */ emissiveIntensity
   /** How much light passes through, as through glass: 0-1. @type {number} */ transmission
+  /** How thick glass is, in its own units: what is behind it bends over this distance; 0 a thin shell. @type {number} */ thickness
   /** A clear glossy layer over the surface: 0-1. @type {number} */ clearcoat
   /** How glossy the coat is, 0 a mirror. @type {number} */ clearcoatRoughness
   /** The soft bright rim of cloth: 0-1. @type {number} */ sheen

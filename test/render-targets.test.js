@@ -206,3 +206,47 @@ describe('a frame drawn in linear light', () => {
     expect(drawLog[0].framebuffer).toBeNull()
   })
 })
+
+describe('glass', () => {
+  /** A box, with a glass box in front of it, made of `material`. */
+  const withGlass = (/** @type {any} */ material) => {
+    const s = scene()
+    s.add(new Mesh({ geometry: box(1), position: [0, 0, 2], material }))
+    s.updateWorldTree()
+    return s
+  }
+  /** The GL fake, its copies and mip levels logged among the draws. */
+  const logged = () => {
+    const fake = fakeGL()
+    const gl = new Proxy(fake.gl, {
+      get: (t, k) => (k === 'blitFramebuffer' || k === 'generateMipmap'
+        ? (/** @type {any[]} */ ...args) => { fake.drawLog.push(/** @type {any} */ ({ call: k })); return t[k]?.(...args) }
+        : t[k]),
+    })
+    return { ...fake, gl }
+  }
+
+  it('bends what is behind it: the picture so far copied out, with smaller levels, before it is drawn', () => {
+    const { gl, drawLog } = logged()
+    const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
+    renderer.setSize(64, 48)
+    renderer.renderFrame(collect(withGlass({ transmission: 1, thickness: 0.5, ior: 1.4 }), camera()))
+    expect(drawLog.map((d) => d.call)).toEqual(['drawElements', 'blitFramebuffer', 'generateMipmap', 'drawElements'])
+    const glass = drawLog[3].program
+    expect(definesOf(glass)).toContain('REFRACTION')
+    expect(glass.values.uRefraction.map((/** @type {number} */ v) => +v.toFixed(3))).toEqual([1.4, 0.5])
+    expect(glass.values.uBehind).toBeDefined()
+    expect(definesOf(drawLog[0].program)).not.toContain('REFRACTION')
+  })
+
+  it('copies nothing for a frame without glass, nor for see-through things that only fade', () => {
+    for (const material of [{ opacity: 0.5 }, { transmission: 1, unlit: true }]) {
+      const { gl, drawLog } = logged()
+      const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
+      renderer.setSize(64, 48)
+      renderer.renderFrame(collect(withGlass(material), camera()))
+      expect(drawLog.map((d) => d.call)).toEqual(['drawElements', 'drawElements'])
+      expect(definesOf(drawLog[1].program)).not.toContain('REFRACTION')
+    }
+  })
+})

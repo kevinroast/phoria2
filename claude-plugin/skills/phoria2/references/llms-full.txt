@@ -390,6 +390,7 @@ One material type, given as a plain object:
 { color: 'orange', unlit: true }                     // flat colour, ignores lights
 { color: '#8cf', opacity: 0.4 }                      // transparent: fades the whole surface
 { transmission: 1, roughness: 0.05 }                 // clear glass
+{ transmission: 1, thickness: 1, roughness: 0.05 }   // solid glass: bends what is behind it
 { color: '#a3121f', metalness: 0.6, clearcoat: 1 }   // car paint: a glossy coat over it
 { color: '#1f2d6e', roughness: 0.9, sheen: 1 }       // velvet: cloth's bright rim
 { color: '#111', roughness: 0.1, iridescence: 1 }   // oil on water: a thin film's shifting colours
@@ -413,7 +414,7 @@ Properties: `color`, `opacity`, `roughness` (0.5), `metalness` (0), `emissive`,
 (`'normal'`, `'additive'` - adds light, for glows and sparks - or `'multiply'` - darkens what is behind, as a colour
 filter does: cyan over magenta is blue), `alphaTest` (cut-outs: drop pixels with less alpha - leaves, fences),
 `map`, `normalMap`/`normalScale`, `bumpMap`/`bumpScale`, `roughnessMap`, `metalnessMap`, `aoMap`,
-`emissiveMap`, `lightMap`/`lightMapIntensity`, `environmentIntensity` (1), `transmission`, `clearcoat`/`clearcoatRoughness`, `sheen`/`sheenColor`/`sheenRoughness`, `iridescence`/`iridescenceIor`/`iridescenceThickness`/`iridescenceThicknessMin`/`iridescenceThicknessMap`, `ior`/
+`emissiveMap`, `lightMap`/`lightMapIntensity`, `environmentIntensity` (1), `transmission`/`thickness`, `clearcoat`/`clearcoatRoughness`, `sheen`/`sheenColor`/`sheenRoughness`, `iridescence`/`iridescenceIor`/`iridescenceThickness`/`iridescenceThicknessMin`/`iridescenceThicknessMap`, `ior`/
 `specularIntensity`/`specularColor`, `anisotropy`/`anisotropyRotation`, `translucency`/`translucencyColor`, `matcap`, `toon` (below); `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
 `mesh.material.color.set('#0f0')`, `mesh.material.opacity = 0.5`, or a whole new one: `mesh.material = { color: 'red' }`
 (options become a Material, as in the constructor; `mesh.geometry = box(2)` likewise).
@@ -483,10 +484,15 @@ a shiny showroom, higher to make one product catch the light, without changing t
 **Glass**: `transmission` (0-1) lets light through as glass does. Unlike `opacity`, which fades
 everything - reflections too, so faded things look washed out, as dimmed chart bars should - glass
 keeps its reflections whole, and shows less of what is behind it towards its edges, where it
-reflects nearly everything. Its colour shows in proportion to `1 - transmission`: `transmission: 0.6`
-with a colour is tinted glass. Keep `roughness` low for clear glass, higher for frosted. There is
-no refraction - what is behind isn't bent. It shines with an `environment` to reflect
-(`'studio'`, or better an `.hdr`).
+reflects nearly everything. Its colour tints what shows through it, as coloured glass does:
+`{ color: '#3d7fd6', transmission: 1 }` is blue glass. `thickness` (0) is how thick it is, in its
+own units: what is behind is bent by its `ior` over that distance, as through a solid lens or a
+bottle's wall - about the object's own depth for a solid piece; 0 is a thin shell (a bubble, a
+window), which doesn't bend it. Keep `roughness` low for clear glass, higher for frosted - what is
+behind blurs. It shines with an `environment` to reflect (`'studio'`, or better an `.hdr`). Glass
+shows what was drawn before anything see-through: glass seen through glass shows the solids behind
+both, not the farther glass, and near the picture's edge what would bend in from off screen is the
+edge itself.
 
 **Clearcoat**: `clearcoat` (0-1) puts a clear glossy layer over the surface - car paint, lacquered
 wood, varnish - with its own sharp reflection over the base's softer one; `clearcoatRoughness` (0,

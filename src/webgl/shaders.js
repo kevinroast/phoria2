@@ -360,6 +360,9 @@ out mat3 vObjectToWorld;
 #ifdef PICK
 flat out uint vPickElement; // which instance, point or segment, for GPU picking
 #endif
+#ifdef REFRACTION
+out float vThicknessScale;  // glass's own units to the world's: how far its thickness reaches
+#endif
 
 ${COMMON}
 
@@ -396,6 +399,13 @@ void main() {
   vec4 world = uModel * placed;
   vWorldPosition = world.xyz;
   vNormal = uNormalMatrix * placedNormal;
+#ifdef REFRACTION
+#ifdef INSTANCED
+  vThicknessScale = length(mat3(uModel) * m[0]);
+#else
+  vThicknessScale = length(uModel[0].xyz);
+#endif
+#endif
   vUv = uv;
 #ifdef UV2
   vUv2 = uv2;
@@ -721,6 +731,14 @@ uniform float uLightMapIntensity;
 uniform float uEnvStrength;  // this material's share of the environment's light and reflections
 #ifdef TRANSMISSION
 uniform float uTransmission;
+#endif
+#ifdef REFRACTION
+// what is behind see-through things: the picture so far, the opaque things drawn, smaller and
+// blurrier down its mip levels - for glass to show bent, and frosted
+uniform sampler2D uBehind;
+uniform vec2 uRefraction;      // ior, thickness (its own units)
+uniform mat4 uViewProjection;
+in float vThicknessScale;
 #endif
 #ifdef CLEARCOAT
 uniform float uClearcoat;
@@ -1459,6 +1477,31 @@ vec3 reflected(vec3 r, vec3 n, float roughness, vec3 irradiance) {
 }
 #endif
 
+#ifdef REFRACTION
+// what is behind, as glass bends it: the view's ray turned at the surface by the ior and carried
+// through the glass's thickness, then looked up where it comes out - at a blurrier level the rougher
+// the glass (as glTF's reference renderer and three.js do: by roughness, scaled by how much the ior
+// bends). A thin shell (thickness 0) doesn't bend it, but still blurs it. In the picture's own
+// encoding, premultiplied
+vec4 behindGlass(vec3 n, vec3 v, float roughness) {
+  vec3 exit = vWorldPosition + refract(-v, n, 1.0 / uRefraction.x) * uRefraction.y * vThicknessScale;
+  vec4 clip = uViewProjection * vec4(exit, 1.0);
+  vec2 uv = clamp(clip.xy / clip.w * 0.5 + 0.5, 0.0, 1.0);
+  float lod = log2(float(textureSize(uBehind, 0).x)) * roughness * clamp(uRefraction.x * 2.0 - 2.0, 0.0, 1.0);
+  return textureLod(uBehind, uv, lod);
+}
+// what comes through glass, tinted by its colour as coloured glass tints light, in the picture's
+// encoding - so laid over the glass as blending would lay what is behind
+vec3 throughGlass(vec4 behind, vec3 tint) {
+  if (behind.a <= 0.0) return vec3(0.0);
+#ifdef LINEAR_OUTPUT
+  return behind.rgb * tint;
+#else
+  return linearToSrgb(srgbToLinear(behind.rgb / behind.a) * tint) * behind.a;
+#endif
+}
+#endif
+
 void main() {
   clipAway(vWorldPosition);
   vec4 base = vec4(uColor * vColor, uOpacity);
@@ -1490,6 +1533,10 @@ void main() {
 #endif
   // how much of what is behind it this hides: its opacity - less for glass, which lets light through
   float coverage = base.a;
+#ifdef REFRACTION
+  // what glass shows through it, bent - laid over it at the end
+  vec4 behind = vec4(0.0);
+#endif
 
 #ifdef LIT
 #ifdef HOOK_FRAGMENT
@@ -1640,6 +1687,9 @@ ${RECT_LIGHTS}
   // everything (Fresnel), less and less
   coverage *= mix(1.0, clamp(max(brdf.r, max(brdf.g, brdf.b)), 0.0, 1.0), uTransmission);
 #endif
+#ifdef REFRACTION
+  behind = behindGlass(n, v, roughness);
+#endif
 #ifdef DEBUG_SHADOW_TEXELS
   color = shadowTexels(color);
 #endif
@@ -1680,6 +1730,12 @@ ${RECT_LIGHTS}
   // premultiplied alpha, so the canvas composites correctly over the page. The colour is the light
   // the surface sends back - faded with its opacity; coverage is how much of what is behind it hides
   fragColor = outputColor(color, base.a, coverage);
+#ifdef REFRACTION
+  // glass lays what is behind it over itself, as blending would - but bent - and covers what is
+  // there: where the picture behind is see-through (no background), the page shows through as before
+  float glassShows = 1.0 - coverage;
+  fragColor = vec4(fragColor.rgb + throughGlass(behind, base.rgb) * glassShows, coverage + behind.a * glassShows);
+#endif
 }
 `
 

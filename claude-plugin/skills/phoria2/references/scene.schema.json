@@ -1086,6 +1086,11 @@
           "minimum": 0,
           "maximum": 1
         },
+        "thickness": {
+          "type": "number",
+          "description": "How thick glass is, in its own units: what is behind it is bent by its ior over this distance, as through a solid lens. 0, a thin shell, doesn't bend it.",
+          "minimum": 0
+        },
         "clearcoat": {
           "type": "number",
           "description": "A clear glossy layer over the surface - car paint, lacquer, varnish.",

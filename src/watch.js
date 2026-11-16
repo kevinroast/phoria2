@@ -186,6 +186,7 @@ export class ChangeWatch {
     this.#push(m.triplanar)
     this.#push(m.bumpScale)
     this.#push(m.transmission)
+    this.#push(m.thickness)
     this.#push(m.clearcoat)
     this.#push(m.clearcoatRoughness)
     this.#push(m.sheen)
