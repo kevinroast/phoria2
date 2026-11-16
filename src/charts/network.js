@@ -6,7 +6,7 @@ import { icosphere } from '../geometry/generators.js'
 import { InstancedMesh, Lines, Points } from '../scene/drawables.js'
 import { Color } from '../value/Color.js'
 import { describe, fail } from '../validate.js'
-import { labelsOf } from './marks.js'
+import { grow, labelsOf } from './marks.js'
 
 /** @import { MarkContext, Mark } from './marks.js' */
 
@@ -34,8 +34,7 @@ export function networkMark(ctx) {
   const source = o.source ?? 'source', target = o.target ?? 'target'
   /** @type {Map<any, number[]>} layout positions by key, kept between updates for stability */
   let placed = new Map()
-  const makeNodes = (/** @type {number} */ capacity) => new InstancedMesh({ geometry: icosphere({ radius: 1, detail: 2 }), material: { roughness: 0.35 }, count: capacity, labels: labelsOf(ctx, 'above') })
-  let nodesMesh = makeNodes(Math.max(8, ctx.spec.rows.length * 2))
+  const nodesMesh = new InstancedMesh({ geometry: icosphere({ radius: 1, detail: 2 }), material: { roughness: 0.35 }, count: Math.max(8, ctx.spec.rows.length * 2), labels: labelsOf(ctx, 'above') })
   nodesMesh.count = 0
   // links in up to three widths; each segment carries its link's row
   const linkNodes = WIDTHS.map((width) => new Lines({ geometry: new Geometry({ positions: [0, 0, 0, 0, 0, 0] }), material: { width, vertexColors: true }, data: [] }))
@@ -78,17 +77,8 @@ export function networkMark(ctx) {
         hovered = null
         active.visible = false
       }
-      if (n > nodesMesh.instanceMatrices.length / 16) {
-        // more nodes than room - arriving and leaving ones together, in a transition: a bigger mesh,
-        // swapped in place, keeping its hover handler
-        const bigger = makeNodes(n * 2)
-        if (neighbours) bigger.on('hover', hover)
-        nodesMesh.parent?.add(bigger)
-        nodesMesh.parent?.remove(nodesMesh)
-        nodesMesh.dispose()
-        mark.nodes[mark.nodes.indexOf(nodesMesh)] = bigger
-        nodesMesh = bigger
-      }
+      // more nodes than room - arriving and leaving ones together, in a transition
+      grow(nodesMesh, n)
       nodesMesh.count = n
       nodesMesh.data = t.rows
       const keys = t.rows.map(keyOf)

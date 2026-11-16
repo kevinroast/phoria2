@@ -168,6 +168,16 @@ export class Vec3 extends Float32Array {
   }
 }
 
+/**
+ * @internal Two unit directions square to a unit direction and to each other - any such pair, for
+ * spreading things across it (a disc round a light's direction).
+ * @param {Vec3} d @returns {[Vec3, Vec3]}
+ */
+export function across(d) {
+  const u = d.clone().cross(Math.abs(d[1]) < 0.9 ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0)).normalize()
+  return [u, d.clone().cross(u).normalize()]
+}
+
 /** @param {Vec3Input} v @returns {Float32Array | number[]} */
 function toArray(v) {
   return Array.isArray(v) || ArrayBuffer.isView(v) ? /** @type {Float32Array | number[]} */ (v) : Vec3.fromInput(v)

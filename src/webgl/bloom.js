@@ -21,31 +21,32 @@ import { COMMON, FULLSCREEN_VERTEX, TONE_MAP } from './shaders.js'
 // float target where it can be drawn to, blended just as the canvas would be) or, with LINEAR_INPUT,
 // linear light. The tone maps never quite reach white, so a colour at white or past it wasn't mapped
 // - unlit colours, additive points piling up - and counts as it is: a pure red label is 1, not a
-// light. What maps nearer white than BLOOM_PEAK counts as BLOOM_PEAK (half floats can't tell it
+// light. What maps nearer white than TONE_PEAK counts as TONE_PEAK (half floats can't tell it
 // apart); without float targets, nearer than 8 bits can.
 const UNTONE = /* glsl */ `
 ${TONE_MAP}
-const float BLOOM_PEAK = 16.0;
-// the light a surface's tone map turned into this colour (scaled by the exposure). Only its brightness
-// is run backwards - its brightest channel - and the colour scaled to it, keeping the hue it shows:
-// undoing the maps' hue shifts too (Neutral's desaturation, ACES a channel at a time) pulls channels
-// near white apart - a pale window's soft edge would glow pure red
+// the light a surface's tone map turned into this colour (scaled by the exposure) - tone.js's
+// lightBehind, but only its brightness is run backwards - its brightest channel - and the colour
+// scaled to it, keeping the hue it shows: undoing the maps' hue shifts too (Neutral's desaturation,
+// ACES a channel at a time) pulls channels near white apart - a pale window's soft edge would glow
+// pure red
 vec3 untone(vec3 c) {
   c = max(c, 0.0);
   float top = max(c.r, max(c.g, c.b));
   if (top <= 0.0) return c;
   if (uToneMapping == 1) {
-    // ACES (Narkowicz) runs to 1.033: white exactly, or past that, wasn't mapped
-    if (abs(top - 1.0) < 1e-3 || top >= 1.0329) return c;
+    // ACES (Narkowicz) runs to ACES_TOP: white exactly, or past that, wasn't mapped
+    if (abs(top - 1.0) < 1e-3 || top >= ACES_TOP) return c;
     // its rational curve solved for the light
-    float a = min(2.43 * top - 2.51, -1e-4), b = 0.59 * top - 0.03, k = 0.14 * top;
-    return c * (min((-b - sqrt(max(b * b - 4.0 * a * k, 0.0))) / (2.0 * a), BLOOM_PEAK) / top);
+    float a = min(ACES_C * top - ACES_A, -1e-4), b = ACES_D * top - ACES_B, k = ACES_E * top;
+    return c * (min((-b - sqrt(max(b * b - 4.0 * a * k, 0.0))) / (2.0 * a), TONE_PEAK) / top);
   } else if (uToneMapping == 2) {
     // Khronos PBR Neutral, backwards: its highlight compression, then its toe
     if (top >= 0.999) return c;
-    if (top > 0.8) c *= min(0.6 + 0.04 / (1.0 - top), BLOOM_PEAK) / top;
+    float d = 1.0 - NEUTRAL_START;
+    if (top > NEUTRAL_START) c *= min(NEUTRAL_START - d + d * d / (1.0 - top), TONE_PEAK) / top;
     float y = min(c.r, min(c.g, c.b));
-    return c + (y < 0.04 ? 0.4 * sqrt(y) - y : 0.04);
+    return c + (y < NEUTRAL_TOE ? 2.0 * sqrt(NEUTRAL_TOE * y) - y : NEUTRAL_TOE);
   }
   return c;
 }
@@ -63,20 +64,11 @@ uniform float uRange;       // how far past the threshold the glow keeps growing
 out vec4 fragColor;
 ${COMMON}
 ${UNTONE}
-// a colour of the picture, in linear light, not premultiplied
-vec3 shownAt(vec4 c) {
-  if (c.a <= 0.0) return vec3(0.0);
-#ifdef LINEAR_INPUT
-  return c.rgb / c.a;
-#else
-  return srgbToLinear(c.rgb / c.a);
-#endif
-}
 // one of the picture's own pixels, as light - premultiplied: the light of the colour itself, faded
 // again by its cover
 vec3 lightAt(ivec2 p, ivec2 size) {
   vec4 c = texelFetch(uSource, clamp(p, ivec2(0), size - 1), 0);
-  return untone(shownAt(c)) * c.a;
+  return untone(inputColor(c)) * c.a;
 }
 void main() {
   vec3 c;
@@ -138,18 +130,10 @@ uniform float uStrength;
 out vec4 fragColor;
 ${COMMON}
 ${UNTONE}
-vec3 shownAt(vec4 c) {
-  if (c.a <= 0.0) return vec3(0.0);
-#ifdef LINEAR_INPUT
-  return c.rgb / c.a;
-#else
-  return srgbToLinear(c.rgb / c.a);
-#endif
-}
 void main() {
   vec4 scene = texture(uScene, vUv);
   vec3 glow = texture(uBloom, vUv).rgb * uStrength;
-  vec3 light = untone(shownAt(scene));
+  vec3 light = untone(inputColor(scene));
   glow = max(toneCurve(light + glow) - toneCurve(light), 0.0);
   // where the canvas is see-through, the glow brings its own cover
   float a = clamp(scene.a + max(glow.r, max(glow.g, glow.b)), 0.0, 1.0);
@@ -171,21 +155,15 @@ const LEVELS = 6
 const BLOOM_RANGE = 4
 
 export class Bloom {
-  #float = false
-
   /** @param {WebGL2RenderingContext} gl @param {Programs} programs @param {TargetPool} targets */
   constructor(gl, programs, targets) {
     this.gl = gl
     this.programs = programs
     this.targets = targets
-    this.reset()
   }
 
-  /** After a lost context: what it can render to, asked again. */
-  reset() {
-    // half floats keep the glow smooth as the levels are added up; 8 bits if they can't be drawn to
-    this.#float = !!this.gl.getExtension('EXT_color_buffer_float')
-  }
+  /** After a lost context: it keeps no GL objects of its own (its targets are the pool's). */
+  reset() {}
 
   /**
    * The picture with its glow, drawn into `output`.
@@ -193,18 +171,13 @@ export class Bloom {
    * @param {WebGLFramebuffer | null} output null: the canvas
    * @param {number} width @param {number} height
    * @param {BloomSettings} settings
-   * @param {{ exposure: number, toneMapping: number, linear: boolean }} tone the surfaces' tone map, run
+   * @param {{ toneMapping: number, linear: boolean }} tone the surfaces' tone map, run
    *   backwards to find the light behind the picture; linear: the picture is in linear light, and the
    *   glow stays so (otherwise sRGB)
    */
   apply(picture, output, width, height, settings, tone) {
     const gl = this.gl
     const defines = tone.linear ? ['LINEAR_INPUT'] : []
-    gl.disable(gl.DEPTH_TEST)
-    gl.disable(gl.CULL_FACE)
-    gl.disable(gl.BLEND)
-    gl.depthMask(false)
-
     // the levels: each half the one before, as long as it is still 8 pixels
     const levels = []
     let w = width, h = height
@@ -212,61 +185,58 @@ export class Bloom {
       w = Math.max(1, w >> 1)
       h = Math.max(1, h >> 1)
       if (i > 1 && Math.min(w, h) < 8) break
-      levels.push(this.targets.get(`bloom-${i}`, { width: w, height: h, color: this.#float ? gl.RGBA16F : gl.RGBA8 }))
+      // half floats keep the glow smooth as the levels are added up; 8 bits if they can't be drawn to
+      levels.push(this.targets.get(`bloom-${i}`, { width: w, height: h, color: this.targets.float ? gl.RGBA16F : gl.RGBA8 }))
     }
 
-    // down: each level half the one before, the first keeping only what is bright
-    const down = this.programs.ready('bloom-down', defines, DOWN)
-    gl.useProgram(down.program)
-    let source = picture, sw = width, sh = height
-    levels.forEach((level, i) => {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, level.framebuffer)
-      gl.viewport(0, 0, level.width, level.height)
-      down.set('uSource', source)
-      down.set('uTexel', [1 / sw, 1 / sh])
-      down.set('uThreshold', i === 0 ? Math.max(0, settings.threshold) : -1)
-      if (i === 0) {
-        down.set('uRange', BLOOM_RANGE)
-        down.set('uExposure', tone.exposure)
-        down.set('uToneMapping', tone.toneMapping)
+    this.programs.fullscreenPasses(() => {
+      // down: each level half the one before, the first keeping only what is bright
+      const down = this.programs.ready('bloom-down', defines, DOWN)
+      gl.useProgram(down.program)
+      let source = picture, sw = width, sh = height
+      levels.forEach((level, i) => {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, level.framebuffer)
+        gl.viewport(0, 0, level.width, level.height)
+        down.set('uSource', source)
+        down.set('uTexel', [1 / sw, 1 / sh])
+        down.set('uThreshold', i === 0 ? Math.max(0, settings.threshold) : -1)
+        if (i === 0) {
+          down.set('uRange', BLOOM_RANGE)
+          down.set('uToneMapping', tone.toneMapping)
+        }
+        this.programs.drawFullscreen()
+        source = /** @type {WebGLTexture} */ (level.texture)
+        sw = level.width
+        sh = level.height
+      })
+
+      // up: each level blurred back onto the one above, the wider ones counting for less at a small radius
+      const up = this.programs.ready('bloom-up', [], UP)
+      gl.useProgram(up.program)
+      gl.enable(gl.BLEND)
+      gl.blendFunc(gl.ONE, gl.ONE)
+      const weight = Math.min(1, Math.max(0, settings.radius))
+      for (let i = levels.length - 1; i > 0; i--) {
+        const from = levels[i], to = levels[i - 1]
+        gl.bindFramebuffer(gl.FRAMEBUFFER, to.framebuffer)
+        gl.viewport(0, 0, to.width, to.height)
+        up.set('uSource', from.texture)
+        up.set('uTexel', [1 / from.width, 1 / from.height])
+        up.set('uWeight', weight)
+        this.programs.drawFullscreen()
       }
+      gl.disable(gl.BLEND)
+
+      // the picture with its glow
+      gl.bindFramebuffer(gl.FRAMEBUFFER, output)
+      gl.viewport(0, 0, width, height)
+      const composite = this.programs.ready('bloom-composite', defines, COMPOSITE)
+      gl.useProgram(composite.program)
+      composite.set('uScene', picture)
+      composite.set('uBloom', levels[0].texture)
+      composite.set('uStrength', Math.max(0, settings.strength))
+      composite.set('uToneMapping', tone.toneMapping)
       this.programs.drawFullscreen()
-      source = /** @type {WebGLTexture} */ (level.texture)
-      sw = level.width
-      sh = level.height
     })
-
-    // up: each level blurred back onto the one above, the wider ones counting for less at a small radius
-    const up = this.programs.ready('bloom-up', [], UP)
-    gl.useProgram(up.program)
-    gl.enable(gl.BLEND)
-    gl.blendFunc(gl.ONE, gl.ONE)
-    const weight = Math.min(1, Math.max(0, settings.radius))
-    for (let i = levels.length - 1; i > 0; i--) {
-      const from = levels[i], to = levels[i - 1]
-      gl.bindFramebuffer(gl.FRAMEBUFFER, to.framebuffer)
-      gl.viewport(0, 0, to.width, to.height)
-      up.set('uSource', from.texture)
-      up.set('uTexel', [1 / from.width, 1 / from.height])
-      up.set('uWeight', weight)
-      this.programs.drawFullscreen()
-    }
-    gl.disable(gl.BLEND)
-
-    // the picture with its glow
-    gl.bindFramebuffer(gl.FRAMEBUFFER, output)
-    gl.viewport(0, 0, width, height)
-    const composite = this.programs.ready('bloom-composite', defines, COMPOSITE)
-    gl.useProgram(composite.program)
-    composite.set('uScene', picture)
-    composite.set('uBloom', levels[0].texture)
-    composite.set('uStrength', Math.max(0, settings.strength))
-    composite.set('uExposure', tone.exposure)
-    composite.set('uToneMapping', tone.toneMapping)
-    this.programs.drawFullscreen()
-
-    gl.depthMask(true)
-    gl.enable(gl.DEPTH_TEST)
-    gl.bindVertexArray(null)
   }
 }

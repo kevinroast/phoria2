@@ -149,7 +149,7 @@ describe('a frame drawn in linear light', () => {
     expect(steps.map((d) => d.program.shaders[1].source.includes('uBloom'))).toEqual([true])
     expect(definesOf(steps[0].program)).not.toContain('LINEAR_INPUT')
     const bright = drawLog.find((d) => d.call === 'drawArrays' && d.program.shaders[1].source.includes('uThreshold'))
-    expect(/** @type {any} */ (bright).program.shaders[1].source).toContain('untone(shownAt(c))')
+    expect(/** @type {any} */ (bright).program.shaders[1].source).toContain('untone(inputColor(c))')
   })
 
   it("isn't how a refine sample is drawn: as the plain frame, sRGB - glass blending as on the canvas - averaged in linear light", () => {
@@ -160,13 +160,40 @@ describe('a frame drawn in linear light', () => {
     const [box3, average, encode] = drawLog
     expect(definesOf(box3.program)).not.toContain('LINEAR_OUTPUT')
     // into the average: decoded, then out through the encode
-    expect(average.program.shaders[1].source).toContain('srgbToLinear(c.rgb / c.a) * c.a')
+    expect(average.program.shaders[1].source).toContain('inputColor(c) * c.a')
     expect(definesOf(average.program)).not.toContain('LINEAR_INPUT')
     expect([encode.framebuffer, encode.program.shaders[1].source.includes('linearToSrgb(c.rgb / c.a)')]).toEqual([null, true])
     // held: nothing on the canvas
     drawLog.length = 0
     renderer.renderFrame(collect(scene(), camera()), { accumulate: { index: 1, show: false } })
     expect(drawLog.some((d) => d.framebuffer === null)).toBe(false)
+  })
+
+  it("keeps each renderer's refine average to itself - views sharing a context share its pool", () => {
+    /** @type {string[]} */
+    const names = []
+    const get = TargetPool.prototype.get
+    vi.spyOn(TargetPool.prototype, 'get').mockImplementation(function (/** @type {string} */ name, /** @type {any} */ spec) {
+      names.push(name)
+      return get.call(this, name, spec)
+    })
+    for (let i = 0; i < 2; i++) {
+      const renderer = new WebGLRenderer({ canvas: fakeCanvas(floatGL().gl) })
+      renderer.setSize(64, 48)
+      renderer.renderFrame(collect(scene(), camera()), { accumulate: { index: 0, show: false } })
+    }
+    expect(new Set(names.filter((n) => n.startsWith('refine'))).size).toBe(2)
+  })
+
+  it('shows an average into a target that encodes itself, with no other step: copied there as it is', () => {
+    const { gl, drawLog } = floatGL()
+    const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
+    renderer.setSize(64, 48)
+    const target = makeTarget(gl, { width: 64, height: 48, color: gl.SRGB8_ALPHA8 })
+    renderer.renderFrame(collect(scene(), camera()), { target: { framebuffer: target.framebuffer, width: 64, height: 48, srgb: true }, accumulate: { index: 0, show: true } })
+    const last = drawLog[drawLog.length - 1]
+    expect(last.framebuffer).toBe(target.framebuffer)
+    expect(definesOf(last.program)).toContain('LINEAR_INPUT')
   })
 
   it('without float targets, is drawn as any other frame', () => {

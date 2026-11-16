@@ -10,7 +10,7 @@ import { Lines } from './scene/drawables.js'
 import { Scene } from './scene/Scene.js'
 import { Box3 } from './value/Box3.js'
 import { Mat4 } from './value/Mat4.js'
-import { Vec3 } from './value/Vec3.js'
+import { across, Vec3 } from './value/Vec3.js'
 
 /** @import { DrawItem, FrameDescription, FrameLight } from './frame.js' */
 /** @import { Hit } from './Raycaster.js' */
@@ -310,13 +310,6 @@ export class DebugDraw {
 const X = new Vec3(1, 0, 0), Y = new Vec3(0, 1, 0), Z = new Vec3(0, 0, 1)
 // a box's corners by bit (x, y, z), and the twelve edges between them
 const EDGES = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]]
-
-/** Two unit axes across a direction. @param {Vec3} d @returns {[Vec3, Vec3]} */
-function across(d) {
-  const up = Math.abs(d[1]) < 0.9 ? Y : X
-  const u = d.clone().cross(up).normalize()
-  return [u, d.clone().cross(u).normalize()]
-}
 
 /** p moved s along d, as a new point. @param {ArrayLike<number>} p @param {ArrayLike<number>} d @param {number} s */
 function moved(p, d, s) {

@@ -94,7 +94,6 @@ export class Programs {
     return true
   }
 
-  /** Forget everything - after a lost context. */
   /** Forget every program - after a lost context, when they are already gone. */
   reset() {
     this.#cache.clear()
@@ -105,13 +104,33 @@ export class Programs {
 
   /**
    * Draw one triangle over the whole target with the program in use - a full-screen pass, its corners
-   * made in the vertex shader from the vertex index. Depth, culling and blending are the pass's own.
+   * made in the vertex shader from the vertex index. Depth, culling and blending are the pass's own -
+   * set by fullscreenPasses.
    */
   drawFullscreen() {
     const gl = this.gl
     this.#empty ??= gl.createVertexArray()
     gl.bindVertexArray(this.#empty)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
+  }
+
+  /**
+   * Run full-screen passes: `draw` binds its targets and draws (drawFullscreen), with no depth test
+   * or writes, no culling and no blending - unless it turns blending on. After, the state the scene's
+   * drawing expects again: depth tested and written, no blending, no vertex array bound.
+   * @param {() => void} draw
+   */
+  fullscreenPasses(draw) {
+    const gl = this.gl
+    gl.disable(gl.DEPTH_TEST)
+    gl.disable(gl.CULL_FACE)
+    gl.disable(gl.BLEND)
+    gl.depthMask(false)
+    draw()
+    gl.disable(gl.BLEND)
+    gl.depthMask(true)
+    gl.enable(gl.DEPTH_TEST)
+    gl.bindVertexArray(null)
   }
 
   dispose() {

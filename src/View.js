@@ -6,7 +6,7 @@ import { EASES } from './ease.js'
 import { Raycaster } from './Raycaster.js'
 import { pickArea } from './area.js'
 import { ChangeWatch } from './watch.js'
-import { REVEAL, defaultSamples, jitterFrame, lensFrame, lightSample, noiseShift } from './refine.js'
+import { REVEAL, defaultSamples, lightSample, sampleFrame } from './refine.js'
 import { Box3 } from './value/Box3.js'
 import { Color } from './value/Color.js'
 import { Vec3 } from './value/Vec3.js'
@@ -377,18 +377,43 @@ export class View {
    * @returns {boolean} whether it was drawn complete (nothing still compiling)
    */
   #refineSample(n, wait, show = false) {
+    // the plain frame placed the labels: a sample draws only the picture
+    const frame = this.#collect({ labels: false, lightSample: lightSample(n) })
+    sampleFrame(frame, n, this.camera, this.canvas.width, this.canvas.height)
+    this.#draw(frame, { wait, accumulate: { index: n, show: show || n + 1 >= REVEAL } })
+    return this.renderer.info.compiling === 0
+  }
+
+  /**
+   * What the view draws now: the scene as the camera sees it, lit (by the auto lights, if it has none),
+   * at the view's time, with the hover highlight - the one place a plain frame and a refine sample are
+   * made. @param {{ labels?: boolean, lightSample?: [number, number] }} [options] as collect's
+   * @returns {FrameDescription}
+   */
+  #collect(options) {
     this.scene.updateWorldTree()
-    const frame = collect(this.scene, this.camera, { lightSample: lightSample(n) })
+    const frame = collect(this.scene, this.camera, options)
     if (this.autoLight && frame.lights.length === 0) this.#addAutoLights(frame)
     frame.time = this.time
     frame.highlight = this.#highlightFor(this.#hovered)
-    frame.noiseShift = noiseShift(n)
-    // a camera with an aperture: through a point on its lens, focused on its focal plane
-    const camera = /** @type {any} */ (this.camera)
-    if (camera.aperture > 0) lensFrame(frame, n, camera.aperture, camera.focus)
-    jitterFrame(frame, n, this.canvas.width, this.canvas.height)
-    this.renderer.renderFrame(frame, { wait, accumulate: { index: n, show: show || n + 1 >= REVEAL } })
-    return this.renderer.info.compiling === 0
+    frame.shadowTexels = this.#debug?.shadows === 'texels'
+    return frame
+  }
+
+  /**
+   * Draw a frame, the debug helpers on the end of it while it is drawn - off again after: never
+   * picked, explained or kept in lastFrame.
+   * @param {FrameDescription} frame @param {Parameters<WebGLRenderer['renderFrame']>[1]} options
+   */
+  #draw(frame, options) {
+    const debug = this.#debug && this.#debugDraw
+      ? this.#debugDraw.add(frame, this.#debug, { camera: this.camera, hovered: this.#hovered, bounds: this.scene.boundsFrom(this.camera) })
+      : null
+    this.renderer.renderFrame(frame, options)
+    if (debug) {
+      frame.opaque.length -= debug.opaque
+      frame.transparent.length -= debug.transparent
+    }
   }
 
   /**
@@ -678,24 +703,10 @@ export class View {
       // what is drawn from the preset's direction, not every candidate label set
       else if (!bounds.isEmpty()) this.frame(this.scene)
     }
-    this.scene.updateWorldTree()
-    const frame = collect(this.scene, this.camera)
-    if (this.autoLight && frame.lights.length === 0) this.#addAutoLights(frame)
-    frame.time = this.time
-    frame.highlight = this.#highlightFor(this.#hovered)
-    frame.shadowTexels = this.#debug?.shadows === 'texels'
+    const frame = this.#collect()
     this.#occlude(frame)
-    // debug helpers go on the end of the frame for drawing, and come off again after: never picked,
-    // explained or kept in lastFrame
-    const debug = this.#debug && this.#debugDraw
-      ? this.#debugDraw.add(frame, this.#debug, { camera: this.camera, hovered: this.#hovered, bounds: this.scene.boundsFrom(this.camera) })
-      : null
     const started = performance.now()
-    this.renderer.renderFrame(frame, { wait })
-    if (debug) {
-      frame.opaque.length -= debug.opaque
-      frame.transparent.length -= debug.transparent
-    }
+    this.#draw(frame, { wait })
     if (this.#debugDraw) {
       const now = performance.now()
       // time between frames drawn one after another, smoothed; after a pause, none
@@ -1259,8 +1270,8 @@ export class View {
       }
     } finally {
       // the next frame comes even if this one threw - the error still reaches the console, but one
-      // bad handler doesn't freeze the view. In manual mode, sleep until something asks for a frame
-      if (this.renderMode !== 'manual' || (this.#running && this.#onFrame) || this.#dirty || this.#pickPending || this.#refining()) this.#schedule()
+      // bad handler doesn't freeze the view. In manual mode it sleeps until something asks for a frame
+      this.#schedule()
     }
   }
 

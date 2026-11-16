@@ -114,6 +114,8 @@ const keyOf = (spec) => `${spec.width}x${spec.height}|${spec.color === undefined
 /** A context's render targets, by name and description. */
 export class TargetPool {
   /** @type {Map<string, { target: Target, used: number }>} */ #entries = new Map()
+  /** @type {boolean | undefined} */ #float
+  /** @type {number | undefined} */ #samples
   /** Frames drawn on the context, as the pool counts them. */
   frame = 0
 
@@ -134,6 +136,19 @@ export class TargetPool {
     if (!entry) this.#entries.set(key, entry = { target: makeTarget(this.gl, spec), used: this.frame })
     entry.used = this.frame
     return entry.target
+  }
+
+  /**
+   * Can float colour (RGBA16F, RG16F) be drawn to here? Asking turns EXT_color_buffer_float on; asked
+   * once, and again after a lost context.
+   */
+  get float() {
+    return (this.#float ??= !!this.gl.getExtension('EXT_color_buffer_float'))
+  }
+
+  /** How many samples a multisampled target takes: 4, or fewer where the GPU allows fewer. */
+  get samples() {
+    return (this.#samples ??= Math.min(4, this.gl.getParameter(this.gl.MAX_SAMPLES) || 4))
   }
 
   /** How many targets are kept now. */
@@ -158,6 +173,7 @@ export class TargetPool {
   /** Forget every target - after a lost context, when they are already gone. */
   reset() {
     this.#entries.clear()
+    this.#float = this.#samples = undefined
   }
 
   /** Free every target. */

@@ -3,7 +3,7 @@
 // with soft shadows exact rather than estimated. What differs from one sample to the next:
 //   - where in its pixel the camera looks: the projection shifted by under a pixel, spread by a tent
 //     filter (a picture's resolve, not a box's hard edge), and
-//   - where on each casting light its shadow is drawn from (frame.js sampleLight) - a sun's or a
+//   - where on each casting light its shadow is drawn from (sampleLight) - a sun's or a
 //     rect light's; a spot or point light keeps its soft shadow, and
 //   - where soft shadows read their blue noise, so their grain averages away, and
 //   - with a camera's aperture, where on its lens it looks from: a thin lens, the eye moved across it
@@ -12,10 +12,12 @@
 // Each comes from its own Halton sequence (2 and 3 the pixel, 5 and 7 the light, 11 and 13 the noise,
 // 17 and 19 the lens), so they never fall into step: one sequence shared between them would draw the
 // same lattice every time, and averaging never removes a lattice.
+import { BLUE_NOISE_SIZE, SOFT_SPREAD, softnessOf } from './shadow.js'
 import { Mat4 } from './value/Mat4.js'
-import { Vec3 } from './value/Vec3.js'
+import { across, Vec3 } from './value/Vec3.js'
 
-/** @import { FrameDescription } from './frame.js' */
+/** @import { FrameDescription, FrameLight } from './frame.js' */
+/** @import { Camera } from './scene/cameras.js' */
 
 /** Samples the average holds before it is shown in place of the plain frame: fewer are a few hard shadows overlaid. */
 export const REVEAL = 16
@@ -87,11 +89,7 @@ export function lensFrame(frame, n, aperture, focus) {
   view[12] -= dx
   view[13] -= dy
   // ...and the picture moved back by as much at the focal plane: there, w is `focus`
-  const sx = (p[0] * dx) / focus, sy = (p[5] * dy) / focus, projection = p.clone()
-  for (let c = 0; c < 4; c++) {
-    projection[c * 4] += sx * p[c * 4 + 3]
-    projection[c * 4 + 1] += sy * p[c * 4 + 3]
-  }
+  const projection = shear(p, (p[0] * dx) / focus, (p[5] * dy) / focus)
   frame.camera = { ...frame.camera, view, projection, viewProjection: new Mat4().multiplyMatrices(projection, view), position }
 }
 
@@ -111,13 +109,13 @@ export function lightSample(n) {
 }
 
 /**
- * Sample n's shift of soft shadows' 64 x 64 blue-noise tile, in texels: from Halton (11, 13), its own
+ * Sample n's shift of soft shadows' blue-noise tile, in texels: from Halton (11, 13), its own
  * sequences again.
  * @param {number} n from 0
  * @returns {[number, number]}
  */
 export function noiseShift(n) {
-  return [Math.floor(halton(n + 1, 11) * 64), Math.floor(halton(n + 1, 13) * 64)]
+  return [Math.floor(halton(n + 1, 11) * BLUE_NOISE_SIZE), Math.floor(halton(n + 1, 13) * BLUE_NOISE_SIZE)]
 }
 
 /**
@@ -139,14 +137,59 @@ export function pixelShift(n) {
 export function jitterFrame(frame, n, width, height) {
   const [dx, dy] = pixelShift(n)
   const tx = (2 * dx) / width, ty = (2 * dy) / height
-  /** @param {import('./value/Mat4.js').Mat4} m */
-  const shift = (m) => {
-    const out = m.clone()
-    for (let c = 0; c < 4; c++) {
-      out[c * 4] += tx * m[c * 4 + 3]
-      out[c * 4 + 1] += ty * m[c * 4 + 3]
-    }
-    return out
+  frame.camera = { ...frame.camera, projection: shear(frame.camera.projection, tx, ty), viewProjection: shear(frame.camera.viewProjection, tx, ty) }
+}
+
+/**
+ * A projection that moves what it draws across the screen by (tx, ty) after the perspective divide -
+ * x and y gaining tx and ty times w - as a new matrix.
+ * @param {Mat4} m @param {number} tx @param {number} ty
+ */
+function shear(m, tx, ty) {
+  const out = m.clone()
+  for (let c = 0; c < 4; c++) {
+    out[c * 4] += tx * m[c * 4 + 3]
+    out[c * 4 + 1] += ty * m[c * 4 + 3]
   }
-  frame.camera = { ...frame.camera, projection: shift(frame.camera.projection), viewProjection: shift(frame.camera.viewProjection) }
+  return out
+}
+
+/**
+ * Make a collected frame refine sample n: its pixel shift, its blue-noise shift and - with a camera
+ * that has an aperture - its point on the lens. (Its lights are moved as it is collected:
+ * collect's lightSample, with lightSample(n).)
+ * @param {FrameDescription} frame @param {number} n from 0 @param {Camera} camera
+ * @param {number} width @param {number} height the picture, in pixels
+ */
+export function sampleFrame(frame, n, camera, width, height) {
+  frame.noiseShift = noiseShift(n)
+  const lens = /** @type {{ aperture?: number, focus?: number }} */ (camera)
+  if (lens.aperture && lens.aperture > 0) lensFrame(frame, n, lens.aperture, /** @type {number} */ (lens.focus))
+  jitterFrame(frame, n, width, height)
+}
+
+/**
+ * A refine sample's view of a casting light: moved to a point across its size, its shadow sharp
+ * from there. Averaged over the samples, the shadows make the penumbra a light that size casts -
+ * exactly, where soft shadows estimate it. A rect light's own size; a sun's from its shadowSoftness,
+ * an angle (none: it stays sharp), its direction tilted with it. A spot or point light keeps its soft
+ * shadow: its edge spreads with the gap whatever the distance to what casts - no one size of light
+ * does that (sized for the garden, a lantern's own bars, a hand's width from the flame, blurred
+ * away) - and the samples average its grain away instead (sampleFrame shifts the blue noise).
+ * @param {FrameLight} light changed in place - a frame's own copy
+ * @param {[number, number]} sample in the unit square
+ */
+export function sampleLight(light, [u, v]) {
+  if (light.kind === 'rect') {
+    const hw = /** @type {Vec3} */ (light.halfWidth), hh = /** @type {Vec3} */ (light.halfHeight)
+    light.shadowFrom = /** @type {Vec3} */ (light.position).clone().add(hw.clone().multiplyScalar(2 * u - 1)).add(hh.clone().multiplyScalar(2 * v - 1))
+    light.hardShadow = true
+    return
+  }
+  const softness = softnessOf(light)
+  if (light.kind !== 'directional' || !(softness > 0)) return
+  light.shadowSoftness = 0
+  const [x, y] = onDisc(u, v)
+  const d = /** @type {Vec3} */ (light.direction), [a, b] = across(d), r = SOFT_SPREAD * softness
+  light.direction = d.clone().add(a.multiplyScalar(x * r)).add(b.multiplyScalar(y * r)).normalize()
 }

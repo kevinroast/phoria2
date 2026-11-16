@@ -297,6 +297,18 @@ export function hiddenInstance(m, i) {
 }
 
 /**
+ * Room for `count` instance matrices: the first `from` copied from `keep`, the rest identity - just
+ * the diagonal, written straight in.
+ * @param {number} count @param {number} from @param {Float32Array} [keep]
+ */
+function identities(count, from, keep) {
+  const m = new Float32Array(count * 16)
+  if (keep) m.set(keep.subarray(0, from * 16))
+  for (let o = from * 16; o < m.length; o += 16) m[o] = m[o + 5] = m[o + 10] = m[o + 15] = 1
+  return m
+}
+
+/**
  * Many copies of one geometry and material, drawn together. Set each copy with setInstance().
  * Picking reports which instance was hit. An instance scaled to 0 is hidden - it draws nothing, and
  * framing, culling, shadows and labels leave it out - so a pool of instances can keep spares.
@@ -305,7 +317,7 @@ export class InstancedMesh extends Mesh {
   static type = 'instanced-mesh'
   static get OPTIONS() { return [...DRAWABLE_OPTIONS, 'count', 'instances', 'instanceMatrices', 'instanceColors', 'labels'] }
 
-  /** How many instances are drawn (at most the count it was created with). */
+  /** How many instances are drawn (at most the count it was created with - its instanceMatrices' room). */
   count = 0
   /** A 4x4 matrix per instance. @type {Float32Array} */
   instanceMatrices
@@ -327,10 +339,7 @@ export class InstancedMesh extends Mesh {
     const count = options.count ?? options.instances?.length ?? (Array.isArray(options.data) ? options.data.length : undefined)
     if (!Number.isInteger(count) || count < 0) fail('InstancedMesh', `'count' must be a whole number, got ${describe(count)}`)
     this.count = count
-    this.instanceMatrices = new Float32Array(count * 16)
-    // identity matrices: just the diagonal, written straight in
-    const m = this.instanceMatrices
-    for (let o = 0; o < m.length; o += 16) m[o] = m[o + 5] = m[o + 10] = m[o + 15] = 1
+    this.instanceMatrices = identities(count, 0)
     options.instances?.forEach((inst, i) => this.setInstance(i, inst))
     if (options.instanceMatrices) {
       if (options.instanceMatrices.length !== count * 16) fail('InstancedMesh', `'instanceMatrices' needs ${count * 16} numbers (16 per instance)`)
@@ -382,6 +391,26 @@ export class InstancedMesh extends Mesh {
    * @returns {this}
    */
   needsUpdate() {
+    this.version++
+    return this
+  }
+
+  /**
+   * @internal Make room for at least `capacity` instances, keeping the ones there - for marks that
+   * grow with their data, so the node itself (its material, handlers, place in the scene) stays the
+   * same. The new room holds identity matrices, and white where there are colours.
+   * @param {number} capacity
+   * @returns {this}
+   */
+  reserve(capacity) {
+    const had = this.instanceMatrices.length / 16
+    if (capacity <= had) return this
+    this.instanceMatrices = identities(capacity, had, this.instanceMatrices)
+    if (this.instanceColors) {
+      const colors = new Float32Array(capacity * 3).fill(1)
+      colors.set(this.instanceColors)
+      this.instanceColors = colors
+    }
     this.version++
     return this
   }

@@ -1,7 +1,8 @@
-// Where a directional light's shadow map looks: fitted every frame to what casts shadows, so there
-// is no shadow camera to configure. In the light's view a shadow only travels along the depth,
-// so the casters' extent across the view is all the map has to cover; the depth runs on to the
-// furthest receiver.
+// Where lights' shadow maps look: fitted every frame to what casts shadows, so there is no shadow
+// camera to configure. In a directional light's view a shadow only travels along the depth, so the
+// casters' extent across the view is all the map has to cover; the depth runs on to the furthest
+// receiver. Spot, rect-area and point lights fit their cones and cubes the same way. Also what soft
+// shadows are made of, for the renderer and refine alike.
 import * as mat4 from './math/mat4.js'
 import { Mat4 } from './value/Mat4.js'
 
@@ -9,6 +10,19 @@ import { Mat4 } from './value/Mat4.js'
 
 /** Shadow map size in texels. */
 export const SHADOW_MAP_SIZE = 2048
+
+/**
+ * Soft shadows: at shadowSoftness 1 the edge spreads this much of the gap from caster to surface
+ * either way - four tenths across, a large studio light; for a sun, the angle a light that wide
+ * spans, which refine tilts its direction across.
+ */
+export const SOFT_SPREAD = 0.2
+
+/** A light's shadowSoftness, held to 0-1 - set on the light directly it isn't checked. @param {{ shadowSoftness?: number }} light */
+export const softnessOf = (light) => Math.min(1, Math.max(0, light.shadowSoftness ?? 0))
+
+/** Soft shadows' blue-noise tile is this many texels square (a power of two: the shader wraps by mask). */
+export const BLUE_NOISE_SIZE = 64
 
 /**
  * @typedef {object} ShadowFit

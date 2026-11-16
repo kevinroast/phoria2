@@ -2,7 +2,7 @@ import * as mat3 from '../math/mat3.js'
 import * as mat4 from '../math/mat4.js'
 import { Geometry } from '../geometry/Geometry.js'
 import { Material } from '../material/Material.js'
-import { CLIP_ONLY_FRAGMENT, COMMON, ENCODE_FRAGMENT, FULLSCREEN_VERTEX, MESH_VERTEX } from './shaders.js'
+import { ACCUMULATE_FRAGMENT, CLIP_ONLY_FRAGMENT, ENCODE_FRAGMENT, FULLSCREEN_VERTEX, MESH_VERTEX } from './shaders.js'
 import { hookFailed, hookFor, setHookUniforms } from './hooks.js'
 import { placementDefines, setShapeUniforms, shapeDefines } from './shape.js'
 import { featureDefines, secondUvDefines, setFeatureUniforms } from '../material/features.js'
@@ -13,6 +13,7 @@ import { GLContext } from './context.js'
 import { uvMatrix } from './resources.js'
 import { blit } from './targets.js'
 import { drawKind } from '../scene/kinds.js'
+import { lightBehind, TONE_MAPPING } from './tone.js'
 
 /** @import { FrameDescription, DrawItem, FrameLight, FrameCap } from '../frame.js' */
 /** @import { Scene } from '../scene/Scene.js' */
@@ -193,67 +194,16 @@ export function groundShadowSettings(owner, value) {
   return effectSettings(owner, 'groundShadow', value, GROUND_SHADOW, GROUND_SHADOW_HINTS, { opacity: [0, 1], softness: [0, 1], height: [0, Infinity], size: [0, Infinity] })
 }
 
-const TONE_MAPPING = { none: 0, aces: 1, neutral: 2 }
 // soft shadows' blue noise, where a plain frame reads it
 const NO_SHIFT = [0, 0]
-// as bloom's (bloom.js): what maps nearer white than this counts as this
-const LIGHT_PEAK = 16
-
-/**
- * The light, before the exposure, that a tone map turns into this colour - the tone maps in shaders.js
- * run backwards, as bloom's `untone` runs them. A channel at white, which they never quite reach,
- * counts as LIGHT_PEAK.
- * @param {ArrayLike<number>} c linear colour @param {number} toneMapping @param {number} exposure
- * @returns {number[]}
- */
-export function lightBehind(c, toneMapping, exposure) {
-  let out = [Math.max(0, c[0]), Math.max(0, c[1]), Math.max(0, c[2])]
-  if (toneMapping === 1) {
-    // ACES (Narkowicz): its rational curve solved for the light, a channel at a time
-    out = out.map((o) => {
-      o = Math.min(o, 1.0329)
-      const a = Math.min(2.43 * o - 2.51, -1e-4), b = 0.59 * o - 0.03, k = 0.14 * o
-      return Math.min((-b - Math.sqrt(Math.max(b * b - 4 * a * k, 0))) / (2 * a), LIGHT_PEAK)
-    })
-  } else if (toneMapping === 2) {
-    // Khronos PBR Neutral: its highlight compression, then its toe
-    const top = Math.max(...out)
-    if (top > 0.8) {
-      const peak = top < 1 ? Math.min(0.6 + 0.04 / (1 - top), LIGHT_PEAK) : LIGHT_PEAK
-      const newPeak = 1 - 0.04 / (peak - 0.6)
-      const g = 1 - 1 / (0.15 * (peak - newPeak) + 1)
-      out = out.map((v) => Math.max((Math.min(v, newPeak) - g * newPeak) / (1 - g), 0) * (peak / newPeak))
-    }
-    const y = Math.min(...out)
-    const offset = y < 0.04 ? 0.4 * Math.sqrt(y) - y : 0.04
-    out = out.map((v) => v + offset)
-  }
-  const e = Math.max(exposure, 1e-6)
-  return out.map((v) => v / e)
-}
 /** @type {import('./passes.js').ShadowMap[]} */
 const NO_SHADOWS = []
+// renderers made, so each keeps its own refine average in a shared context's pool
+let renderers = 0
 // the step out of linear light, at the end of a linear frame's chain
 const ENCODE = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, ENCODE_FRAGMENT])
-// a refine sample into the running average, the blend unit weighting it: in linear light, so edges
-// and penumbrae average as light does. The sample was drawn as the plain frame is, as sRGB - glass
-// and other see-through things blending just as they do on the canvas - unless the frame is linear
-// (LINEAR_INPUT); premultiplied in, premultiplied out
-const ACCUMULATE = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, /* glsl */ `
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uSource;
-out vec4 fragColor;
-${COMMON}
-void main() {
-  vec4 c = texture(uSource, vUv);
-#ifdef LINEAR_INPUT
-  fragColor = c;
-#else
-  fragColor = c.a > 0.0 ? vec4(srgbToLinear(c.rgb / c.a) * c.a, c.a) : vec4(0.0);
-#endif
-}
-`])
+// a refine sample into the running average
+const ACCUMULATE = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, ACCUMULATE_FRAGMENT])
 // counting a cap's faces into the stencil: the solids' surfaces, colour and depth left alone
 const CLIP_MASK = /** @type {[string, string]} */ ([MESH_VERTEX, CLIP_ONLY_FRAGMENT])
 // a cap: a square on the plane, two units across, facing +Y until it is placed
@@ -373,6 +323,8 @@ export class WebGLRenderer {
   /** Model-view for sorting points back to front. */
   #modelView = new Float32Array(16)
   /** A cap's material, by colour, so each colour compiles and uploads once. @type {Map<number, Material>} */ #capMaterials = new Map()
+  /** Its refine average's name in the context's pool - kept from frame to frame, so never another view's. */
+  #refineTarget = `refine-${++renderers}`
 
   /** @param {WebGLRendererOptions} options */
   constructor(options) {
@@ -581,7 +533,7 @@ export class WebGLRenderer {
     for (const item of frame.transparent) for (const [, t] of item.material.allTextures) if (/** @type {any} */ (t).isRenderTexture) shown.add(/** @type {RenderTexture} */ (t))
     if (!shown.size) return
     const gl = this.gl
-    const samples = gl.getContextAttributes()?.antialias ? Math.min(4, gl.getParameter(gl.MAX_SAMPLES) || 4) : 0
+    const samples = this.#samples
     for (const rt of shown) {
       // when it is due: each frame, every nth, or once and after each needsUpdate()
       const due = rt.drawn.version < 0 || (rt.update === 'frame' ? true : rt.update === 'manual' ? rt.drawn.version !== rt.version : rt.drawn.frames + 1 >= rt.update)
@@ -643,7 +595,7 @@ export class WebGLRenderer {
       passes.time = frame.time ?? 0
       passes.cameraPosition = frame.camera.position
     }
-    const glows = !!this.#bloom && !plain, float = !!gl.getExtension('EXT_color_buffer_float')
+    const glows = !!this.#bloom && !plain, float = gpu.targets.float
     /** @type {FrameState} */
     const state = {
       // in linear light: into float targets encoded at the end, or into a target that encodes itself
@@ -684,15 +636,16 @@ export class WebGLRenderer {
     const bloomSettings = this.#bloom
     // a refine sample's average is in linear light, whatever its samples were drawn in
     const chainLinear = state.linear || !!accumulate
-    if (bloom && bloomSettings) steps.push({ run: (picture, output) => bloom.apply(picture, output, width, height, bloomSettings, { exposure: this.exposure, toneMapping: TONE_MAPPING[this.toneMapping], linear: chainLinear }), linear: chainLinear })
+    if (bloom && bloomSettings) steps.push({ run: (picture, output) => bloom.apply(picture, output, width, height, bloomSettings, { toneMapping: TONE_MAPPING[this.toneMapping], linear: chainLinear }), linear: chainLinear })
     // (a target that encodes itself needs no step for it)
     if (chainLinear && !target?.srgb && shows) steps.push({ run: (picture, output) => this.#encode(picture, output, width, height), linear: false })
     if (fxaa) steps.push({ run: (picture, output) => fxaa.fxaa(picture, output, width, height), linear: false })
+    // a shown average with nothing else to do (into a target that encodes itself): copied there as it is
+    if (accumulate && shows && !steps.length) steps.push({ run: (picture, output) => this.#pass('accumulate', ['LINEAR_INPUT'], ACCUMULATE, picture, output, width, height), linear: true })
     const output = target ? target.framebuffer : null
-    // bloom works in light, so what is brighter than white glows more: the picture it reads is drawn into
-    // a float target - as sRGB, blended as on the canvas, unless the frame is linear - to keep what
-    // is past white (additive points piling up) and the tone maps' last steps to white apart
-    // float to keep what is past white: for bloom, and for a refine sample's light
+    // a float picture, to keep what is past white apart from the tone maps' last steps to it - for bloom,
+    // which works in light (what is brighter than white glows more: additive points piling up), and
+    // for a refine sample's light. Drawn as sRGB, blended as on the canvas, unless the frame is linear
     const scene = steps.length || accumulate ? this.#sceneTargets(width, height, state.linear || ((!!bloom || !!accumulate) && float)) : null
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, scene ? scene.draw.framebuffer : output)
@@ -742,7 +695,12 @@ export class WebGLRenderer {
 
   /** Can refine samples be averaged here - can float targets be drawn to? */
   get canRefine() {
-    return !this.#gpu.lost && !!this.gl.getExtension('EXT_color_buffer_float')
+    return !this.#gpu.lost && this.#gpu.targets.float
+  }
+
+  /** Samples a picture drawn off the canvas takes - as the canvas: none when it isn't antialiased. */
+  get #samples() {
+    return this.gl.getContextAttributes()?.antialias ? this.#gpu.targets.samples : 0
   }
 
   /**
@@ -754,23 +712,12 @@ export class WebGLRenderer {
    */
   #accumulate(picture, index, width, height, linear) {
     const gl = this.gl
-    const average = this.#gpu.targets.get('refine', { width, height, color: gl.RGBA16F })
-    gl.bindFramebuffer(gl.FRAMEBUFFER, average.framebuffer)
-    gl.viewport(0, 0, width, height)
-    gl.disable(gl.DEPTH_TEST)
-    gl.disable(gl.CULL_FACE)
-    gl.depthMask(false)
-    gl.enable(gl.BLEND)
-    gl.blendColor(0, 0, 0, 1 / (index + 1))
-    gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA)
-    const program = this.#gpu.programs.ready('accumulate', linear ? ['LINEAR_INPUT'] : [], ACCUMULATE)
-    gl.useProgram(program.program)
-    program.set('uSource', picture)
-    this.#gpu.programs.drawFullscreen()
-    gl.disable(gl.BLEND)
-    gl.depthMask(true)
-    gl.enable(gl.DEPTH_TEST)
-    gl.bindVertexArray(null)
+    const average = this.#gpu.targets.get(this.#refineTarget, { width, height, color: gl.RGBA16F })
+    this.#pass('accumulate', linear ? ['LINEAR_INPUT'] : [], ACCUMULATE, picture, average.framebuffer, width, height, () => {
+      gl.enable(gl.BLEND)
+      gl.blendColor(0, 0, 0, 1 / (index + 1))
+      gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA)
+    })
     return /** @type {WebGLTexture} */ (average.texture)
   }
 
@@ -784,7 +731,7 @@ export class WebGLRenderer {
   #sceneTargets(width, height, linear) {
     const gl = this.gl, pool = this.#gpu.targets
     const color = linear ? gl.RGBA16F : gl.RGBA8
-    const samples = gl.getContextAttributes()?.antialias ? Math.min(4, gl.getParameter(gl.MAX_SAMPLES) || 4) : 0
+    const samples = this.#samples
     const picture = pool.get('scene', { width, height, color, depth: samples ? null : 'stencil' })
     const draw = samples ? pool.get('scene-multisampled', { width, height, color, depth: 'stencil', samples }) : picture
     return { draw, picture }
@@ -812,20 +759,26 @@ export class WebGLRenderer {
    * @param {WebGLTexture} picture @param {WebGLFramebuffer | null} output @param {number} width @param {number} height
    */
   #encode(picture, output, width, height) {
-    const gl = this.gl
-    gl.bindFramebuffer(gl.FRAMEBUFFER, output)
-    gl.viewport(0, 0, width, height)
-    gl.disable(gl.DEPTH_TEST)
-    gl.disable(gl.BLEND)
-    gl.disable(gl.CULL_FACE)
-    gl.depthMask(false)
-    const program = this.#gpu.programs.ready('encode', [], ENCODE)
-    gl.useProgram(program.program)
-    program.set('uSource', picture)
-    this.#gpu.programs.drawFullscreen()
-    gl.depthMask(true)
-    gl.enable(gl.DEPTH_TEST)
-    gl.bindVertexArray(null)
+    this.#pass('encode', [], ENCODE, picture, output, width, height)
+  }
+
+  /**
+   * One full-screen pass reading a picture (uSource) into `output`.
+   * @param {string} name @param {string[]} defines @param {[string, string]} sources
+   * @param {WebGLTexture} picture @param {WebGLFramebuffer | null} output @param {number} width @param {number} height
+   * @param {() => void} [blend] turns blending on, for a pass blended into what `output` holds
+   */
+  #pass(name, defines, sources, picture, output, width, height, blend) {
+    const gl = this.gl, programs = this.#gpu.programs
+    programs.fullscreenPasses(() => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, output)
+      gl.viewport(0, 0, width, height)
+      blend?.()
+      const program = programs.ready(name, defines, sources)
+      gl.useProgram(program.program)
+      program.set('uSource', picture)
+      programs.drawFullscreen()
+    })
   }
 
   /**

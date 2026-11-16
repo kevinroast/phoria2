@@ -19,6 +19,14 @@ export function stackKey(ch, row, v) {
   return `${xv instanceof Date ? xv.getTime() : xv}|${ch.z ? ch.z.get(row) : ''}|${v < 0 ? '-' : '+'}`
 }
 
+/**
+ * Room in an instanced mark for n items, twice that when it grows - the same node, so its styling
+ * and handlers stay. @param {InstancedMesh} mesh @param {number} n
+ */
+export function grow(mesh, n) {
+  if (n > mesh.instanceMatrices.length / 16) mesh.reserve(n * 2)
+}
+
 /** @import { Node } from '../scene/Node.js' */
 /** @import { Scale, ColorScale } from './scales.js' */
 /** @import { Channel, normalise } from './spec.js' */
@@ -79,7 +87,8 @@ const pos = (s, c, row) => (s && c ? s(c.get(row)) : 0)
 
 /** @param {MarkContext} ctx @returns {Mark} */
 export function barMark(ctx) {
-  let mesh = makeBars(64, ctx)
+  const mesh = new InstancedMesh({ geometry: boxGeometry(1), material: { roughness: 0.55 }, count: 64, labels: labelsOf(ctx, 'above') })
+  mesh.count = 0
   const mark = {
     nodes: [mesh],
     layout(rows) {
@@ -112,14 +121,7 @@ export function barMark(ctx) {
     },
     apply(state, target) {
       const n = state.length / target.stride
-      if (n > mesh.instanceMatrices.length / 16) {
-        // more bars than room: a bigger mesh, swapped in place
-        const bigger = makeBars(n * 2, ctx)
-        mesh.parent?.add(bigger)
-        mesh.parent?.remove(mesh)
-        mesh.dispose()
-        mark.nodes[0] = mesh = bigger
-      }
+      grow(mesh, n)
       mesh.count = n
       mesh.data = target.rows
       for (let i = 0; i < n; i++) {
@@ -132,13 +134,6 @@ export function barMark(ctx) {
     },
   }
   return mark
-}
-
-/** @param {number} capacity @param {MarkContext} ctx */
-function makeBars(capacity, ctx) {
-  const mesh = new InstancedMesh({ geometry: boxGeometry(1), material: { roughness: 0.55 }, count: capacity, labels: labelsOf(ctx, 'above') })
-  mesh.count = 0
-  return mesh
 }
 
 /** Keys for transitions: the key channel, an id field, or nothing (match by order). @param {MarkContext} ctx @param {any[]} rows */
@@ -158,7 +153,7 @@ export function pointMark(ctx) {
   const opacity = ctx.spec.channels.opacity?.value
   const material = { roughness: 0.4, ...(opacity !== undefined ? { opacity } : {}) }
   /** @type {any} */
-  let node = sized
+  const node = sized
     ? new InstancedMesh({ geometry: icosphere({ radius: 1, detail: 1 }), material, count: 64, labels: labelsOf(ctx, 'above') })
     // dots with a darker rim, so each one reads where they crowd together - drawn furthest first, so
     // each blends over the ones behind it
@@ -180,12 +175,7 @@ export function pointMark(ctx) {
       const n = state.length / target.stride
       node.data = target.rows
       if (sized) {
-        if (n > node.instanceMatrices.length / 16) {
-          const bigger = new InstancedMesh({ geometry: node.geometry, material: node.material, count: n * 2, labels: node.labels })
-          node.parent?.add(bigger)
-          node.parent?.remove(node)
-          mark.nodes[0] = node = bigger
-        }
+        grow(node, n)
         node.count = n
         for (let i = 0; i < n; i++) {
           const [x, y, z, s, r, g, b] = state.subarray(i * 7, i * 7 + 7)
@@ -516,7 +506,7 @@ function arrowGeometry() {
  */
 export function vectorMark(ctx) {
   /** @type {any} */
-  let node = new InstancedMesh({ geometry: arrowGeometry(), material: { roughness: 0.45 }, count: 64 })
+  const node = new InstancedMesh({ geometry: arrowGeometry(), material: { roughness: 0.45 }, count: 64 })
   node.count = 0
   const mark = {
     nodes: [node],
@@ -542,12 +532,7 @@ export function vectorMark(ctx) {
     },
     apply(state, target) {
       const n = state.length / target.stride
-      if (n > node.instanceMatrices.length / 16) {
-        const bigger = new InstancedMesh({ geometry: node.geometry, material: node.material, count: n })
-        node.parent?.add(bigger)
-        node.parent?.remove(node)
-        mark.nodes[0] = node = bigger
-      }
+      grow(node, n)
       node.count = n
       node.data = target.rows
       for (let i = 0; i < n; i++) {

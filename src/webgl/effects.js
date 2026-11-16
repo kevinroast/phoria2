@@ -226,8 +226,6 @@ const GROUND_BLUR_SIZE = GROUND_SIZE / 2
 const GROUND_BLUR_RADIUS = 32
 
 export class Effects {
-  /** Rendering to float textures: occlusion keeps its depth, for an upsample that keeps edges. */
-  floatTargets = false
   /** Where the solids were last: the ground shadow keeps its square until they move well out of it. @type {[number, number, number] | null} */ #square = null
   /** @type {WebGLVertexArrayObject | null} */ #empty = null
 
@@ -243,7 +241,6 @@ export class Effects {
   reset() {
     this.#empty = null
     this.#square = null
-    this.floatTargets = !!this.gl.getExtension('EXT_color_buffer_float')
   }
 
   /**
@@ -258,7 +255,7 @@ export class Effects {
   occlusion(frame, passes, settings, width, height, sceneSize) {
     const gl = this.gl
     const w = Math.max(1, Math.ceil(width / 2)), h = Math.max(1, Math.ceil(height / 2))
-    const format = this.floatTargets ? gl.RG16F : gl.RGBA8
+    const format = this.targets.float ? gl.RG16F : gl.RGBA8
     const normals = this.targets.get('ao-normals', { width: w, height: h, filter: 'nearest', depth: 'texture' })
     const found = this.targets.get('ao', { width: w, height: h, color: format })
     const blurred = this.targets.get('ao-blurred', { width: w, height: h, color: format })
@@ -295,7 +292,7 @@ export class Effects {
     this.programs.drawFullscreen()
 
     // blurred across, then down
-    const defines = this.floatTargets ? ['DEPTH'] : []
+    const defines = this.targets.float ? ['DEPTH'] : []
     const blur = this.programs.ready('ssao-blur', defines, OCCLUSION_BLUR)
     gl.useProgram(blur.program)
     gl.bindFramebuffer(gl.FRAMEBUFFER, blurred.framebuffer)
@@ -311,7 +308,7 @@ export class Effects {
     gl.enable(gl.DEPTH_TEST)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     return {
-      texture: /** @type {WebGLTexture} */ (found.texture), depth: this.floatTargets, scale: [1 / width, 1 / height],
+      texture: /** @type {WebGLTexture} */ (found.texture), depth: this.targets.float, scale: [1 / width, 1 / height],
       viewZ: [view[2], view[6], view[10], view[14]],
     }
   }
@@ -410,20 +407,15 @@ export class Effects {
    */
   fxaa(picture, output, width, height) {
     const gl = this.gl
-    gl.bindFramebuffer(gl.FRAMEBUFFER, output)
-    gl.viewport(0, 0, width, height)
-    gl.disable(gl.DEPTH_TEST)
-    gl.disable(gl.BLEND)
-    gl.disable(gl.CULL_FACE)
-    gl.depthMask(false)
-    const program = this.programs.ready('fxaa', [], FXAA)
-    gl.useProgram(program.program)
-    program.set('uSource', picture)
-    program.set('uTexel', [1 / width, 1 / height])
-    this.programs.drawFullscreen()
-    gl.depthMask(true)
-    gl.enable(gl.DEPTH_TEST)
-    gl.bindVertexArray(null)
+    this.programs.fullscreenPasses(() => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, output)
+      gl.viewport(0, 0, width, height)
+      const program = this.programs.ready('fxaa', [], FXAA)
+      gl.useProgram(program.program)
+      program.set('uSource', picture)
+      program.set('uTexel', [1 / width, 1 / height])
+      this.programs.drawFullscreen()
+    })
   }
 
   /**

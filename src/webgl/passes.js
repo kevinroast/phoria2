@@ -1,21 +1,17 @@
 // The renderer's extra passes: HDR environments (prefiltered once into a mip chain of blurrier
-// reflections, plus spherical harmonics for diffuse light), panorama backgrounds, and the
-// directional shadow map. Each keeps its GL objects and frees them on reset() after a lost context.
+// reflections, plus spherical harmonics for diffuse light), panorama backgrounds, the shadow maps
+// (directional, spot and rect-area tiles, point cubes), outlines and the depth ambient occlusion
+// reads. Each keeps its GL objects, and forgets them on reset() after a lost context.
 import * as mat3 from '../math/mat3.js'
 import * as mat4 from '../math/mat4.js'
 import { irradianceSH } from '../irradiance.js'
-import { POINT_SHADOW_SIZE, SHADOW_MAP_SIZE, SPOT_ATLAS_SIZE } from '../shadow.js'
+import { BLUE_NOISE_SIZE, POINT_SHADOW_SIZE, SHADOW_MAP_SIZE, SOFT_SPREAD, softnessOf, SPOT_ATLAS_SIZE } from '../shadow.js'
 import { CLIP, CLIP_ONLY_FRAGMENT, COMMON, CUTOUT, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
 import { setHookUniforms } from './hooks.js'
 import { setShapeUniforms, shapeDefines } from './shape.js'
 import { blit } from './targets.js'
 import { BLUE_NOISE } from './blue-noise-data.js'
 
-// soft shadows: at shadowSoftness 1 the edge spreads this much of the gap from caster to surface
-// either way - four tenths across, a large studio light
-const SOFT_SPREAD = 0.2
-/** A light's shadowSoftness, held to 0-1 - set on the light directly it isn't checked. @param {{ shadowSoftness?: number }} light */
-const softnessOf = (light) => Math.min(1, Math.max(0, light.shadowSoftness ?? 0))
 // a rect light's filter is an ellipse this much bigger than its half width and height: an evenly lit
 // rectangle and an evenly filled ellipse spread an edge alike when their spreads (second moments)
 // match - its half width over root 3, the ellipse's semi-axis over 2
@@ -358,8 +354,6 @@ export class Passes {
   /** @type {WebGLTexture | null} */ #blueNoise = null
   /** Spot lights' shadows, a tile each. @type {{ texture: WebGLTexture, framebuffer: WebGLFramebuffer } | null} */ #spotShadow = null
   /** A point light's shadow: a depth cube, a framebuffer a face. @type {{ texture: WebGLTexture, framebuffers: WebGLFramebuffer[] } | null} */ #pointShadow = null
-  /** Rendering to float textures, which environments need. */
-  floatTargets = false
 
   /** @param {WebGL2RenderingContext} gl @param {Programs} programs @param {Resources} resources @param {TargetPool} targets */
   constructor(gl, programs, resources, targets) {
@@ -378,7 +372,6 @@ export class Passes {
     this.#blueNoise = null
     this.#spotShadow = null
     this.#pointShadow = null
-    this.floatTargets = !!this.gl.getExtension('EXT_color_buffer_float')
   }
 
   /**
@@ -388,7 +381,7 @@ export class Passes {
    * @returns {Environment | null}
    */
   environment(texture) {
-    if (!texture.image || !texture.isHDR || !this.floatTargets) return null
+    if (!texture.image || !texture.isHDR || !this.targets.float) return null
     let env = this.#environments.get(texture)
     if (env && env.version === texture.version) return env
     const gl = this.gl
@@ -466,13 +459,7 @@ export class Passes {
     program.set('uToneMapping', tone.toneMapping)
     program.set('uInverseViewProjection', mat4.invert(mat4.create(), frame.camera.viewProjection))
     program.set('uCameraPosition', frame.camera.position)
-    gl.disable(gl.DEPTH_TEST)
-    gl.disable(gl.BLEND)
-    gl.disable(gl.CULL_FACE)
-    gl.depthMask(false)
-    this.programs.drawFullscreen()
-    gl.depthMask(true)
-    gl.enable(gl.DEPTH_TEST)
+    this.programs.fullscreenPasses(() => this.programs.drawFullscreen())
   }
 
   /**
@@ -730,14 +717,11 @@ export class Passes {
       program.set('uStep', [0, 1 / outline.height])
       program.set('uRadius', outline.radius)
     }
-    gl.disable(gl.DEPTH_TEST)
-    gl.disable(gl.CULL_FACE)
-    gl.depthMask(false)
-    gl.enable(gl.BLEND)
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
-    this.programs.drawFullscreen()
-    gl.depthMask(true)
-    gl.enable(gl.DEPTH_TEST)
+    this.programs.fullscreenPasses(() => {
+      gl.enable(gl.BLEND)
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+      this.programs.drawFullscreen()
+    })
   }
 
   /**
@@ -756,7 +740,7 @@ export class Passes {
       wide: this.targets.get('outline-wide', flat),
       coverage: smooth ? this.targets.get('outline-coverage', { ...flat, color: gl.R8 }) : null,
       // two multisampled targets drawn at once: the mask, and its coverage
-      msaa: smooth ? this.targets.get('outline-msaa', { width, height, color: [gl.RGBA8, gl.R8], samples: Math.min(4, gl.getParameter(gl.MAX_SAMPLES) || 4) }) : null,
+      msaa: smooth ? this.targets.get('outline-msaa', { width, height, color: [gl.RGBA8, gl.R8], samples: this.targets.samples }) : null,
     }
   }
 
@@ -778,7 +762,7 @@ export class Passes {
   }
 
   /**
-   * A 64 x 64 tile of blue noise (blue-noise-data.js), one byte a texel, for soft shadows: each pixel
+   * A BLUE_NOISE_SIZE square tile of blue noise (blue-noise-data.js), one byte a texel, for soft shadows: each pixel
    * reads its own texel, tiled across the screen, for the angle it turns its sample discs by.
    * @returns {WebGLTexture}
    */
@@ -791,7 +775,7 @@ export class Passes {
     const texture = /** @type {WebGLTexture} */ (gl.createTexture())
     gl.activeTexture(gl.TEXTURE15)
     gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, 64, 64, 0, gl.RED, gl.UNSIGNED_BYTE, bytes)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, BLUE_NOISE_SIZE, BLUE_NOISE_SIZE, 0, gl.RED, gl.UNSIGNED_BYTE, bytes)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
     gl.bindTexture(gl.TEXTURE_2D, null)

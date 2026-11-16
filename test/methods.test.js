@@ -124,6 +124,20 @@ describe('moving nodes', () => {
     expect([lines.datumAt(0), lines.datumAt(5)]).toEqual(['only', null])
     expect(new Mesh({ geometry: box(1), data: { id: 7 } }).datumAt(3)).toEqual({ id: 7 })
   })
+
+  it('makes room for more instances in place, keeping those there', () => {
+    const mesh = new InstancedMesh({ geometry: box(1), count: 2 })
+    mesh.setInstance(1, { position: [3, 0, 0], color: '#ff0000' })
+    const version = mesh.version
+    expect(mesh.reserve(1)).toBe(mesh)
+    expect(mesh.version).toBe(version)
+    mesh.reserve(4)
+    expect([mesh.instanceMatrices.length, mesh.instanceColors?.length, mesh.version > version]).toEqual([64, 12, true])
+    // the one that was there, and identity and white in the new room
+    expect([mesh.instanceMatrices[16 + 12], mesh.instanceMatrices[48], mesh.instanceMatrices[63]]).toEqual([3, 1, 1])
+    expect(Array.from(mesh.instanceColors?.slice(3, 12) ?? [])).toEqual([1, 0, 0, 1, 1, 1, 1, 1, 1])
+    mesh.setInstance(3, { position: [0, 1, 0] })
+  })
 })
 
 describe('points of indexed geometry', () => {

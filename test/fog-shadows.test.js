@@ -4,7 +4,7 @@ import { DirectionalLight, Fog, Group, Mesh, PerspectiveCamera, PointLight, Poin
 import { collect } from '../src/frame.js'
 import { fitPointShadow, fitSpotShadow } from '../src/shadow.js'
 import { ChangeWatch } from '../src/watch.js'
-import { lightBehind } from '../src/webgl/WebGLRenderer.js'
+import { lightBehind, toneCurve, TONE_MAPPING } from '../src/webgl/tone.js'
 import { Box3 } from '../src/value/Box3.js'
 import { fakeCanvas, fakeGL } from './fakes.js'
 
@@ -73,16 +73,9 @@ describe('Fog', () => {
   })
 
   it('fogs lit surfaces in light, towards what the tone map turns into its colour', () => {
-    // the tone maps of shaders.js, forwards: lightBehind must undo them
-    const neutral = (/** @type {number[]} */ c) => {
-      const x = Math.min(...c), off = x < 0.08 ? x - 6.25 * x * x : 0.04
-      c = c.map((v) => v - off)
-      const peak = Math.max(...c)
-      if (peak <= 0.8) return c
-      const np = 1 - 0.04 / (peak - 0.6), g = 1 - 1 / (0.15 * (peak - np) + 1)
-      return c.map((v) => v * np / peak).map((v) => v + (np - v) * g)
-    }
-    const aces = (/** @type {number[]} */ c) => c.map((v) => (v * (2.51 * v + 0.03)) / (v * (2.43 * v + 0.59) + 0.14))
+    // the tone maps forwards, as the shaders run them: lightBehind must undo them
+    const neutral = (/** @type {number[]} */ c) => toneCurve(c, TONE_MAPPING.neutral)
+    const aces = (/** @type {number[]} */ c) => toneCurve(c, TONE_MAPPING.aces)
     for (const color of [[0.05, 0.08, 0.11], [0.5, 0.45, 0.3], [0.9, 0.85, 0.7]]) {
       for (const exposure of [1, 0.6]) {
         expect(neutral(lightBehind(color, 2, exposure).map((v) => v * exposure)).map((v, i) => v - color[i]).every((d) => Math.abs(d) < 1e-6)).toBe(true)

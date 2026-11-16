@@ -3,6 +3,8 @@
 // vertex arrays work with any program.
 import { warnOnce } from '../validate.js'
 import { MAPS } from '../material/features.js'
+import { BLUE_NOISE_SIZE } from '../shadow.js'
+import { TONE_CONSTANTS } from './tone.js'
 
 /** Fixed attribute locations shared by every program. */
 export const ATTRIBUTES = {
@@ -214,6 +216,16 @@ vec4 outputColor(vec3 color, float alpha, float coverage) {
   return vec4(linearToSrgb(color) * alpha, coverage);
 #endif
 }
+// outputColor's counterpart, for a pass reading a picture: its colour as linear light, taken out of
+// its alpha - the picture sRGB, drawn as the canvas would be, or with LINEAR_INPUT linear already
+vec3 inputColor(vec4 c) {
+  if (c.a <= 0.0) return vec3(0.0);
+#ifdef LINEAR_INPUT
+  return c.rgb / c.a;
+#else
+  return srgbToLinear(c.rgb / c.a);
+#endif
+}
 `
 
 // a direction to equirectangular UVs: around from +x towards +z, and down from straight up (the
@@ -243,6 +255,26 @@ void main() {
 }
 `
 
+// a refine sample into the running average, the blend unit weighting it: in linear light, so edges
+// and penumbrae average as light does. The sample was drawn as the plain frame is, as sRGB - glass
+// and other see-through things blending just as they do on the canvas - unless the frame is linear
+// (LINEAR_INPUT); premultiplied in, premultiplied out
+export const ACCUMULATE_FRAGMENT = /* glsl */ `
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uSource;
+out vec4 fragColor;
+${COMMON}
+void main() {
+  vec4 c = texture(uSource, vUv);
+#ifdef LINEAR_INPUT
+  fragColor = c;
+#else
+  fragColor = vec4(inputColor(c) * c.a, c.a);
+#endif
+}
+`
+
 // one triangle that covers the screen, for backgrounds and image passes
 export const FULLSCREEN_VERTEX = /* glsl */ `
 out vec2 vUv;
@@ -256,25 +288,25 @@ void main() {
 export const TONE_MAP = /* glsl */ `
 uniform float uExposure;
 uniform int uToneMapping;    // 0 none, 1 aces, 2 neutral
-
+${TONE_CONSTANTS}
 // the curve alone, on light already scaled by the exposure (bloom adds its glow in light and maps
-// the sum with it)
+// the sum with it) - as tone.js's toneCurve
 vec3 toneCurve(vec3 c) {
   if (uToneMapping == 1) {
-    // ACES filmic, Narkowicz's fit - up to 1.033, not clamped to 1, so bloom can tell its highlights
-    // from white (sRGB clamps what shows)
-    c = max((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0);
+    // ACES filmic, Narkowicz's fit - up to ACES_TOP, not clamped to 1, so bloom can tell its
+    // highlights from white (sRGB clamps what shows)
+    c = max((c * (ACES_A * c + ACES_B)) / (c * (ACES_C * c + ACES_D) + ACES_E), 0.0);
   } else if (uToneMapping == 2) {
     // Khronos PBR Neutral
     float x = min(c.r, min(c.g, c.b));
-    float offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
+    float offset = x < 2.0 * NEUTRAL_TOE ? x - x * x / (4.0 * NEUTRAL_TOE) : NEUTRAL_TOE;
     c -= offset;
     float peak = max(c.r, max(c.g, c.b));
-    if (peak > 0.8) {
-      float d = 0.2;
-      float newPeak = 1.0 - d * d / (peak + d - 0.8);
+    if (peak > NEUTRAL_START) {
+      float d = 1.0 - NEUTRAL_START;
+      float newPeak = 1.0 - d * d / (peak + d - NEUTRAL_START);
       c *= newPeak / peak;
-      float g = 1.0 - 1.0 / (0.15 * (peak - newPeak) + 1.0);
+      float g = 1.0 - 1.0 / (NEUTRAL_DESATURATION * (peak - newPeak) + 1.0);
       c = mix(c, vec3(newPeak), g);
     }
   }
@@ -1123,7 +1155,7 @@ const float SOFT_PUSH = 0.25;
 uniform sampler2D uBlueNoise;
 uniform ivec2 uBlueNoiseShift;
 float softSpin() {
-  return 6.2831853 * texelFetch(uBlueNoise, (ivec2(gl_FragCoord.xy) + uBlueNoiseShift) & 63, 0).r;
+  return 6.2831853 * texelFetch(uBlueNoise, (ivec2(gl_FragCoord.xy) + uBlueNoiseShift) & ${BLUE_NOISE_SIZE - 1}, 0).r;
 }
 // a perspective map's depth (0-1) as a distance from the light
 float softDistance(float d, float near, float far) {

@@ -201,6 +201,20 @@ describe('charts', () => {
     expect(mesh.count).toBe(2)
   })
 
+  it('grows past its room in place: the same node, its styling and handlers kept', () => {
+    const scene = new Scene()
+    const many = (n) => Array.from({ length: n }, (_, i) => ({ month: `m${i}`, sales: i + 1 }))
+    const bars = scene.add(chart({ mark: 'bar', data: many(10), x: 'month', y: 'sales', transition: false }))
+    const mesh = /** @type {any} */ (bars.marks[0])
+    mesh.material.roughness = 0.2
+    const clicked = () => {}
+    mesh.on('click', clicked)
+    bars.update(many(100))
+    expect(bars.marks[0]).toBe(mesh)
+    expect([mesh.count, mesh.material.roughness, mesh.handlersFor('click').includes(clicked)]).toEqual([100, 0.2, true])
+    expect(mesh.instanceMatrices.length / 16).toBeGreaterThanOrEqual(100)
+  })
+
   it('filters rows, keeping the axes where they were', () => {
     const scene = new Scene()
     const bars = scene.add(chart({ mark: 'bar', data: rows, x: 'month', y: 'sales', color: 'region', stack: true, transition: false }))

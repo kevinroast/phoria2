@@ -6,7 +6,7 @@ import { Box3 } from './value/Box3.js'
 import { warnOnce } from './validate.js'
 import { fitPointShadow, fitShadow, fitSpotShadow, SPOT_TILES } from './shadow.js'
 import { worldPlane } from './clip.js'
-import { onDisc } from './refine.js'
+import { sampleLight } from './refine.js'
 import { hiddenInstance } from './scene/drawables.js'
 import { variantOf } from './material/features.js'
 import { drawKind, isInstanced } from './scene/kinds.js'
@@ -61,42 +61,6 @@ const OVER_LIMIT = {
 // casts in front of it - up to this far off straight ahead (radians, about 66 degrees), as a wider
 // view spreads the map too thin to be worth it.
 const RECT_SHADOW_ANGLE = 1.15
-
-// as passes.js's: at shadowSoftness 1 a soft shadow's edge spreads a fifth of the gap either way -
-// the edge a light this wide (as an angle, a sun; as a size over its distance, a lamp) casts
-const SOFT_SPREAD = 0.2
-
-/** Two directions square to `d` (unit) and to each other. @param {Vec3} d */
-function across(d) {
-  const a = (Math.abs(d[1]) < 0.9 ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0)).cross(d).normalize()
-  return [a, d.clone().cross(a)]
-}
-
-/**
- * A refine sample's view of a casting light: moved to a point across its size, its shadow sharp
- * from there. Averaged over the samples, the shadows make the penumbra a light that size casts -
- * exactly, where soft shadows estimate it. A rect light's own size; a sun's from its shadowSoftness,
- * an angle (none: it stays sharp), its direction tilted with it. A spot or point light keeps its soft
- * shadow: its edge spreads with the gap whatever the distance to what casts - no one size of light
- * does that (sized for the garden, a lantern's own bars, a hand's width from the flame, blurred
- * away) - and the samples average its grain away instead (the View shifts the blue noise).
- * @param {FrameLight} light changed in place - a frame's own copy
- * @param {[number, number]} sample in the unit square
- */
-function sampleLight(light, [u, v]) {
-  if (light.kind === 'rect') {
-    const hw = /** @type {Vec3} */ (light.halfWidth), hh = /** @type {Vec3} */ (light.halfHeight)
-    light.shadowFrom = /** @type {Vec3} */ (light.position).clone().add(hw.clone().multiplyScalar(2 * u - 1)).add(hh.clone().multiplyScalar(2 * v - 1))
-    light.hardShadow = true
-    return
-  }
-  const softness = Math.min(1, Math.max(0, light.shadowSoftness ?? 0))
-  if (light.kind !== 'directional' || !(softness > 0)) return
-  light.shadowSoftness = 0
-  const [x, y] = onDisc(u, v)
-  const d = /** @type {Vec3} */ (light.direction), [a, b] = across(d), r = SOFT_SPREAD * softness
-  light.direction = d.clone().add(a.multiplyScalar(x * r)).add(b.multiplyScalar(y * r)).normalize()
-}
 
 /**
  * The half-angle of the cone from `at`, looking along `direction`, that takes in every corner of
@@ -249,15 +213,16 @@ function coneOver(at, direction, boxes) {
  * What to draw: everything visible, culled to the camera's view, sorted for drawing. Expects world
  * matrices to be current (scene.update() or scene.updateWorld()); the camera is brought up to date
  * here, since it often isn't in the scene. A frame drawn off screen - into a render texture - takes
- * `display: false`: no labels, overlays, outlines or interaction, only what is drawn. A refine
- * sample takes `lightSample`, a point in the unit square: each casting light is moved there across
- * its size, its shadow sharp (sampleLight).
+ * `display: false`: no labels, overlays, outlines or interaction, only what is drawn; `labels: false`
+ * leaves out only the labels - a refine sample's, whose picture has outlines but whose labels the
+ * plain frame placed. A refine sample also takes `lightSample`, a point in the unit square: each
+ * casting light is moved there across its size, its shadow sharp (refine.js sampleLight).
  * @param {Scene} scene
  * @param {Camera} camera
- * @param {{ display?: boolean, lightSample?: [number, number] | null }} [options]
+ * @param {{ display?: boolean, labels?: boolean, lightSample?: [number, number] | null }} [options]
  * @returns {FrameDescription}
  */
-export function collect(scene, camera, { display = true, lightSample = null } = {}) {
+export function collect(scene, camera, { display = true, labels = display, lightSample = null } = {}) {
   camera.updateWorld()
   const view = camera.viewMatrix
   const projection = camera.projectionMatrix
@@ -341,12 +306,12 @@ export function collect(scene, camera, { display = true, lightSample = null } = 
           else capped.set(item.clip, [item])
         }
         frame.stats.drawn++
-        if (display && node.labels) instanceLabels(node, viewProjection, view, projection[5], frame.labels)
+        if (labels && node.labels) instanceLabels(node, viewProjection, view, projection[5], frame.labels)
       } else {
         frame.stats.culled++
       }
     } else if (node.isLabel) {
-      if (!display) return
+      if (!labels) return
       const position = node.worldPosition
       frame.labels.push({ key: node, node, index: null, text: node.text, content: node.content, style: node, position, ...project(position, viewProjection, view, projection[5]) })
     } else if (node.lightKind) {
