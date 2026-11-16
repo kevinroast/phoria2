@@ -737,6 +737,7 @@ uniform float uTransmission;
 // blurrier down its mip levels - for glass to show bent, and frosted
 uniform sampler2D uBehind;
 uniform vec2 uRefraction;      // ior, thickness (its own units)
+uniform vec4 uAttenuation;     // the body's colour (linear) after a distance (w; 0: no tint)
 uniform mat4 uViewProjection;
 in float vThicknessScale;
 #endif
@@ -1490,6 +1491,13 @@ vec4 behindGlass(vec3 n, vec3 v, float roughness) {
   float lod = log2(float(textureSize(uBehind, 0).x)) * roughness * clamp(uRefraction.x * 2.0 - 2.0, 0.0, 1.0);
   return textureLod(uBehind, uv, lod);
 }
+// what glass's body leaves of light on its way through - Beer-Lambert, over the path the light
+// takes in it (its thickness, as glTF's reference renderer and three.js take it): attenuationColor
+// is what is left after attenuationDistance, and more glass tints deeper
+vec3 bodyTint() {
+  if (uAttenuation.w <= 0.0) return vec3(1.0);
+  return pow(max(uAttenuation.rgb, 1e-4), vec3(uRefraction.y * vThicknessScale / uAttenuation.w));
+}
 // what comes through glass, tinted by its colour as coloured glass tints light, in the picture's
 // encoding - so laid over the glass as blending would lay what is behind
 vec3 throughGlass(vec4 behind, vec3 tint) {
@@ -1734,7 +1742,7 @@ ${RECT_LIGHTS}
   // glass lays what is behind it over itself, as blending would - but bent - and covers what is
   // there: where the picture behind is see-through (no background), the page shows through as before
   float glassShows = 1.0 - coverage;
-  fragColor = vec4(fragColor.rgb + throughGlass(behind, base.rgb) * glassShows, coverage + behind.a * glassShows);
+  fragColor = vec4(fragColor.rgb + throughGlass(behind, base.rgb * bodyTint()) * glassShows, coverage + behind.a * glassShows);
 #endif
 }
 `

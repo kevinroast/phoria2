@@ -187,6 +187,8 @@ export class ChangeWatch {
     this.#push(m.bumpScale)
     this.#push(m.transmission)
     this.#push(m.thickness)
+    this.#push(m.attenuationDistance)
+    this.#pushAll(m.attenuationColor)
     this.#push(m.clearcoat)
     this.#push(m.clearcoatRoughness)
     this.#push(m.sheen)

@@ -210,6 +210,8 @@ contract('Material', {
     bumpScale: { value: 0.002, read: (m) => m.bumpScale, default: 1, bad: 'deep', error: 'bumpScale' },
     transmission: { value: 0.8, read: (m) => m.transmission, default: 0, bad: 2, error: 'transmission' },
     thickness: { value: 0.5, read: (m) => m.thickness, default: 0, bad: -1, error: 'thickness' },
+    attenuationDistance: { value: 2, read: (m) => m.attenuationDistance, default: Infinity, bad: -1, error: 'attenuationDistance' },
+    attenuationColor: { value: '#ffaa00', read: (m) => hex(m.attenuationColor), expect: 0xffaa00, default: 0xffffff, bad: 'notacolour', error: 'notacolour' },
     clearcoat: { value: 1, read: (m) => m.clearcoat, default: 0, bad: -1, error: 'clearcoat' },
     clearcoatRoughness: { value: 0.3, read: (m) => m.clearcoatRoughness, default: 0, bad: 'satin', error: 'clearcoatRoughness' },
     sheen: { value: 1, read: (m) => m.sheen, default: 0, bad: 2, error: 'sheen' },

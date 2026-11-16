@@ -239,6 +239,18 @@ describe('glass', () => {
     expect(definesOf(drawLog[0].program)).not.toContain('REFRACTION')
   })
 
+  it("tints by its body over a distance - none where the distance is Infinity, which a uniform can't hold", () => {
+    const tinted = (/** @type {any} */ material) => {
+      const { gl, drawLog } = logged()
+      const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
+      renderer.setSize(64, 48)
+      renderer.renderFrame(collect(withGlass({ transmission: 1, thickness: 1, ...material }), camera()))
+      return drawLog[3].program.values.uAttenuation.map((/** @type {number} */ v) => +v.toFixed(3))
+    }
+    expect(tinted({})).toEqual([1, 1, 1, 0])
+    expect(tinted({ attenuationColor: '#ff0000', attenuationDistance: 0.5 })).toEqual([1, 0, 0, 0.5])
+  })
+
   it('copies nothing for a frame without glass, nor for see-through things that only fade', () => {
     for (const material of [{ opacity: 0.5 }, { transmission: 1, unlit: true }]) {
       const { gl, drawLog } = logged()

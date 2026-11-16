@@ -404,6 +404,28 @@ describe('glass and clearcoat from glTF', () => {
     warn.mockRestore()
   })
 
+  it("reads glass's body: its thickness and the colour it turns light over a distance", async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const json = sampleGLTF()
+    json.extensionsUsed = [...(json.extensionsUsed ?? []), 'KHR_materials_transmission', 'KHR_materials_volume']
+    json.materials[0].extensions = {
+      ...json.materials[0].extensions,
+      KHR_materials_transmission: { transmissionFactor: 1 },
+      KHR_materials_volume: { thicknessFactor: 0.4, attenuationColor: [1, 0.5, 0.25], attenuationDistance: 2 },
+    }
+    const model = await parseGLTF(json, { baseUrl: 'https://example.com/models/', waitForTextures: false })
+    const { material: m } = /** @type {Mesh} */ (model.find('Triangle'))
+    const c = m.attenuationColor
+    expect([m.transmission, m.thickness, m.attenuationDistance]).toEqual([1, 0.4, 2])
+    expect([c[0], c[1], c[2]].map((v) => +v.toFixed(3))).toEqual([1, 0.5, 0.25])
+    expect(warn.mock.calls.some(([w]) => String(w).includes('KHR_materials_volume'))).toBe(false)
+    // no distance: a body that doesn't tint
+    json.materials[0].extensions.KHR_materials_volume = { thicknessFactor: 1 }
+    const plain = await parseGLTF(json, { baseUrl: 'https://example.com/models/', waitForTextures: false })
+    expect(/** @type {Mesh} */ (plain.find('Triangle')).material.attenuationDistance).toBe(Infinity)
+    warn.mockRestore()
+  })
+
   it('reads sheen, ior, specular, anisotropy and diffuse transmission by their factors', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const json = sampleGLTF()

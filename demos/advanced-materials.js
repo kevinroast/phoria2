@@ -210,6 +210,14 @@ export default function run({ canvas, gui }) {
   f.add(glass.material, 'ior', 1, 2.5, 0.01)
   f.add(glass.material, 'opacity', 0, 1, 0.01)
   f.add(glassStyle, 'color', { clear: '#ffffff', blue: '#6fb3ff', green: '#7fe0a0', amber: '#ffc46b' }).onChange((v) => glass.material.color.set(v))
+  // its body's tint, deeper through more of it: the colour light turns after this far
+  const BODIES = { none: null, amber: ['#e0a030', 0.6], 'bottle green': ['#3f9a5a', 0.8], 'sea blue': ['#4fb0c8', 1.2] }
+  const body = { body: 'none' }
+  f.add(body, 'body', Object.keys(BODIES)).onChange((/** @type {keyof typeof BODIES} */ key) => {
+    const b = BODIES[key]
+    glass.material.attenuationColor = b ? b[0] : '#ffffff'
+    glass.material.attenuationDistance = b ? b[1] : Infinity
+  })
 
   f = folders.clearcoat = gui.addFolder('Clearcoat').close()
   const paintStyle = { color: PAINT.color }

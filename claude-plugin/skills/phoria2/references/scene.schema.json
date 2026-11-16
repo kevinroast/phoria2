@@ -1091,6 +1091,15 @@
           "description": "How thick glass is, in its own units: what is behind it is bent by its ior over this distance, as through a solid lens. 0, a thin shell, doesn't bend it.",
           "minimum": 0
         },
+        "attenuationColor": {
+          "$ref": "#/$defs/color",
+          "description": "The colour glass's body turns light that has come through attenuationDistance of it - deeper the thicker it is."
+        },
+        "attenuationDistance": {
+          "type": "number",
+          "description": "How far light goes through glass's body to come out attenuationColor, in its own units as thickness is. Leave it out for a body that doesn't tint.",
+          "exclusiveMinimum": 0
+        },
         "clearcoat": {
           "type": "number",
           "description": "A clear glossy layer over the surface - car paint, lacquer, varnish.",

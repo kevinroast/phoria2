@@ -93,6 +93,9 @@ export const FEATURES = [
     set('uTransmission', m.transmission)
     // what bends what is behind it (read where the picture behind is there to bend - REFRACTION)
     set('uRefraction', [m.ior, m.thickness])
+    // its body's tint over a distance - 0 for a body that doesn't tint (no Infinity in a uniform)
+    const a = m.attenuationColor
+    set('uAttenuation', [a[0], a[1], a[2], Number.isFinite(m.attenuationDistance) ? m.attenuationDistance : 0])
   } },
   {
     name: 'clearcoat', define: 'CLEARCOAT', kinds: MESH, lit: true, when: (m) => m.clearcoat > 0,
