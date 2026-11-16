@@ -91,8 +91,10 @@ export const FEATURES = [
   { name: 'cutout', define: 'ALPHA_TEST', kinds: MESH, when: (m) => m.alphaTest > 0 },
   { name: 'glass', define: 'TRANSMISSION', kinds: MESH, lit: true, when: (m) => m.transmission > 0, uniforms: (m, { set }) => {
     set('uTransmission', m.transmission)
-    // what bends what is behind it (read where the picture behind is there to bend - REFRACTION)
-    set('uRefraction', [m.ior, m.thickness])
+    // what bends what is behind it (read where the picture behind is there to bend - REFRACTION): its
+    // ior, its thickness, and dispersion's half spread of the ior across the colours, as
+    // KHR_materials_dispersion has it - red bent by the ior less that, blue by it more
+    set('uRefraction', [m.ior, m.thickness, (m.ior - 1) * 0.025 * m.dispersion])
     // its body's tint over a distance - 0 for a body that doesn't tint (no Infinity in a uniform)
     const a = m.attenuationColor
     set('uAttenuation', [a[0], a[1], a[2], Number.isFinite(m.attenuationDistance) ? m.attenuationDistance : 0])

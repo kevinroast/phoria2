@@ -199,6 +199,7 @@ function coneOver(at, direction, boxes) {
  * @property {FrameHighlight | null} highlight set by the View for hover highlighting
  * @property {boolean} [shadowTexels] set by the View for debug.shadows: 'texels' - shadow map texels drawn over what receives them
  * @property {[number, number]} [noiseShift] a refine sample's shift of soft shadows' blue-noise tile, in texels
+ * @property {number} [spectrum] a refine sample's share of glass's dispersion, 0-2 (1 when not refining)
  * @property {any[]} overlays HTML elements carried by the nodes drawn (node.overlay)
  * @property {boolean} interactive some node has a tooltip, highlight or pointer handler
  * @property {boolean} draggable some node has an onDrag handler

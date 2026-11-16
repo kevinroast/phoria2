@@ -4,7 +4,7 @@
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { DirectionalLight, Mesh, PerspectiveCamera, RectAreaLight, Scene, SpotLight, View, box, plane } from '../src/index.js'
 import { collect } from '../src/frame.js'
-import { REVEAL, halton, jitterFrame, lensFrame, lensSample, lightSample, noiseShift, pixelShift, tent } from '../src/refine.js'
+import { REVEAL, halton, jitterFrame, lensFrame, lensSample, lightSample, noiseShift, pixelShift, sampleFrame, tent } from '../src/refine.js'
 import { fakePage } from './fakes.js'
 
 describe('refine samples', () => {
@@ -122,6 +122,17 @@ describe('a refine sample of a frame', () => {
     expect([...(/** @type {any} */ (sharp.position))]).toEqual([3, 5, 0])
     // and each sample reads the blue noise somewhere else
     expect(new Set(Array.from({ length: 16 }, (_, n) => noiseShift(n).join())).size).toBe(16)
+  })
+
+  it("spreads glass's dispersion by a share of 0-2 a sample, averaging to all of it", () => {
+    const shares = Array.from({ length: 256 }, (_, n) => {
+      const frame = collect(new Scene(), new PerspectiveCamera({ position: [0, 0, 5], aspect: 1 }))
+      sampleFrame(frame, n, new PerspectiveCamera(), 64, 64)
+      return /** @type {number} */ (frame.spectrum)
+    })
+    expect(Math.min(...shares) >= 0 && Math.max(...shares) <= 2).toBe(true)
+    // (a few percent off over 256: its base, 23, divides 23 x 23 samples evenly)
+    expect(Math.abs(shares.reduce((a, b) => a + b) / shares.length - 1)).toBeLessThan(0.05)
   })
 })
 

@@ -206,6 +206,7 @@ export default function run({ canvas, gui }) {
   const glassStyle = { color: '#ffffff' }
   f.add(glass.material, 'transmission', 0, 1, 0.01)
   f.add(glass.material, 'thickness', 0, 2, 0.01)
+  f.add(glass.material, 'dispersion', 0, 5, 0.05)
   f.add(glass.material, 'roughness', 0, 1, 0.01)
   f.add(glass.material, 'ior', 1, 2.5, 0.01)
   f.add(glass.material, 'opacity', 0, 1, 0.01)

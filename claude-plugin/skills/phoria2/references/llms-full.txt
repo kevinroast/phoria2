@@ -414,7 +414,7 @@ Properties: `color`, `opacity`, `roughness` (0.5), `metalness` (0), `emissive`,
 (`'normal'`, `'additive'` - adds light, for glows and sparks - or `'multiply'` - darkens what is behind, as a colour
 filter does: cyan over magenta is blue), `alphaTest` (cut-outs: drop pixels with less alpha - leaves, fences),
 `map`, `normalMap`/`normalScale`, `bumpMap`/`bumpScale`, `roughnessMap`, `metalnessMap`, `aoMap`,
-`emissiveMap`, `lightMap`/`lightMapIntensity`, `environmentIntensity` (1), `transmission`/`thickness`/`attenuationColor`/`attenuationDistance`, `clearcoat`/`clearcoatRoughness`, `sheen`/`sheenColor`/`sheenRoughness`, `iridescence`/`iridescenceIor`/`iridescenceThickness`/`iridescenceThicknessMin`/`iridescenceThicknessMap`, `ior`/
+`emissiveMap`, `lightMap`/`lightMapIntensity`, `environmentIntensity` (1), `transmission`/`thickness`/`attenuationColor`/`attenuationDistance`/`dispersion`, `clearcoat`/`clearcoatRoughness`, `sheen`/`sheenColor`/`sheenRoughness`, `iridescence`/`iridescenceIor`/`iridescenceThickness`/`iridescenceThicknessMin`/`iridescenceThicknessMap`, `ior`/
 `specularIntensity`/`specularColor`, `anisotropy`/`anisotropyRotation`, `translucency`/`translucencyColor`, `matcap`, `toon` (below); `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
 `mesh.material.color.set('#0f0')`, `mesh.material.opacity = 0.5`, or a whole new one: `mesh.material = { color: 'red' }`
 (options become a Material, as in the constructor; `mesh.geometry = box(2)` likewise).
@@ -492,7 +492,10 @@ window), which doesn't bend it. A thick piece can tint by its body too, deeper t
 tinted bottle glass, a coloured liquid: `attenuationColor` is the colour light turns after going
 `attenuationDistance` through it (default Infinity: no tint), so
 `{ transmission: 1, thickness: 1, attenuationColor: '#e0a030', attenuationDistance: 0.5 }` is a
-block of amber. Keep `roughness` low for clear glass, higher for frosted - what is
+block of amber. `dispersion` (0) splits what a thick piece bends into its colours - rainbow fringes
+where what is behind changes, as through a prism or a cut gem: 20 over the glass's Abbe number, so
+0.3-0.5 for window and bottle glass, about 1 for flint glass and crystal, 2 or more to show it off.
+With `refine` on, the fringes settle into a smooth rainbow. Keep `roughness` low for clear glass, higher for frosted - what is
 behind blurs. It shines with an `environment` to reflect (`'studio'`, or better an `.hdr`). Glass
 shows what was drawn before anything see-through: glass seen through glass shows the solids behind
 both, not the farther glass, and near the picture's edge what would bend in from off screen is the
@@ -547,7 +550,7 @@ hard-edged highlight - a cartoon. Lights and shadows work as usual; the shaded t
 ambient and hemisphere light, so add some for a lighter shade. Metals keep their colour, with a
 highlight of it. Pair it with `outline` on the nodes for inked edges.
 
-glTF models bring glass, its body, clearcoat, sheen, reflectance, brushed metal and translucency from `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_clearcoat`,
+glTF models bring glass, its body and dispersion, clearcoat, sheen, reflectance, brushed metal and translucency from `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_dispersion`, `KHR_materials_clearcoat`,
 `KHR_materials_sheen`, `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_anisotropy`
 and `KHR_materials_diffuse_transmission` (by their factors; their textures aren't read), and
 iridescence from `KHR_materials_iridescence` (its thickness texture too).

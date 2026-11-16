@@ -6,12 +6,13 @@
 //   - where on each casting light its shadow is drawn from (sampleLight) - a sun's or a
 //     rect light's; a spot or point light keeps its soft shadow, and
 //   - where soft shadows read their blue noise, so their grain averages away, and
+//   - how far glass's dispersion spreads the colours, so its fringes average into a rainbow, and
 //   - with a camera's aperture, where on its lens it looks from: a thin lens, the eye moved across it
 //     and the picture sheared to keep the focal plane where it was - sharp there, blurred before and
 //     behind it, as a camera's depth of field.
 // Each comes from its own Halton sequence (2 and 3 the pixel, 5 and 7 the light, 11 and 13 the noise,
-// 17 and 19 the lens), so they never fall into step: one sequence shared between them would draw the
-// same lattice every time, and averaging never removes a lattice.
+// 17 and 19 the lens, 23 the dispersion), so they never fall into step: one sequence shared between
+// them would draw the same lattice every time, and averaging never removes a lattice.
 import { BLUE_NOISE_SIZE, SOFT_SPREAD, softnessOf } from './shadow.js'
 import { Mat4 } from './value/Mat4.js'
 import { across, Vec3 } from './value/Vec3.js'
@@ -155,7 +156,8 @@ function shear(m, tx, ty) {
 }
 
 /**
- * Make a collected frame refine sample n: its pixel shift, its blue-noise shift and - with a camera
+ * Make a collected frame refine sample n: its pixel shift, its blue-noise shift, its share of glass's
+ * dispersion and - with a camera
  * that has an aperture - its point on the lens. (Its lights are moved as it is collected:
  * collect's lightSample, with lightSample(n).)
  * @param {FrameDescription} frame @param {number} n from 0 @param {Camera} camera
@@ -163,6 +165,8 @@ function shear(m, tx, ty) {
  */
 export function sampleFrame(frame, n, camera, width, height) {
   frame.noiseShift = noiseShift(n)
+  // from none of the spread to twice it, evenly: on average, the spread itself
+  frame.spectrum = 2 * halton(n + 1, 23)
   const lens = /** @type {{ aperture?: number, focus?: number }} */ (camera)
   if (lens.aperture && lens.aperture > 0) lensFrame(frame, n, lens.aperture, /** @type {number} */ (lens.focus))
   jitterFrame(frame, n, width, height)

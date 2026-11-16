@@ -27,7 +27,7 @@ import { Animation } from './Animation.js'
 const SUPPORTED = new Set(['KHR_materials_emissive_strength', 'KHR_texture_transform', 'KHR_lights_punctual',
   'KHR_materials_unlit', 'KHR_mesh_quantization', 'KHR_materials_transmission', 'KHR_materials_clearcoat', 'KHR_materials_sheen',
   'KHR_materials_ior', 'KHR_materials_specular', 'KHR_materials_anisotropy', 'KHR_materials_diffuse_transmission',
-  'KHR_materials_variants', 'KHR_materials_iridescence', 'KHR_materials_volume'])
+  'KHR_materials_variants', 'KHR_materials_iridescence', 'KHR_materials_volume', 'KHR_materials_dispersion'])
 const COMPRESSION = new Set(['KHR_draco_mesh_compression', 'EXT_meshopt_compression', 'KHR_texture_basisu'])
 
 const COMPONENTS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT2: 4, MAT3: 9, MAT4: 16 }
@@ -438,6 +438,8 @@ class Builder {
       material.attenuationColor.setLinear(c[0], c[1], c[2])
       if (volume.attenuationDistance > 0) material.attenuationDistance = volume.attenuationDistance
     }
+    // its colours split, by the same measure phoria2 takes (20 over the Abbe number)
+    if (x.KHR_materials_dispersion) material.dispersion = Math.max(0, x.KHR_materials_dispersion.dispersion ?? 0)
     if (coat) {
       material.clearcoat = clamp(coat.clearcoatFactor ?? 0)
       material.clearcoatRoughness = clamp(coat.clearcoatRoughnessFactor ?? 0)

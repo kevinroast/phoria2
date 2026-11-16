@@ -80,6 +80,9 @@ import { Texture } from './Texture.js'
  *   of it - deeper the thicker it is, as tinted bottle glass or a coloured liquid (default white)
  * @property {number} [attenuationDistance] how far light goes through glass's body to come out attenuationColor, in its
  *   own units, as thickness is (default Infinity: the body doesn't tint)
+ * @property {number} [dispersion] how much glass with a thickness splits light into its colours - rainbow fringes
+ *   where it bends what is behind it: 20 over the glass's Abbe number, so 0.3-0.5 for crown glass, about 1 for
+ *   flint glass, 2 or more for a showy prism (default 0)
  * @property {number} [clearcoat] 0-1: a clear glossy layer over the surface - car paint, lacquer, varnish (default 0)
  * @property {number} [clearcoatRoughness] 0-1: how glossy the coat is, 0 a mirror (default 0)
  * @property {number} [sheen] 0-1: the soft bright rim of cloth at grazing angles - velvet, felt, upholstery (default 0)
@@ -134,7 +137,7 @@ const LINEAR_MAPS = new Set(['roughnessMap', 'metalnessMap', 'normalMap', 'bumpM
 const FLAGS = ['unlit', 'flatShading', 'doubleSided', 'vertexColors', 'depthWrite', 'depthTest', 'sizeAttenuation', 'transparent', 'fog']
 const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiveIntensity: [0, Infinity], size: [0, Infinity], width: [0, Infinity],
   alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1], triplanar: [0, Infinity], bumpScale: [-Infinity, Infinity],
-  transmission: [0, 1], thickness: [0, Infinity], attenuationDistance: [0, Infinity], clearcoat: [0, 1], clearcoatRoughness: [0, 1], sheen: [0, 1], sheenRoughness: [0, 1], ior: [1, Infinity],
+  transmission: [0, 1], thickness: [0, Infinity], attenuationDistance: [0, Infinity], dispersion: [0, Infinity], clearcoat: [0, 1], clearcoatRoughness: [0, 1], sheen: [0, 1], sheenRoughness: [0, 1], ior: [1, Infinity],
   iridescence: [0, 1], iridescenceIor: [1, Infinity], iridescenceThickness: [0, Infinity], iridescenceThicknessMin: [0, Infinity],
   specularIntensity: [0, 1], anisotropy: [0, 1], anisotropyRotation: [-Infinity, Infinity], translucency: [0, 1], toon: [0, 16],
   lightMapIntensity: [0, Infinity], environmentIntensity: [0, Infinity], dash: [0, Infinity], gap: [0, Infinity],
@@ -143,7 +146,7 @@ const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiv
 const COLORS = { color: 0xffffff, emissive: 0x000000, sheenColor: 0xffffff, specularColor: 0xffffff, translucencyColor: 0xffffff, attenuationColor: 0xffffff }
 const DEFAULTS = {
   name: '', opacity: 1, alphaTest: 0, roughness: 0.5, metalness: 0, normalScale: 1, bumpScale: 1, aoMapIntensity: 1, triplanar: 0, emissiveIntensity: 1,
-  transmission: 0, thickness: 0, attenuationDistance: Infinity, clearcoat: 0, clearcoatRoughness: 0, sheen: 0, sheenRoughness: 0.5, ior: 1.5, specularIntensity: 1, anisotropy: 0,
+  transmission: 0, thickness: 0, attenuationDistance: Infinity, dispersion: 0, clearcoat: 0, clearcoatRoughness: 0, sheen: 0, sheenRoughness: 0.5, ior: 1.5, specularIntensity: 1, anisotropy: 0,
   iridescence: 0, iridescenceIor: 1.3, iridescenceThickness: 400, iridescenceThicknessMin: 100,
   anisotropyRotation: 0, translucency: 0, toon: 0, lightMapIntensity: 1, environmentIntensity: 1, unlit: false, flatShading: false,
   doubleSided: false, vertexColors: false, blending: 'normal', depthWrite: true, depthTest: true, fog: true,
@@ -209,6 +212,7 @@ export class Material {
   /** How much light passes through, as through glass: 0-1. @type {number} */ transmission
   /** How thick glass is, in its own units: what is behind it bends over this distance; 0 a thin shell. @type {number} */ thickness
   /** How far light goes through glass's body to come out attenuationColor (Infinity: no tint). @type {number} */ attenuationDistance
+  /** How much glass with a thickness splits light into its colours: 20 over its Abbe number. @type {number} */ dispersion
   /** A clear glossy layer over the surface: 0-1. @type {number} */ clearcoat
   /** How glossy the coat is, 0 a mirror. @type {number} */ clearcoatRoughness
   /** The soft bright rim of cloth: 0-1. @type {number} */ sheen

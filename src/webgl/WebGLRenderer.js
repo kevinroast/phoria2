@@ -952,6 +952,7 @@ export class WebGLRenderer {
       program.set('uResolution', [state.width, state.height])
       program.set('uNear', frame.camera.near)
       program.set('uScale', frame.camera.projection[5] * state.height / 2)
+      program.set('uSpectrum', frame.spectrum ?? 1)
       if (kind === 'mesh' && !material.unlit) {
         for (const [name, value] of Object.entries(state.lights)) program.set(name, value)
         const env = state.environment

@@ -234,9 +234,24 @@ describe('glass', () => {
     expect(drawLog.map((d) => d.call)).toEqual(['drawElements', 'blitFramebuffer', 'generateMipmap', 'drawElements'])
     const glass = drawLog[3].program
     expect(definesOf(glass)).toContain('REFRACTION')
-    expect(glass.values.uRefraction.map((/** @type {number} */ v) => +v.toFixed(3))).toEqual([1.4, 0.5])
+    // no dispersion: no spread of the ior; and a plain frame bends by all of a spread
+    expect(glass.values.uRefraction.map((/** @type {number} */ v) => +v.toFixed(3))).toEqual([1.4, 0.5, 0])
+    expect(glass.values.uSpectrum).toBe(1)
     expect(glass.values.uBehind).toBeDefined()
     expect(definesOf(drawLog[0].program)).not.toContain('REFRACTION')
+  })
+
+  it('splits colours by an ior each - spread as KHR_materials_dispersion does, by a share a refine sample picks', () => {
+    const { gl, drawLog } = logged()
+    const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
+    renderer.setSize(64, 48)
+    const frame = collect(withGlass({ transmission: 1, thickness: 1, ior: 1.5, dispersion: 2 }), camera())
+    frame.spectrum = 0.25
+    renderer.renderFrame(frame)
+    const glass = drawLog[3].program
+    // half spread: (ior - 1) / 40 times the dispersion
+    expect(glass.values.uRefraction.map((/** @type {number} */ v) => +v.toFixed(4))).toEqual([1.5, 1, 0.025])
+    expect(glass.values.uSpectrum).toBe(0.25)
   })
 
   it("tints by its body over a distance - none where the distance is Infinity, which a uniform can't hold", () => {

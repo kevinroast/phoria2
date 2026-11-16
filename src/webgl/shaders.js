@@ -736,7 +736,8 @@ uniform float uTransmission;
 // what is behind see-through things: the picture so far, the opaque things drawn, smaller and
 // blurrier down its mip levels - for glass to show bent, and frosted
 uniform sampler2D uBehind;
-uniform vec2 uRefraction;      // ior, thickness (its own units)
+uniform vec3 uRefraction;      // ior, thickness (its own units), dispersion's half spread of the ior
+uniform float uSpectrum;       // how much of that spread this picture bends by: 1, or a refine sample's 0-2
 uniform vec4 uAttenuation;     // the body's colour (linear) after a distance (w; 0: no tint)
 uniform mat4 uViewProjection;
 in float vThicknessScale;
@@ -1484,12 +1485,23 @@ vec3 reflected(vec3 r, vec3 n, float roughness, vec3 irradiance) {
 // the glass (as glTF's reference renderer and three.js do: by roughness, scaled by how much the ior
 // bends). A thin shell (thickness 0) doesn't bend it, but still blurs it. In the picture's own
 // encoding, premultiplied
-vec4 behindGlass(vec3 n, vec3 v, float roughness) {
-  vec3 exit = vWorldPosition + refract(-v, n, 1.0 / uRefraction.x) * uRefraction.y * vThicknessScale;
+vec2 bentTo(vec3 n, vec3 v, float ior) {
+  vec3 exit = vWorldPosition + refract(-v, n, 1.0 / ior) * uRefraction.y * vThicknessScale;
   vec4 clip = uViewProjection * vec4(exit, 1.0);
-  vec2 uv = clamp(clip.xy / clip.w * 0.5 + 0.5, 0.0, 1.0);
+  return clamp(clip.xy / clip.w * 0.5 + 0.5, 0.0, 1.0);
+}
+vec4 behindGlass(vec3 n, vec3 v, float roughness) {
   float lod = log2(float(textureSize(uBehind, 0).x)) * roughness * clamp(uRefraction.x * 2.0 - 2.0, 0.0, 1.0);
-  return textureLod(uBehind, uv, lod);
+  vec4 behind = textureLod(uBehind, bentTo(n, v, uRefraction.x), lod);
+  // dispersion: each colour bent by an ior of its own, red least and blue most - fringes of colour
+  // where what is behind changes. Refined, each sample spreads them a different amount, and the
+  // three fringes average into a rainbow
+  float spread = uRefraction.z * uSpectrum;
+  if (spread > 0.0) {
+    behind.r = textureLod(uBehind, bentTo(n, v, uRefraction.x - spread), lod).r;
+    behind.b = textureLod(uBehind, bentTo(n, v, uRefraction.x + spread), lod).b;
+  }
+  return behind;
 }
 // what glass's body leaves of light on its way through - Beer-Lambert, over the path the light
 // takes in it (its thickness, as glTF's reference renderer and three.js take it): attenuationColor
