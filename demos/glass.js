@@ -1,10 +1,11 @@
-import { Geometry, HemisphereLight, Mesh, RectAreaLight, View, box, cylinder, extrude, lathe, plane } from 'phoria2'
+import { Geometry, HemisphereLight, Mesh, RectAreaLight, View, box, cylinder, extrude, lathe, plane, sphere } from 'phoria2'
 
 // A glass still life on a photographer's sweep, each piece the glass it would be made of: a dense
 // flint prism and a cut gem whose hard facet edges split what they bend into rainbow fringes
-// (dispersion), an iridescent amber pear, a frosted green bottle and a lead crystal tumbler. Each is
-// solid with a thickness, so what is behind it bends by its ior; the tinted ones tint deeper where
-// there is more of them. The softbox throws their coloured light on the floor rather than grey
+// (dispersion), an iridescent amber pear, and two thin-walled vessels - a bell jar over a brass ball
+// and a lead crystal tumbler, their far sides showing through their near ones. The solid pieces bend
+// what is behind them by their ior through their thickness; the vessels' walls shift it a little, as
+// panes do; the tinted ones tint deeper where there is more glass. The softbox throws their coloured light on the floor rather than grey
 // shadows. Bold stripes on the backdrop give the bending and the fringes something to show against;
 // still, the picture refines - the fringes settling into smooth rainbows, the softbox's shadows
 // exact - and the lens can soften what is out of focus.
@@ -116,14 +117,19 @@ base.rgb *= mix(0.05, 1.0, smoothstep(-w, w, k));` } } }))
     material: { transmission: 1, roughness: 0.02, ior: 1.52, thickness: 0.8, attenuationColor: '#e8a83a', attenuationDistance: 0.9, iridescence: 0.55, iridescenceThickness: 520 } }), 0.15, -0.15))
   pearMesh.add(new Mesh({ geometry: cylinder({ radius: 0.025, height: 0.22, segments: 8 }), position: [0.02, 1.18, 0], rotation: [0, 0, -0.25],
     material: { color: '#4a3020', roughness: 0.7 }, castShadow: true }))
-  // The vessels are walls of glass, not solids: one surface each, open at the top, thin-walled - what
-  // is behind shifts a little as through a pane, and the wall tints deepest seen edge-on - and
+  // The vessels are walls of glass, not solids: one surface each, open-ended, thin-walled - what is
+  // behind shifts a little as through a pane, and the wall tints deepest seen edge-on - and
   // double-sided, so the far side shows through the near one
-  // a bottle in frosted green glass - soda-lime, acid-etched, so what is behind it blurs; its wall tints
-  // little face on and deep along its sides
-  const bottle = [[0, 0], [0.28, 0], [0.3, 0.04], [0.3, 0.86], [0.22, 1.06], [0.1, 1.2], [0.09, 1.5], [0.11, 1.52], [0.11, 1.57]]
-  piece(standOnFloor(new Mesh({ geometry: lathe({ points: bottle, segments: 48 }),
-    material: { transmission: 1, roughness: 0.38, ior: 1.52, thickness: 0.02, thinWalled: true, doubleSided: true, attenuationColor: '#2f8a52', attenuationDistance: 0.035 } }), 1.25, -0.55))
+  // a bell jar on a wooden base, over a polished brass ball: clear soda-lime a few millimetres thick,
+  // faintly green where its wall is seen edge-on, as window glass is. Open at the bottom, a knob on top.
+  // (What it covers is solid: glass under glass shows only what is behind both)
+  const base = scene.add(new Mesh({ geometry: cylinder({ radius: 0.5, height: 0.06, segments: 48 }), position: [1.25, 0.03, -0.55], castShadow: true, receiveShadow: true,
+    material: { color: '#7a5636', roughness: 0.55 } }))
+  scene.add(new Mesh({ geometry: sphere({ radius: 0.2, segments: 48 }), position: [base.position[0], 0.26, base.position[2]], castShadow: true, receiveShadow: true,
+    material: { color: '#e0b25a', metalness: 1, roughness: 0.12 } }))
+  const jar = [[0.42, 0], [0.42, 0.52], [0.4, 0.68], [0.33, 0.8], [0.2, 0.87], [0.07, 0.9], [0.05, 0.95], [0.08, 0.99], [0.07, 1.03], [0, 1.04]]
+  piece(standOnFloor(new Mesh({ geometry: lathe({ points: jar, segments: 64 }),
+    material: { transmission: 1, roughness: 0.02, ior: 1.52, thickness: 0.012, thinWalled: true, doubleSided: true, attenuationColor: '#e2f4e8', attenuationDistance: 0.04 } }), base.position[0], base.position[2], 0.06))
   // a tumbler in cut lead crystal: twelve flat sides, a little more ior and fire than plain glass (Abbe
   // about 44), tinted sea blue
   const tumbler = [[0, 0], [0.3, 0], [0.33, 0.05], [0.36, 0.62]]
