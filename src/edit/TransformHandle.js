@@ -124,10 +124,11 @@ export class TransformHandle {
     this.#view.invalidate()
   }
 
-  /** Take the handle out of the scene, giving the target back its own drag. */
+  /** Take the handle out of the scene, giving the target back its own drag, and free its GPU copies. */
   dispose() {
     this.target = null
     this.node.removeFromParent()
+    this.node.dispose()
   }
 
   #build() {

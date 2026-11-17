@@ -2,6 +2,7 @@
 // thing under it. Its default look is in a :where() rule, which has no specificity, so any CSS for
 // .phoria-tooltip overrides it.
 import { describe, fail } from './validate.js'
+import { addStyle } from './css.js'
 
 /** @import { Hit } from './Raycaster.js' */
 
@@ -31,12 +32,7 @@ export class Tooltip {
   constructor(content, className = '') {
     if (typeof content !== 'function') fail('View', `tooltip() takes a function (hit) => text, got ${describe(content)}`)
     this.content = content
-    if (!document.getElementById('phoria-tooltip-style')) {
-      const style = document.createElement('style')
-      style.id = 'phoria-tooltip-style'
-      style.textContent = STYLE
-      document.head.prepend(style)
-    }
+    addStyle('phoria-tooltip-style', STYLE)
     this.el = document.createElement('div')
     this.el.className = `phoria-tooltip${className ? ` ${className}` : ''}`
     this.el.setAttribute('role', 'tooltip')

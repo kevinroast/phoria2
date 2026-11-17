@@ -1,5 +1,6 @@
 // Default looks for chart HTML - ticks, titles, value labels, legends - in :where() rules, which
 // have no specificity, so any app CSS for these classes wins. Added once, on first use.
+import { addStyle as addStyleSheet } from '../css.js'
 
 const CSS = `
 /* ticks are bare text: the padding is breathing room, so the overlap the label layout allows never runs them together */
@@ -32,10 +33,7 @@ const CSS = `
   white-space: nowrap; opacity: 0.8; }
 `
 
+/** Add the charts' default CSS to the page, once. */
 export function addStyle() {
-  if (typeof document === 'undefined' || document.getElementById('phoria-chart-style')) return
-  const style = document.createElement('style')
-  style.id = 'phoria-chart-style'
-  style.textContent = CSS
-  document.head.prepend(style)
+  addStyleSheet('phoria-chart-style', CSS)
 }

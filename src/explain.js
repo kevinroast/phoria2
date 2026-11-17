@@ -3,6 +3,7 @@
 
 import { Box3 } from './value/Box3.js'
 import { drawKind } from './scene/kinds.js'
+import { usesTime } from './watch.js'
 
 /** @import { FrameDescription } from './frame.js' */
 /** @import { LabelStats } from './labels.js' */
@@ -28,6 +29,8 @@ import { drawKind } from './scene/kinds.js'
  * @property {Record<string, unknown> | null} [debug] what debug drawing shows, when it is on
  * @property {{ bloom: Record<string, number> | null, ambientOcclusion: Record<string, number | null> | null,
  *   groundShadow: Record<string, number | null> | null, fxaa: boolean }} [effects] the picture's effects, on or off
+ * @property {{ samples: number, supported: boolean } | null} [refine] the view's refine setting (null: off), and
+ *   whether this device can refine - draw to float targets
  */
 
 // two decimals, but two significant figures for small numbers - a shadow texel of 0.0034 units isn't
@@ -129,7 +132,7 @@ export function explain(info) {
     const parts = (/** @type {any} */ s) => ['vertex', 'fragment', 'lit'].filter((p) => s[p]).join(', ')
     lines.push(`Shader hooks: ${hooked.map((i) => {
       const s = /** @type {any} */ (i.material.shader), n = /** @type {any} */ (i.node)
-      const reads = [...(/\buTime\b/.test(s.vertex + s.fragment + s.lit) ? ['uTime'] : []), ...Object.keys(s.uniforms)]
+      const reads = [...(usesTime(s) ? ['uTime'] : []), ...Object.keys(s.uniforms)]
       return `${n.constructor.name}${n.name ? ` '${n.name}'` : ''} (${parts(s)}${reads.length ? `; ${reads.join(', ')}` : ''})`
     }).join(', ')}`)
     const unculled = hooked.filter((i) => i.material.shader?.vertex && i.material.shader.bounds === null).length
@@ -190,6 +193,19 @@ export function explain(info) {
       warnings.push("ambientOcclusion is on but there is no light from all round for it to dim - it leaves direct light alone; add a HemisphereLight or AmbientLight, or set scene.environment")
     }
   }
+
+  // refining a still view, and the camera's depth of field - which only a refined picture shows
+  const refine = info.refine
+  const aperture = ortho ? 0 : cam.aperture ?? 0
+  if (refine || aperture > 0) {
+    lines.push(`Refine: ${refine ? `${refine.samples} samples a still view` : 'off'}${aperture > 0 ? `; depth of field, aperture ${fmt(aperture)}, focused ${fmt(cam.focus)} ahead${cam.focusDistance === null ? ' (the orbit pivot)' : ''}` : ''}`)
+  }
+  if (aperture > 0 && !refine) warnings.push("the camera has an aperture but refine is off - depth of field shows only in refined pictures; set view.refine = true, or export with view.toImage({ samples })")
+  if (refine && !refine.supported) warnings.push("refine is on but this device can't draw to float targets - pictures aren't refined")
+  else if (refine && info.renderMode === 'always') warnings.push("refine is on but renderMode is 'always' - the view is never still, so it never refines; use renderMode 'auto'")
+  // glass with a dispersion but no thickness: a thin shell doesn't bend, so it doesn't split colours either
+  const flatGlass = items.filter((i) => i.material.transmission > 0 && i.material.dispersion > 0 && !(i.material.thickness > 0)).length
+  if (flatGlass) warnings.push(`${plural(flatGlass, 'glass object')} with dispersion but thickness 0 - a thin shell doesn't bend light, so it splits no colours; give it a thickness`)
 
   // debug drawing on: said, so a picture full of lines isn't a mystery
   if (info.debug) {

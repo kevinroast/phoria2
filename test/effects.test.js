@@ -213,4 +213,21 @@ describe('explain()', () => {
     expect(after).not.toContain('ambientOcclusion is on')
     view.dispose()
   })
+
+  it('says when depth of field will not show - an aperture with refine off - and glass that cannot disperse', async () => {
+    const view = new View({ canvas: page.canvas(), camera: { position: [0, 0, 6], target: [0, 0, 0], aperture: 0.1 } })
+    view.scene.add(new Mesh({ geometry: box(1), material: { transmission: 1, dispersion: 1 } }))
+    const text = await view.explain()
+    expect(text).toContain('Refine: off; depth of field, aperture 0.1, focused 6 ahead (the orbit pivot)')
+    expect(text).toContain('the camera has an aperture but refine is off')
+    expect(text).toContain('1 glass object with dispersion but thickness 0')
+    // refined, and the glass given a thickness: no warnings about them
+    view.refine = { samples: 64 }
+    view.scene.children[0].material.thickness = 1
+    const after = await view.explain()
+    expect(after).toContain('Refine: 64 samples a still view')
+    expect(after).not.toContain('refine is off')
+    expect(after).not.toContain('with dispersion but thickness 0')
+    view.dispose()
+  })
 })

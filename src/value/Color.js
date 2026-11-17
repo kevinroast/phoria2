@@ -4,7 +4,8 @@ import { CSS_COLORS } from './cssColors.js'
 /** @import { ColorInput } from '../types.js' */
 
 const toLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
-const toSRGB = (c) => (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055)
+/** @internal A linear channel as sRGB (not clamped). @param {number} c */
+export const toSRGB = (c) => (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055)
 const clamp01 = (c) => Math.min(1, Math.max(0, c))
 
 const NUMBER = String.raw`[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?`

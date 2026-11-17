@@ -12,6 +12,7 @@
 import { View } from '../View.js'
 import { create } from '../describe.js'
 import { fail } from '../validate.js'
+import { addStyle as addStyleSheet } from '../css.js'
 
 /** @import { Node } from '../scene/Node.js' */
 /** @import { Scene } from '../scene/Scene.js' */
@@ -163,11 +164,7 @@ const STYLE = ':where(phoria-view) { display: block; position: relative; height:
   ':where(phoria-view > canvas) { position: absolute; inset: 0; width: 100%; height: 100%; display: block }'
 
 function addStyle() {
-  if (typeof document === 'undefined' || document.getElementById('phoria-view-style')) return
-  const style = document.createElement('style')
-  style.id = 'phoria-view-style'
-  style.textContent = STYLE
-  document.head.prepend(style)
+  addStyleSheet('phoria-view-style', STYLE)
 }
 
 // a base class to extend where there is no DOM (a server, the tests' page), so importing never throws
@@ -302,8 +299,11 @@ export class PhoriaView extends Base {
     const view = /** @type {View} */ (this.#view)
     const current = () => ticket === this.#loading
     this.#ready = (async () => {
-      // what an earlier load added goes
-      for (const node of this.#added) node.removeFromParent()
+      // what an earlier load added goes, its GPU copies freed with it
+      for (const node of this.#added) {
+        node.removeFromParent()
+        node.dispose()
+      }
       this.#added = []
       this.#model = null
       const url = this.getAttribute('scene')

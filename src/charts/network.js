@@ -215,7 +215,7 @@ export function networkMark(ctx) {
       const { x, y, z } = ctx.scales, ch = ctx.spec.channels
       return rows.map((r) => [x && ch.x ? x(ch.x.get(r)) : 0, y && ch.y ? y(ch.y.get(r)) : h / 2, z && ch.z ? z(ch.z.get(r)) : 0])
     }
-    if (layout && typeof layout === 'object' && 'tiers' in layout) return tiers(rows, keys, pairs, layout, [w, h, d])
+    if (layout && typeof layout === 'object' && 'tiers' in layout) return tiers(rows, pairs, layout, [w, h, d])
     if (layout !== 'force') fail('chart()', `layout ${describe(layout)} - expected 'force', 'given' or { tiers: 'field' }`)
     const raw = force(keys, pairs)
     // fit the layout into the box, keeping its proportions
@@ -294,10 +294,10 @@ export function networkMark(ctx) {
 
 /**
  * Tiers: rings stacked top to bottom by a field, each ring ordered to sit under its links.
- * @param {any[]} rows @param {any[]} keys @param {number[][]} pairs
+ * @param {any[]} rows @param {number[][]} pairs
  * @param {{ tiers: string, order?: any[] }} layout @param {number[]} box
  */
-function tiers(rows, keys, pairs, layout, [w, h, d]) {
+function tiers(rows, pairs, layout, [w, h, d]) {
   const field = layout.tiers
   if (!rows.length) return []
   if (!(field in rows[0])) fail('chart()', `layout: { tiers: '${field}' } - '${field}' isn't a node field`)
@@ -321,7 +321,6 @@ function tiers(rows, keys, pairs, layout, [w, h, d]) {
       out[i] = [Math.cos(angle[i]) * r, h * (1 - t / Math.max(1, count - 1)), Math.sin(angle[i]) * r]
     })
   }
-  void keys
   return out
 }
 

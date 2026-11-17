@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   Geometry, Group, Lines, Mesh, OrthographicCamera, PerspectiveCamera, Raycaster, Scene, box, create,
 } from '../src/index.js'
@@ -213,6 +213,18 @@ describe('charts', () => {
     expect(bars.marks[0]).toBe(mesh)
     expect([mesh.count, mesh.material.roughness, mesh.handlersFor('click').includes(clicked)]).toEqual([100, 0.2, true])
     expect(mesh.instanceMatrices.length / 16).toBeGreaterThanOrEqual(100)
+  })
+
+  it('frees what it stops showing - an old frame, title and marks are disposed, not just removed', () => {
+    const scene = new Scene()
+    const bars = scene.add(chart({ mark: 'bar', data: rows, x: 'month', y: 'sales', title: 'Sales', transition: false }))
+    const before = [...bars.children]
+    const disposed = before.map((n) => vi.spyOn(n, 'dispose'))
+    bars.filter((r) => r.region === 'North')
+    before.forEach((n, i) => {
+      if (!bars.children.includes(n)) expect(disposed[i]).toHaveBeenCalled()
+    })
+    expect(before.some((n) => !bars.children.includes(n))).toBe(true)
   })
 
   it('filters rows, keeping the axes where they were', () => {

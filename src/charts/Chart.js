@@ -16,6 +16,7 @@ import { addStyle } from './style.js'
 import { EASES } from '../ease.js'
 
 /** @import { Mark, MarkContext, Target } from './marks.js' */
+/** @import { Node } from '../scene/Node.js' */
 /** @import { Scale, ColorScale } from './scales.js' */
 /** @import { Channel } from './spec.js' */
 
@@ -161,8 +162,10 @@ export class Chart extends Group {
   /** A new chart from the same spec and transform. @returns {any} */
   clone() {
     // the node options a chart takes (its tooltip and highlight are its own, in its spec)
-    const { name, position, quaternion, scale, visible, pickable, highlightWhole, onHover, onClick, showFrom, clip, onDrag, outline } = super.cloneOptions()
-    const copy = new Chart({ ...this.#input, name, position, quaternion, scale, visible, pickable, highlightWhole, onHover, onClick, showFrom, clip, onDrag, outline })
+    const node = /** @type {Record<string, unknown>} */ (super.cloneOptions())
+    delete node.tooltip
+    delete node.highlight
+    const copy = new Chart({ ...this.#input, ...node })
     // as Node.clone() does - but not the update handlers, which include this chart's own
     copy.userData = structuredClone(this.userData)
     copy.matrixAutoUpdate = this.matrixAutoUpdate
@@ -207,19 +210,20 @@ export class Chart extends Group {
     const signature = JSON.stringify([spec.mark, Object.entries(ch).map(([k, c]) => [k, c.field, c.type]), sized && box, theme, overlap, o.stack, o.layout, o.flat, o.contours, Object.keys(spec.link)])
     if (signature !== this.#signature) {
       this.#signature = signature
-      if (this.#mark) this.remove(.../** @type {any[]} */ (this.#mark.nodes))
+      // the old marks go, their GPU copies freed with them
+      if (this.#mark) for (const node of this.#mark.nodes) dropNode(this, node)
       this.#mark = makeMark(spec.mark, this.#ctx)
       for (const node of this.#mark.nodes) this.add(node)
       this.#current = this.#shown = null
       this.#tween = null
     }
-    if (this.#frame) this.remove(this.#frame)
+    if (this.#frame) dropNode(this, this.#frame)
     const frameOf = o.frame === 'origin' ? originFrame : chartFrame
     this.#frame = o.frame === false || (spec.mark === 'network' && o.layout !== 'given') ? null : this.add(frameOf({ box, theme, overlap, axes: axesFor(spec, this.scales) }))
     // curved coordinates on axes through the origin: rings around it, as polar graph paper
     const guides = this.#frame && o.frame === 'origin' && spec.coords ? curvedGuides({ coords: spec.coords, upright: spec.mark === 'curve', rows: spec.rows, scales: this.scales, theme, overlap, rings: spec.rings }) : null
     if (guides) this.#frame?.add(guides)
-    if (this.#title) this.remove(this.#title)
+    if (this.#title) dropNode(this, this.#title)
     this.#title = o.title ? this.add(new Label({ text: String(o.title), position: [0, box[1] * 1.12, -box[2] / 2], className: `phoria-axis-title phoria-${theme}`, overlap: 'show' })) : null
 
     this.#setLegend(spec, theme)
@@ -569,4 +573,14 @@ export function formatValue(c, v) {
   if (v instanceof Date) return f ? new Intl.DateTimeFormat(undefined, f).format(v) : DATE.format(v)
   if (typeof v === 'number') return f ? new Intl.NumberFormat(undefined, f).format(v) : (Math.abs(v) >= 1e4 ? COMPACT : NUMBER).format(v)
   return String(v)
+}
+
+/**
+ * A node the chart no longer shows: taken out, and its GPU copies freed - not left for the garbage
+ * collector, with the renderer's counts climbing on a live dashboard meanwhile.
+ * @param {Node} parent @param {Node} node
+ */
+function dropNode(parent, node) {
+  parent.remove(node)
+  node.dispose()
 }

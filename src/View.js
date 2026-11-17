@@ -1,5 +1,5 @@
 import { collect, toScreen } from './frame.js'
-import { LabelLayer } from './labels.js'
+import { LabelLayer, zoomedOut } from './labels.js'
 import { DRAG_START, OrbitControl } from './OrbitControl.js'
 import { cameraPreset, fitPoints, framingScale, presetDirection } from './presets.js'
 import { EASES } from './ease.js'
@@ -1195,6 +1195,7 @@ export class View {
         keyboard: !!this.#keyboard, reducedMotion: this.reducedMotion, description: this.canvas.getAttribute?.('aria-label') ?? this.#description },
       debug: this.#debug,
       effects: { bloom: this.bloom, ambientOcclusion: this.ambientOcclusion, groundShadow: this.groundShadow, fxaa: this.fxaa },
+      refine: this.#refine ? { samples: this.#refine.samples, supported: this.renderer.canRefine } : null,
     })
   }
 
@@ -1402,7 +1403,7 @@ export class View {
     const labels = /** @type {(import('./frame.js').FrameLabel & { occluded?: boolean })[]} */ (frame.labels)
     // a label waiting to be zoomed in to won't show either way, so it needs no ray
     const halfHeight = this.height / 2
-    const testing = labels.filter((l) => l.style.occlude && l.visible && !(l.style.minScale && l.scale * halfHeight < l.style.minScale))
+    const testing = labels.filter((l) => l.style.occlude && l.visible && !zoomedOut(l, halfHeight))
     if (!testing.length) return
     // what this frame drew hides what is behind it - the same surfaces the picture shows, each placed
     // once for all the rays, which ask only whether anything is nearer than their label

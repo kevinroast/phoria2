@@ -2,6 +2,7 @@
 // projected position. Crisp at any pixel ratio, styleable with CSS, and selectable/accessible like
 // any text on the page. Overlapping labels give way by priority (see labelLayout.js).
 import { alignColumns, layoutLabels, leaderEnd, placeBox, stackColumns } from './labelLayout.js'
+import { addStyle } from './css.js'
 
 /** @import { FrameLabel } from './frame.js' */
 
@@ -165,7 +166,7 @@ export class LabelLayer {
       seen.add(label.key)
       if (!label.visible) stats.offscreen++
       // details for closer up: until then they take no part, so they can't push other labels out
-      else if (label.style.minScale && label.scale * rect.height / 2 < label.style.minScale) stats.zoomedOut++
+      else if (zoomedOut(label, rect.height / 2)) stats.zoomedOut++
       else if (label.occluded && label.style.overlap === 'hide') stats.occluded++
       else active.push({ label, entry: this.#entry(label, root) })
     }
@@ -381,12 +382,7 @@ export class LabelLayer {
     if (this.#root) return this.#root
     // labels keep to one line unless the page's CSS says otherwise: a rule that any other wins over,
     // where an inline style would win over every rule
-    if (!document.getElementById('phoria-labels-style')) {
-      const style = document.createElement('style')
-      style.id = 'phoria-labels-style'
-      style.textContent = ':where(.phoria-label) { white-space: nowrap } :where(.phoria-label[data-interactive]) { cursor: pointer }'
-      document.head.prepend(style)
-    }
+    addStyle('phoria-labels-style', ':where(.phoria-label) { white-space: nowrap } :where(.phoria-label[data-interactive]) { cursor: pointer }')
     const root = document.createElement('div')
     root.className = 'phoria-labels'
     // its own stacking context, so labels' depth ordering stays below the page's floating UI
@@ -439,4 +435,13 @@ export class LabelLayer {
     this.#placed = placed
     Object.assign(root.style, { position, left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` })
   }
+}
+
+/**
+ * A label waiting to be zoomed in to: one with a minScale, smaller on screen than it.
+ * @internal @param {{ scale: number, style: { minScale?: number | null } }} label
+ * @param {number} halfHeight half the view's height, CSS pixels
+ */
+export function zoomedOut(label, halfHeight) {
+  return !!label.style.minScale && label.scale * halfHeight < label.style.minScale
 }

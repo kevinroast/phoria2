@@ -8,6 +8,7 @@ import { Drawable, Mesh, Points, Lines } from '../scene/drawables.js'
 import { PerspectiveCamera, OrthographicCamera } from '../scene/cameras.js'
 import { DirectionalLight, PointLight, SpotLight } from '../scene/lights.js'
 import { Geometry } from '../geometry/Geometry.js'
+import { toSRGB } from '../value/Color.js'
 import { Material } from '../material/Material.js'
 import { Texture } from '../material/Texture.js'
 import { PhoriaError, describe, warnOnce } from '../validate.js'
@@ -620,7 +621,7 @@ function srgbColors(c, size) {
   for (let i = 0; i < n; i++) {
     for (let k = 0; k < 3; k++) {
       const v = Math.min(Math.max(c[i * size + k], 0), 1)
-      out[i * 3 + k] = v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055
+      out[i * 3 + k] = toSRGB(v)
     }
   }
   return out

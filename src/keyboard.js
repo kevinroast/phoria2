@@ -6,6 +6,7 @@
 import { hiddenInstance } from './scene/drawables.js'
 import { Vec3 } from './value/Vec3.js'
 import { isInstanced } from './scene/kinds.js'
+import { addStyle } from './css.js'
 
 /** @import { Hit } from './Raycaster.js' */
 /** @import { TooltipContent } from './tooltip.js' */
@@ -52,12 +53,7 @@ export class Keyboard {
     this.#view = view
     this.#hooks = hooks
     this.#options = options
-    if (!document.getElementById('phoria-sr-style')) {
-      const style = document.createElement('style')
-      style.id = 'phoria-sr-style'
-      style.textContent = STYLE
-      document.head.prepend(style)
-    }
+    addStyle('phoria-sr-style', STYLE)
     const canvas = view.canvas, id = `phoria-keys-${++ids}`
     // what a screen reader says as you step: politely, after what it's saying already
     this.#say = document.createElement('div')
