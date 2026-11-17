@@ -60,7 +60,7 @@ function standOnFloor(mesh, x, z, on = 0) {
 export default function run({ canvas, gui }) {
   const view = new View({
     canvas, background: '#0b0c10',
-    camera: { position: [0.5, 2.6, 8.2], target: [0, 0.5, -0.2], fov: 38 },
+    camera: { position: [0.4, 2.4, 6.6], target: [0, 0.55, -1.4], fov: 40 },
     orbit: { minDistance: 2.5, maxDistance: 12, minPitch: 0.05, maxPitch: 1.2 },
     // the softbox's face and the glints off the facets glow; the lit floor doesn't
     bloom: { strength: 0.35, radius: 0.6, threshold: 1.6 },
@@ -100,12 +100,12 @@ base.rgb *= mix(0.05, 1.0, smoothstep(-w, w, k));` } } }))
   // twice as much as window glass (Abbe 25.8). On end, its faces flat: three tall hard edges against
   // the stripes, splitting what they bend
   piece(standOnFloor(new Mesh({ geometry: extrude({ shape: [[-0.4, -0.23], [0.4, -0.23], [0, 0.46]], depth: 1.3, axis: 'y' }),
-    material: { transmission: 1, roughness: 0.02, ior: 1.78, dispersion: 0.78, thickness: 1.2, flatShading: true }, rotation: [0, 0.4, 0] }), -2.2, -1.5))
+    material: { transmission: 1, roughness: 0.02, ior: 1.78, dispersion: 0.78, thickness: 1.2, flatShading: true }, rotation: [0, 0.4, 0] }), -2.5, -1.5))
   // a cut gem, a round brilliant in synthetic rutile - more fire than diamond, five times its spread
   // of colours (Abbe about 10), and a higher ior still. A lathe with few sides and flat shading makes
   // its facets; tilted towards the camera on a black velvet block, so they bend the stripes and the
   // dark velvet - the contrast its fringes need
-  const plinth = scene.add(new Mesh({ geometry: box({ width: 0.8, height: 0.42, depth: 0.8 }), position: [-0.85, 0.21, 0.9], castShadow: true, receiveShadow: true,
+  const plinth = scene.add(new Mesh({ geometry: box({ width: 0.8, height: 0.42, depth: 0.8 }), position: [-1.25, 0.21, -1.5], castShadow: true, receiveShadow: true,
     material: { color: '#131316', roughness: 0.95 } }))
   const gem = [[0, 0], [0.46, 0.4], [0.5, 0.44], [0.5, 0.47], [0.3, 0.64], [0, 0.64]]
   piece(standOnFloor(new Mesh({ geometry: lathe({ points: gem, segments: 16 }), rotation: [0.55, 0.2, 0],
@@ -114,7 +114,7 @@ base.rgb *= mix(0.05, 1.0, smoothstep(-w, w, k));` } } }))
   // iridescent film, the picture that started all this. A brown stem in its top
   const pear = [[0, 0], [0.16, 0.02], [0.33, 0.13], [0.41, 0.3], [0.38, 0.5], [0.27, 0.68], [0.19, 0.84], [0.15, 0.98], [0.1, 1.08], [0, 1.12]]
   const pearMesh = piece(standOnFloor(new Mesh({ geometry: lathe({ points: pear, segments: 64 }),
-    material: { transmission: 1, roughness: 0.02, ior: 1.52, thickness: 0.8, attenuationColor: '#e8a83a', attenuationDistance: 0.9, iridescence: 0.55, iridescenceThickness: 520 } }), 0.15, -0.15))
+    material: { transmission: 1, roughness: 0.02, ior: 1.52, thickness: 0.8, attenuationColor: '#e8a83a', attenuationDistance: 0.9, iridescence: 0.55, iridescenceThickness: 520 } }), 0, -1.5))
   pearMesh.add(new Mesh({ geometry: cylinder({ radius: 0.025, height: 0.22, segments: 8 }), position: [0.02, 1.18, 0], rotation: [0, 0, -0.25],
     material: { color: '#4a3020', roughness: 0.7 }, castShadow: true }))
   // The vessels are walls of glass, not solids: one surface each, open-ended, thin-walled - what is
@@ -123,7 +123,7 @@ base.rgb *= mix(0.05, 1.0, smoothstep(-w, w, k));` } } }))
   // a bell jar on a wooden base, over a polished brass ball: clear soda-lime a few millimetres thick,
   // faintly green where its wall is seen edge-on, as window glass is. Open at the bottom, a knob on top.
   // (What it covers is solid: glass under glass shows only what is behind both)
-  const base = scene.add(new Mesh({ geometry: cylinder({ radius: 0.5, height: 0.06, segments: 48 }), position: [1.25, 0.03, -0.55], castShadow: true, receiveShadow: true,
+  const base = scene.add(new Mesh({ geometry: cylinder({ radius: 0.5, height: 0.06, segments: 48 }), position: [1.25, 0.03, -1.5], castShadow: true, receiveShadow: true,
     material: { color: '#7a5636', roughness: 0.55 } }))
   scene.add(new Mesh({ geometry: sphere({ radius: 0.2, segments: 48 }), position: [base.position[0], 0.26, base.position[2]], castShadow: true, receiveShadow: true,
     material: { color: '#e0b25a', metalness: 1, roughness: 0.12 } }))
@@ -134,7 +134,7 @@ base.rgb *= mix(0.05, 1.0, smoothstep(-w, w, k));` } } }))
   // about 44), tinted sea blue
   const tumbler = [[0, 0], [0.3, 0], [0.33, 0.05], [0.36, 0.62]]
   piece(standOnFloor(new Mesh({ geometry: lathe({ points: tumbler, segments: 12 }),
-    material: { transmission: 1, roughness: 0.02, ior: 1.56, dispersion: 0.45, thickness: 0.03, thinWalled: true, doubleSided: true, flatShading: true, attenuationColor: '#4fb0c8', attenuationDistance: 0.06 } }), 2.2, 0.45))
+    material: { transmission: 1, roughness: 0.02, ior: 1.56, dispersion: 0.45, thickness: 0.03, thinWalled: true, doubleSided: true, flatShading: true, attenuationColor: '#4fb0c8', attenuationDistance: 0.06 } }), 2.5, -1.5))
 
   // a little light from all round, so nothing is quite black
   scene.add(new HemisphereLight({ sky: '#9aa4b8', ground: '#2a2826', intensity: 0.15 }))
@@ -145,8 +145,8 @@ base.rgb *= mix(0.05, 1.0, smoothstep(-w, w, k));` } } }))
     material: { color: '#000000', emissive: '#fff4e6', emissiveIntensity: 7, doubleSided: true } }))
   const placeKey = () => {
     const a = 2.2 + settings.place * 0.6
-    key.position.set(Math.cos(a) * 3.4, 3.4, Math.sin(a) * -3.4 + 1.8)
-    key.target = [0, 0.3, -0.2]
+    key.position.set(Math.cos(a) * 3.4, 3.4, Math.sin(a) * -3.4 + 0.6)
+    key.target = [0, 0.3, -1.5]
     key.width = settings.size
     key.height = settings.size * 0.6
     scene.updateWorldTree()
