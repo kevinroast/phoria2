@@ -60,7 +60,7 @@ function standOnFloor(mesh, x, z, on = 0) {
 export default function run({ canvas, gui }) {
   const view = new View({
     canvas, background: '#0b0c10',
-    camera: { position: [0.4, 2.4, 6.6], target: [0, 0.55, -1.4], fov: 40 },
+    camera: { position: [0.3, 1.8, 4.4], target: [0, 0.5, -1.5], fov: 40 },
     orbit: { minDistance: 2.5, maxDistance: 12, minPitch: 0.05, maxPitch: 1.2 },
     // the softbox's face and the glints off the facets glow; the lit floor doesn't
     bloom: { strength: 0.35, radius: 0.6, threshold: 1.6 },
@@ -72,7 +72,7 @@ export default function run({ canvas, gui }) {
   scene.environment = 'studio'
   scene.environmentIntensity = 0.45
 
-  const settings = { place: 0, size: 1.6, turn: false, aperture: 0, focus: 0 }
+  const settings = { place: 0, turn: false, aperture: 0, focus: 0 }
 
   // the set: a pale floor, satin, so the coloured light reads on it - and behind, a sweep printed with
   // bold black and white stripes, for the glass to bend and split. The stripes are a few lines of
@@ -131,10 +131,11 @@ base.rgb *= mix(0.05, 1.0, smoothstep(-w, w, k));` } } }))
   piece(standOnFloor(new Mesh({ geometry: lathe({ points: jar, segments: 64 }),
     material: { transmission: 1, roughness: 0.02, ior: 1.52, thickness: 0.012, thinWalled: true, doubleSided: true, attenuationColor: '#e2f4e8', attenuationDistance: 0.04 } }), base.position[0], base.position[2], 0.06))
   // a tumbler in cut lead crystal: twelve flat sides, a little more ior and fire than plain glass (Abbe
-  // about 44), tinted sea blue
-  const tumbler = [[0, 0], [0.3, 0], [0.33, 0.05], [0.36, 0.62]]
+  // about 44), with a subtle green to it
+  // (its underside domed a little, as a glass's is: it stands on the ring of its foot, not flat on the floor)
+  const tumbler = [[0, 0.015], [0.27, 0.004], [0.3, 0], [0.33, 0.05], [0.36, 0.62]]
   piece(standOnFloor(new Mesh({ geometry: lathe({ points: tumbler, segments: 12 }),
-    material: { transmission: 1, roughness: 0.02, ior: 1.56, dispersion: 0.45, thickness: 0.03, thinWalled: true, doubleSided: true, flatShading: true, attenuationColor: '#4fb0c8', attenuationDistance: 0.06 } }), 2.5, -1.5))
+    material: { transmission: 1, roughness: 0.02, ior: 1.56, dispersion: 0.45, thickness: 0.03, thinWalled: true, doubleSided: true, flatShading: true, attenuationColor: '#b4dcb8', attenuationDistance: 0.06 } }), 2.5, -1.5))
 
   // a little light from all round, so nothing is quite black
   scene.add(new HemisphereLight({ sky: '#9aa4b8', ground: '#2a2826', intensity: 0.15 }))
@@ -147,8 +148,8 @@ base.rgb *= mix(0.05, 1.0, smoothstep(-w, w, k));` } } }))
     const a = 2.2 + settings.place * 0.6
     key.position.set(Math.cos(a) * 3.4, 3.4, Math.sin(a) * -3.4 + 0.6)
     key.target = [0, 0.3, -1.5]
-    key.width = settings.size
-    key.height = settings.size * 0.6
+    key.width = 1.6
+    key.height = 0.96
     scene.updateWorldTree()
     const [hw, hh] = key.worldEdges, p = key.worldPosition
     const at = (/** @type {number} */ s, /** @type {number} */ t) => [0, 1, 2].map((i) => p[i] + hw[i] * s + hh[i] * t)
@@ -157,7 +158,6 @@ base.rgb *= mix(0.05, 1.0, smoothstep(-w, w, k));` } } }))
 
   const l = gui.addFolder('Softbox')
   l.add(settings, 'place', -1, 1, 0.01).name('position').onChange(placeKey)
-  l.add(settings, 'size', 0.4, 3, 0.05).name('size').onChange(placeKey)
   gui.add(settings, 'turn').name('turn the pieces')
   gui.add({ refine: true }, 'refine').name('refine when still').onChange((on) => { view.refine = on })
   // depth of field, shown as the picture refines: the lens's radius, and the focus nearer or further
