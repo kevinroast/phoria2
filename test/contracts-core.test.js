@@ -188,6 +188,7 @@ contract('Material', {
     unlit: { value: true, read: (m) => m.unlit, default: false, bad: 'yes', error: 'unlit' },
     flatShading: { value: true, read: (m) => m.flatShading, default: false, bad: 'yes', error: 'flatShading' },
     doubleSided: { value: true, read: (m) => m.doubleSided, default: false, bad: 'yes', error: 'doubleSided' },
+    thinWalled: { value: true, read: (m) => m.thinWalled, default: false, bad: 'yes', error: 'thinWalled' },
     fog: { value: false, read: (m) => m.fog, default: true, bad: 'thick', error: 'fog' },
     vertexColors: { value: true, read: (m) => m.vertexColors, default: false, bad: 'yes', error: 'vertexColors' },
     depthWrite: { value: false, read: (m) => m.depthWrite, default: true, bad: 'no', error: 'depthWrite' },

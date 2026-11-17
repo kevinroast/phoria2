@@ -414,7 +414,7 @@ Properties: `color`, `opacity`, `roughness` (0.5), `metalness` (0), `emissive`,
 (`'normal'`, `'additive'` - adds light, for glows and sparks - or `'multiply'` - darkens what is behind, as a colour
 filter does: cyan over magenta is blue), `alphaTest` (cut-outs: drop pixels with less alpha - leaves, fences),
 `map`, `normalMap`/`normalScale`, `bumpMap`/`bumpScale`, `roughnessMap`, `metalnessMap`, `aoMap`,
-`emissiveMap`, `lightMap`/`lightMapIntensity`, `environmentIntensity` (1), `transmission`/`thickness`/`attenuationColor`/`attenuationDistance`/`dispersion`, `clearcoat`/`clearcoatRoughness`, `sheen`/`sheenColor`/`sheenRoughness`, `iridescence`/`iridescenceIor`/`iridescenceThickness`/`iridescenceThicknessMin`/`iridescenceThicknessMap`, `ior`/
+`emissiveMap`, `lightMap`/`lightMapIntensity`, `environmentIntensity` (1), `transmission`/`thickness`/`thinWalled`/`attenuationColor`/`attenuationDistance`/`dispersion`, `clearcoat`/`clearcoatRoughness`, `sheen`/`sheenColor`/`sheenRoughness`, `iridescence`/`iridescenceIor`/`iridescenceThickness`/`iridescenceThicknessMin`/`iridescenceThicknessMap`, `ior`/
 `specularIntensity`/`specularColor`, `anisotropy`/`anisotropyRotation`, `translucency`/`translucencyColor`, `matcap`, `toon` (below); `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
 `mesh.material.color.set('#0f0')`, `mesh.material.opacity = 0.5`, or a whole new one: `mesh.material = { color: 'red' }`
 (options become a Material, as in the constructor; `mesh.geometry = box(2)` likewise).
@@ -495,7 +495,12 @@ tinted bottle glass, a coloured liquid: `attenuationColor` is the colour light t
 block of amber. `dispersion` (0) splits what a thick piece bends into its colours - rainbow fringes
 where what is behind changes, as through a prism or a cut gem: 20 over the glass's Abbe number, so
 0.3-0.5 for window and bottle glass, about 1 for flint glass and crystal, 2 or more to show it off.
-With `refine` on, the fringes settle into a smooth rainbow. Keep `roughness` low for clear glass,
+With `refine` on, the fringes settle into a smooth rainbow. A vessel - a bottle, a drinking glass, a
+lamp's shade - is a single surface of glass a wall thick, not a solid: model it as one surface (no
+inner wall), and give it `thinWalled: true` with `thickness` its wall's, so what is behind shifts
+a little as through a pane rather than bending as through a lens, and its body tints deeper where
+the wall is seen edge-on, as a bottle's sides are; and `doubleSided: true`, so its far side shows
+through its near one - its back faces are drawn first, then its front faces over them. Keep `roughness` low for clear glass,
 higher for frosted - what is behind blurs. It shines with an `environment` to reflect
 (`'studio'`, or better an `.hdr`). Glass that casts shadows (`castShadow`) casts coloured light, not
 a grey shadow - the light it lets through, tinted by its colour and its body - from directional,

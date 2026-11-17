@@ -235,7 +235,7 @@ describe('glass', () => {
     const glass = drawLog[3].program
     expect(definesOf(glass)).toContain('REFRACTION')
     // no dispersion: no spread of the ior; and a plain frame bends by all of a spread
-    expect(glass.values.uRefraction.map((/** @type {number} */ v) => +v.toFixed(3))).toEqual([1.4, 0.5, 0])
+    expect(glass.values.uRefraction.map((/** @type {number} */ v) => +v.toFixed(3))).toEqual([1.4, 0.5, 0, 0])
     expect(glass.values.uSpectrum).toBe(1)
     expect(glass.values.uBehind).toBeDefined()
     expect(definesOf(drawLog[0].program)).not.toContain('REFRACTION')
@@ -250,8 +250,22 @@ describe('glass', () => {
     renderer.renderFrame(frame)
     const glass = drawLog[3].program
     // half spread: (ior - 1) / 40 times the dispersion
-    expect(glass.values.uRefraction.map((/** @type {number} */ v) => +v.toFixed(4))).toEqual([1.5, 1, 0.025])
+    expect(glass.values.uRefraction.map((/** @type {number} */ v) => +v.toFixed(4))).toEqual([1.5, 1, 0.025, 0])
     expect(glass.values.uSpectrum).toBe(0.25)
+  })
+
+  it('draws double-sided glass back faces first, taken into the picture behind again for its front faces', () => {
+    const { gl, drawLog } = logged()
+    const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
+    renderer.setSize(64, 48)
+    renderer.renderFrame(collect(withGlass({ transmission: 1, thickness: 0.1, thinWalled: true, doubleSided: true }), camera()))
+    // the box, the copy, the glass's back faces, the copy again, its front faces
+    expect(drawLog.map((d) => d.call)).toEqual(['drawElements', 'blitFramebuffer', 'generateMipmap', 'drawElements', 'blitFramebuffer', 'generateMipmap', 'drawElements'])
+    expect(drawLog[6].program.values.uRefraction[3]).toBe(1)
+    // one-sided glass: one copy, one draw
+    drawLog.length = 0
+    renderer.renderFrame(collect(withGlass({ transmission: 1, thickness: 0.1 }), camera()))
+    expect(drawLog.filter((d) => d.call === 'blitFramebuffer')).toHaveLength(1)
   })
 
   it("tints by its body over a distance - none where the distance is Infinity, which a uniform can't hold", () => {

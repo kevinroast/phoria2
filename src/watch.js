@@ -210,7 +210,7 @@ export class ChangeWatch {
     this.#push(m.environmentIntensity)
     this.#pushAll(m.translucencyColor)
     this.#push((m.unlit ? 1 : 0) | (m.flatShading ? 2 : 0) | (m.doubleSided ? 4 : 0) | (m.vertexColors ? 8 : 0) |
-      (m.depthWrite ? 16 : 0) | (m.depthTest ? 32 : 0) | (m.sizeAttenuation ? 64 : 0) | (m.blending === 'additive' ? 128 : m.blending === 'multiply' ? 1024 : 0) | (m.transparent ? 256 : 0) | (m.fog ? 512 : 0))
+      (m.depthWrite ? 16 : 0) | (m.depthTest ? 32 : 0) | (m.sizeAttenuation ? 64 : 0) | (m.blending === 'additive' ? 128 : m.blending === 'multiply' ? 1024 : 0) | (m.transparent ? 256 : 0) | (m.fog ? 512 : 0) | (m.thinWalled ? 2048 : 0))
     for (const [, texture] of m.allTextures) this.#texture(texture)
     const hooks = m.shader
     if (hooks) {

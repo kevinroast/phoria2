@@ -743,7 +743,7 @@ uniform float uTransmission;
 // what is behind see-through things: the picture so far, the opaque things drawn, smaller and
 // blurrier down its mip levels - for glass to show bent, and frosted
 uniform sampler2D uBehind;
-uniform vec3 uRefraction;      // ior, thickness (its own units), dispersion's half spread of the ior
+uniform vec4 uRefraction;      // ior, thickness (its own units), dispersion's half spread of the ior, 1 for a thin wall
 uniform float uSpectrum;       // how much of that spread this picture bends by: 1, or a refine sample's 0-2
 uniform vec4 uAttenuation;     // the body's colour (linear) after a distance (w; 0: no tint)
 uniform mat4 uViewProjection;
@@ -1533,9 +1533,17 @@ vec3 reflected(vec3 r, vec3 n, float roughness, vec3 irradiance) {
 // the glass (as glTF's reference renderer and three.js do: by roughness, scaled by how much the ior
 // bends). A thin shell (thickness 0) doesn't bend it, but still blurs it. In the picture's own
 // encoding, premultiplied
+// how far light goes in glass, along a ray turned by an ior: a solid piece's thickness (as glTF has it),
+// or across a thin wall that thick - further the more slanting, up to four times
+float glassPath(vec3 r, vec3 n) {
+  float t = uRefraction.y * vThicknessScale;
+  return uRefraction.w > 0.0 ? t / max(abs(dot(r, n)), 0.25) : t;
+}
 vec2 bentTo(vec3 n, vec3 v, float ior) {
-  vec3 exit = vWorldPosition + refract(-v, n, 1.0 / ior) * uRefraction.y * vThicknessScale;
-  vec4 clip = uViewProjection * vec4(exit, 1.0);
+  // where the ray comes out: off the line it came in on by as much as the glass bends it - through a
+  // thin wall, the sideways shift of a pane, out parallel to how it went in
+  vec3 r = refract(-v, n, 1.0 / ior);
+  vec4 clip = uViewProjection * vec4(vWorldPosition + r * glassPath(r, n), 1.0);
   return clamp(clip.xy / clip.w * 0.5 + 0.5, 0.0, 1.0);
 }
 vec4 behindGlass(vec3 n, vec3 v, float roughness) {
@@ -1552,11 +1560,11 @@ vec4 behindGlass(vec3 n, vec3 v, float roughness) {
   return behind;
 }
 // what glass's body leaves of light on its way through - Beer-Lambert, over the path the light
-// takes in it (its thickness, as glTF's reference renderer and three.js take it): attenuationColor
-// is what is left after attenuationDistance, and more glass tints deeper
-vec3 bodyTint() {
+// takes in it (glassPath): attenuationColor is what is left after attenuationDistance, and more glass
+// tints deeper - a thin wall seen edge-on, as a bottle's sides are, the deepest
+vec3 bodyTint(vec3 n, vec3 v) {
   if (uAttenuation.w <= 0.0) return vec3(1.0);
-  return pow(max(uAttenuation.rgb, 1e-4), vec3(uRefraction.y * vThicknessScale / uAttenuation.w));
+  return pow(max(uAttenuation.rgb, 1e-4), vec3(glassPath(refract(-v, n, 1.0 / uRefraction.x), n) / uAttenuation.w));
 }
 // what comes through glass, tinted by its colour as coloured glass tints light, in the picture's
 // encoding - so laid over the glass as blending would lay what is behind
@@ -1604,6 +1612,7 @@ void main() {
 #ifdef REFRACTION
   // what glass shows through it, bent - laid over it at the end
   vec4 behind = vec4(0.0);
+  vec3 glassTint = vec3(1.0);
 #endif
 
 #ifdef LIT
@@ -1757,6 +1766,7 @@ ${RECT_LIGHTS}
 #endif
 #ifdef REFRACTION
   behind = behindGlass(n, v, roughness);
+  glassTint = base.rgb * bodyTint(n, v);
 #endif
 #ifdef DEBUG_SHADOW_TEXELS
   color = shadowTexels(color);
@@ -1802,7 +1812,7 @@ ${RECT_LIGHTS}
   // glass lays what is behind it over itself, as blending would - but bent - and covers what is
   // there: where the picture behind is see-through (no background), the page shows through as before
   float glassShows = 1.0 - coverage;
-  fragColor = vec4(fragColor.rgb + throughGlass(behind, base.rgb * bodyTint()) * glassShows, coverage + behind.a * glassShows);
+  fragColor = vec4(fragColor.rgb + throughGlass(behind, glassTint) * glassShows, coverage + behind.a * glassShows);
 #endif
 }
 `

@@ -960,6 +960,10 @@
         "doubleSided": {
           "type": "boolean"
         },
+        "thinWalled": {
+          "type": "boolean",
+          "description": "Glass as a wall thickness thick - a window, a bottle's or a glass's side - not a solid piece: what is behind shifts a little rather than bending as through a lens, and the body tints deeper where the wall is seen edge-on."
+        },
         "vertexColors": {
           "type": "boolean"
         },

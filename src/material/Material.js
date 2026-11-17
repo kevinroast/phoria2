@@ -76,6 +76,9 @@ import { Texture } from './Texture.js'
  *   towards its edges. Its colour tints what shows through, as coloured glass does
  * @property {number} [thickness] how thick glass is, in its own units - what is behind it is bent by its ior over
  *   this distance, as through a solid lens or a bottle's wall; 0 is a thin shell, which doesn't bend it (default 0)
+ * @property {boolean} [thinWalled] glass as a wall `thickness` thick - a window, a bottle's or a glass's side, a
+ *   lamp's shade - not a solid piece: what is behind shifts a little, as through a pane, rather than bending
+ *   as through a lens, and its body tints deeper where the wall is seen edge-on (default false)
  * @property {ColorInput} [attenuationColor] the colour glass's body turns light that has come through attenuationDistance
  *   of it - deeper the thicker it is, as tinted bottle glass or a coloured liquid (default white)
  * @property {number} [attenuationDistance] how far light goes through glass's body to come out attenuationColor, in its
@@ -134,7 +137,7 @@ import { Texture } from './Texture.js'
 const MAPS = ['map', 'roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap', 'emissiveMap', 'lightMap', 'iridescenceThicknessMap', 'matcap']
 // data maps hold numbers, not colours
 const LINEAR_MAPS = new Set(['roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap', 'iridescenceThicknessMap'])
-const FLAGS = ['unlit', 'flatShading', 'doubleSided', 'vertexColors', 'depthWrite', 'depthTest', 'sizeAttenuation', 'transparent', 'fog']
+const FLAGS = ['unlit', 'flatShading', 'doubleSided', 'vertexColors', 'depthWrite', 'depthTest', 'sizeAttenuation', 'transparent', 'fog', 'thinWalled']
 const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiveIntensity: [0, Infinity], size: [0, Infinity], width: [0, Infinity],
   alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1], triplanar: [0, Infinity], bumpScale: [-Infinity, Infinity],
   transmission: [0, 1], thickness: [0, Infinity], attenuationDistance: [0, Infinity], dispersion: [0, Infinity], clearcoat: [0, 1], clearcoatRoughness: [0, 1], sheen: [0, 1], sheenRoughness: [0, 1], ior: [1, Infinity],
@@ -149,7 +152,7 @@ const DEFAULTS = {
   transmission: 0, thickness: 0, attenuationDistance: Infinity, dispersion: 0, clearcoat: 0, clearcoatRoughness: 0, sheen: 0, sheenRoughness: 0.5, ior: 1.5, specularIntensity: 1, anisotropy: 0,
   iridescence: 0, iridescenceIor: 1.3, iridescenceThickness: 400, iridescenceThicknessMin: 100,
   anisotropyRotation: 0, translucency: 0, toon: 0, lightMapIntensity: 1, environmentIntensity: 1, unlit: false, flatShading: false,
-  doubleSided: false, vertexColors: false, blending: 'normal', depthWrite: true, depthTest: true, fog: true,
+  doubleSided: false, thinWalled: false, vertexColors: false, blending: 'normal', depthWrite: true, depthTest: true, fog: true,
   size: 1, sizeAttenuation: true, width: 1, dash: 0, gap: 0, dashOffset: 0,
 }
 const OPTIONS = ['name', ...Object.keys(COLORS), ...MAPS, ...FLAGS, ...Object.keys(NUMBERS), 'blending', 'shader']
@@ -232,6 +235,7 @@ export class Material {
   /** @type {boolean} */ unlit
   /** @type {boolean} */ flatShading
   /** @type {boolean} */ doubleSided
+  /** Glass as a wall `thickness` thick, not a solid piece: what is behind shifts rather than bends. @type {boolean} */ thinWalled
   /** @type {boolean} */ vertexColors
   /** Fades into the scene's fog with distance. @type {boolean} */ fog
   /** @type {'normal' | 'additive' | 'multiply'} */ blending

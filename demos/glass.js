@@ -116,18 +116,19 @@ base.rgb *= mix(0.05, 1.0, smoothstep(-w, w, k));` } } }))
     material: { transmission: 1, roughness: 0.02, ior: 1.52, thickness: 0.8, attenuationColor: '#e8a83a', attenuationDistance: 0.9, iridescence: 0.55, iridescenceThickness: 520 } }), 0.15, -0.15))
   pearMesh.add(new Mesh({ geometry: cylinder({ radius: 0.025, height: 0.22, segments: 8 }), position: [0.02, 1.18, 0], rotation: [0, 0, -0.25],
     material: { color: '#4a3020', roughness: 0.7 }, castShadow: true }))
-  // a bottle in frosted green glass - soda-lime, acid-etched, so what is behind it blurs; a wall a few
-  // millimetres thick bends little, but the long way through its sides tints it deep
-  const bottle = [[0, 0], [0.28, 0], [0.3, 0.04], [0.3, 0.86], [0.22, 1.06], [0.1, 1.2], [0.09, 1.5], [0.11, 1.52], [0.11, 1.57], [0, 1.57]]
+  // The vessels are walls of glass, not solids: one surface each, open at the top, thin-walled - what
+  // is behind shifts a little as through a pane, and the wall tints deepest seen edge-on - and
+  // double-sided, so the far side shows through the near one
+  // a bottle in frosted green glass - soda-lime, acid-etched, so what is behind it blurs; its wall tints
+  // little face on and deep along its sides
+  const bottle = [[0, 0], [0.28, 0], [0.3, 0.04], [0.3, 0.86], [0.22, 1.06], [0.1, 1.2], [0.09, 1.5], [0.11, 1.52], [0.11, 1.57]]
   piece(standOnFloor(new Mesh({ geometry: lathe({ points: bottle, segments: 48 }),
-    material: { transmission: 1, roughness: 0.38, ior: 1.52, thickness: 0.12, attenuationColor: '#2f8a52', attenuationDistance: 0.12 } }), 1.25, -0.55))
+    material: { transmission: 1, roughness: 0.38, ior: 1.52, thickness: 0.02, thinWalled: true, doubleSided: true, attenuationColor: '#2f8a52', attenuationDistance: 0.035 } }), 1.25, -0.55))
   // a tumbler in cut lead crystal: twelve flat sides, a little more ior and fire than plain glass (Abbe
-  // about 44), tinted sea blue. Hollow - the profile runs up the outside, over the rim and down the
-  // inside to a heavy base - so its thickness is its wall's, and its tint, through so little glass,
-  // comes over a shorter distance
-  const tumbler = [[0, 0], [0.3, 0], [0.33, 0.05], [0.36, 0.62], [0.33, 0.62], [0.3, 0.16], [0, 0.16]]
+  // about 44), tinted sea blue
+  const tumbler = [[0, 0], [0.3, 0], [0.33, 0.05], [0.36, 0.62]]
   piece(standOnFloor(new Mesh({ geometry: lathe({ points: tumbler, segments: 12 }),
-    material: { transmission: 1, roughness: 0.02, ior: 1.56, dispersion: 0.45, thickness: 0.06, flatShading: true, attenuationColor: '#4fb0c8', attenuationDistance: 0.1 } }), 2.2, 0.45))
+    material: { transmission: 1, roughness: 0.02, ior: 1.56, dispersion: 0.45, thickness: 0.03, thinWalled: true, doubleSided: true, flatShading: true, attenuationColor: '#4fb0c8', attenuationDistance: 0.06 } }), 2.2, 0.45))
 
   // a little light from all round, so nothing is quite black
   scene.add(new HemisphereLight({ sky: '#9aa4b8', ground: '#2a2826', intensity: 0.15 }))

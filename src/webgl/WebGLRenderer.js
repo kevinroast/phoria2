@@ -683,12 +683,19 @@ export class WebGLRenderer {
     // not while some are still compiling, or it shows before what casts it
     if (ground && effects && !this.info.compiling) effects.drawGround(ground, frame)
     // glass bends what is behind it: the picture so far, taken before anything see-through is drawn
-    if (frame.transparent.some(refracts)) {
-      const color = scene ? (sceneFloat ? gl.RGBA16F : gl.RGBA8) : target?.srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8
-      state.behind = this.#behind(scene ? scene.draw.framebuffer : output, width, height, color)
-    }
+    const glassy = frame.transparent.some(refracts)
+    const drawingInto = scene ? scene.draw.framebuffer : output
+    const behindColor = scene ? (sceneFloat ? gl.RGBA16F : gl.RGBA8) : target?.srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8
+    if (glassy) state.behind = this.#behind(drawingInto, width, height, behindColor)
     gl.enable(gl.BLEND)
-    for (const item of frame.transparent) this.#draw(item, frame, true, state)
+    // double-sided glass shows its far side through its near one, as three.js does: its back faces
+    // drawn first, bending the solids, and taken into the picture behind again for its front faces
+    const twoSided = glassy ? frame.transparent.filter((item) => refracts(item) && item.material.doubleSided) : []
+    if (twoSided.length) {
+      for (const item of twoSided) this.#draw(item, frame, true, state, 'back')
+      state.behind = this.#behind(drawingInto, width, height, behindColor)
+    }
+    for (const item of frame.transparent) this.#draw(item, frame, true, state, twoSided.includes(item) ? 'front' : null)
     // outlines over everything
     if (outline && passes) passes.outlineComposite(outline, state.linear)
     gl.depthMask(true)
@@ -887,8 +894,11 @@ export class WebGLRenderer {
     return { lights, lightDefines: defines, studio: frame.environment === 'studio', ltc }
   }
 
-  /** @param {DrawItem} item @param {FrameDescription} frame @param {boolean} transparent @param {FrameState} state */
-  #draw(item, frame, transparent, state) {
+  /**
+   * @param {DrawItem} item @param {FrameDescription} frame @param {boolean} transparent @param {FrameState} state
+   * @param {'back' | 'front' | null} [side] only its back or its front faces, whatever its material says
+   */
+  #draw(item, frame, transparent, state, side = null) {
     const gl = this.gl
     const { node, geometry, material, worldMatrix, instances } = item
     const kind = drawKind(node)
@@ -1079,11 +1089,11 @@ export class WebGLRenderer {
     // a mirroring transform (negative scale) reverses the winding - which also says which side is
     // the back, for double-sided materials
     gl.frontFace(mat4.determinant(worldMatrix) < 0 ? gl.CW : gl.CCW)
-    if (material.doubleSided) {
+    if (material.doubleSided && !side) {
       gl.disable(gl.CULL_FACE)
     } else {
       gl.enable(gl.CULL_FACE)
-      gl.cullFace(gl.BACK)
+      gl.cullFace(side === 'back' ? gl.FRONT : gl.BACK)
     }
     // surfaces sit a hair behind their own depth, so a line lying on one - an edge, a seam, a
     // drawing's outline - shows whole rather than fighting it pixel by pixel
