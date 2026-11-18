@@ -93,6 +93,8 @@ export class Texture {
 
   /** @type {Set<() => void>} */
   #onDispose = new Set()
+  /** Stops following a video's frames, while one is followed. @type {(() => void) | null} */
+  #unfollow = null
 
   /** @param {TextureOptions | string} [options] options, or just a url */
   constructor(options = {}) {
@@ -137,28 +139,40 @@ export class Texture {
   get image() { return this.#image }
   /** @param {TextureImage | null} v */
   set image(v) {
+    this.#unfollow?.()
     this.#image = v
     this.needsUpdate()
-    if (isVideo(v)) this.#follow(/** @type {HTMLVideoElement} */ (v))
+    this.#unfollow = isVideo(v) ? this.#follow(/** @type {HTMLVideoElement} */ (v)) : null
   }
 
   // Each new frame of a playing video marks the texture changed, so views redraw with it: the
   // browser's own per-frame callback where there is one, otherwise a check every animation frame
-  // while it plays. Following stops when the image is replaced.
-  /** @param {HTMLVideoElement} video */
+  // while it plays. Returns what stops it - called when the image is set again (even to the same
+  // video) and on dispose(), so the video lets go of the texture and no second chain runs.
+  /**
+   * @param {HTMLVideoElement} video
+   * @returns {() => void}
+   */
   #follow(video) {
+    let live = true
     if (typeof video.requestVideoFrameCallback === 'function') {
+      /** @type {number} */
+      let pending
       const frame = () => {
-        if (this.#image !== video) return
+        if (!live) return
         this.needsUpdate()
-        video.requestVideoFrameCallback(frame)
+        pending = video.requestVideoFrameCallback(frame)
       }
-      video.requestVideoFrameCallback(frame)
-      return
+      pending = video.requestVideoFrameCallback(frame)
+      return () => {
+        live = false
+        video.cancelVideoFrameCallback?.(pending)
+      }
     }
+    const listening = new AbortController()
     let last = -1, running = false
     const tick = () => {
-      if (this.#image !== video || video.paused || video.ended) {
+      if (!live || video.paused || video.ended) {
         running = false
         return
       }
@@ -169,16 +183,18 @@ export class Texture {
       requestAnimationFrame(tick)
     }
     const start = () => {
-      if (running || this.#image !== video) return
+      if (running || !live) return
       running = true
       requestAnimationFrame(tick)
     }
-    video.addEventListener('play', start)
+    video.addEventListener('play', start, { signal: listening.signal })
     // a seek while paused shows a new frame too
-    video.addEventListener('seeked', () => {
-      if (this.#image === video) this.needsUpdate()
-    })
+    video.addEventListener('seeked', () => this.needsUpdate(), { signal: listening.signal })
     if (!video.paused) start()
+    return () => {
+      live = false
+      listening.abort()
+    }
   }
 
   /** 'srgb' for colour (decoded to linear by the GPU), 'linear' for data such as normals and roughness. Call needsUpdate() after changing it. @returns {'srgb' | 'linear'} */
@@ -238,8 +254,10 @@ export class Texture {
     return regions.length ? regions : null
   }
 
-  /** Release the GPU copy. @returns {void} */
+  /** Release the GPU copy, and stop following a video's frames (setting image again starts again). @returns {void} */
   dispose() {
+    this.#unfollow?.()
+    this.#unfollow = null
     for (const fn of this.#onDispose) fn()
   }
 

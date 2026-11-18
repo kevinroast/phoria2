@@ -1054,6 +1054,78 @@ describe('glass and clearcoat', () => {
     }
   })
 
+  it('a video texture stops following on dispose, cancels its callback, and never follows twice', () => {
+    class FakeVideo {
+      readyState = 4
+      paused = false
+      /** @type {Map<number, () => void>} */ frames = new Map()
+      next = 0
+      requestVideoFrameCallback(fn) { this.frames.set(++this.next, fn); return this.next }
+      cancelVideoFrameCallback(id) { this.frames.delete(id) }
+      addEventListener() {}
+      present() { const due = [...this.frames.values()]; this.frames.clear(); for (const fn of due) fn() }
+    }
+    vi.stubGlobal('HTMLVideoElement', FakeVideo)
+    try {
+      const video = new FakeVideo()
+      const texture = new Texture({ image: video })
+      // the same video again: still one callback waiting, one update a frame
+      texture.image = video
+      expect(video.frames.size).toBe(1)
+      let before = texture.version
+      video.present()
+      expect(texture.version).toBe(before + 1)
+      // disposed: the callback is cancelled, so the video holds nothing of the texture
+      texture.dispose()
+      expect(video.frames.size).toBe(0)
+      // without cancelVideoFrameCallback, a callback still due does nothing and isn't renewed
+      const old = new FakeVideo()
+      old.cancelVideoFrameCallback = undefined
+      const other = new Texture({ image: old })
+      other.dispose()
+      before = other.version
+      old.present()
+      expect([other.version, old.frames.size]).toEqual([before, 0])
+      // setting it again after dispose follows again
+      texture.image = video
+      before = texture.version
+      video.present()
+      expect(texture.version).toBe(before + 1)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('without requestVideoFrameCallback, a video texture removes its listeners on dispose and on a new image', () => {
+    class FakeVideo extends EventTarget {
+      readyState = 4
+      paused = true
+      ended = false
+      currentTime = 0
+    }
+    vi.stubGlobal('HTMLVideoElement', FakeVideo)
+    try {
+      const video = new FakeVideo()
+      const texture = new Texture({ image: video })
+      texture.image = video
+      let before = texture.version
+      video.dispatchEvent(new Event('seeked'))
+      // one listener, not two, after setting the same video twice
+      expect(texture.version).toBe(before + 1)
+      texture.dispose()
+      before = texture.version
+      video.dispatchEvent(new Event('seeked'))
+      expect(texture.version).toBe(before)
+      const next = new Texture({ image: video })
+      next.image = { data: new Uint8Array(4), width: 1, height: 1 }
+      before = next.version
+      video.dispatchEvent(new Event('seeked'))
+      expect(next.version).toBe(before)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it("a map's UV transform: repeat, then rotation about its centre, then offset - glTF's order", () => {
     const at = (t, u, v) => {
       const m = uvMatrix({ repeat: [1, 1], offset: [0, 0], rotation: 0, center: [0, 0], ...t })
