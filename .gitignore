@@ -10,3 +10,6 @@ eval/
 
 # experiments that are not part of the library or the demos yet
 experiments/
+
+# perf/run.mjs output, per machine and commit
+perf/results/

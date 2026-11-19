@@ -1196,7 +1196,7 @@ export class WebGLRenderer {
         else if (state.studio) d.push('STUDIO')
       }
       // maps on the second UV set read it - where the geometry has one
-      d.push(...secondUvDefines(material, geometry, material.textures.map(([slot]) => slot)))
+      d.push(...secondUvDefines(material, geometry, material.mapEntries.map(([slot]) => slot)))
     }
     // (points drawn as squares add SPRITES - see #draw, which knows the node)
     return d

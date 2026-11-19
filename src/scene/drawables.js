@@ -1,4 +1,5 @@
 import * as mat4 from '../math/mat4.js'
+import { Box3 } from '../value/Box3.js'
 import { Color } from '../value/Color.js'
 import { Euler } from '../value/Euler.js'
 import { Quat } from '../value/Quat.js'
@@ -8,7 +9,6 @@ import { resolveGeometry, resolveMaterial } from '../resolve.js'
 import { NODE_OPTIONS, Node } from './Node.js'
 import { isInstanced } from './kinds.js'
 
-/** @import { Box3 } from '../value/Box3.js' */
 /** @import { Geometry } from '../geometry/Geometry.js' */
 /** @import { Material, MaterialOptions } from '../material/Material.js' */
 /** @import { GeometryOptions } from '../geometry/Geometry.js' */
@@ -313,6 +313,12 @@ function identities(count, from, keep) {
  * Picking reports which instance was hit. An instance scaled to 0 is hidden - it draws nothing, and
  * framing, culling, shadows and labels leave it out - so a pool of instances can keep spares.
  */
+/** Whether two 4x4 matrices hold the same numbers. @param {ArrayLike<number>} a @param {ArrayLike<number>} b */
+function sameMatrix(a, b) {
+  for (let i = 0; i < 16; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
 export class InstancedMesh extends Mesh {
   static type = 'instanced-mesh'
   static get OPTIONS() { return [...DRAWABLE_OPTIONS, 'count', 'instances', 'instanceMatrices', 'instanceColors', 'labels'] }
@@ -441,15 +447,27 @@ export class InstancedMesh extends Mesh {
     this.instanceColors.set(SCRATCH_COLOR.set(color, 'InstancedMesh'), i * 3)
   }
 
+  /** The instances' world box as last found, and what it was found for. @type {{ box: Box3, version: number, count: number, geometry: Geometry, geometryVersion: number, pad: number, world: Float32Array } | null} */
+  #bounds = null
+
   /** @internal @param {Box3} box */
   expandBounds(box) {
     // as far as a shader hook can move a vertex, round each copy
     const pad = this.material.shader?.vertex ? this.material.shader.bounds ?? 0 : 0
-    this.eachInstanceBox((x0, y0, z0, x1, y1, z1) => {
-      box.expandByXYZ(x0 - pad, y0 - pad, z0 - pad)
-      box.expandByXYZ(x1 + pad, y1 + pad, z1 + pad)
-    })
-    return box
+    // O(instances), and asked for several times a frame (each shadow-casting light's fit, the
+    // effects' size) - so kept until the instances, their geometry or the node's place change
+    let b = this.#bounds
+    if (!b || b.version !== this.version || b.count !== this.count || b.geometry !== this.geometry || b.geometryVersion !== this.geometry.version || b.pad !== pad || !sameMatrix(b.world, this.worldMatrix)) {
+      b = this.#bounds ??= { box: new Box3(), version: 0, count: 0, geometry: this.geometry, geometryVersion: 0, pad: 0, world: new Float32Array(16) }
+      const own = b.box.makeEmpty()
+      this.eachInstanceBox((x0, y0, z0, x1, y1, z1) => {
+        own.expandByXYZ(x0 - pad, y0 - pad, z0 - pad)
+        own.expandByXYZ(x1 + pad, y1 + pad, z1 + pad)
+      })
+      Object.assign(b, { version: this.version, count: this.count, geometry: this.geometry, geometryVersion: this.geometry.version, pad })
+      b.world.set(this.worldMatrix)
+    }
+    return box.union(b.box)
   }
 
   /**
@@ -467,7 +485,7 @@ export class InstancedMesh extends Mesh {
     const w = this.worldMatrix, im = this.instanceMatrices, m = scratchMatrix
     for (let i = 0; i < this.count; i++) {
       if (hiddenInstance(im, i)) continue
-      mat4.multiply(m, w, im.subarray(i * 16, i * 16 + 16))
+      mat4.multiply(m, w, im, i * 16)
       const x = m[0] * cx + m[4] * cy + m[8] * cz + m[12]
       const y = m[1] * cx + m[5] * cy + m[9] * cz + m[13]
       const z = m[2] * cx + m[6] * cy + m[10] * cz + m[14]

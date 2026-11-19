@@ -253,6 +253,8 @@ export class Material {
   #transparent = false
   /** @type {Record<string, Texture | null>} */
   #maps = Object.fromEntries(MAPS.map((m) => [m, null]))
+  /** The maps that are set, made again only after setMap() - read for every drawable every frame. @type {[string, Texture][] | null} */
+  #setMaps = null
   /** @type {Set<() => void>} */
   #onDispose = new Set()
   /** @type {Required<Omit<ShaderHooks, 'bounds'>> & { bounds: number | null } | null} */
@@ -283,9 +285,9 @@ export class Material {
   /** @param {ShaderHooks | null} v */
   set shader(v) { this.#shader = shaderHooks(v) }
 
-  /** @internal Every texture the material reads: its maps, then its shader's uniform textures. @returns {[string, Texture][]} */
+  /** @internal Every texture the material reads: its maps, then its shader's uniform textures. Shared - don't change it. @returns {[string, Texture][]} */
   get allTextures() {
-    const maps = this.textures
+    const maps = this.mapEntries
     const u = this.#shader?.uniforms
     if (!u) return maps
     return [...maps, ...Object.entries(u).filter(([, v]) => v instanceof Texture).map(([k, v]) => /** @type {[string, Texture]} */ ([`shader.${k}`, v]))]
@@ -381,6 +383,7 @@ export class Material {
    * @param {MapInput | null} value
    */
   setMap(slot, value) {
+    this.#setMaps = null
     if (value == null) {
       this.#maps[slot] = null
       return
@@ -405,7 +408,12 @@ export class Material {
 
   /** The maps that are set, by slot. @returns {[string, Texture][]} */
   get textures() {
-    return /** @type {[string, Texture][]} */ (Object.entries(this.#maps).filter(([, t]) => t))
+    return [...this.mapEntries]
+  }
+
+  /** @internal The maps that are set, by slot - kept between calls. Shared - don't change it. @returns {[string, Texture][]} */
+  get mapEntries() {
+    return this.#setMaps ??= /** @type {[string, Texture][]} */ (Object.entries(this.#maps).filter(([, t]) => t))
   }
 
   /** Rendered in the transparent pass: an opacity below 1, additive or multiply blending, or set for maps with soft alpha. @returns {boolean} */
@@ -452,7 +460,7 @@ export class Material {
     }
     if (this.#transparent) json.transparent = true
     for (const [key, c] of Object.entries(this.#colors)) if (c.getHex() !== COLORS[key]) json[key] = c.getStyle()
-    for (const [slot, t] of this.textures) {
+    for (const [slot, t] of this.mapEntries) {
       const desc = keepTextures ? t : t.toJSON()
       if (desc) json[slot] = desc
     }

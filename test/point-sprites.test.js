@@ -68,7 +68,7 @@ describe('points drawn as squares', () => {
     expect(draw().filter((c) => c.call === 'bufferSubData')).toHaveLength(1)
   })
 
-  it('go furthest first when sorted, re-sorting every frame', () => {
+  it('go furthest first when sorted, sorting again when the view turns - not when it is still', () => {
     // the camera looks down -z from z = 5: z = -2 is furthest, z = 2 nearest
     const geometry = new Geometry({ positions: [0, 0, 0, 0, 0, -2, 0, 0, 2] })
     const points = new Points({ geometry, sort: true })
@@ -76,9 +76,31 @@ describe('points drawn as squares', () => {
     const { draw } = recording(points)
     const sent = () => draw().find((c) => c.call === 'bufferSubData')?.args[0]
     expect(order(sent())).toEqual([1, 0, 2])
+    // nothing moved: nothing sorted or sent
+    expect(sent()).toBeUndefined()
     // the points turned round: the order follows
     points.rotation.y = Math.PI
     expect(order(sent())).toEqual([2, 0, 1])
+    // new positions sort again, with the view still
+    geometry.positions.set([0, 0, 3], 0)
+    geometry.needsUpdate()
+    expect(order(sent())).toEqual([0, 2, 1])
+  })
+
+  it('sort many points back to front, to within a 65,536th of their depth range', () => {
+    let seed = 7
+    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647
+    const n = 5000, positions = new Float32Array(n * 3).map(() => rand() * 4 - 2)
+    // a few at exactly the same depth, which keep their own order
+    for (const i of [10, 20, 30]) positions.set([0.5, 0.5, 0.25], i * 3)
+    const { draw } = recording(new Points({ geometry: new Geometry({ positions }), sort: true }))
+    const ids = order(draw().find((c) => c.call === 'bufferSubData')?.args[0])
+    expect(new Set(ids).size).toBe(n)
+    // the camera at z = 5 looking down -z: view depth is z - 5, furthest (most negative) first
+    const z = ids.map((i) => positions[i * 3 + 2])
+    const step = 4 / 65535
+    for (let k = 1; k < n; k++) expect(z[k]).toBeGreaterThanOrEqual(z[k - 1] - step)
+    expect(ids.filter((i) => [10, 20, 30].includes(i))).toEqual([10, 20, 30])
   })
 
   it('keep their sizes, opacities and angles through clone and JSON', () => {

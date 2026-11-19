@@ -47,6 +47,9 @@ export function networkMark(ctx) {
   let at = []
   /** @type {any[]} */ let links = []
   /** @type {any[]} */ let rowsNow = []
+  /** row index by key, for rowsNow @type {Map<unknown, number>} */ let indexNow = new Map()
+  /** the largest link width and flow values, for scaling each link against @type {{ width: number, flow: number }} */
+  let linkMax = { width: 1, flow: 1 }
   /** the hovered node by its key, not its row - rows move and go when the data changes; null for none */
   /** @type {unknown} */ let hovered = null
 
@@ -55,11 +58,12 @@ export function networkMark(ctx) {
     layout(rows) {
       const keys = rows.map(keyOf)
       const index = new Map(keys.map((k, i) => [k, i]))
+      const known = new Set(ctx.spec.rows.map(keyOf))
       links = ctx.spec.links.filter((l, i) => {
         const a = l[source], b = l[target]
         if (a === undefined || b === undefined) fail('chart()', `link ${i} has no '${a === undefined ? source : target}' - links name their ends with source: '${source}', target: '${target}' (set 'source' and 'target' to your field names)`)
-        if (!ctx.spec.rows.some((r) => keyOf(r) === a)) fail('chart()', `link ${i}: ${source} ${describe(a)} names no node`)
-        if (!ctx.spec.rows.some((r) => keyOf(r) === b)) fail('chart()', `link ${i}: ${target} ${describe(b)} names no node`)
+        if (!known.has(a)) fail('chart()', `link ${i}: ${source} ${describe(a)} names no node`)
+        if (!known.has(b)) fail('chart()', `link ${i}: ${target} ${describe(b)} names no node`)
         // links to hidden nodes are hidden too
         return index.has(a) && index.has(b)
       })
@@ -72,17 +76,20 @@ export function networkMark(ctx) {
     apply(state, t) {
       const n = state.length / t.stride
       rowsNow = t.rows
+      const keys = t.rows.map(keyOf)
+      const index = new Map(keys.map((k, i) => [k, i]))
+      indexNow = index
       // a hovered node that has gone from the data is hovered no longer
-      if (hovered !== null && !rowsNow.some((r) => keyOf(r) === hovered)) {
+      if (hovered !== null && !index.has(hovered)) {
         hovered = null
         active.visible = false
       }
+      // each link's width and flow scale against the largest - found once, not once a link
+      linkMax = { width: largest(linkCh.width), flow: largest(linkCh.flow) }
       // more nodes than room - arriving and leaving ones together, in a transition
       grow(nodesMesh, n)
       nodesMesh.count = n
       nodesMesh.data = t.rows
-      const keys = t.rows.map(keyOf)
-      const index = new Map(keys.map((k, i) => [k, i]))
       at = []
       for (let i = 0; i < n; i++) {
         const [x, y, z, s, r, g, b] = state.subarray(i * 7, i * 7 + 7)
@@ -158,20 +165,32 @@ export function networkMark(ctx) {
     const p = []
     for (const l of links) {
       if (l[source] !== key && l[target] !== key) continue
-      const a = rowsNow.findIndex((r) => keyOf(r) === l[source]), b = rowsNow.findIndex((r) => keyOf(r) === l[target])
-      if (a >= 0 && b >= 0) p.push(...at[a], ...at[b])
+      const a = indexNow.get(l[source]), b = indexNow.get(l[target])
+      if (a !== undefined && b !== undefined) p.push(...at[a], ...at[b])
     }
     active.geometry.dispose()
     active.geometry = new Geometry({ positions: p })
+  }
+
+  /** the hovered node's neighbours by key, and what they were found for @type {{ key: unknown, links: any[], near: Set<unknown> } | null} */
+  let nearHovered = null
+  /** The hovered node's neighbours, found once per hover and per layout - not per node. @returns {Set<unknown>} */
+  function neighboursOfHovered() {
+    if (nearHovered && nearHovered.key === hovered && nearHovered.links === links) return nearHovered.near
+    const near = new Set()
+    for (const l of links) {
+      if (l[source] === hovered) near.add(l[target])
+      if (l[target] === hovered) near.add(l[source])
+    }
+    nearHovered = { key: hovered, links, near }
+    return near
   }
 
   /** A node's colour, dimmed while another node and its neighbours are highlighted. @param {number} k @param {number[]} rgb */
   function dimmed(k, rgb) {
     if (hovered === null || !neighbours) return rgb
     const other = keyOf(rowsNow[k])
-    if (other === hovered) return rgb
-    const near = links.some((l) => (l[source] === hovered && l[target] === other) || (l[target] === hovered && l[source] === other))
-    if (near) return rgb
+    if (other === hovered || neighboursOfHovered().has(other)) return rgb
     const c = new Color().setSRGB(rgb[0], rgb[1], rgb[2]).lerp(ctx.theme === 'light' ? '#ffffff' : '#202024', 0.65)
     return c.toSRGB()
   }
@@ -181,9 +200,15 @@ export function networkMark(ctx) {
     const c = linkCh.width
     if (!c) return 0
     if (c.field === null) return c.value >= 3.5 ? 2 : c.value >= 2 ? 1 : 0
-    const values = ctx.spec.links.map((l) => Number(c.get(l)) || 0)
-    const max = Math.max(...values) || 1
-    return Math.min(2, Math.floor((Number(c.get(link)) || 0) / max * 2.999))
+    return Math.min(2, Math.floor((Number(c.get(link)) || 0) / linkMax.width * 2.999))
+  }
+
+  /** The largest value a link channel takes over every link, or 1 when none is above 0. @param {any} c */
+  function largest(c) {
+    if (!c || c.field === null) return 1
+    let max = 0
+    for (const l of ctx.spec.links) max = Math.max(max, Number(c.get(l)) || 0)
+    return max || 1
   }
 
   /** @param {any} link @returns {number[]} */
@@ -199,8 +224,7 @@ export function networkMark(ctx) {
   function flowSpeed(link) {
     const c = linkCh.flow
     if (c.field === null) return 0.4
-    const max = Math.max(...ctx.spec.links.map((l) => Number(c.get(l)) || 0)) || 1
-    return 0.15 + 0.6 * (Number(c.get(link)) || 0) / max
+    return 0.15 + 0.6 * (Number(c.get(link)) || 0) / linkMax.flow
   }
 
   /**
@@ -234,7 +258,10 @@ export function networkMark(ctx) {
    * where a force layout leaves a dense middle and far-off leaves, which then set the scale.
    */
   function force(keys, pairs) {
-    const n = keys.length, rand = random(o.seed ?? 1), dims = o.flat ? [0, 2] : [0, 1, 2]
+    // the same nodes and links as last time, all placed: they stay where they are - an update that
+    // only recolours costs nothing here
+    if (sameGraph(keys, pairs)) return keys.map((key) => [.../** @type {number[]} */ (placed.get(key))])
+    const n = keys.length, rand = random(o.seed ?? 1)
     const warm = keys.some((key) => placed.has(key))
     const steps = o.steps ?? (warm ? 60 : 300)
     // links between every pair: breadth first from each node; parts not joined sit a hop beyond the furthest
@@ -258,35 +285,61 @@ export function networkMark(ctx) {
         }
       }
     }
-    const p = keys.map((key, i) => {
-      if (placed.has(key)) return [...placed.get(key)]
-      // a new node starts beside a neighbour that is already placed, or anywhere
-      const next = near[i].find((j) => placed.has(keys[j]))
-      const from = next === undefined ? [0, 0, 0] : placed.get(keys[next])
-      const spread = next === undefined ? Math.sqrt(n) : 0.5
-      return [from[0] + (rand() - 0.5) * spread, o.flat ? 0 : from[1] + (rand() - 0.5) * spread, from[2] + (rand() - 0.5) * spread]
+    // positions flat, x y z per node - the loop below is O(steps x n^2), so it reads no nested arrays
+    const p = new Float64Array(n * 3)
+    keys.forEach((key, i) => {
+      let at = placed.get(key)
+      if (!at) {
+        // a new node starts beside a neighbour that is already placed, or anywhere
+        const next = near[i].find((j) => placed.has(keys[j]))
+        const from = next === undefined ? [0, 0, 0] : /** @type {number[]} */ (placed.get(keys[next]))
+        const spread = next === undefined ? Math.sqrt(n) : 0.5
+        at = [from[0] + (rand() - 0.5) * spread, o.flat ? 0 : from[1] + (rand() - 0.5) * spread, from[2] + (rand() - 0.5) * spread]
+      }
+      p.set(at, i * 3)
     })
-    // each node in turn moves to where its distances to all the others fit best, nearer ones counting more
-    const to = [0, 0, 0]
+    // each node in turn moves to where its distances to all the others fit best, nearer ones counting
+    // more - until no node moves more than a ten-thousandth of a link
+    const flat = !!o.flat
     for (let step = 0; step < steps; step++) {
+      let moved = 0
       for (let i = 0; i < n; i++) {
-        to.fill(0)
-        let weights = 0
+        const px = p[i * 3], py = p[i * 3 + 1], pz = p[i * 3 + 2]
+        let tx = 0, ty = 0, tz = 0, weights = 0
         for (let j = 0; j < n; j++) {
           if (i === j) continue
           const h = hops[i * n + j], want = h === Infinity ? furthest + 1 : h, w = 1 / (want * want)
-          const dx = p[i][0] - p[j][0], dy = p[i][1] - p[j][1], dz = p[i][2] - p[j][2]
-          const len = Math.hypot(dx, dy, dz) || 1e-6
-          to[0] += w * (p[j][0] + want * dx / len)
-          to[1] += w * (p[j][1] + want * dy / len)
-          to[2] += w * (p[j][2] + want * dz / len)
+          const qx = p[j * 3], qy = p[j * 3 + 1], qz = p[j * 3 + 2]
+          const dx = px - qx, dy = py - qy, dz = pz - qz
+          const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6
+          tx += w * (qx + want * dx / len)
+          ty += w * (qy + want * dy / len)
+          tz += w * (qz + want * dz / len)
           weights += w
         }
-        if (weights) for (const c of dims) p[i][c] = to[c] / weights
+        if (!weights) continue
+        const nx = tx / weights, ny = flat ? py : ty / weights, nz = tz / weights
+        moved = Math.max(moved, Math.abs(nx - px), Math.abs(ny - py), Math.abs(nz - pz))
+        p[i * 3] = nx
+        p[i * 3 + 1] = ny
+        p[i * 3 + 2] = nz
       }
+      if (moved < 1e-4) break
     }
-    placed = new Map(keys.map((key, i) => [key, p[i]]))
-    return p
+    const out = keys.map((_, i) => [p[i * 3], p[i * 3 + 1], p[i * 3 + 2]])
+    placed = new Map(keys.map((key, i) => [key, [...out[i]]]))
+    laidOut = { keys, pairs }
+    return out
+  }
+
+  /** the nodes and links the force layout last ran for @type {{ keys: any[], pairs: number[][] } | null} */
+  let laidOut = null
+  /** Whether these are the nodes and links the force layout last ran for. @param {any[]} keys @param {number[][]} pairs */
+  function sameGraph(keys, pairs) {
+    if (!laidOut || laidOut.keys.length !== keys.length || laidOut.pairs.length !== pairs.length || o.steps !== undefined) return false
+    for (let i = 0; i < keys.length; i++) if (laidOut.keys[i] !== keys[i] || !placed.has(keys[i])) return false
+    for (let i = 0; i < pairs.length; i++) if (laidOut.pairs[i][0] !== pairs[i][0] || laidOut.pairs[i][1] !== pairs[i][1]) return false
+    return true
   }
 
   return mark
@@ -307,14 +360,22 @@ function tiers(rows, pairs, layout, [w, h, d]) {
   const angle = new Array(rows.length).fill(0)
   const out = new Array(rows.length)
   const radius = Math.min(w, d) / 2 * 0.92
+  const near = rows.map(() => /** @type {number[]} */ ([]))
+  for (const [a, b] of pairs) {
+    near[a].push(b)
+    near[b].push(a)
+  }
   for (let t = 0; t < count; t++) {
     const members = rows.map((_, i) => i).filter((i) => tierOf[i] === t)
-    // sit under the nodes they link to in the tier above: order by those nodes' angles
-    const pull = (i) => {
-      const above = pairs.filter(([a, b]) => a === i || b === i).map(([a, b]) => (a === i ? b : a)).filter((j) => tierOf[j] < t)
-      return above.length ? above.reduce((s, j) => s + angle[j], 0) / above.length : members.indexOf(i)
+    // sit under the nodes they link to in the tier above: order by those nodes' angles - each found
+    // once, before sorting
+    if (t > 0) {
+      const pull = new Map(members.map((i, m) => {
+        const above = near[i].filter((j) => tierOf[j] < t)
+        return [i, above.length ? above.reduce((s, j) => s + angle[j], 0) / above.length : m]
+      }))
+      members.sort((a, b) => /** @type {number} */ (pull.get(a)) - /** @type {number} */ (pull.get(b)))
     }
-    if (t > 0) members.sort((a, b) => pull(a) - pull(b))
     const r = members.length === 1 ? 0 : t === 0 ? radius * 0.25 : radius * (0.35 + 0.65 * t / Math.max(1, count - 1))
     members.forEach((i, m) => {
       angle[i] = (m + 0.5) / members.length * Math.PI * 2

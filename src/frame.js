@@ -341,10 +341,12 @@ export function collect(scene, camera, { display = true, labels = display, light
   if (lightSample && items.length) for (const light of [...(sun >= 0 ? [frame.lights[sun]] : []), ...spots]) sampleLight(light, lightSample)
   if (spots.length > SPOT_TILES) warnOnce(scene, `more than ${SPOT_TILES} spot and rect-area lights cast shadows - the extras don't`)
   if (points.length > 1) warnOnce(scene, 'more than one point light casts shadows - only the first does')
+  // each caster's and receiver's world box, found once for every light fitted round them
+  const boxes = items.length ? items.map((c) => c.node.expandBounds(new Box3())) : []
+  const receiving = items.length ? receivers.map((n) => n.expandBounds(new Box3())) : []
   if (items.length && points.length) {
     const light = points[0]
-    const boxes = items.map((c) => c.node.expandBounds(new Box3()))
-    const fit = fitPointShadow(/** @type {Vec3} */ (light.position), light.range ?? 0, boxes, receivers.map((n) => n.expandBounds(new Box3())))
+    const fit = fitPointShadow(/** @type {Vec3} */ (light.position), light.range ?? 0, boxes, receiving)
     if (fit) {
       // each face draws only what it can see
       const faces = fit.viewProjections.map((viewProjection) => {
@@ -355,8 +357,6 @@ export function collect(scene, camera, { display = true, labels = display, light
     }
   }
   if (items.length && spots.length) {
-    const boxes = items.map((c) => c.node.expandBounds(new Box3()))
-    const receiving = receivers.map((n) => n.expandBounds(new Box3()))
     for (const light of spots.slice(0, SPOT_TILES)) {
       const at = /** @type {Vec3} */ (light.shadowFrom ?? light.position)
       // the light's own fitting - a lamp round it - doesn't shadow it
@@ -377,8 +377,7 @@ export function collect(scene, camera, { display = true, labels = display, light
   }
   if (items.length && sun >= 0) {
     const light = frame.lights[sun]
-    const bounds = (/** @type {any} */ n) => n.expandBounds(new Box3())
-    const fit = fitShadow(/** @type {Vec3} */ (light.direction), items.map((c) => bounds(c.node)), receivers.map(bounds), undefined, /** @type {any} */ (light.node).shadowBounds)
+    const fit = fitShadow(/** @type {Vec3} */ (light.direction), boxes, receiving, undefined, /** @type {any} */ (light.node).shadowBounds)
     if (fit) {
       frame.lights.splice(sun, 1)
       frame.lights.unshift(light)

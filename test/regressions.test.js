@@ -7,6 +7,7 @@ import { chart, scaleColor, scaleLinear, scaleTime } from '../src/charts/index.j
 import { TransformHandle } from '../src/edit/index.js'
 import { Animation, Model, parseGLTF } from '../src/gltf/index.js'
 import { Vec3 } from '../src/value/Vec3.js'
+import { Box3 } from '../src/value/Box3.js'
 import { uvMatrix } from '../src/webgl/resources.js'
 import { fakeCanvas, fakeElement, fakeGL, fakePage } from './fakes.js'
 import { variantOf } from '../src/material/features.js'
@@ -113,6 +114,22 @@ describe("the network chart's hover", () => {
     expect(parts(c).active.visible).toBe(false)
   })
 
+  it('dims the nodes the hovered one has no link to, and only those', () => {
+    const scene = new Scene()
+    const ns = nodes(6)
+    const c = scene.add(chart({ mark: 'network', data: { nodes: ns, links: ring(ns) }, transition: false }))
+    const { mesh } = parts(c)
+    const colours = () => Array.from({ length: 6 }, (_, i) => Array.from(mesh.instanceColors.subarray(i * 3, i * 3 + 3)))
+    const plain = colours()
+    // the same colour, to float rounding - the first comes through the layout's Float32Array
+    const same = () => colours().map((c, i) => c.every((v, k) => Math.abs(v - plain[i][k]) < 1e-4))
+    for (const fn of mesh.handlersFor('hover')) fn({ node: mesh, instance: 0 })
+    // n0's neighbours round the ring are n1 and n5
+    expect(same()).toEqual([true, true, false, false, false, true])
+    for (const fn of mesh.handlersFor('hover')) fn(null)
+    expect(same()).toEqual([true, true, true, true, true, true])
+  })
+
   it('keeps highlighting the same node when the rows are reordered', () => {
     const scene = new Scene()
     const ns = nodes(6)
@@ -172,6 +189,46 @@ describe('a restored context', () => {
     expect(asked).toContain('KHR_parallel_shader_compile')
     expect(asked).toContain('EXT_texture_filter_anisotropic')
     renderer.dispose()
+  })
+})
+
+describe('an instanced mesh\'s bounds', () => {
+  it('are kept between calls, and found again when the instances, count, geometry or place change', () => {
+    const mesh = new InstancedMesh({ geometry: box(), count: 2 })
+    mesh.setInstance(0, { position: [0, 0, 0] }).setInstance(1, { position: [4, 0, 0] })
+    const max = () => {
+      mesh.updateWorld()
+      return mesh.expandBounds(new Box3()).max[0]
+    }
+    expect(max()).toBeCloseTo(4.5)
+    mesh.setInstance(1, { position: [6, 0, 0] })
+    expect(max()).toBeCloseTo(6.5)
+    mesh.count = 1
+    expect(max()).toBeCloseTo(0.5)
+    mesh.position.x = 2
+    expect(max()).toBeCloseTo(2.5)
+    mesh.geometry = box({ width: 3 })
+    expect(max()).toBeCloseTo(3.5)
+    // a box it is added to keeps what it had
+    mesh.updateWorld()
+    expect(mesh.expandBounds(new Box3([-10, 0, 0], [-9, 1, 1])).min[0]).toBe(-10)
+  })
+})
+
+describe('a material\'s textures', () => {
+  it('follow setMap, and a copy changed by the app changes nothing', () => {
+    const image = { width: 1, height: 1, data: new Uint8Array(4) }
+    const a = new Texture({ image }), b = new Texture({ image })
+    const m = new Material({ map: a })
+    expect(m.textures.map(([slot]) => slot)).toEqual(['map'])
+    m.textures.pop()
+    expect(m.textures).toHaveLength(1)
+    m.normalMap = b
+    expect(m.allTextures.map(([slot]) => slot)).toEqual(['map', 'normalMap'])
+    m.map = null
+    expect(m.allTextures.map(([, t]) => t)).toEqual([b])
+    m.shader = { uniforms: { uExtra: a }, fragment: 'void main() {}' }
+    expect(m.allTextures.map(([slot]) => slot)).toEqual(['normalMap', 'shader.uExtra'])
   })
 })
 

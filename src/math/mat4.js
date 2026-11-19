@@ -88,15 +88,19 @@ export function determinant(a) {
   return a13 * b6 - a03 * b7 + a33 * b8 - a23 * b9
 }
 
-/** out = a * b @template {Mat4Like} T @param {T} out @param {Mat4Like} a @param {Mat4Like} b @returns {T} */
-export function multiply(out, a, b) {
+/**
+ * out = a * b - b read from `at` on, so a matrix inside a larger array (an instance's) needs no view of
+ * its own. @template {Mat4Like} T @param {T} out @param {Mat4Like} a @param {Mat4Like} b @param {number} [at]
+ * @returns {T}
+ */
+export function multiply(out, a, b, at = 0) {
   const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3]
   const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7]
   const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11]
   const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15]
   // one column of b at a time, so out may alias a or b
   for (let c = 0; c < 16; c += 4) {
-    const b0 = b[c], b1 = b[c + 1], b2 = b[c + 2], b3 = b[c + 3]
+    const b0 = b[at + c], b1 = b[at + c + 1], b2 = b[at + c + 2], b3 = b[at + c + 3]
     out[c] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30
     out[c + 1] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31
     out[c + 2] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32

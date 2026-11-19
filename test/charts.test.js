@@ -270,7 +270,17 @@ describe('charts', () => {
     const before = where()
     net.update({ nodes: nodes.map((n) => ({ ...n, status: n.id === 'core' ? 'down' : 'ok' })), links })
     const after = where()
-    expect(after.map((v, k) => Math.abs(v - before[k]) < 0.5)).toEqual([true, true, true])
+    // the same nodes and links: the layout doesn't run again, so nothing moves at all
+    expect(after).toEqual(before)
+  })
+
+  it("sorts links into widths and flow speeds by the largest link's value", () => {
+    const nodes = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }]
+    const links = [{ source: 'a', target: 'b', w: 10, f: 4 }, { source: 'b', target: 'c', w: 5, f: 2 }, { source: 'c', target: 'd', w: 1, f: 0 }]
+    const net = chart({ mark: 'network', data: { nodes, links }, link: { width: 'w', flow: 'f' }, transition: false })
+    // thin, medium and thick lines, each with its links' rows
+    const lines = net.marks.filter((m) => m instanceof Lines && m.pickable)
+    expect(lines.map((l) => /** @type {any} */ (l).data.map((r) => r.w))).toEqual([[1], [5], [10]])
   })
 
   it('checks network data and lays out tiers', () => {
