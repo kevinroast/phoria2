@@ -85,10 +85,10 @@ try {
   writeFileSync(file, JSON.stringify({ commit, ...perf }, null, 2))
 
   console.log(`GPU: ${perf.env.gpu}`)
-  console.log(`${'scene'.padEnd(12)}${'metric'.padEnd(28)}${'phoria2'.padStart(10)}${'three.js'.padStart(10)}`)
+  console.log(`${'scene'.padEnd(20)}${'metric'.padEnd(28)}${'phoria2'.padStart(10)}${'three.js'.padStart(10)}`)
   const fmt = (v) => (v === null ? '-' : v >= 100 ? v.toFixed(0) : v.toFixed(2))
   for (const r of perf.results) {
-    console.log(`${r.scene.padEnd(12)}${`${r.metric} (${r.unit})`.padEnd(28)}${fmt(r.phoria2).padStart(10)}${fmt(r.three).padStart(10)}`)
+    console.log(`${r.scene.padEnd(20)}${`${r.metric} (${r.unit})`.padEnd(28)}${fmt(r.phoria2).padStart(10)}${fmt(r.three).padStart(10)}`)
   }
   console.log(`\nsaved ${file}`)
 } finally {

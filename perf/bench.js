@@ -7,7 +7,7 @@ import * as P from 'phoria2'
 import * as THREE from 'three'
 
 const WIDTH = 800, HEIGHT = 600
-const BARS = 100_000, POINTS = 1_000_000, VIEWS = 20, TILE_BARS = 400
+const BARS = 100_000, POINTS = 1_000_000, VIEWS = 20, TILE_BARS = 400, SORTED = 100_000
 const stage = /** @type {HTMLElement} */ (document.getElementById('stage'))
 const status = /** @type {HTMLElement} */ (document.getElementById('status'))
 const table = /** @type {HTMLTableElement} */ (document.getElementById('results'))
@@ -262,6 +262,149 @@ async function points() {
   record('1M points', 'frame', 'ms', pFrame, tFrame)
 }
 
+/** n positions in a cube 200 across, the same every run. @param {number} n */
+function cloud(n) {
+  const positions = new Float32Array(n * 3)
+  let seed = 1
+  for (let i = 0; i < positions.length; i++) {
+    seed = (seed * 16807) % 2147483647
+    positions[i] = (seed / 2147483647 - 0.5) * 200
+  }
+  return positions
+}
+
+/** A camera position on a circle round the middle, a little further on each call. */
+function orbiter() {
+  let a = 0
+  return () => {
+    a += 0.01
+    return [Math.sin(a) * 300, 140, Math.cos(a) * 300]
+  }
+}
+
+// see-through points drawn back to front, as a scatter chart draws them: with the camera still
+// (nothing to sort again) and moving (a sort every frame). three.js doesn't sort a Points' own
+// points, so it sorts the index by depth each frame, as an app would
+async function sortedPoints() {
+  const positions = cloud(SORTED)
+  let c = canvas()
+  let t0 = performance.now()
+  const view = phoriaView(c)
+  view.scene.add(new P.Points({ geometry: new P.Geometry({ positions }), material: { color: '#9cf', size: 3, sizeAttenuation: false, opacity: 0.5, depthWrite: false }, sort: true }))
+  await firstPicture(view)
+  const pBuild = performance.now() - t0
+  const pStill = await frames(() => view.render(), view.renderer.gl)
+  const pNext = orbiter()
+  const pMoving = await frames(() => {
+    view.camera.position.set(...pNext())
+    view.render()
+  }, view.renderer.gl)
+  view.dispose()
+  c.remove()
+
+  c = canvas()
+  t0 = performance.now()
+  const t = threeRenderer(c)
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  const index = new Uint32Array(SORTED), depth = new Float32Array(SORTED)
+  geometry.setIndex(new THREE.BufferAttribute(index, 1))
+  const points = new THREE.Points(geometry, new THREE.PointsMaterial({ color: '#9cf', size: 3, sizeAttenuation: false, map: roundSprite(), transparent: true, opacity: 0.5, depthWrite: false }))
+  t.scene.add(points)
+  const sortFrom = () => {
+    t.camera.updateMatrixWorld()
+    const m = t.camera.matrixWorldInverse.elements
+    for (let i = 0; i < SORTED; i++) {
+      depth[i] = m[2] * positions[i * 3] + m[6] * positions[i * 3 + 1] + m[10] * positions[i * 3 + 2] + m[14]
+      index[i] = i
+    }
+    index.sort((a, b) => depth[a] - depth[b])
+    const sorted = /** @type {THREE.BufferAttribute} */ (geometry.index)
+    sorted.needsUpdate = true
+  }
+  sortFrom()
+  t.renderer.render(t.scene, t.camera)
+  sync(t.gl)
+  const tBuild = performance.now() - t0
+  const tStill = await frames(() => t.renderer.render(t.scene, t.camera), t.gl)
+  const tNext = orbiter()
+  const tMoving = await frames(() => {
+    t.camera.position.set(...tNext())
+    t.camera.lookAt(0, 0, 0)
+    sortFrom()
+    t.renderer.render(t.scene, t.camera)
+  }, t.gl)
+  disposeThree(t)
+
+  record('100k sorted points', 'build + first frame', 'ms', pBuild, tBuild)
+  record('100k sorted points', 'frame, camera still', 'ms', pStill, tStill)
+  record('100k sorted points', 'frame, camera moving', 'ms', pMoving, tMoving)
+}
+
+// the bars again, on a floor, casting shadows from a sun and a point light: fitting each light's
+// shadow round 100k instances every frame, then drawing the maps
+async function shadowedBars() {
+  let c = canvas()
+  let t0 = performance.now()
+  const view = new P.View({ canvas: c, renderMode: 'manual', pixelRatio: 1, autoLight: false, camera: { position: [0, 140, 300], target: [0, 0, 0], far: 2000 } })
+  view.scene.add(new P.HemisphereLight({ sky: '#ffffff', ground: '#444444', intensity: 0.6 }))
+  view.scene.add(new P.DirectionalLight({ direction: [-1, -2, -1], intensity: 1.4, castShadow: true }))
+  view.scene.add(new P.PointLight({ position: [0, 40, 0], intensity: 3000, range: 200, castShadow: true }))
+  view.scene.add(new P.Mesh({ geometry: P.plane(340), material: { color: '#888888' }, receiveShadow: true }))
+  const pbars = phoriaBars(view, BARS)
+  pbars.castShadow = true
+  pbars.receiveShadow = true
+  await firstPicture(view)
+  const pBuild = performance.now() - t0
+  const pStill = await frames(() => view.render(), view.renderer.gl)
+  const pNext = orbiter()
+  const pMoving = await frames(() => {
+    view.camera.position.set(...pNext())
+    view.render()
+  }, view.renderer.gl)
+  view.dispose()
+  c.remove()
+
+  c = canvas()
+  t0 = performance.now()
+  const t = threeRenderer(c)
+  t.renderer.shadowMap.enabled = true
+  const sun = /** @type {THREE.DirectionalLight} */ (t.scene.children.find((o) => o instanceof THREE.DirectionalLight))
+  // three.js's sun shadow covers a box it is told: the grid's, as phoria2 fits its own
+  sun.position.set(100, 200, 100)
+  sun.castShadow = true
+  sun.shadow.mapSize.set(2048, 2048)
+  Object.assign(sun.shadow.camera, { left: -230, right: 230, top: 230, bottom: -230, near: 1, far: 600 })
+  sun.shadow.camera.updateProjectionMatrix()
+  const lamp = new THREE.PointLight(0xffffff, 3000, 200, 2)
+  lamp.position.set(0, 40, 0)
+  lamp.castShadow = true
+  lamp.shadow.mapSize.set(1024, 1024)
+  t.scene.add(lamp)
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(340, 340), new THREE.MeshStandardMaterial({ color: '#888888' }))
+  floor.rotation.x = -Math.PI / 2
+  floor.receiveShadow = true
+  t.scene.add(floor)
+  const tbars = threeBars(t.scene, BARS)
+  tbars.castShadow = true
+  tbars.receiveShadow = true
+  t.renderer.render(t.scene, t.camera)
+  sync(t.gl)
+  const tBuild = performance.now() - t0
+  const tStill = await frames(() => t.renderer.render(t.scene, t.camera), t.gl)
+  const tNext = orbiter()
+  const tMoving = await frames(() => {
+    t.camera.position.set(...tNext())
+    t.camera.lookAt(0, 0, 0)
+    t.renderer.render(t.scene, t.camera)
+  }, t.gl)
+  disposeThree(t)
+
+  record('100k shadowed bars', 'build + first frame', 'ms', pBuild, tBuild)
+  record('100k shadowed bars', 'frame, camera still', 'ms', pStill, tStill)
+  record('100k shadowed bars', 'frame, camera moving', 'ms', pMoving, tMoving)
+}
+
 async function views() {
   const cols = 5, w = WIDTH / cols, h = HEIGHT / (VIEWS / cols)
   /** @param {(c: HTMLCanvasElement) => any} make */
@@ -338,7 +481,7 @@ async function run() {
     date: new Date().toISOString(),
   }
   probe.getExtension('WEBGL_lose_context')?.loseContext()
-  for (const [name, scene] of [['100k bars', bars], ['1M points', points], [`${VIEWS} views`, views]]) {
+  for (const [name, scene] of [['100k bars', bars], ['1M points', points], ['100k sorted points', sortedPoints], ['100k shadowed bars', shadowedBars], [`${VIEWS} views`, views]]) {
     status.textContent = `running ${name}...`
     await nextFrame()
     await /** @type {() => Promise<void>} */ (scene)()

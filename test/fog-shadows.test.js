@@ -1,6 +1,6 @@
 // Night scenes: distance fog, and shadows from spot and point lights.
 import { describe, expect, it, vi } from 'vitest'
-import { DirectionalLight, Fog, Group, Mesh, PerspectiveCamera, PointLight, Points, Scene, SpotLight, WebGLRenderer, box, cylinder, plane, sphere } from '../src/index.js'
+import { DirectionalLight, Fog, Group, InstancedMesh, Mesh, PerspectiveCamera, PointLight, Points, Scene, SpotLight, WebGLRenderer, box, cylinder, plane, sphere } from '../src/index.js'
 import { collect } from '../src/frame.js'
 import { fitPointShadow, fitSpotShadow } from '../src/shadow.js'
 import { ChangeWatch } from '../src/watch.js'
@@ -130,6 +130,18 @@ describe('spot light shadows', () => {
     const { scene, crate } = lit({ lamp: true })
     const [shadow] = collect(scene, camera()).spotShadows
     expect(shadow.casters.map((c) => c.node)).toEqual([crate])
+  })
+
+  it("still shadows from an instanced mesh whose box is round the light - a searchlight on one roof of a city", () => {
+    const scene = new Scene()
+    scene.add(new Mesh({ geometry: plane(40), receiveShadow: true }))
+    const city = scene.add(new InstancedMesh({ geometry: box(1), count: 2, castShadow: true }))
+    city.setInstance(0, { position: [-8, 2, 0], scale: [1, 4, 1] }).setInstance(1, { position: [8, 0.5, 0] })
+    // above the low building, below the tall one's roof: inside the city's box
+    scene.add(new SpotLight({ position: [8, 2, 0], direction: [-1, -0.3, 0], angle: 0.5, castShadow: true }))
+    scene.updateWorldTree()
+    const [shadow] = collect(scene, camera()).spotShadows
+    expect(shadow.casters.map((c) => c.node)).toEqual([city])
   })
 
   it('has room for four, and leaves non-casting spot lights without', () => {

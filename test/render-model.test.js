@@ -35,8 +35,9 @@ describe('Raycaster', () => {
     scene.updateWorldTree()
     const frame = collect(scene, camera())
     const solids = Raycaster.solids([...frame.opaque, ...frame.transparent])
-    // the wall and both crates - lines hide nothing
-    expect(solids.map((s) => [s.node === wall ? 'wall' : 'crate', s.instance])).toEqual([['wall', null], ['crate', 0], ['crate', 1]])
+    // the wall, and the crates with a sphere each - lines hide nothing
+    expect(solids.map((s) => [s.node === wall ? 'wall' : 'crate', s.spheres.length / 4])).toEqual([['wall', 1], ['crate', 2]])
+    expect(Array.from(solids[1].spheres.subarray(0, 3))).toEqual([3, 0, 0])
     const rc = new Raycaster().setFromCamera([0, 0], camera())
     expect(rc.blocked(solids, 9)).toBe(true) // the wall's face is 7 away
     expect(rc.blocked(solids, 6)).toBe(false) // nothing that near

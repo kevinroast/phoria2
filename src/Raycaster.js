@@ -11,7 +11,13 @@ import { isInstanced } from './scene/kinds.js'
 /** @import { InstancedMesh, Lines, Mesh, Points } from './scene/drawables.js' */
 
 /** The section plane cutting what is being tested: world plane, and whether its cut faces are filled. @typedef {{ plane: Float32Array, cap: boolean }} Cut */
-/** @internal A surface ready for many rays: a mesh or one instance, with its world matrix and bounding sphere. @typedef {{ node: any, world: Float32Array, instance: number | null, cut: Cut | null, x: number, y: number, z: number, radius: number }} Solid */
+/**
+ * @internal Surfaces ready for many rays: a mesh, or every instance of an instanced one, with each
+ * one's bounding sphere - x, y, z and radius, four numbers each in `spheres`. An instance's world
+ * matrix (the node's times its own, at instance x 16 in `matrices`) is worked out only for a ray that
+ * meets its sphere, so thousands of instances cost four numbers each, not a matrix and an object.
+ * @typedef {{ node: any, world: Float32Array, matrices: Float32Array | null, spheres: Float32Array, cut: Cut | null }} Solid
+ */
 
 // Nodes are told apart by markers (drawMode, instanceMatrices) rather than instanceof, so picking
 // doesn't pull every node class into an app's bundle.
@@ -32,6 +38,8 @@ import { isInstanced } from './scene/kinds.js'
 
 const inverse = new Float32Array(16)
 const instanceWorld = new Float32Array(16)
+// a solid instance's world matrix, worked out where a ray needs it (solids(), blocked())
+const SCRATCH_WORLD = new Float32Array(16)
 const a = new Vec3(), b = new Vec3(), c = new Vec3()
 const localPlane = new Float32Array(4)
 
@@ -122,9 +130,9 @@ export class Raycaster {
   }
 
   /** @internal
-   * The solid surfaces of a frame's draw list, ready for many rays: each mesh and each instance with its
-   * world matrix and bounding sphere worked out once, rather than once per ray - for label occlusion,
-   * which casts a ray per label.
+   * The solid surfaces of a frame's draw list, ready for many rays: each mesh's and each instance's
+   * bounding sphere worked out once, rather than once per ray - for label occlusion, which casts a ray
+   * per label.
    * @param {{ node: Node, worldMatrix: Float32Array, instances: { count: number, instanceMatrices: Float32Array } | null, clip: { plane: Float32Array, cap: unknown } | null }[]} items
    * @returns {Solid[]}
    */
@@ -134,19 +142,20 @@ export class Raycaster {
     for (const item of items) {
       const n = /** @type {any} */ (item.node)
       if (n.drawMode !== 'triangles' || !n.geometry.vertexCount) continue
-      const box = n.geometry.bounds, center = box.getCenter(), radius = box.getRadius()
+      const box = n.geometry.bounds, [cx, cy, cz] = box.getCenter(), radius = box.getRadius()
       const cut = item.clip ? { plane: item.clip.plane, cap: !!item.clip.cap } : null
-      /** @param {Float32Array} world @param {number | null} instance */
-      const add = (world, instance) => {
-        const c = center.clone().applyMatrix4(world)
-        const scale = Math.max(Math.hypot(world[0], world[1], world[2]), Math.hypot(world[4], world[5], world[6]), Math.hypot(world[8], world[9], world[10]))
-        out.push({ node: n, world, instance, cut, x: c[0], y: c[1], z: c[2], radius: radius * scale })
+      const world = Float32Array.from(item.worldMatrix)
+      const matrices = item.instances ? item.instances.instanceMatrices : null
+      const count = item.instances ? item.instances.count : 1
+      const spheres = new Float32Array(count * 4)
+      for (let i = 0; i < count; i++) {
+        const m = matrices ? mat4.multiply(SCRATCH_WORLD, world, matrices, i * 16) : world, o = i * 4
+        spheres[o] = m[0] * cx + m[4] * cy + m[8] * cz + m[12]
+        spheres[o + 1] = m[1] * cx + m[5] * cy + m[9] * cz + m[13]
+        spheres[o + 2] = m[2] * cx + m[6] * cy + m[10] * cz + m[14]
+        spheres[o + 3] = radius * Math.max(Math.hypot(m[0], m[1], m[2]), Math.hypot(m[4], m[5], m[6]), Math.hypot(m[8], m[9], m[10]))
       }
-      if (item.instances) {
-        for (let i = 0; i < item.instances.count; i++) {
-          add(mat4.multiply(new Float32Array(16), item.worldMatrix, item.instances.instanceMatrices.subarray(i * 16, i * 16 + 16)), i)
-        }
-      } else add(Float32Array.from(item.worldMatrix), null)
+      out.push({ node: n, world, matrices, spheres, cut })
     }
     return out
   }
@@ -163,17 +172,24 @@ export class Raycaster {
     /** @type {Hit[]} */
     const hits = []
     for (const s of solids) {
-      if (s.node === skip && (skipInstance === null || s.instance === skipInstance)) continue
-      // its bounding sphere first: missed, or wholly beyond the distance or behind the ray, it can't block
-      const ox = s.x - o[0], oy = s.y - o[1], oz = s.z - o[2]
-      const along = ox * d[0] + oy * d[1] + oz * d[2]
-      const off = ox * ox + oy * oy + oz * oz - along * along, r2 = s.radius * s.radius
-      if (off > r2) continue
-      const half = Math.sqrt(r2 - off)
-      if (along - half > distance || along + half < 0) continue
-      hits.length = 0
-      this.#mesh(s.node, s.world, s.instance, hits, s.cut)
-      if (hits.length && hits[0].distance < distance) return true
+      // what the label is on: the whole node, or just the one instance
+      if (s.node === skip && (skipInstance === null || !s.matrices)) continue
+      const spheres = s.spheres
+      for (let i = 0; i < spheres.length / 4; i++) {
+        if (s.node === skip && i === skipInstance) continue
+        // its bounding sphere first: missed, or wholly beyond the distance or behind the ray, it can't block
+        const ox = spheres[i * 4] - o[0], oy = spheres[i * 4 + 1] - o[1], oz = spheres[i * 4 + 2] - o[2], r = spheres[i * 4 + 3]
+        const along = ox * d[0] + oy * d[1] + oz * d[2]
+        const off = ox * ox + oy * oy + oz * oz - along * along, r2 = r * r
+        if (off > r2) continue
+        const half = Math.sqrt(r2 - off)
+        if (along - half > distance || along + half < 0) continue
+        hits.length = 0
+        const instance = s.matrices ? i : null
+        const world = s.matrices ? mat4.multiply(SCRATCH_WORLD, s.world, s.matrices, i * 16) : s.world
+        this.#mesh(s.node, world, instance, hits, s.cut)
+        if (hits.length && hits[0].distance < distance) return true
+      }
     }
     return false
   }

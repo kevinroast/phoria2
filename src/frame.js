@@ -359,8 +359,10 @@ export function collect(scene, camera, { display = true, labels = display, light
   if (items.length && spots.length) {
     for (const light of spots.slice(0, SPOT_TILES)) {
       const at = /** @type {Vec3} */ (light.shadowFrom ?? light.position)
-      // the light's own fitting - a lamp round it - doesn't shadow it
-      const own = boxes.map((b) => b.containsPoint(at))
+      // the light's own fitting - a lamp round it - doesn't shadow it. Not an instanced mesh: its box
+      // is round all its instances (a city's, with a searchlight on one roof), and one instance can't
+      // be left out of the map anyway
+      const own = boxes.map((b, i) => !items[i].instances && b.containsPoint(at))
       const direction = /** @type {Vec3} */ (light.direction), casting = boxes.filter((_, i) => !own[i])
       const angle = light.kind === 'rect' ? coneOver(at, direction, casting) : /** @type {number} */ (light.angle)
       const fit = fitSpotShadow(at, direction, angle, light.range ?? 0, casting, receiving)
