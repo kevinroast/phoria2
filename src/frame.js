@@ -400,11 +400,10 @@ export function collect(scene, camera, { display = true, labels = display, light
     if (v === undefined) kinds.set(kind, v = variantOf(item.material, kind))
     return v
   }
-  const variants = new Map(frame.opaque.map((item) => [item, variantOfItem(item)]))
-  frame.opaque.sort((x, y) => {
-    const a = /** @type {string} */ (variants.get(x)), b = /** @type {string} */ (variants.get(y))
-    return x.node.renderOrder - y.node.renderOrder || (a < b ? -1 : a > b ? 1 : 0) || x.depth - y.depth
-  })
+  // each item with its variant as a number, sorted, then put back - no lookups while sorting
+  const keyed = frame.opaque.map((item) => ({ item, order: item.node.renderOrder, variant: variantNumber(variantOfItem(item)) }))
+  keyed.sort((x, y) => x.order - y.order || x.variant - y.variant || x.item.depth - y.item.depth)
+  for (let i = 0; i < keyed.length; i++) frame.opaque[i] = keyed[i].item
   // transparent: back to front so blending composes correctly
   frame.transparent.sort((x, y) => x.node.renderOrder - y.node.renderOrder || y.depth - x.depth)
   return frame
@@ -422,6 +421,18 @@ export function solidItems(frame) {
   return /** @type {DrawItem[]} */ (frame.solids.map(([node, clip]) => drawItem(node, frame.camera.view, null, clip)).filter(Boolean))
 }
 
+// a drawable's bounds' middle in the world, for drawItem
+const CENTER = new Vec3()
+// each material variant a number, in the order first seen - drawn grouped by it
+/** @type {Map<string, number>} */
+const VARIANTS = new Map()
+/** @param {string} variant */
+const variantNumber = (variant) => {
+  let n = VARIANTS.get(variant)
+  if (n === undefined) VARIANTS.set(variant, n = VARIANTS.size)
+  return n
+}
+
 /**
  * @param {Drawable} node @param {Mat4} view @param {Float32Array[] | null} planes null: no culling
  * @param {FrameClip | null} clip the plane cutting it
@@ -433,20 +444,22 @@ function drawItem(node, view, planes, clip) {
   if (instances && instances.count === 0) return null
   if (!geometry.vertexCount) return null
 
-  const box = geometry.bounds
-  const center = box.getCenter().applyMatrix4(worldMatrix)
+  const box = geometry.bounds, lo = box.min, hi = box.max
+  // the bounds' middle and reach, into a scratch vector - every drawable, every frame
+  const center = CENTER.set((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2).applyMatrix4(worldMatrix)
+  const radius = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2
   const scale = Math.max(Math.hypot(worldMatrix[0], worldMatrix[1], worldMatrix[2]),
     Math.hypot(worldMatrix[4], worldMatrix[5], worldMatrix[6]), Math.hypot(worldMatrix[8], worldMatrix[9], worldMatrix[10]))
   // instanced meshes spread their copies anywhere, so they aren't culled as a whole; a shader hook
   // that moves vertices is culled by its padded bounds, or - without them - not at all
   const hooks = material.shader?.vertex ? material.shader : null
   const pad = hooks ? hooks.bounds : 0
-  if (planes && node.frustumCulled && !instances && pad !== null && !sphereInFrustum(planes, center, box.getRadius() * scale + pad)) return null
+  if (planes && node.frustumCulled && !instances && pad !== null && !sphereInFrustum(planes, center, radius * scale + pad)) return null
   // all of it on the cut-away side of a clip - points and lines aren't cut, so they stay
   const cuts = clip && node.drawMode === 'triangles' ? clip : null
   if (cuts && !instances) {
     const p = cuts.plane
-    if (p[0] * center[0] + p[1] * center[1] + p[2] * center[2] + p[3] > box.getRadius() * scale) return null
+    if (p[0] * center[0] + p[1] * center[1] + p[2] * center[2] + p[3] > radius * scale) return null
   }
 
   // distance in front of the camera, along its view direction

@@ -61,14 +61,16 @@ const hookId = (hook) => {
  * @property {Map<Material, Map<string, DrawMemo>>} memo each material's features, hooks and programs
  *   for this frame, by kind of drawable - worked out by its first draw, read by the rest
  * @property {Map<string, Map<number, { program: import('./programs.js').Program, defines: string[] }>>} programs
- *   the programs found this frame, by what of a material decides one (its variant) - shared by
- *   materials alike in that, so a thousand materials of one kind work out their program once
+ *   the programs found this frame, by a material's features (their key), then the draw's signature -
+ *   shared by materials alike, so a thousand materials of one kind work out their program once
  */
 
 /**
  * What a material's draws share within a frame: its features for the kind of drawable, its shader
  * hooks, and its programs by what else decides one - the draw's signature (see #draw).
- * @typedef {{ features: import('../material/features.js').MaterialFeatures, hook: import('./hooks.js').Hook | null, programs: Map<number, { program: import('./programs.js').Program, defines: string[] }> }} DrawMemo
+ * `own` is the material's part of a draw's signature: its fog, the maps it reads from a second UV set
+ * and its hooks.
+ * @typedef {{ features: import('../material/features.js').MaterialFeatures, hook: import('./hooks.js').Hook | null, own: number, programs: Map<number, { program: import('./programs.js').Program, defines: string[] }> }} DrawMemo
  */
 
 /**
@@ -964,14 +966,16 @@ export class WebGLRenderer {
     let memo = kinds.get(kind)
     if (!memo) {
       const features = featuresOf(material, kind), hook = hookFor(material)
-      // what of the material decides its program: its features, kind, fog, the maps it reads from a
-      // second UV set, and its hooks - alike in those, materials share their programs
+      // what else of the material decides its program, as a number to add to the draw's signature:
+      // its fog, the maps it reads from a second UV set, its hooks - alike in those and in features,
+      // materials share their programs
       let second = 0
-      material.mapEntries.forEach(([, t], i) => { if (t.uvSet === 1) second |= 1 << i })
-      const variant = `${kind}|${features.key}|${material.fog ? 1 : 0}|${second}|${hook ? hookId(hook) : 0}`
-      let programs = state.programs.get(variant)
-      if (!programs) state.programs.set(variant, programs = new Map())
-      kinds.set(kind, memo = { features, hook, programs })
+      const maps = material.mapEntries
+      for (let i = 0; i < maps.length; i++) if (maps[i][1].uvSet === 1) second |= 1 << i
+      const own = (material.fog ? 256 : 0) + second * 512 + (hook ? hookId(hook) * 2 ** 20 : 0)
+      let programs = state.programs.get(features.key)
+      if (!programs) state.programs.set(features.key, programs = new Map())
+      kinds.set(kind, memo = { features, hook, own, programs })
     }
     return memo
   }
@@ -1001,8 +1005,8 @@ export class WebGLRenderer {
     // material, they find the program its first draw this frame worked out
     const memo = this.#memoFor(material, kind, state)
     const hook = memo.hook
-    const signature = (instances ? 1 : 0) | (item.clip ? 2 : 0) | (sprites ? 4 : 0) | (receives ? 8 : 0) | (ssao ? 16 : 0) | (behind ? 32 : 0)
-      | (geometry.colors !== null ? 64 : 0) | (geometry.uvs2 ? 128 : 0)
+    const signature = ((instances ? 1 : 0) | (item.clip ? 2 : 0) | (sprites ? 4 : 0) | (receives ? 8 : 0) | (ssao ? 16 : 0) | (behind ? 32 : 0)
+      | (geometry.colors !== null ? 64 : 0) | (geometry.uvs2 ? 128 : 0)) + memo.own
     let chosen = memo.programs.get(signature)
     if (!chosen) {
       // placed and cut as every pass draws it, then the material's features and the frame's lights

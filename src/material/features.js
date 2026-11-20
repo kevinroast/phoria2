@@ -26,6 +26,7 @@
  * @property {readonly ('mesh' | 'points' | 'lines')[]} kinds
  * @property {boolean} [lit] only for lit materials
  * @property {boolean} [geometric] when() also asks the geometry (given one) - checked again for its defines
+ * @property {string} [slot] a map's feature: the material slot it reads (none apply to a material with no maps)
  * @property {(m: Material, geometry?: Geometry | null) => boolean} when
  * @property {(m: Material, sink: UniformSink) => void} [uniforms]
  */
@@ -84,7 +85,7 @@ export const FEATURES = [
   },
   // each map: its sampler, and - read through UVs - its own repeat, rotation and offset
   ...MAPS.map(({ slot, uniform, define, lit }) => /** @type {Feature} */ ({
-    name: slot, define, kinds: MESH, lit, when: (m) => !!m[slot],
+    name: slot, define, kinds: MESH, lit, slot, when: (m) => !!m[slot],
     uniforms: (m, { map }) => map(uniform, /** @type {Texture} */ (m[slot]), slot !== 'matcap'),
   })),
   { name: null, define: null, kinds: MESH, when: (m) => !!m.bumpMap, uniforms: (m, { set }) => set('uBumpScale', m.bumpScale) },
@@ -195,9 +196,11 @@ export function glassFilter(m, worldMatrix) {
  */
 export function featuresOf(m, kind) {
   const all = /** @type {Feature[]} */ ([]), uniforms = /** @type {Feature[]} */ ([])
-  let key = ''
+  // most materials have no maps: their ten features are passed over without asking each slot
+  const maps = m.mapEntries.length > 0
+  let key = kind[0]
   for (const f of BY_KIND[kind]) {
-    if ((f.lit && m.unlit) || !f.when(m)) continue
+    if ((f.slot && !maps) || (f.lit && m.unlit) || !f.when(m)) continue
     all.push(f)
     if (f.uniforms) uniforms.push(f)
     key += String.fromCharCode(48 + /** @type {number} */ (INDEX.get(f)))
@@ -231,8 +234,9 @@ export function setUniformsOf(features, m, sink) {
  * @returns {string}
  */
 export function variantOf(m, kind) {
+  const maps = m.mapEntries.length > 0
   let key = ''
-  for (const f of BY_KIND[kind]) if (f.name && (!f.lit || !m.unlit) && f.when(m)) key += key ? `+${f.name}` : f.name
+  for (const f of BY_KIND[kind]) if (f.name && !(f.slot && !maps) && (!f.lit || !m.unlit) && f.when(m)) key += key ? `+${f.name}` : f.name
   return m.shader ? (key ? `${key}+hooks` : 'hooks') : key
 }
 
