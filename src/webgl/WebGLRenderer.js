@@ -5,7 +5,8 @@ import { Material } from '../material/Material.js'
 import { ACCUMULATE_FRAGMENT, CLIP_ONLY_FRAGMENT, ENCODE_FRAGMENT, FULLSCREEN_VERTEX, MESH_VERTEX } from './shaders.js'
 import { hookFailed, hookFor, setHookUniforms } from './hooks.js'
 import { placementDefines, setShapeUniforms, shapeDefines } from './shape.js'
-import { featureDefines, isGlass, secondUvDefines, setFeatureUniforms } from '../material/features.js'
+import { definesOf, featuresOf, isGlass, secondUvDefines, setUniformsOf } from '../material/features.js'
+import { GLState } from './glstate.js'
 import { collect, solidItems } from '../frame.js'
 import { Box3 } from '../value/Box3.js'
 import { checkNumber, checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from '../validate.js'
@@ -14,6 +15,17 @@ import { uvMatrix } from './resources.js'
 import { blit } from './targets.js'
 import { drawKind } from '../scene/kinds.js'
 import { lightBehind, TONE_MAPPING } from './tone.js'
+
+// each set of shader hooks a number, for the key of the programs it shares
+/** @type {WeakMap<object, number>} */
+const hookIds = new WeakMap()
+let hooksSeen = 0
+/** @param {object} hook */
+const hookId = (hook) => {
+  let id = hookIds.get(hook)
+  if (id === undefined) hookIds.set(hook, id = ++hooksSeen)
+  return id
+}
 
 /** @import { FrameDescription, DrawItem, FrameLight, FrameCap } from '../frame.js' */
 /** @import { Scene } from '../scene/Scene.js' */
@@ -46,6 +58,17 @@ import { lightBehind, TONE_MAPPING } from './tone.js'
  *   surfaces are fogged in light, towards it
  * @property {WebGLTexture | null} behind the picture behind the see-through things - the opaque ones
  *   drawn - mipmapped, for glass to bend; taken when the frame has glass
+ * @property {Map<Material, Map<string, DrawMemo>>} memo each material's features, hooks and programs
+ *   for this frame, by kind of drawable - worked out by its first draw, read by the rest
+ * @property {Map<string, Map<number, { program: import('./programs.js').Program, defines: string[] }>>} programs
+ *   the programs found this frame, by what of a material decides one (its variant) - shared by
+ *   materials alike in that, so a thousand materials of one kind work out their program once
+ */
+
+/**
+ * What a material's draws share within a frame: its features for the kind of drawable, its shader
+ * hooks, and its programs by what else decides one - the draw's signature (see #draw).
+ * @typedef {{ features: import('../material/features.js').MaterialFeatures, hook: import('./hooks.js').Hook | null, programs: Map<number, { program: import('./programs.js').Program, defines: string[] }> }} DrawMemo
  */
 
 /**
@@ -324,6 +347,20 @@ export class WebGLRenderer {
   /** With a shared context: the canvas's 2D context, which the picture is copied into. @type {CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null} */
   #copy = null
   /** @type {Float32Array} */ #normalMatrix = new Float32Array(9)
+  /** The render state the scene's draws set, remembered between them - see glstate.js. @type {GLState | null} */
+  #glState = null
+  /**
+   * Where a material's features send their uniforms: the program drawing it. One for every draw,
+   * rather than one made each draw. @type {import('../material/features.js').UniformSink & { program: import('./programs.js').Program | null }}
+   */
+  #sink = {
+    program: null,
+    set: (name, value) => this.#sink.program?.set(name, value),
+    map: (uniform, texture, transform) => {
+      this.#sink.program?.set(uniform, this.#gpu.resources.texture(texture))
+      if (transform) this.#sink.program?.set(`${uniform}Uv`, uvMatrix(texture))
+    },
+  }
   /** Model-view for sorting points back to front. */
   #modelView = new Float32Array(16)
   /** A cap's material, by colour, so each colour compiles and uploads once. @type {Map<number, Material>} */ #capMaterials = new Map()
@@ -606,7 +643,7 @@ export class WebGLRenderer {
       wait, linear: (linear && float) || !!target?.srgb, width, height,
       environment: passes && typeof env === 'object' ? passes.environment(env) : null, shadows: [], occlusion: null, ...this.#lightsOf(frame),
       fogLight: frame.fog ? lightBehind(frame.fog.color, TONE_MAPPING[this.toneMapping], this.exposure) : null,
-      behind: null,
+      behind: null, memo: new Map(), programs: new Map(),
     }
     if (passes && typeof env === 'object' && env.image && !state.environment) {
       warnOnce(env, env.isHDR ? "this device can't render to float textures, which HDR environments need - lighting without it"
@@ -676,7 +713,9 @@ export class WebGLRenderer {
     gl.depthFunc(gl.LEQUAL)
 
     gl.disable(gl.BLEND)
+    this.#beginDraws()
     for (const item of frame.opaque) this.#draw(item, frame, false, state)
+    this.#endDraws()
     // section planes' caps fill the cut faces of the solids just drawn, before anything see-through
     for (const cap of frame.caps) this.#cap(cap, frame, state)
     // the ground shadow over the opaque things - a floor among them - and under anything see-through;
@@ -692,10 +731,14 @@ export class WebGLRenderer {
     // drawn first, bending the solids, and taken into the picture behind again for its front faces
     const twoSided = glassy ? frame.transparent.filter((item) => refracts(item) && item.material.doubleSided) : []
     if (twoSided.length) {
+      this.#beginDraws()
       for (const item of twoSided) this.#draw(item, frame, true, state, 'back')
+      this.#endDraws()
       state.behind = this.#behind(drawingInto, width, height, behindColor)
     }
+    this.#beginDraws()
     for (const item of frame.transparent) this.#draw(item, frame, true, state, twoSided.includes(item) ? 'front' : null)
+    this.#endDraws()
     // outlines over everything
     if (outline && passes) passes.outlineComposite(outline, state.linear)
     gl.depthMask(true)
@@ -895,46 +938,98 @@ export class WebGLRenderer {
   }
 
   /**
+   * The render state the scene's draws set is remembered from here (GLState) - after anything that set
+   * it directly. @returns {GLState}
+   */
+  #beginDraws() {
+    const gs = this.#glState ??= new GLState(this.gl)
+    gs.reset()
+    return gs
+  }
+
+  /** After a run of draws: polygon offset off, as everything else expects. */
+  #endDraws() {
+    this.#glState?.set(this.gl.POLYGON_OFFSET_FILL, false)
+  }
+
+  /**
+   * A material's features, hooks and programs for a kind of drawable, this frame: worked out by its
+   * first draw, read by the rest.
+   * @param {Material} material @param {'mesh' | 'points' | 'lines'} kind @param {FrameState} state
+   * @returns {DrawMemo}
+   */
+  #memoFor(material, kind, state) {
+    let kinds = state.memo.get(material)
+    if (!kinds) state.memo.set(material, kinds = new Map())
+    let memo = kinds.get(kind)
+    if (!memo) {
+      const features = featuresOf(material, kind), hook = hookFor(material)
+      // what of the material decides its program: its features, kind, fog, the maps it reads from a
+      // second UV set, and its hooks - alike in those, materials share their programs
+      let second = 0
+      material.mapEntries.forEach(([, t], i) => { if (t.uvSet === 1) second |= 1 << i })
+      const variant = `${kind}|${features.key}|${material.fog ? 1 : 0}|${second}|${hook ? hookId(hook) : 0}`
+      let programs = state.programs.get(variant)
+      if (!programs) state.programs.set(variant, programs = new Map())
+      kinds.set(kind, memo = { features, hook, programs })
+    }
+    return memo
+  }
+
+  /**
    * @param {DrawItem} item @param {FrameDescription} frame @param {boolean} transparent @param {FrameState} state
    * @param {'back' | 'front' | null} [side] only its back or its front faces, whatever its material says
    */
   #draw(item, frame, transparent, state, side = null) {
-    const gl = this.gl
+    const gl = this.gl, gs = /** @type {GLState} */ (this.#glState)
     const { node, geometry, material, worldMatrix, instances } = item
     const kind = drawKind(node)
     const receives = kind === 'mesh' && node.receiveShadow && !material.unlit
     const shadows = receives ? state.shadows : NO_SHADOWS
-
     const clip = kind === 'mesh' ? item.clip : null
-    // placed and cut as every pass draws it, then the material's features and the frame's lights
-    const defines = [...placementDefines(item), ...this.#defines(kind, material, geometry, state)]
-    if (kind === 'points' && /** @type {any} */ (node).drawsSprites) defines.push('SPRITES')
-    for (const shadow of shadows) {
-      defines.push(shadow.define)
-      if (shadow.soft) defines.push(shadow.soft.define)
-      // glass in the light's way colours it
-      if (shadow.glass) defines.push(shadow.glass.define)
-    }
-    if (shadows.length && frame.shadowTexels) defines.push('DEBUG_SHADOW_TEXELS')
+    const sprites = kind === 'points' && !!(/** @type {any} */ (node).drawsSprites)
     const fog = material.fog ? frame.fog : null
-    if (fog) {
-      defines.push('FOG')
-      if (fog.linear) defines.push('FOG_LINEAR')
-      if (material.blending === 'additive') defines.push('FOG_ADD')
-      else if (material.blending === 'multiply') defines.push('FOG_MULTIPLY')
-    }
     // ambient occlusion dims the light from all round on lit solids; see-through things show what is
     // behind them, so the occlusion found there isn't theirs
     const ssao = kind === 'mesh' && !transparent && !material.unlit ? state.occlusion : null
-    if (ssao) defines.push('SSAO', ...(ssao.depth ? ['SSAO_DEPTH'] : []))
     // glass, over the picture behind it: bent and tinted, and blurred where it is rough
     const behind = transparent && kind === 'mesh' && refracts(item) ? state.behind : null
-    if (behind) defines.push('REFRACTION')
-    // a material's own GLSL, spliced into this program
-    const hook = hookFor(material)
-    if (hook) defines.push(...hook.defines)
+
+    // the program: the material's (its features, its hooks), the frame's (its lights, shadows, fog) and
+    // the draw's own - placed by instances or not, cut, drawn as squares, receiving shadows, occluded,
+    // over glass, its geometry's colours and second UVs. Those last are the draw's signature: with the
+    // material, they find the program its first draw this frame worked out
+    const memo = this.#memoFor(material, kind, state)
+    const hook = memo.hook
+    const signature = (instances ? 1 : 0) | (item.clip ? 2 : 0) | (sprites ? 4 : 0) | (receives ? 8 : 0) | (ssao ? 16 : 0) | (behind ? 32 : 0)
+      | (geometry.colors !== null ? 64 : 0) | (geometry.uvs2 ? 128 : 0)
+    let chosen = memo.programs.get(signature)
+    if (!chosen) {
+      // placed and cut as every pass draws it, then the material's features and the frame's lights
+      const defines = [...placementDefines(item), ...this.#defines(kind, material, geometry, state, memo.features)]
+      if (sprites) defines.push('SPRITES')
+      for (const shadow of shadows) {
+        defines.push(shadow.define)
+        if (shadow.soft) defines.push(shadow.soft.define)
+        // glass in the light's way colours it
+        if (shadow.glass) defines.push(shadow.glass.define)
+      }
+      if (shadows.length && frame.shadowTexels) defines.push('DEBUG_SHADOW_TEXELS')
+      if (fog) {
+        defines.push('FOG')
+        if (fog.linear) defines.push('FOG_LINEAR')
+        if (material.blending === 'additive') defines.push('FOG_ADD')
+        else if (material.blending === 'multiply') defines.push('FOG_MULTIPLY')
+      }
+      if (ssao) defines.push('SSAO', ...(ssao.depth ? ['SSAO_DEPTH'] : []))
+      if (behind) defines.push('REFRACTION')
+      // a material's own GLSL, spliced into this program
+      if (hook) defines.push(...hook.defines)
+      chosen = { defines, program: this.#gpu.programs.get(kind, defines, undefined, hook?.source) }
+      memo.programs.set(signature, chosen)
+    }
+    const { program, defines } = chosen
     const programs = this.#gpu.programs
-    const program = programs.get(kind, defines, undefined, hook?.source)
     if (!programs.isReady(program)) {
       if (!state.wait) {
         // still compiling: drawn once it's done, rather than holding up everything else
@@ -950,7 +1045,7 @@ export class WebGLRenderer {
       this.info.compiling++
       return
     }
-    gl.useProgram(program.program)
+    gs.useProgram(program.program)
 
     // per-frame values, once per program per frame
     if (program.frame !== this.#gpu.frame) {
@@ -976,9 +1071,10 @@ export class WebGLRenderer {
         for (const shadow of shadows) for (const [name, value] of Object.entries(shadow.uniforms)) program.set(name, value)
       }
     }
-    // the frame's own textures are bound every draw, not once a frame: other programs drawn in
+    // the frame's own textures are set every draw, not once a frame: other programs drawn in
     // between bind their maps to the same texture units, and a shadow sampler left reading an
-    // ordinary texture makes the draw fail
+    // ordinary texture makes the draw fail. A unit already holding the texture isn't bound again
+    // (programs.js bindTo)
     if (kind === 'mesh' && !material.unlit) {
       if (state.environment) program.set('uEnvMap', state.environment.prefiltered)
       if (state.ltc) {
@@ -1020,29 +1116,24 @@ export class WebGLRenderer {
     if (clip) program.set('uClipPlane', clip.plane)
     // the material's own: each of its features' uniforms - its colour, its surface, its maps (each bound
     // to its sampler, with its repeat, rotation and offset)
-    const resources = this.#gpu.resources
-    setFeatureUniforms(material, kind, {
-      set: (name, value) => program.set(name, value),
-      map: (uniform, texture, transform) => {
-        program.set(uniform, resources.texture(texture))
-        if (transform) program.set(`${uniform}Uv`, uvMatrix(texture))
-      },
-    })
+    this.#sink.program = program
+    setUniformsOf(memo.features, material, this.#sink)
 
-    // render state
-    gl.depthMask(!transparent && material.depthWrite)
-    if (material.depthTest) gl.enable(gl.DEPTH_TEST)
-    else gl.disable(gl.DEPTH_TEST)
+    // render state - sent only where it differs from the last draw's
+    gs.depthMask(!transparent && material.depthWrite)
+    gs.set(gl.DEPTH_TEST, material.depthTest)
     if (transparent) {
       // output is premultiplied, so 'normal' is ONE / ONE_MINUS_SRC_ALPHA; 'multiply' scales what is
       // behind by the colour, as much as the opacity says: dst * (colour * opacity + 1 - opacity)
-      if (material.blending === 'additive') gl.blendFunc(gl.ONE, gl.ONE)
-      else if (material.blending === 'multiply') gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA)
-      else gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+      if (material.blending === 'additive') gs.blendFunc(gl.ONE, gl.ONE)
+      else if (material.blending === 'multiply') gs.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA)
+      else gs.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
     }
 
     if (kind === 'lines') {
-      gl.disable(gl.CULL_FACE)
+      // drawn as quads, so no culling - and no offset: a line lies over its surface
+      gs.set(gl.CULL_FACE, false)
+      gs.set(gl.POLYGON_OFFSET_FILL, false)
       program.set('uWidth', material.width * this.pixelRatio)
       const arrows = /** @type {any} */ (node).arrowBits ?? 0
       program.set('uArrows', arrows)
@@ -1056,16 +1147,17 @@ export class WebGLRenderer {
     }
 
     if (kind === 'points') {
-      gl.disable(gl.CULL_FACE)
+      gs.set(gl.CULL_FACE, false)
+      gs.set(gl.POLYGON_OFFSET_FILL, false)
       program.set('uSize', material.sizeAttenuation ? material.size : material.size * this.pixelRatio)
       // round points are solid, but their edges are soft: blended over what is behind even in the
       // opaque pass, or the edge fades to black - a dark ring round every dot
       const round = !transparent && !material.map
       if (round) {
-        gl.enable(gl.BLEND)
-        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+        gs.set(gl.BLEND, true)
+        gs.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
       }
-      if (/** @type {any} */ (node).drawsSprites) {
+      if (sprites) {
         // each point a square, any size and turned - drawn back to front when the points ask, for
         // smoke and other soft things that hide what is behind them
         program.set('uResolution', [state.width, state.height])
@@ -1078,7 +1170,7 @@ export class WebGLRenderer {
         gl.bindVertexArray(buffers.vao)
         gl.drawArrays(gl.POINTS, 0, geometry.drawnVertices)
       }
-      if (round) gl.disable(gl.BLEND)
+      if (round) gs.set(gl.BLEND, false)
       this.info.drawCalls++
       return
     }
@@ -1088,19 +1180,19 @@ export class WebGLRenderer {
     program.set('uNormalMatrix', this.#normalMatrix)
     // a mirroring transform (negative scale) reverses the winding - which also says which side is
     // the back, for double-sided materials
-    gl.frontFace(mat4.determinant(worldMatrix) < 0 ? gl.CW : gl.CCW)
+    gs.frontFace(mat4.determinant(worldMatrix) < 0 ? gl.CW : gl.CCW)
     if (material.doubleSided && !side) {
-      gl.disable(gl.CULL_FACE)
+      gs.set(gl.CULL_FACE, false)
     } else {
-      gl.enable(gl.CULL_FACE)
-      gl.cullFace(side === 'back' ? gl.FRONT : gl.BACK)
+      gs.set(gl.CULL_FACE, true)
+      gs.cullFace(side === 'back' ? gl.FRONT : gl.BACK)
     }
     // surfaces sit a hair behind their own depth, so a line lying on one - an edge, a seam, a
-    // drawing's outline - shows whole rather than fighting it pixel by pixel
-    gl.enable(gl.POLYGON_OFFSET_FILL)
-    gl.polygonOffset(1, 2)
+    // drawing's outline - shows whole rather than fighting it pixel by pixel (off again after the run
+    // of draws - #endDraws)
+    gs.set(gl.POLYGON_OFFSET_FILL, true)
+    gs.polygonOffset(1, 2)
     this.info.triangles += this.#gpu.resources.drawTriangles(geometry, instances, material.anisotropy > 0 && !material.unlit)
-    gl.disable(gl.POLYGON_OFFSET_FILL)
     this.info.drawCalls++
   }
 
@@ -1155,7 +1247,10 @@ export class WebGLRenderer {
     // then the plane, just where the count says
     gl.stencilFunc(gl.NOTEQUAL, 0, 0xff)
     gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP)
+    // the counting set state directly
+    this.#beginDraws()
     this.#draw(this.#capItem(cap), frame, false, state)
+    this.#endDraws()
     gl.disable(gl.STENCIL_TEST)
   }
 
@@ -1183,12 +1278,13 @@ export class WebGLRenderer {
    * A drawable's defines but its placement: the material's features (features.js), and - for a lit
    * mesh - the frame's lights and environment.
    * @param {'mesh' | 'points' | 'lines'} kind @param {Material} material @param {Geometry} geometry @param {FrameState} state
+   * @param {import('../material/features.js').MaterialFeatures} features the material's, for the kind
    * @returns {string[]}
    */
-  #defines(kind, material, geometry, state) {
+  #defines(kind, material, geometry, state, features) {
     // drawn in linear light, for a chain that encodes the picture at its end
     const d = state.linear ? ['LINEAR_OUTPUT'] : []
-    d.push(...featureDefines(material, kind, geometry))
+    d.push(...definesOf(features, material, geometry))
     if (kind === 'mesh') {
       if (!material.unlit) {
         d.push(...state.lightDefines)

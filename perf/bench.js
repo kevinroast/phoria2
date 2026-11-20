@@ -7,7 +7,7 @@ import * as P from 'phoria2'
 import * as THREE from 'three'
 
 const WIDTH = 800, HEIGHT = 600
-const BARS = 100_000, POINTS = 1_000_000, VIEWS = 20, TILE_BARS = 400, SORTED = 100_000
+const BARS = 100_000, POINTS = 1_000_000, VIEWS = 20, TILE_BARS = 400, SORTED = 100_000, MESHES = 2_000
 const stage = /** @type {HTMLElement} */ (document.getElementById('stage'))
 const status = /** @type {HTMLElement} */ (document.getElementById('status'))
 const table = /** @type {HTMLTableElement} */ (document.getElementById('results'))
@@ -405,6 +405,43 @@ async function shadowedBars() {
   record('100k shadowed bars', 'frame, camera moving', 'ms', pMoving, tMoving)
 }
 
+// many separate meshes, each with a material of its own - a draw call each, as scenes built from
+// parts are: what each draw costs the CPU, binding and setting, more than the GPU
+async function meshes() {
+  const side = Math.ceil(Math.sqrt(MESHES))
+  const at = (i) => [((i % side) - side / 2) * 4, 0, (Math.floor(i / side) - side / 2) * 4]
+  const colour = (i) => `hsl(${(i * 37) % 360}, 60%, 55%)`
+  let c = canvas()
+  let t0 = performance.now()
+  const view = phoriaView(c)
+  const geometry = P.box(2)
+  for (let i = 0; i < MESHES; i++) view.scene.add(new P.Mesh({ geometry, material: { color: colour(i), roughness: 0.5 }, position: at(i), rotation: [0, i, 0] }))
+  await firstPicture(view)
+  const pBuild = performance.now() - t0
+  const pFrame = await frames(() => view.render(), view.renderer.gl)
+  view.dispose()
+  c.remove()
+
+  c = canvas()
+  t0 = performance.now()
+  const t = threeRenderer(c)
+  const box = new THREE.BoxGeometry(2, 2, 2)
+  for (let i = 0; i < MESHES; i++) {
+    const mesh = new THREE.Mesh(box, new THREE.MeshStandardMaterial({ color: colour(i), roughness: 0.5 }))
+    mesh.position.set(...at(i))
+    mesh.rotation.y = i
+    t.scene.add(mesh)
+  }
+  t.renderer.render(t.scene, t.camera)
+  sync(t.gl)
+  const tBuild = performance.now() - t0
+  const tFrame = await frames(() => t.renderer.render(t.scene, t.camera), t.gl)
+  disposeThree(t)
+
+  record('2k meshes', 'build + first frame', 'ms', pBuild, tBuild)
+  record('2k meshes', 'frame', 'ms', pFrame, tFrame)
+}
+
 async function views() {
   const cols = 5, w = WIDTH / cols, h = HEIGHT / (VIEWS / cols)
   /** @param {(c: HTMLCanvasElement) => any} make */
@@ -481,7 +518,7 @@ async function run() {
     date: new Date().toISOString(),
   }
   probe.getExtension('WEBGL_lose_context')?.loseContext()
-  for (const [name, scene] of [['100k bars', bars], ['1M points', points], ['100k sorted points', sortedPoints], ['100k shadowed bars', shadowedBars], [`${VIEWS} views`, views]]) {
+  for (const [name, scene] of [['100k bars', bars], ['1M points', points], ['100k sorted points', sortedPoints], ['100k shadowed bars', shadowedBars], ['2k meshes', meshes], [`${VIEWS} views`, views]]) {
     status.textContent = `running ${name}...`
     await nextFrame()
     await /** @type {() => Promise<void>} */ (scene)()

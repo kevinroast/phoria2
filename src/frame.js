@@ -389,7 +389,18 @@ export function collect(scene, camera, { display = true, labels = display, light
 
   // opaque: front to back lets the depth test reject hidden pixels early; grouping by material
   // variant - worked out once an item, for its kind - keeps shader switches down
-  const variants = new Map(frame.opaque.map((item) => [item, variantOf(item.material, kindOf(item.node))]))
+  // a material's variant found once, however many items share it
+  /** @type {Map<unknown, Map<string, string>>} */
+  const byMaterial = new Map()
+  const variantOfItem = (/** @type {DrawItem} */ item) => {
+    const kind = kindOf(item.node)
+    let kinds = byMaterial.get(item.material)
+    if (!kinds) byMaterial.set(item.material, kinds = new Map())
+    let v = kinds.get(kind)
+    if (v === undefined) kinds.set(kind, v = variantOf(item.material, kind))
+    return v
+  }
+  const variants = new Map(frame.opaque.map((item) => [item, variantOfItem(item)]))
   frame.opaque.sort((x, y) => {
     const a = /** @type {string} */ (variants.get(x)), b = /** @type {string} */ (variants.get(y))
     return x.node.renderOrder - y.node.renderOrder || (a < b ? -1 : a > b ? 1 : 0) || x.depth - y.depth

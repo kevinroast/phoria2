@@ -97,6 +97,8 @@ export class Programs {
   /** Forget every program - after a lost context, when they are already gone. */
   reset() {
     this.#cache.clear()
+    // and what the texture units held: a restored context starts with nothing bound
+    forgetBindings(this.gl)
     this.#empty = null
     // a lost context drops its extensions: ask again, which turns it back on (or finds it gone)
     this.#parallel = !!this.gl.getExtension('KHR_parallel_shader_compile')
@@ -216,11 +218,46 @@ export class Programs {
 
 /**
  * A setter for a uniform of a type that isn't a sampler, or null for a type nothing sets. A single
- * number sets a scalar; an array or typed array sets a vector, a matrix, or an array of them.
+ * number sets a scalar; an array or typed array sets a vector, a matrix, or an array of them. A
+ * uniform keeps its value in its program, so the setter remembers what it last sent and sends only a
+ * change - most of a draw's uniforms (a material's colour, surface and the rest) are what the last
+ * draw with the program sent.
  * @param {WebGL2RenderingContext} gl @param {number} type @param {WebGLUniformLocation | null} loc
  * @returns {((value: any) => void) | null}
  */
 function setterFor(gl, type, loc) {
+  const send = sendFor(gl, type, loc)
+  if (!send) return null
+  /** @type {number | Float64Array | null} */
+  let last = null
+  return (v) => {
+    if (typeof v === 'number' || typeof v === 'boolean') {
+      if (+v === last) return
+      last = +v
+    } else if (v != null) {
+      const n = v.length
+      if (last instanceof Float64Array && last.length === n) {
+        let same = true
+        for (let i = 0; i < n; i++) {
+          if (last[i] !== v[i]) {
+            same = false
+            break
+          }
+        }
+        if (same) return
+        last.set(v)
+      } else last = Float64Array.from(v)
+    } else last = null
+    send(v)
+  }
+}
+
+/**
+ * The GL call that sends a uniform of a type, or null for a type nothing sets.
+ * @param {WebGL2RenderingContext} gl @param {number} type @param {WebGLUniformLocation | null} loc
+ * @returns {((value: any) => void) | null}
+ */
+function sendFor(gl, type, loc) {
   switch (type) {
     case gl.FLOAT: return (v) => typeof v === 'number' ? gl.uniform1f(loc, v) : gl.uniform1fv(loc, v)
     case gl.FLOAT_VEC2: return (v) => gl.uniform2fv(loc, v)
@@ -271,31 +308,53 @@ function samplerTarget(gl, type) {
   }
 }
 
-/** Texture units with a sampler object bound, per context: the next plain texture bound there unbinds it. @type {WeakMap<WebGL2RenderingContext, Set<number>>} */
-const samplerUnits = new WeakMap()
+/**
+ * What each context's texture units hold - the texture on each target, and the sampler object -
+ * so a draw binds only what isn't there already. Exact while every bind to units 0-14 goes through
+ * bindTo(); everything else binds on unit 15 (SAMPLER_UNITS). Keyed by unit and target, as GL keeps
+ * a texture per target on each unit.
+ * @typedef {{ textures: Map<number, unknown>, samplers: unknown[] }} Bindings
+ * @type {WeakMap<WebGL2RenderingContext, Bindings>}
+ */
+const bindings = new WeakMap()
+
+/** Forget what a context's units hold - a restored context has nothing bound. @param {WebGL2RenderingContext} gl */
+export function forgetBindings(gl) {
+  bindings.delete(gl)
+}
 
 /**
  * A sampler's setter: binds the texture to the sampler's own unit, on its target - or, given
  * { texture, sampler }, with a sampler object of its own, to read the texture another way than its
  * own settings say (a shadow map's depths, say, beside the comparisons its texture is set up for).
+ * Only what changed is bound; the sampler's unit is set the first time, its program in use - a
+ * uniform keeps its value in its program.
  * @param {WebGL2RenderingContext} gl @param {number} target @param {WebGLUniformLocation | null} loc @param {number} unit
  * @returns {(value: WebGLTexture | { texture: WebGLTexture, sampler: WebGLSampler }) => void}
  */
 function bindTo(gl, target, loc, unit) {
+  let assigned = false
+  const slot = unit * 0x10000 + target
   return (value) => {
-    const paired = /** @type {any} */ (value)?.sampler ? /** @type {{ texture: WebGLTexture, sampler: WebGLSampler }} */ (value) : null
-    gl.activeTexture(gl.TEXTURE0 + unit)
-    gl.bindTexture(target, paired ? paired.texture : /** @type {WebGLTexture} */ (value))
-    let units = samplerUnits.get(gl)
-    if (paired) {
-      if (!units) samplerUnits.set(gl, units = new Set())
-      gl.bindSampler(unit, paired.sampler)
-      units.add(unit)
-    } else if (units?.has(unit)) {
-      gl.bindSampler(unit, null)
-      units.delete(unit)
+    if (!assigned) {
+      gl.uniform1i(loc, unit)
+      assigned = true
     }
-    gl.uniform1i(loc, unit)
+    const paired = /** @type {any} */ (value)?.sampler ? /** @type {{ texture: WebGLTexture, sampler: WebGLSampler }} */ (value) : null
+    const texture = paired ? paired.texture : value, sampler = paired ? paired.sampler : null
+    let held = bindings.get(gl)
+    if (!held) bindings.set(gl, held = { textures: new Map(), samplers: [] })
+    if (held.textures.get(slot) !== texture || !held.textures.has(slot)) {
+      gl.activeTexture(gl.TEXTURE0 + unit)
+      gl.bindTexture(target, /** @type {WebGLTexture} */ (texture))
+      held.textures.set(slot, texture)
+    }
+    // a plain texture after a paired one unbinds the sampler object, or it would go on reading the
+    // new texture its own way
+    if (held.samplers[unit] !== sampler) {
+      gl.bindSampler(unit, /** @type {WebGLSampler | null} */ (sampler))
+      held.samplers[unit] = sampler
+    }
   }
 }
 

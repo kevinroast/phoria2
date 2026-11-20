@@ -25,6 +25,7 @@
  * @property {string | null} define the #define that switches its code on
  * @property {readonly ('mesh' | 'points' | 'lines')[]} kinds
  * @property {boolean} [lit] only for lit materials
+ * @property {boolean} [geometric] when() also asks the geometry (given one) - checked again for its defines
  * @property {(m: Material, geometry?: Geometry | null) => boolean} when
  * @property {(m: Material, sink: UniformSink) => void} [uniforms]
  */
@@ -140,7 +141,7 @@ export const FEATURES = [
     name: 'triplanar', define: 'TRIPLANAR', kinds: MESH, when: (m) => m.triplanar > 0 && UV_MAPS.some((slot) => m[slot]),
     uniforms: (m, { set }) => set('uTriplanar', m.triplanar),
   },
-  { name: 'vcolor', define: 'VERTEX_COLORS', kinds: ALL, when: (m, g) => m.vertexColors && (!g || g.colors !== null) },
+  { name: 'vcolor', define: 'VERTEX_COLORS', kinds: ALL, geometric: true, when: (m, g) => m.vertexColors && (!g || g.colors !== null) },
   // points
   { name: 'map', define: 'MAP', kinds: ['points'], when: (m) => !!m.map, uniforms: (m, { map }) => map('uMap', /** @type {Texture} */ (m.map), true) },
   { name: 'sized', define: 'SIZE_ATTENUATION', kinds: ['points'], when: (m) => m.sizeAttenuation },
@@ -158,8 +159,10 @@ export const FEATURES = [
   { name: 'multiply', define: null, kinds: ALL, when: (m) => m.blending === 'multiply' },
 ]
 
-/** Is a feature the material's, for this kind of drawable? @param {Feature} f @param {Material} m @param {string} kind @param {Geometry | null} [geometry] */
-const applies = (f, m, kind, geometry) => f.kinds.includes(/** @type {any} */ (kind)) && (!f.lit || !m.unlit) && f.when(m, geometry)
+// each kind's features, in the table's order, and each feature's place in the table - for walking
+// only a kind's own, and for a short key of which apply
+const BY_KIND = Object.fromEntries(['mesh', 'points', 'lines'].map((kind) => [kind, FEATURES.filter((f) => f.kinds.includes(/** @type {any} */ (kind)))]))
+const INDEX = new Map(FEATURES.map((f, i) => [f, i]))
 
 /**
  * Glass: a material that lets light through, lit - it bends what is behind it, and colours the light
@@ -182,16 +185,55 @@ export function glassFilter(m, worldMatrix) {
 }
 
 /**
+ * A material's features for a kind of drawable, found in one walk of the table - for the renderer to
+ * keep while it draws a frame, and read for the program's defines and the uniforms of every draw
+ * with the material. A feature that asks the geometry is in when the material asks for it. `key`
+ * says which apply, one character each - materials with the same key switch on the same code.
+ * @typedef {{ all: Feature[], uniforms: Feature[], key: string }} MaterialFeatures
+ * @param {Material} m @param {'mesh' | 'points' | 'lines'} kind
+ * @returns {MaterialFeatures}
+ */
+export function featuresOf(m, kind) {
+  const all = /** @type {Feature[]} */ ([]), uniforms = /** @type {Feature[]} */ ([])
+  let key = ''
+  for (const f of BY_KIND[kind]) {
+    if ((f.lit && m.unlit) || !f.when(m)) continue
+    all.push(f)
+    if (f.uniforms) uniforms.push(f)
+    key += String.fromCharCode(48 + /** @type {number} */ (INDEX.get(f)))
+  }
+  return { all, uniforms, key }
+}
+
+/**
+ * The defines a material's features switch on, given the geometry drawn.
+ * @param {MaterialFeatures} features @param {Material} m @param {Geometry} geometry
+ * @returns {string[]}
+ */
+export function definesOf(features, m, geometry) {
+  const defines = /** @type {string[]} */ ([])
+  for (const f of features.all) if (f.define && (!f.geometric || f.when(m, geometry))) defines.push(f.define)
+  return defines
+}
+
+/**
+ * Set the uniforms a material's features read.
+ * @param {MaterialFeatures} features @param {Material} m @param {UniformSink} sink
+ */
+export function setUniformsOf(features, m, sink) {
+  for (const f of features.uniforms) /** @type {NonNullable<Feature['uniforms']>} */ (f.uniforms)(m, sink)
+}
+
+/**
  * A material's variant key for a kind of drawable: its features' names, joined. Materials with
  * the same key compile to the same program (geometry and the frame aside).
  * @param {Material} m @param {'mesh' | 'points' | 'lines'} kind
  * @returns {string}
  */
 export function variantOf(m, kind) {
-  const parts = /** @type {string[]} */ ([])
-  for (const f of FEATURES) if (f.name && applies(f, m, kind)) parts.push(f.name)
-  if (m.shader) parts.push('hooks')
-  return parts.join('+')
+  let key = ''
+  for (const f of BY_KIND[kind]) if (f.name && (!f.lit || !m.unlit) && f.when(m)) key += key ? `+${f.name}` : f.name
+  return m.shader ? (key ? `${key}+hooks` : 'hooks') : key
 }
 
 /**
@@ -200,9 +242,7 @@ export function variantOf(m, kind) {
  * @returns {string[]}
  */
 export function featureDefines(m, kind, geometry) {
-  const defines = /** @type {string[]} */ ([])
-  for (const f of FEATURES) if (f.define && applies(f, m, kind, geometry)) defines.push(f.define)
-  return defines
+  return definesOf(featuresOf(m, kind), m, geometry)
 }
 
 /**
@@ -210,7 +250,7 @@ export function featureDefines(m, kind, geometry) {
  * @param {Material} m @param {'mesh' | 'points' | 'lines'} kind @param {UniformSink} sink
  */
 export function setFeatureUniforms(m, kind, sink) {
-  for (const f of FEATURES) if (f.uniforms && applies(f, m, kind)) f.uniforms(m, sink)
+  setUniformsOf(featuresOf(m, kind), m, sink)
 }
 
 /**
