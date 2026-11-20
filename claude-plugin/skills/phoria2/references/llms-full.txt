@@ -803,6 +803,11 @@ a lantern or a carved pumpkin lights the room only through the openings. Give a 
 drawn at the light `castShadow: false`. The directional shadow is fitted to whatever casts, every
 frame; when things fly far off, give the light `shadowBounds: { min: [x, y, z], max: [x, y, z] }` -
 the world area that gets shadows - so the map stays sharp there.
+A shadow map is drawn again only when its light or something casting into it changes - orbiting a
+still scene, or another view of the same scene, reuses it - so lights that don't move cost little.
+Nothing to set: moving a caster, changing its geometry, instances or cut-out, or moving the light
+redraws it. A caster with shader hooks redraws its maps every frame. `renderer.info.shadowMaps` and
+`shadowMapsKept` count each frame's maps drawn and kept (the `debug: { stats: true }` corner shows them).
 
 **Soft shadows**: `shadowSoftness` on any shadow-casting light gives contact-hardening shadows - sharp
 where an object meets what it stands on, softening further off, as under a large light. 0 (the

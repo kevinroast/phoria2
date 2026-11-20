@@ -335,8 +335,12 @@ export class WebGLRenderer {
   /** @type {Required<BloomOptions> | null} */ #bloom = null
   /** @type {typeof AMBIENT_OCCLUSION | null} */ #ambientOcclusion = null
   /** @type {typeof GROUND_SHADOW | null} */ #groundShadow = null
-  /** Counts from the last frame and the GPU caches; renderTextures is how many were drawn for it. */
-  info = { drawCalls: 0, triangles: 0, programs: 0, geometries: 0, textures: 0, compiling: 0, renderTextures: 0 }
+  /**
+   * Counts from the last frame and the GPU caches; renderTextures is how many were drawn for it;
+   * shadowMaps how many shadow maps (a light's, or the ground shadow) were drawn, and shadowMapsKept
+   * how many were as the frame before left them - nothing in their light or casters moved.
+   */
+  info = { drawCalls: 0, triangles: 0, programs: 0, geometries: 0, textures: 0, compiling: 0, renderTextures: 0, shadowMaps: 0, shadowMapsKept: 0 }
   /**
    * Called when something the last frame couldn't draw yet is ready - the code for HDR
    * environments, backgrounds and shadows, which loads the first time a scene has one. The View
@@ -542,6 +546,8 @@ export class WebGLRenderer {
     this.info.triangles = 0
     this.info.compiling = 0
     this.info.renderTextures = 0
+    this.info.shadowMaps = 0
+    this.info.shadowMapsKept = 0
     // the render textures the frame shows, each drawn from its own camera first
     this.#renderTextures(frame, wait)
     const acc = accumulate && this.canRefine ? accumulate : null
@@ -665,6 +671,10 @@ export class WebGLRenderer {
     // ambient occlusion and the ground shadow, each drawn into targets of its own before the scene
     state.occlusion = effects && passes && occlusion ? effects.occlusion(frame, passes, occlusion, width, height, solids ? solids.getRadius() * 2 : 1) : null
     const ground = effects && passes && groundShadow && solids ? effects.groundShadow(solidItems(frame), solids, passes, groundShadow) : null
+    for (const map of [...state.shadows, ...(ground ? [ground] : [])]) {
+      if (map.kept) this.info.shadowMapsKept++
+      else this.info.shadowMaps++
+    }
     // outlines' mask, drawn before the scene, so the scene's own target need not be left
     const outline = passes && frame.outlines.length ? passes.outlineMask(frame.outlines, frame, width, height, this.pixelRatio, this.outlineAntialias) : null
 

@@ -8,6 +8,7 @@
 //   bloom and the encode out of linear light.
 import * as mat4 from '../math/mat4.js'
 import { FULLSCREEN_VERTEX } from './shaders.js'
+import { DrawnFrom } from './drawn.js'
 
 /** @import { Programs } from './programs.js' */
 /** @import { Passes } from './passes.js' */
@@ -28,6 +29,7 @@ import { FULLSCREEN_VERTEX } from './shaders.js'
  * @property {WebGLTexture} texture how dark each texel is
  * @property {[number, number, number, number]} rect its middle (x, z), half its width, and the ground's height
  * @property {number} opacity
+ * @property {boolean} kept as the last frame drew it - the solids and the settings unchanged
  */
 
 
@@ -241,7 +243,11 @@ export class Effects {
   reset() {
     this.#empty = null
     this.#square = null
+    this.#groundDrawn.forget()
   }
+
+  /** What the ground shadow was last drawn from: the same is kept (drawn.js). */
+  #groundDrawn = new DrawnFrom()
 
   /**
    * Ambient occlusion for this frame, before the picture is drawn: the solids' depth and normals at
@@ -335,6 +341,12 @@ export class Effects {
 
     // depth up from the ground: x and z across the square, height up to `height`
     const viewProjection = new Float32Array([1 / h, 0, 0, 0, 0, 0, 2 / height, 0, 0, 1 / h, 0, 0, -cx / h, -cz / h, (-2 * ground) / height - 1, 1])
+    const radius = Math.round(1 + settings.softness * (GROUND_BLUR_RADIUS - 1))
+    const result = { texture: /** @type {WebGLTexture} */ (a.texture), rect: /** @type {[number, number, number, number]} */ ([cx, cz, h, ground]), opacity: settings.opacity, kept: false }
+    // like a shadow map, it doesn't depend on the camera: drawn again only when the solids, its
+    // square or its blur changed - or the pool handed out new targets
+    result.kept = this.#groundDrawn.begin().object(depth).object(a).object(b).numbers(viewProjection).number(radius).casters(solids).same()
+    if (result.kept) return result
     gl.bindFramebuffer(gl.FRAMEBUFFER, depth.framebuffer)
     gl.viewport(0, 0, GROUND_SIZE, GROUND_SIZE)
     gl.depthMask(true)
@@ -356,7 +368,7 @@ export class Effects {
     this.programs.drawFullscreen()
     const blur = this.programs.ready('ground-blur', [], GROUND_BLUR)
     gl.useProgram(blur.program)
-    blur.set('uRadius', Math.round(1 + settings.softness * (GROUND_BLUR_RADIUS - 1)))
+    blur.set('uRadius', radius)
     gl.bindFramebuffer(gl.FRAMEBUFFER, b.framebuffer)
     blur.set('uSource', a.texture)
     blur.set('uStep', [1, 0])
@@ -368,7 +380,7 @@ export class Effects {
     gl.depthMask(true)
     gl.enable(gl.DEPTH_TEST)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-    return { texture: /** @type {WebGLTexture} */ (a.texture), rect: [cx, cz, h, ground], opacity: settings.opacity }
+    return result
   }
 
   /**

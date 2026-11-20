@@ -166,7 +166,7 @@ export class DebugDraw {
   /**
    * The corner readout, refreshed a few times a second.
    * @param {DebugOptions['stats']} where
-   * @param {{ drawCalls: number, triangles: number, programs: number, textures: number, geometries: number, compiling: number }} info
+   * @param {{ drawCalls: number, triangles: number, programs: number, textures: number, geometries: number, compiling: number, shadowMaps?: number, shadowMapsKept?: number }} info
    * @param {number} frameMs time between drawn frames @param {number} cpuMs time the last frame took to draw
    */
   stats(where, info, frameMs, cpuMs) {
@@ -194,6 +194,8 @@ export class DebugDraw {
       `${fps ? `${fps} fps  ${frameMs.toFixed(1)} ms` : 'idle'}  cpu ${cpuMs.toFixed(1)} ms`,
       `${info.drawCalls} draws  ${k(info.triangles)} triangles`,
       `${info.programs} programs${info.compiling ? ` (${info.compiling} compiling)` : ''}  ${info.textures} textures  ${info.geometries} geometries`,
+      // shadow maps drawn this frame, and kept from the last - kept while nothing casting moves
+      ...(info.shadowMaps || info.shadowMapsKept ? [`shadow maps: ${info.shadowMaps ?? 0} drawn  ${info.shadowMapsKept ?? 0} kept`] : []),
     ].join('\n')
   }
 
