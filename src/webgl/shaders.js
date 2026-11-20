@@ -5,6 +5,7 @@ import { warnOnce } from '../validate.js'
 import { MAPS } from '../material/features.js'
 import { BLUE_NOISE_SIZE } from '../shadow.js'
 import { TONE_CONSTANTS } from './tone.js'
+import { ENV_DFG } from './dfg.js'
 
 /** Fixed attribute locations shared by every program. */
 export const ATTRIBUTES = {
@@ -1036,14 +1037,22 @@ vec3 studio(vec3 d) {
   return mix(floorColor, sky, smoothstep(0.35, 0.55, up));
 }
 
-// Karis' analytic approximation of the split-sum environment BRDF.
+// the split-sum environment BRDF: how much of the light from all round a surface reflects once, as
+// a scale on f0 and a bias on f90 (fitted to the integral - dfg.js; Karis' approximation fell 10 - 40%
+// short at mid roughness and over-read rough surfaces seen head on)
+${ENV_DFG}
 vec3 envBRDF(vec3 f0, float f90, float roughness, float NoV) {
-  vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
-  vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
-  vec4 r = roughness * c0 + c1;
-  float a004 = min(r.x * r.x, exp2(-9.28 * NoV)) * r.x + r.y;
-  vec2 ab = vec2(-1.04, 1.04) * a004 + r.zw;
-  return f0 * ab.x + ab.y * f90;
+  vec2 dfg = envDFG(roughness, NoV);
+  return f0 * dfg.x + f90 * dfg.y;
+}
+// What a rough surface reflects more than once: light a microfacet sends into its neighbour, lost
+// to a single bounce, comes out after more (Fdez-Aguera, "A Multiple-Scattering Microfacet Model for
+// Real-Time Image-based Lighting"). Without it a rough metal is too dark - a quarter at roughness 0.8.
+// single: what reflects once (envBRDF); dfg: its two terms. What it adds, for light from all round.
+vec3 multiScatter(vec3 single, vec2 dfg, vec3 f0) {
+  float lost = 1.0 - dfg.x - dfg.y;
+  vec3 average = f0 + (1.0 - f0) * 0.047619;
+  return single * average / (1.0 - lost * average) * lost;
 }
 
 #ifdef ENV_MAP
@@ -1717,7 +1726,13 @@ ${RECT_LIGHTS}
   // ambient: flat, hemisphere and environment light
   vec3 irradiance = irradianceAt(n);
   float NoV = clamp(abs(dot(n, v)), 1e-4, 1.0);
-  vec3 brdf = envBRDF(f0, f90, roughness, NoV);
+  vec2 dfg = envDFG(roughness, NoV);
+  vec3 brdf = f0 * dfg.x + f90 * dfg.y;
+  // the light from all round reflected more than once, and - as a direct light's (1 - F) - what the
+  // dielectric layer reflects, taken off what reaches the diffuse under it
+  vec3 scattered = multiScatter(brdf, dfg, f0);
+  vec3 coated = uSpecular.rgb * dfg.x + uSpecular.a * dfg.y;
+  coated += multiScatter(coated, dfg, uSpecular.rgb);
 #ifdef ANISOTROPY
   // reflections drawn out along the brushing: off a normal bent across it (KHR_materials_anisotropy)
   vec3 brushNormal = cross(cross(brushB, v), brushB);
@@ -1731,8 +1746,8 @@ ${RECT_LIGHTS}
   // a flat fill, so the tones stay flat: the light from all round, averaged over up and down
   vec3 indirect = diffuse * 0.5 * (irradianceAt(vec3(0.0, 1.0, 0.0)) + irradianceAt(vec3(0.0, -1.0, 0.0)));
 #else
-  vec3 ambientSpecular = reflected(r, n, roughness, irradiance) * brdf;
-  vec3 indirect = diffuse * irradiance + ambientSpecular;
+  vec3 ambientSpecular = reflected(r, n, roughness, irradiance) * brdf + scattered * irradiance;
+  vec3 indirect = diffuse * (1.0 - coated) * irradiance + ambientSpecular;
 #endif
 #ifdef TRANSLUCENCY
   indirect += through * irradianceAt(-n);
