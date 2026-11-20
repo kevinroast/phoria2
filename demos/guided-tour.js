@@ -41,6 +41,36 @@ function tiles(perforated) {
   return new Texture({ image: c, repeat: [1, 1], anisotropy: 8 })
 }
 
+/**
+ * The hall's floor less some aisles, as one mesh of rectangles - its texture coordinates the floor's
+ * own, a 0.6 m tile each, so the tiles line up across the pieces.
+ * @param {[number, number, number][]} holes each aisle's half width (centred on x 0), and its z from and to
+ */
+function floorAround(holes) {
+  const W = HALL.w / 2, D = HALL.d / 2
+  /** @type {[number, number, number, number][]} x from, x to, z from, z to */
+  const pieces = []
+  let z = -D
+  for (const [half, z0, z1] of [...holes].sort((a, b) => a[1] - b[1])) {
+    pieces.push([-W, W, z, z0], [-W, -half, z0, z1], [half, W, z0, z1])
+    z = z1
+  }
+  pieces.push([-W, W, z, D])
+  /** @type {number[]} */
+  const positions = [], normals = [], uvs = [], indices = []
+  for (const [x0, x1, z0, z1] of pieces) {
+    const at = positions.length / 3
+    for (const [x, zz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) {
+      positions.push(x, 0, zz)
+      normals.push(0, 1, 0)
+      uvs.push(x / 0.6, zz / 0.6)
+    }
+    // as plane() winds them: facing up
+    indices.push(at, at + 2, at + 3, at, at + 3, at + 1)
+  }
+  return new Geometry({ positions, normals, uvs, indices })
+}
+
 /** The operations wall's live display, drawn on a canvas. */
 function operations() {
   const c = document.createElement('canvas')
@@ -216,8 +246,10 @@ export default function run({ canvas, gui, info }) {
     room.add(new Mesh({ geometry: box({ width: w, height: HALL.h * 2, depth: d }), position: [x, 0, z], material: { color: '#15191f', roughness: 0.85 }, receiveShadow: true }))
   }
   const plain = tiles(false), perforated = tiles(true)
-  plain.repeat = [HALL.w / 0.6, HALL.d / 0.6]
-  room.add(new Mesh({ geometry: plane({ width: HALL.w, depth: HALL.d }), material: { map: plain, roughness: 0.12, metalness: 0.4, opacity: 0.86 }, receiveShadow: true }))
+  // the plain floor leaves the cold aisles out: see-through things don't write depth, so two layers
+  // one over the other would show whichever was drawn last - and that is sorted by their middles, so
+  // it flipped as the camera turned (the perforated tiles, then the plain floor over them)
+  room.add(new Mesh({ geometry: floorAround(COLD.map((z) => [PER_ROW * RACK.w / 2, z - 1.2, z + 1.2])), material: { map: plain, roughness: 0.12, metalness: 0.4, opacity: 0.86 }, receiveShadow: true }))
   perforated.repeat = [PER_ROW, 4]
   for (const z of COLD) {
     room.add(new Mesh({ geometry: plane({ width: PER_ROW * RACK.w, depth: 2.4 }), position: [0, 0.004, z], material: { map: perforated, roughness: 0.2, metalness: 0.4, opacity: 0.9 }, receiveShadow: true }))
@@ -226,6 +258,13 @@ export default function run({ canvas, gui, info }) {
   mirror.scale = [1, -1, 1]
   mirror.pickable = false
   mirror.traverse((n) => { /** @type {any} */ (n).castShadow = false })
+  // see-through things - the glass, the LEDs (additive), the floor - don't write depth, so they're
+  // drawn in order: the mirrored storey, then the floor, then the hall above it. Sorted by their
+  // middles alone, the LEDs' one mesh, mirrored, could come after the floor and shine through it at
+  // full strength as the camera swung away from a row. (The camera never goes below the floor.)
+  const layer = (/** @type {Group} */ group, /** @type {number} */ order) => group.traverse((n) => { if ('renderOrder' in n) /** @type {any} */ (n).renderOrder = order })
+  layer(mirror, -1)
+  layer(hall, 1)
 
   // ---- the inspection robot, lapping the aisles
   // points all along each aisle's middle, so the curve runs straight down it and only turns past the
