@@ -5,7 +5,7 @@ import { Label } from '../scene/drawables.js'
 import { Color } from '../value/Color.js'
 import { registerType } from '../registry.js'
 import { describe, fail } from '../validate.js'
-import { chartFrame, curvedGuides, originFrame } from './axes.js'
+import { chartFrame, curvedGuides, frameKey, originFrame } from './axes.js'
 import { legend } from './legend.js'
 import { barMark, curveMark, lineMark, pointMark, stackKey, surfaceMark, vectorMark } from './marks.js'
 import { networkMark } from './network.js'
@@ -55,6 +55,12 @@ export class Chart extends Group {
   /** @type {MarkContext} */ #ctx
   /** @type {Group | null} */ #frame = null
   /** @type {Label | null} */ #title = null
+  // what the frame, title and legend show, as keys: an update that changes none of it keeps them -
+  // a live chart's axes rarely change, and making them again is new labels, DOM and line buffers
+  /** @type {string | null} */ #frameKey = null
+  /** @type {string | null} */ #titleKey = null
+  /** @type {string | null} */ #legendKey = null
+  /** @type {HTMLElement | null} the legend, where it is - as the overlay or in its container */ #legendEl = null
   /** @type {Set<string>} colour values switched off in the legend */ #hidden = new Set()
   /** @type {((row: any) => boolean) | null} */ #filter = null
   // what is drawn now: its state, and the layout that state is in
@@ -195,10 +201,21 @@ export class Chart extends Group {
     const color = this.scales.color
     const fallback = Color.fromInput(ch.color?.field ? SCHEMES.category[0] : ch.color?.value ?? SCHEMES.category[0], 'chart()').toSRGB()
     const linkColors = spec.link.color?.field ? colorScale(spec.link.color, spec.links.map((l) => spec.link.color.get(l))) : null
+    // a category's colour, worked out once for all its rows - shared, so frozen (callers copy it)
+    /** @type {Map<unknown, readonly number[]>} */
+    const byCategory = new Map()
+    const categorical = color?.kind === 'categorical'
     Object.assign(this.#ctx, {
       spec, box, theme, overlap, scales: this.scales,
       size: this.scales.size ?? null,
-      rgb: (row) => (color ? color(colorValue(spec, row)).toSRGB() : fallback),
+      rgb: (row) => {
+        if (!color) return fallback
+        const v = colorValue(spec, row)
+        if (!categorical) return color(v).toSRGB()
+        let c = byCategory.get(v)
+        if (c === undefined) byCategory.set(v, c = Object.freeze(color(v).toSRGB()))
+        return c
+      },
       format: formatValue,
       linkColor: (v) => /** @type {ColorScale} */ (linkColors)(v),
     })
@@ -217,14 +234,26 @@ export class Chart extends Group {
       this.#current = this.#shown = null
       this.#tween = null
     }
-    if (this.#frame) dropNode(this, this.#frame)
-    const frameOf = o.frame === 'origin' ? originFrame : chartFrame
-    this.#frame = o.frame === false || (spec.mark === 'network' && o.layout !== 'given') ? null : this.add(frameOf({ box, theme, overlap, axes: axesFor(spec, this.scales) }))
-    // curved coordinates on axes through the origin: rings around it, as polar graph paper
-    const guides = this.#frame && o.frame === 'origin' && spec.coords ? curvedGuides({ coords: spec.coords, upright: spec.mark === 'curve', rows: spec.rows, scales: this.scales, theme, overlap, rings: spec.rings }) : null
-    if (guides) this.#frame?.add(guides)
-    if (this.#title) dropNode(this, this.#title)
-    this.#title = o.title ? this.add(new Label({ text: String(o.title), position: [0, box[1] * 1.12, -box[2] / 2], className: `phoria-axis-title phoria-${theme}`, overlap: 'show' })) : null
+    const frameKind = o.frame === false || (spec.mark === 'network' && o.layout !== 'given') ? null : o.frame === 'origin' ? 'origin' : 'chart'
+    const axes = frameKind ? axesFor(spec, this.scales) : null
+    // curved coordinates on axes through the origin: rings around it, as polar graph paper - drawn
+    // from the rows, so a frame with them is made again each update
+    const guided = frameKind === 'origin' && !!spec.coords
+    const frameNow = frameKind && axes && !guided ? frameKey(frameKind, { box, theme, overlap, axes }) : null
+    if (frameNow === null || frameNow !== this.#frameKey) {
+      if (this.#frame) dropNode(this, this.#frame)
+      const frameOf = frameKind === 'origin' ? originFrame : chartFrame
+      this.#frame = frameKind && axes ? this.add(frameOf({ box, theme, overlap, axes })) : null
+      const guides = this.#frame && guided ? curvedGuides({ coords: /** @type {any} */ (spec.coords), upright: spec.mark === 'curve', rows: spec.rows, scales: this.scales, theme, overlap, rings: spec.rings }) : null
+      if (guides) this.#frame?.add(guides)
+      this.#frameKey = frameNow
+    }
+    const titleNow = o.title ? JSON.stringify([String(o.title), box, theme]) : null
+    if (titleNow === null || titleNow !== this.#titleKey) {
+      if (this.#title) dropNode(this, this.#title)
+      this.#title = o.title ? this.add(new Label({ text: String(o.title), position: [0, box[1] * 1.12, -box[2] / 2], className: `phoria-axis-title phoria-${theme}`, overlap: 'show' })) : null
+      this.#titleKey = titleNow
+    }
 
     this.#setLegend(spec, theme)
     this.tooltip = spec.tooltip === null && !spec.link.tooltip ? null : (hit) => this.#tooltipFor(hit)
@@ -249,12 +278,21 @@ export class Chart extends Group {
 
   /** @param {ReturnType<typeof normalise>} spec @param {'dark' | 'light'} theme */
   #setLegend(spec, theme) {
+    const c = spec.channels.color, o = spec.options.legend, scale = this.scales.color
+    // what it shows: the same as last time keeps it, with only its switched-off entries brought up to date
+    const shown = c?.field && o !== false && scale && typeof document !== 'undefined'
+    const key = shown ? legendKey(c, scale, theme, o) : null
+    if (key !== null && key === this.#legendKey && this.#legendEl) {
+      this.#markHidden(this.#legendEl)
+      return
+    }
+    this.#legendKey = key
+    this.#legendEl = null
     this.overlay?.remove()
     this.overlay = null
-    const c = spec.channels.color, o = spec.options.legend
     // no legend outside a browser (tests, servers)
-    if (!c?.field || o === false || !this.scales.color || typeof document === 'undefined') return
-    const el = legend(this.scales.color, {
+    if (!shown || !scale || !c) return
+    const el = legend(scale, {
       title: c.title, theme, position: o?.position, ticks: o?.ticks, format: (v) => formatValue(c, v),
       onToggle: (value, on) => {
         if (on) this.#hidden.delete(String(value))
@@ -262,10 +300,8 @@ export class Chart extends Group {
         this.#rebuild(true)
       },
     })
-    // keep switched-off entries looking off
-    el.querySelectorAll('.phoria-legend-item').forEach((item, i) => {
-      if (this.#hidden.has(String(this.scales.color?.domain[i]))) item.classList.add('off')
-    })
+    this.#markHidden(el)
+    this.#legendEl = el
     const container = o?.container
     if (container) {
       const host = typeof container === 'string' ? document.querySelector(container) : container
@@ -278,6 +314,13 @@ export class Chart extends Group {
     } else {
       this.overlay = el
     }
+  }
+
+  /** Keep switched-off entries looking off - and switched-on ones on. @param {HTMLElement} el */
+  #markHidden(el) {
+    el.querySelectorAll('.phoria-legend-item').forEach((item, i) => {
+      item.classList.toggle('off', this.#hidden.has(String(this.scales.color?.domain[i])))
+    })
   }
 
   /** @param {any} hit */
@@ -549,6 +592,28 @@ function stackTotals(spec) {
     totals.set(k, (totals.get(k) ?? 0) + v)
   }
   return [...totals.values()]
+}
+
+// a number for each object a key names by itself - a format function, a legend's container element
+/** @type {WeakMap<object, number>} */
+const objectIds = new WeakMap()
+let objectsSeen = 0
+/** @param {unknown} o */
+const idOf = (o) => {
+  if (o === null || (typeof o !== 'object' && typeof o !== 'function')) return o
+  let id = objectIds.get(o)
+  if (id === undefined) objectIds.set(o, id = ++objectsSeen)
+  return `#${id}`
+}
+
+/**
+ * What a legend shows, as a string: its channel's title and format, the scale's kind, domain and
+ * colours, its theme, place, ticks and container. The same as last time keeps it.
+ * @param {Channel} c @param {ColorScale} scale @param {string} theme @param {any} options the legend option
+ */
+function legendKey(c, scale, theme, options) {
+  const format = typeof c.format === 'function' ? idOf(c.format) : c.format ?? null
+  return JSON.stringify([c.field, c.title, format, scale.kind, scale.domain, scale.range, theme, options?.position ?? null, options?.ticks ?? null, idOf(options?.container ?? null)])
 }
 
 /** @param {ReturnType<typeof normalise>} spec @param {Chart['scales']} scales */

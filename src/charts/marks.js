@@ -165,9 +165,17 @@ export function pointMark(ctx) {
     layout(rows) {
       const { x, y, z } = ctx.scales, ch = ctx.spec.channels
       const stride = sized ? 7 : 6, state = new Float32Array(rows.length * stride)
+      // straight into the state, a row at a time - no arrays made a row
       rows.forEach((row, i) => {
-        const p = [pos(x, ch.x, row), pos(y, ch.y, row), pos(z, ch.z, row)]
-        state.set(sized ? [...p, ctx.size(ch.size.get(row)), ...ctx.rgb(row)] : [...p, ...ctx.rgb(row)], i * stride)
+        let o = i * stride
+        state[o++] = pos(x, ch.x, row)
+        state[o++] = pos(y, ch.y, row)
+        state[o++] = pos(z, ch.z, row)
+        if (sized) state[o++] = ctx.size(ch.size.get(row))
+        const rgb = ctx.rgb(row)
+        state[o] = rgb[0]
+        state[o + 1] = rgb[1]
+        state[o + 2] = rgb[2]
       })
       return { rows, keys: keysOf(ctx, rows), state, stride }
     },

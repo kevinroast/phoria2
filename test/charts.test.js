@@ -220,7 +220,8 @@ describe('charts', () => {
     const bars = scene.add(chart({ mark: 'bar', data: rows, x: 'month', y: 'sales', title: 'Sales', transition: false }))
     const before = [...bars.children]
     const disposed = before.map((n) => vi.spyOn(n, 'dispose'))
-    bars.filter((r) => r.region === 'North')
+    // a new title and ten times the sales: new axes and title (an update that changes neither keeps them)
+    bars.update({ title: 'Revenue', data: rows.map((r) => ({ ...r, sales: r.sales * 10 })) })
     before.forEach((n, i) => {
       if (!bars.children.includes(n)) expect(disposed[i]).toHaveBeenCalled()
     })

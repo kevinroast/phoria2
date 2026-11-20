@@ -135,6 +135,21 @@ export function chartFrame({ box, axes, theme, overlap }) {
  * The values an axis marks: those it lists, or about as many as it asks for (five unless it says).
  * @param {AxisSpec} a
  */
+/**
+ * Everything a frame shows, as a string: its kind, box, theme and overlap rule, and for each axis its
+ * scale's kind, range and domain, its title, whether it is drawn, and each tick's place and text. Two
+ * frames with the same key look the same - so an update that leaves the axes alone keeps its frame
+ * rather than making its walls, lines and labels again.
+ * @param {'chart' | 'origin'} kind
+ * @param {{ box: [number, number, number], axes: { x?: AxisSpec, y?: AxisSpec, z?: AxisSpec }, theme: string, overlap: string }} options
+ * @returns {string}
+ */
+export function frameKey(kind, { box, axes, theme, overlap }) {
+  const axis = (/** @type {AxisSpec | undefined} */ a) => a && [a.scale.kind, a.scale.range, a.scale.domain, a.title, a.channel?.axis === false,
+    tickValues(a).map((t) => [a.scale(t), a.scale.format(t)])]
+  return JSON.stringify([kind, box, theme, overlap, axis(axes.x), axis(axes.y), axis(axes.z)])
+}
+
 function tickValues(a) {
   const axis = a.channel?.axis, ticks = axis ? axis.ticks : undefined
   if (!Array.isArray(ticks)) return a.scale.kind === 'band' ? a.scale.ticks() : a.scale.ticks(ticks ?? 5)
