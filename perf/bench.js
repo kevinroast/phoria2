@@ -2,73 +2,18 @@
 // times render and then read one pixel back from every context drawn, so they include the GPU's
 // work, not just the calls that queue it. Like for like: both tone map with Khronos PBR Neutral,
 // both draw round points, and a "first frame" is the first complete picture - for phoria2, whose
-// shaders compile in the background, the first frame with every program ready. Run from perf.html (the Run button, or ?auto), or headless with `npm run perf`.
+// shaders compile in the background, the first frame with every program ready. Run from perf.html
+// (the Run button, or ?auto), or headless with `npm run perf` - `npm run perf -- glass labels` runs
+// only those scenes (by key: see SCENES), and `--pictures` keeps a PNG of each library's frame.
+// The scenes since 1.9 are in scenes.js; what they all share is in harness.js.
 import * as P from 'phoria2'
 import * as THREE from 'three'
+import { canvas, cloud, disposeThree, firstPicture, frames, median, nextFrame, orbiter, perf, phoriaView, record, roundSprite, sync, threeRenderer, WIDTH, HEIGHT, stage } from './harness.js'
+import { MORE_SCENES } from './scenes.js'
 
-const WIDTH = 800, HEIGHT = 600
 const BARS = 100_000, POINTS = 1_000_000, VIEWS = 20, TILE_BARS = 400, SORTED = 100_000, MESHES = 2_000
-const stage = /** @type {HTMLElement} */ (document.getElementById('stage'))
 const status = /** @type {HTMLElement} */ (document.getElementById('status'))
 const table = /** @type {HTMLTableElement} */ (document.getElementById('results'))
-
-/** @type {{ done: boolean, results: { scene: string, metric: string, unit: string, phoria2: number | null, three: number | null }[], env: Record<string, string> }} */
-const perf = { done: false, results: [], env: {} }
-// @ts-ignore - read by perf/run.mjs
-window.__perf = perf
-
-const pixel = new Uint8Array(4)
-/** Wait for the GPU: reading a pixel back can't finish before the drawing has. @param {WebGL2RenderingContext} gl */
-const sync = (gl) => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel)
-const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1]
-const nextFrame = () => new Promise((r) => setTimeout(r, 0))
-
-/**
- * Median ms of fn() with the GPU waited for.
- * @param {() => void} fn @param {WebGL2RenderingContext | WebGL2RenderingContext[]} contexts every context drawn
- */
-async function frames(fn, contexts, n = 30) {
-  const all = [contexts].flat()
-  const syncAll = () => all.forEach(sync)
-  for (let i = 0; i < 3; i++) fn()
-  syncAll()
-  const times = []
-  for (let i = 0; i < n; i++) {
-    const t = performance.now()
-    fn()
-    syncAll()
-    times.push(performance.now() - t)
-    if (i % 10 === 9) await nextFrame()
-  }
-  return median(times)
-}
-
-/** @param {number} w @param {number} h @param {number} [x] @param {number} [y] */
-function canvas(w = WIDTH, h = HEIGHT, x = 0, y = 0) {
-  const c = document.createElement('canvas')
-  Object.assign(c.style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` })
-  stage.append(c)
-  return c
-}
-
-/** @param {string} scene @param {string} metric @param {string} unit @param {number | null} phoria2 @param {number | null} three */
-function record(scene, metric, unit, phoria2, three) {
-  perf.results.push({ scene, metric, unit, phoria2, three })
-  const row = table.insertRow()
-  const cell = (text, win = false) => {
-    const td = row.insertCell()
-    td.textContent = text
-    if (win) td.className = 'win'
-  }
-  const fmt = (v) => (v === null ? '-' : v >= 100 ? v.toFixed(0) : v.toFixed(2))
-  cell(scene)
-  cell(metric)
-  cell(unit)
-  const better = phoria2 !== null && three !== null ? (phoria2 <= three ? 'p' : 't') : ''
-  cell(fmt(phoria2), better === 'p')
-  cell(fmt(three), better === 't')
-  cell(phoria2 && three ? `${(three / phoria2).toFixed(1)}x` : '')
-}
 
 // a grid of bars, heights from the index
 /** @param {number} n @param {number} i */
@@ -90,43 +35,11 @@ function fillBars(m, n, t = 0) {
 
 // --- phoria2 and three.js builders for the same scenes ---
 
-/** Draw until the picture is complete - every shader compiled - and the GPU done. @param {any} view */
-async function firstPicture(view) {
-  view.render()
-  while (view.renderer.info.compiling) {
-    await new Promise((r) => setTimeout(r, 1))
-    view.render()
-  }
-  sync(view.renderer.gl)
-}
-
-function phoriaView(c, camera = { position: [0, 140, 300], target: [0, 0, 0] }) {
-  const view = new P.View({ canvas: c, renderMode: 'manual', pixelRatio: 1, autoLight: false, camera: { ...camera, far: 2000 } })
-  view.scene.add(new P.HemisphereLight({ sky: '#ffffff', ground: '#444444', intensity: 0.6 }))
-  view.scene.add(new P.DirectionalLight({ direction: [-1, -2, -1], intensity: 1.4 }))
-  return view
-}
 function phoriaBars(view, n) {
   const bars = view.scene.add(new P.InstancedMesh({ geometry: P.box(1), material: { color: '#4a90e2', roughness: 0.5 }, count: n }))
   fillBars(bars.instanceMatrices, n)
   bars.needsUpdate()
   return bars
-}
-function threeRenderer(c) {
-  const renderer = new THREE.WebGLRenderer({ canvas: c, antialias: true })
-  // phoria2's default tone mapping, so both do the same work per pixel
-  renderer.toneMapping = THREE.NeutralToneMapping
-  renderer.setPixelRatio(1)
-  renderer.setSize(parseFloat(c.style.width), parseFloat(c.style.height), false)
-  const scene = new THREE.Scene()
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.6 * Math.PI))
-  const sun = new THREE.DirectionalLight(0xffffff, 1.4 * Math.PI)
-  sun.position.set(1, 2, 1)
-  scene.add(sun)
-  const camera = new THREE.PerspectiveCamera(50, parseFloat(c.style.width) / parseFloat(c.style.height), 0.1, 2000)
-  camera.position.set(0, 140, 300)
-  camera.lookAt(0, 0, 0)
-  return { renderer, scene, camera, gl: /** @type {WebGL2RenderingContext} */ (renderer.getContext()) }
 }
 function threeBars(scene, n) {
   const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: '#4a90e2', roughness: 0.5 }), n)
@@ -135,24 +48,6 @@ function threeBars(scene, n) {
   scene.add(mesh)
   return mesh
 }
-/** A white disc, for three.js round points. */
-function roundSprite() {
-  const c = document.createElement('canvas')
-  c.width = c.height = 32
-  const ctx = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'))
-  ctx.fillStyle = '#fff'
-  ctx.beginPath()
-  ctx.arc(16, 16, 15.5, 0, Math.PI * 2)
-  ctx.fill()
-  return new THREE.CanvasTexture(c)
-}
-
-function disposeThree(t) {
-  t.renderer.dispose()
-  t.renderer.forceContextLoss()
-  t.renderer.domElement.remove()
-}
-
 // --- the scenes ---
 
 async function bars() {
@@ -260,26 +155,6 @@ async function points() {
 
   record('1M points', 'build + first frame', 'ms', pBuild, tBuild)
   record('1M points', 'frame', 'ms', pFrame, tFrame)
-}
-
-/** n positions in a cube 200 across, the same every run. @param {number} n */
-function cloud(n) {
-  const positions = new Float32Array(n * 3)
-  let seed = 1
-  for (let i = 0; i < positions.length; i++) {
-    seed = (seed * 16807) % 2147483647
-    positions[i] = (seed / 2147483647 - 0.5) * 200
-  }
-  return positions
-}
-
-/** A camera position on a circle round the middle, a little further on each call. */
-function orbiter() {
-  let a = 0
-  return () => {
-    a += 0.01
-    return [Math.sin(a) * 300, 140, Math.cos(a) * 300]
-  }
 }
 
 // see-through points drawn back to front, as a scatter chart draws them: with the camera still
@@ -518,15 +393,27 @@ async function run() {
     date: new Date().toISOString(),
   }
   probe.getExtension('WEBGL_lose_context')?.loseContext()
-  for (const [name, scene] of [['100k bars', bars], ['1M points', points], ['100k sorted points', sortedPoints], ['100k shadowed bars', shadowedBars], ['2k meshes', meshes], [`${VIEWS} views`, views]]) {
+  // ?scenes=glass,labels runs only those, by key
+  const only = new URLSearchParams(location.search).get('scenes')?.split(',').filter(Boolean) ?? null
+  const unknown = only?.filter((key) => !SCENES.some(([k]) => k === key)) ?? []
+  if (unknown.length) status.textContent = `no scene ${unknown.join(', ')} - the keys are ${SCENES.map(([k]) => k).join(', ')}`
+  for (const [key, name, scene] of SCENES) {
+    if (only && !only.includes(key)) continue
     status.textContent = `running ${name}...`
     await nextFrame()
-    await /** @type {() => Promise<void>} */ (scene)()
+    await scene()
   }
   status.textContent = `done - ${perf.env.gpu}`
   button.disabled = false
   perf.done = true
 }
+
+/** Every scene: its key (for ?scenes=), its name, and what runs it. @type {[string, string, () => Promise<void>][]} */
+const SCENES = [
+  ['bars', '100k bars', bars], ['points', '1M points', points], ['sorted', '100k sorted points', sortedPoints],
+  ['shadowed', '100k shadowed bars', shadowedBars], ['meshes', '2k meshes', meshes], ['views', `${VIEWS} views`, views],
+  ...MORE_SCENES,
+]
 
 document.getElementById('run')?.addEventListener('click', run)
 if (new URLSearchParams(location.search).has('auto')) run()

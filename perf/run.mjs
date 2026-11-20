@@ -1,6 +1,9 @@
 // npm run perf: serve perf.html with Vite, run it in headless Chrome (the one installed - nothing
 // is downloaded), and save the results to perf/results/<date>-<commit>.json for comparing across
 // commits. Set CHROME to the browser's path if it isn't found.
+//   npm run perf -- glass labels     only those scenes, by key (bench.js SCENES)
+//   npm run perf -- --pictures       also a PNG of each scene as each library drew it, in
+//                                    perf/results/pictures/ - to see both draw the same thing
 import { createServer } from 'vite'
 import { spawn, execSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -24,7 +27,10 @@ if (!chrome) {
 
 const server = await createServer({ root, configFile: join(root, 'vite.config.js'), logLevel: 'error', server: { port: 0 } })
 await server.listen()
-const url = `${server.resolvedUrls?.local[0]}perf.html?auto`
+const args = process.argv.slice(2)
+const pictures = args.includes('--pictures')
+const scenes = args.filter((a) => !a.startsWith('--'))
+const url = `${server.resolvedUrls?.local[0]}perf.html?auto${scenes.length ? `&scenes=${scenes.join(',')}` : ''}${pictures ? '&pictures' : ''}`
 
 const profile = mkdtempSync(join(tmpdir(), 'phoria2-perf-'))
 const browser = spawn(chrome, [
@@ -65,14 +71,14 @@ try {
   })
 
   let perf = null
-  const deadline = Date.now() + 5 * 60_000
+  const deadline = Date.now() + 10 * 60_000
   while (Date.now() < deadline) {
     perf = await evaluate('window.__perf && window.__perf.done ? window.__perf : null')
     if (perf) break
     await sleep(500)
   }
   socket.close()
-  if (!perf) throw new Error('the perf run did not finish in 5 minutes')
+  if (!perf) throw new Error('the perf run did not finish in 10 minutes')
 
   let commit = 'unknown'
   try {
@@ -82,7 +88,14 @@ try {
   const out = join(root, 'perf', 'results')
   mkdirSync(out, { recursive: true })
   const file = join(out, `${perf.env.date.slice(0, 10)}-${commit}.json`)
-  writeFileSync(file, JSON.stringify({ commit, ...perf }, null, 2))
+  const { pictures: shots = {}, ...kept } = perf
+  writeFileSync(file, JSON.stringify({ commit, ...kept }, null, 2))
+  if (pictures) {
+    const dir = join(out, 'pictures')
+    mkdirSync(dir, { recursive: true })
+    for (const [name, data] of Object.entries(shots)) writeFileSync(join(dir, `${name}.png`), Buffer.from(String(data).split(',')[1], 'base64'))
+    console.log(`${Object.keys(shots).length} pictures in ${dir}`)
+  }
 
   console.log(`GPU: ${perf.env.gpu}`)
   console.log(`${'scene'.padEnd(20)}${'metric'.padEnd(28)}${'phoria2'.padStart(10)}${'three.js'.padStart(10)}`)
