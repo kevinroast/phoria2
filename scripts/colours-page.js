@@ -51,16 +51,42 @@ function row(view, make) {
 }
 
 /**
+ * A view's picture, as an app exports it: each pixel's red, green, blue and alpha, 0 - 255, the
+ * colour out of its alpha. @param {View} view @param {import('../src/View.js').ImageOptions} [options]
+ */
+async function pixelsOf(view, options) {
+  const blob = await view.toImage(options)
+  const bitmap = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' })
+  const ctx = /** @type {OffscreenCanvasRenderingContext2D} */ (new OffscreenCanvas(bitmap.width, bitmap.height).getContext('2d'))
+  ctx.drawImage(bitmap, 0, 0)
+  return (/** @type {number} */ x, /** @type {number} */ y) => [...ctx.getImageData(Math.round(x), Math.round(y), 1, 1).data]
+}
+
+/**
+ * A view once the parts it loads on first use - bloom's code - are in: drawn again each time one
+ * arrives, until none does for a moment. @param {View} view
+ */
+async function loaded(view) {
+  const renderer = view.renderer, before = renderer.onReady
+  let arrived = true
+  renderer.onReady = () => { arrived = true }
+  for (let i = 0; i < 20 && arrived; i++) {
+    arrived = false
+    view.render()
+    await new Promise((r) => setTimeout(r, 300))
+  }
+  renderer.onReady = before
+  return view
+}
+
+/**
  * Read a view's picture back, and compare each swatch's middle - and the background, in a corner -
  * with what it should be.
  * @param {string} check @param {View} view @param {(number[] | null)[]} expected one per swatch; null only reports
  */
 async function compare(check, view, expected) {
-  const blob = await view.toImage()
-  const bitmap = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' })
-  const ctx = /** @type {OffscreenCanvasRenderingContext2D} */ (new OffscreenCanvas(bitmap.width, bitmap.height).getContext('2d'))
-  ctx.drawImage(bitmap, 0, 0)
-  const pixel = (/** @type {number} */ x, /** @type {number} */ y) => [...ctx.getImageData(Math.round(x), Math.round(y), 1, 1).data.slice(0, 3)]
+  const rgba = await pixelsOf(view)
+  const pixel = (/** @type {number} */ x, /** @type {number} */ y) => rgba(x, y).slice(0, 3)
   const record = (/** @type {string} */ swatch, /** @type {number[] | null} */ want, /** @type {number[]} */ got) => {
     const ok = want ? want.every((v, k) => Math.abs(v - got[k]) <= 1) : null
     out.results.push({ check, swatch, expected: want, got, ok })
@@ -169,6 +195,31 @@ async function run() {
     row(view, (hex) => new Mesh({ geometry: plane(1), material: { color: hex, unlit: true, blending: 'multiply' } }))
     const bg = bytes(BACKGROUND)
     await compare('multiply over the background', view, COLOURS.map((hex) => bytes(hex).map((v, k) => Math.round(v * bg[k] / 255))))
+  }
+
+  // bloom on a see-through canvas: the glow past each swatch's edge, laid over black as the page
+  // would lay it, comes out as the same glow drawn on a black background - in the plain frame (sRGB)
+  // and refined (linear light, encoded at the end). Within 2 in 255: the see-through picture's colour
+  // is read back out of its alpha, which is small out in the glow
+  for (const samples of [1, 4]) {
+    const glowing = () => {
+      const view = viewOf({ bloom: { threshold: 0.2, strength: 1.5 }, antialias: false })
+      row(view, () => unlit('#ffe066'))
+      return view
+    }
+    const black = glowing(), clear = glowing()
+    black.scene.background = '#000000'
+    clear.scene.background = null
+    const [onBlack, onClear] = await Promise.all([black, clear].map(async (view) => pixelsOf(await loaded(view), { samples })))
+    // just past each swatch's edge, and in the gaps between them
+    const n = COLOURS.length
+    const spots = [...COLOURS.map((_, i) => [`above ${i + 1}`, [at(i, n)[0], 0, -0.56]]), ...COLOURS.slice(1).map((_, i) => [`gap ${i + 1}`, [at(i, n)[0] + SPACING / 2, 0, 0]])]
+    for (const [name, point] of /** @type {[string, [number, number, number]][]} */ (spots)) {
+      const { x, y } = black.project(point)
+      const want = onBlack(x, y).slice(0, 3), [r, g, b, a] = onClear(x, y)
+      const got = [r, g, b].map((v) => Math.round(v * a / 255))
+      out.results.push({ check: `bloom glow on a see-through canvas, over black${samples > 1 ? ', refined' : ''}`, swatch: name, expected: want, got, ok: want.every((v, k) => Math.abs(v - got[k]) <= 2) && want.some((v) => v > 4) })
+    }
   }
 
   // lit: a sun straight down on matt swatches - reported, not checked, as light and tone mapping

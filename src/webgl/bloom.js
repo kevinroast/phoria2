@@ -120,7 +120,12 @@ void main() {
 // the picture with its glow. The glow is light: added to the light behind each colour and the sum
 // tone mapped, so it rolls off into white as a lens's does, and a pixel it doesn't reach is exactly
 // as it was - bloom at strength 0 is no bloom. Out as premultiplied sRGB, or with LINEAR_INPUT left
-// linear for the chain to encode at its end
+// linear for the chain to encode at its end.
+// Where the canvas is see-through, the glow brings its own cover: as much as its brightest channel
+// shows, in sRGB - what the page blends with. So over a black page it is exactly the glow drawn on a
+// black background, and over a light one a haze of its colour. (Its cover worked out from the glow's
+// linear light was far too little - 1/255 for a glow that shows as 12/255 - so the colour came out
+// past its cover, which a page can't show and an exported picture lost.)
 const COMPOSITE_FRAGMENT = /* glsl */ `
 precision highp float;
 in vec2 vUv;
@@ -135,12 +140,19 @@ void main() {
   vec3 glow = texture(uBloom, vUv).rgb * uStrength;
   vec3 light = untone(inputColor(scene));
   glow = max(toneCurve(light + glow) - toneCurve(light), 0.0);
-  // where the canvas is see-through, the glow brings its own cover
-  float a = clamp(scene.a + max(glow.r, max(glow.g, glow.b)), 0.0, 1.0);
+  // the picture as it shows - premultiplied sRGB - with the glow added in light
 #ifdef LINEAR_INPUT
-  fragColor = vec4(scene.rgb + glow, a);
+  vec3 shown = scene.a > 0.0 ? linearToSrgb(scene.rgb / scene.a) * scene.a : vec3(0.0);
 #else
-  fragColor = vec4(linearToSrgb(srgbToLinear(scene.rgb) + glow), a);
+  vec3 shown = scene.rgb;
+#endif
+  vec3 c = linearToSrgb(srgbToLinear(shown) + glow);
+  float a = clamp(max(scene.a, max(c.r, max(c.g, c.b))), 0.0, 1.0);
+#ifdef LINEAR_INPUT
+  // back to linear light, premultiplied, so the chain's encode gives c back
+  fragColor = a > 0.0 ? vec4(srgbToLinear(c / a) * a, a) : vec4(0.0);
+#else
+  fragColor = vec4(c, a);
 #endif
 }
 `
