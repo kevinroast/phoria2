@@ -238,22 +238,29 @@ async function manyLights() {
   recordAll('max lights', p, t, { moving: 'frame, camera moving' })
 }
 
-// a sun's soft shadow over 500 boxes: phoria2's contact-hardening shadow against three.js's
-// PCFSoftShadowMap - different filters, so only a rough comparison
+// a sun's shadow over 500 boxes. Like for like: phoria2's default shadow edge against three.js's
+// PCFSoftShadowMap - the two look alike (a crisp, evenly filtered edge). Then phoria2's
+// contact-hardening shadows, which three.js doesn't ship (its PCSS is an example to patch in), at
+// shadowSoftness 0.15 - a sun's: sharp where things meet the ground, softer further off - as rows of
+// its own, for what turning them on costs
 async function softShadows() {
   const boxes = grid(500, 2.2), camera = [0, 30, 45]
-  let pa = 0, ta = 0
-  const p = await timePhoria('soft', (c) => {
-    const view = phoriaBare(c, { position: camera, target: [0, 0, 0] })
-    view.sun = phoriaLights(view, { castShadow: true, shadowSoftness: 0.5 })
-    view.scene.add(phoriaFloor(80))
-    const geometry = P.box(1), material = new P.Material({ color: '#c8c2b8', roughness: 0.6 })
-    for (const [x, z, h] of boxes) view.scene.add(new P.Mesh({ geometry, material, position: [x, h / 2, z], scale: [1.4, h, 1.4], castShadow: true, receiveShadow: true }))
-    return view
-  }, {
-    moving: phoriaOrbit(50, 30),
-    sun: (view) => { pa += 0.01; view.sun.direction.set(-1 + Math.sin(pa) * 0.3, -2, -1) },
-  })
+  const phoria = (softness) => {
+    let pa = 0
+    return timePhoria(softness ? 'soft-hardening' : 'soft', (c) => {
+      const view = phoriaBare(c, { position: camera, target: [0, 0, 0] })
+      view.sun = phoriaLights(view, { castShadow: true, shadowSoftness: softness })
+      view.scene.add(phoriaFloor(80))
+      const geometry = P.box(1), material = new P.Material({ color: '#c8c2b8', roughness: 0.6 })
+      for (const [x, z, h] of boxes) view.scene.add(new P.Mesh({ geometry, material, position: [x, h / 2, z], scale: [1.4, h, 1.4], castShadow: true, receiveShadow: true }))
+      return view
+    }, {
+      moving: phoriaOrbit(50, 30),
+      sun: (view) => { pa += 0.01; view.sun.direction.set(-1 + Math.sin(pa) * 0.3, -2, -1) },
+    })
+  }
+  let ta = 0
+  const p = await phoria(0)
   const t = await timeThree('soft', (c) => {
     const t = threeBare(c, camera)
     t.renderer.shadowMap.enabled = true
@@ -273,7 +280,11 @@ async function softShadows() {
     moving: threeOrbit(50, 30),
     sun: (t) => { ta += 0.01; t.sun.position.set(20 - Math.sin(ta) * 6, 40, 20) },
   })
-  recordAll('soft shadows', p, t, { moving: 'frame, camera moving (filters differ)', sun: 'frame, sun moving (filters differ)' })
+  recordAll('soft shadows', p, t, { moving: 'frame, camera moving', sun: 'frame, sun moving' })
+  const hard = await phoria(0.15)
+  record('soft shadows', 'build + first frame, contact-hardening 0.15', 'ms', hard.build, null)
+  record('soft shadows', 'frame, camera moving, contact-hardening 0.15', 'ms', hard.moving, null)
+  record('soft shadows', 'frame, sun moving, contact-hardening 0.15', 'ms', hard.sun, null)
 }
 
 // 200 spheres, metal and rough by row and column, lit only by an HDR studio: the first frame loads

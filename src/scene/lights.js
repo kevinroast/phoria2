@@ -229,8 +229,10 @@ export class DirectionalLight extends AimedLight {
   /**
    * Contact-hardening shadows: sharp where its shadow meets what casts it, softening further away, as
    * under a large light. 0-1: 0 (the default) keeps the plain filtered edge; at 1, the most, the edge
-   * widens by about four tenths of the distance from the caster to the surface - a large studio light;
-   * 0.2-0.5 is subtler. Costs more per pixel near shadow edges - most on phones.
+   * widens by about four tenths of the distance from the caster to the surface - a large studio light.
+   * For a sun, 0.1-0.2: crisp where things touch, gently softer further off; from about 0.3 it reads
+   * as a large soft light - an overcast sky, a softbox. Costs more per pixel near shadow edges - most
+   * on phones.
    */
   shadowSoftness = 0
   /** @type {Box3 | null} */
