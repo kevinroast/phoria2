@@ -1,10 +1,18 @@
-// npm run perf: serve perf.html with Vite, run it in headless Chrome (the one installed - nothing
-// is downloaded), and save the results to perf/results/<date>-<commit>.json for comparing across
-// commits. Set CHROME to the browser's path if it isn't found.
-//   npm run perf -- glass labels     only those scenes, by key (bench.js SCENES)
+// npm run perf: build the library, serve perf.html with Vite, run it in headless Chrome (the one
+// installed - nothing is downloaded), and save the results to perf/results/<date>-<commit>.json for
+// comparing across commits. Set CHROME to the browser's path if it isn't found.
+//   npm run perf -- glass labels     only those scenes, by key (bench.js SCENES) - saved as
+//                                    <date>-<commit>-glass+labels.json, not over a full run's file
 //   npm run perf -- --pictures       also a PNG of each scene as each library drew it, in
 //                                    perf/results/pictures/ - to see both draw the same thing
-import { createServer } from 'vite'
+//   npm run perf -- --source         phoria2 from src/, as the dev server serves it, not built
+//
+// phoria2 is timed as apps get it: built (perf/results/build, in about a second) with its chunks -
+// shadows, effects, bloom, picking - each one file, its GLSL minified. Served from src/, a chunk
+// arrives as a chain of modules, one after another, and every "build + first frame" that loads one
+// pays for it; three.js is pre-bundled by Vite either way. The perf page opened with `npm run dev`
+// uses src/.
+import { build, createServer } from 'vite'
 import { spawn, execSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -25,11 +33,26 @@ if (!chrome) {
   process.exit(1)
 }
 
-const server = await createServer({ root, configFile: join(root, 'vite.config.js'), logLevel: 'error', server: { port: 0 } })
-await server.listen()
 const args = process.argv.slice(2)
 const pictures = args.includes('--pictures')
+const fromSource = args.includes('--source')
 const scenes = args.filter((a) => !a.startsWith('--'))
+
+// the library built, and phoria2 and each of its sub-paths (package.json's exports) pointed at it
+const built = join(root, 'perf', 'results', 'build')
+/** @type {{ find: RegExp, replacement: string }[]} */
+const alias = []
+if (!fromSource) {
+  await build({ root, configFile: join(root, 'vite.config.js'), logLevel: 'error', build: { outDir: built, emptyOutDir: true } })
+  const exports = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).exports
+  for (const [path, target] of Object.entries(exports)) {
+    if (typeof target !== 'object' || !target.import) continue
+    const name = path === '.' ? 'phoria2' : `phoria2/${path.slice(2)}`
+    alias.push({ find: new RegExp(`^${name.replace('/', '\\/')}$`), replacement: join(built, target.import.replace('./dist/', '')) })
+  }
+}
+const server = await createServer({ root, configFile: join(root, 'vite.config.js'), logLevel: 'error', server: { port: 0 }, resolve: { alias } })
+await server.listen()
 const url = `${server.resolvedUrls?.local[0]}perf.html?auto${scenes.length ? `&scenes=${scenes.join(',')}` : ''}${pictures ? '&pictures' : ''}`
 
 const profile = mkdtempSync(join(tmpdir(), 'phoria2-perf-'))
@@ -87,9 +110,10 @@ try {
   } catch { /* not a git checkout */ }
   const out = join(root, 'perf', 'results')
   mkdirSync(out, { recursive: true })
-  const file = join(out, `${perf.env.date.slice(0, 10)}-${commit}.json`)
+  // a partial run gets a file of its own, so it doesn't replace the full run's of the same commit
+  const file = join(out, `${perf.env.date.slice(0, 10)}-${commit}${scenes.length ? `-${scenes.join('+')}` : ''}.json`)
   const { pictures: shots = {}, ...kept } = perf
-  writeFileSync(file, JSON.stringify({ commit, ...kept }, null, 2))
+  writeFileSync(file, JSON.stringify({ commit, phoria2: fromSource ? 'source' : 'built', ...kept }, null, 2))
   if (pictures) {
     const dir = join(out, 'pictures')
     mkdirSync(dir, { recursive: true })
@@ -98,6 +122,7 @@ try {
   }
 
   console.log(`GPU: ${perf.env.gpu}`)
+  console.log(`phoria2: ${fromSource ? 'from src/ (--source)' : 'built'}`)
   console.log(`${'scene'.padEnd(20)}${'metric'.padEnd(28)}${'phoria2'.padStart(10)}${'three.js'.padStart(10)}`)
   const fmt = (v) => (v === null ? '-' : v >= 100 ? v.toFixed(0) : v.toFixed(2))
   for (const r of perf.results) {

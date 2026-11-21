@@ -26,7 +26,6 @@ const pixel = new Uint8Array(4)
 export const sync = (gl) => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel)
 export const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1]
 export const nextFrame = () => new Promise((r) => setTimeout(r, 0))
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /**
  * Median ms of fn() with the GPU waited for.
@@ -83,11 +82,35 @@ export function picture(name, c) {
   if (wantPictures) perf.pictures[name] = c.toDataURL('image/png')
 }
 
-/** Draw until the picture is complete - every shader compiled - and the GPU done. @param {any} view */
+/**
+ * The renderer's next onReady - a part loaded, or every shader compiled - or the timeout, whichever
+ * comes first; its own handler, if it has one, still hears it.
+ * @param {any} renderer @param {number} ms
+ */
+function nextReady(renderer, ms) {
+  const before = renderer.onReady
+  return new Promise((r) => {
+    const done = () => {
+      renderer.onReady = before
+      r(undefined)
+    }
+    renderer.onReady = () => {
+      before?.()
+      done()
+    }
+    setTimeout(done, ms)
+  })
+}
+
+/**
+ * Draw until the picture is complete - every shader compiled - and the GPU done. While shaders
+ * compile it waits to be told they're ready, as a View does, rather than drawing over and over.
+ * @param {any} view
+ */
 export async function firstPicture(view) {
   view.render()
   while (view.renderer.info.compiling) {
-    await new Promise((r) => setTimeout(r, 1))
+    await nextReady(view.renderer, 100)
     view.render()
   }
   sync(view.renderer.gl)
@@ -115,9 +138,11 @@ export async function complete(view) {
     view.render()
     sync(renderer.gl)
     done = performance.now()
-    // shaders: check again shortly; otherwise wait for a part to load - drawn again the moment one
-    // does, or, with nothing coming, finished (that last wait isn't counted)
-    if (renderer.info.compiling) await sleep(1)
+    // shaders: drawn again when the renderer says they're ready (onReady), as a View does - not over
+    // and over meanwhile, which in a big scene keeps the main thread from the very loads and compile
+    // checks being waited for; otherwise wait for a part to load - drawn again the moment one does,
+    // or, with nothing coming, finished (that last wait isn't counted)
+    if (renderer.info.compiling) await new Promise((r) => { wake = r; setTimeout(r, 100) })
     else await new Promise((r) => { wake = r; setTimeout(r, 300) })
     wake = null
   }
