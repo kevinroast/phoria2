@@ -344,6 +344,12 @@ export class WebGLRenderer {
   info = { drawCalls: 0, triangles: 0, programs: 0, geometries: 0, textures: 0, compiling: 0, renderTextures: 0, shadowMaps: 0, shadowMapsKept: 0 }
   /** Of info.compiling, the draws left out while their GLSL loads (parts.js) - not compiling yet. */
   #waitingForParts = 0
+  // The last draw's program and material, in this run of draws. A draw with the same two sets none of
+  // the material's uniforms or maps - they are as that draw left them, the textures still bound to
+  // their units (nothing else drew between). Forgotten at each run's start; a material can't change
+  // within a run - no app code runs between its draws.
+  /** @type {import('./programs.js').Program | null} */ #lastProgram = null
+  /** @type {Material | null} */ #lastMaterial = null
   /**
    * Called when something the last frame couldn't draw yet is ready - the code for HDR
    * environments, backgrounds and shadows, which loads the first time a scene has one. The View
@@ -962,6 +968,7 @@ export class WebGLRenderer {
   #beginDraws() {
     const gs = this.#glState ??= new GLState(this.gl)
     gs.reset()
+    this.#lastProgram = this.#lastMaterial = null
     return gs
   }
 
@@ -1144,8 +1151,12 @@ export class WebGLRenderer {
     if (clip) program.set('uClipPlane', clip.plane)
     // the material's own: each of its features' uniforms - its colour, its surface, its maps (each bound
     // to its sampler, with its repeat, rotation and offset)
-    this.#sink.program = program
-    setUniformsOf(memo.features, material, this.#sink)
+    if (program !== this.#lastProgram || material !== this.#lastMaterial) {
+      this.#sink.program = program
+      setUniformsOf(memo.features, material, this.#sink)
+      this.#lastProgram = program
+      this.#lastMaterial = material
+    }
 
     // render state - sent only where it differs from the last draw's
     gs.depthMask(!transparent && material.depthWrite)

@@ -400,9 +400,21 @@ export function collect(scene, camera, { display = true, labels = display, light
     if (v === undefined) kinds.set(kind, v = variantOf(item.material, kind))
     return v
   }
-  // each item with its variant as a number, sorted, then put back - no lookups while sorting
-  const keyed = frame.opaque.map((item) => ({ item, order: item.node.renderOrder, variant: variantNumber(variantOfItem(item)) }))
-  keyed.sort((x, y) => x.order - y.order || x.variant - y.variant || x.item.depth - y.item.depth)
+  // Within a variant, a material's draws together - switching materials rebinds every map and sets
+  // its uniforms again, and three materials of 1,000 boxes interleaved by depth bound 4,000 textures
+  // a frame - its group placed by its nearest draw, and front to back within it. When every draw
+  // has its own material this is front to back, as before.
+  /** @type {Map<unknown, number>} */
+  const nearest = new Map()
+  for (const item of frame.opaque) {
+    const near = nearest.get(item.material)
+    if (near === undefined || item.depth < near) nearest.set(item.material, item.depth)
+  }
+  // each item with its variant, material and group's place as numbers, sorted, then put back - no
+  // lookups while sorting
+  const keyed = frame.opaque.map((item) => ({ item, order: item.node.renderOrder, variant: variantNumber(variantOfItem(item)),
+    near: /** @type {number} */ (nearest.get(item.material)), material: materialNumber(item.material) }))
+  keyed.sort((x, y) => x.order - y.order || x.variant - y.variant || x.near - y.near || x.material - y.material || x.item.depth - y.item.depth)
   for (let i = 0; i < keyed.length; i++) frame.opaque[i] = keyed[i].item
   // transparent: back to front so blending composes correctly
   frame.transparent.sort((x, y) => x.node.renderOrder - y.node.renderOrder || y.depth - x.depth)
@@ -430,6 +442,16 @@ const VARIANTS = new Map()
 const variantNumber = (variant) => {
   let n = VARIANTS.get(variant)
   if (n === undefined) VARIANTS.set(variant, n = VARIANTS.size)
+  return n
+}
+// each material a number, in the order first seen - its draws kept together
+/** @type {WeakMap<object, number>} */
+const MATERIALS = new WeakMap()
+let materialsSeen = 0
+/** @param {object} material */
+const materialNumber = (material) => {
+  let n = MATERIALS.get(material)
+  if (n === undefined) MATERIALS.set(material, n = materialsSeen++)
   return n
 }
 
