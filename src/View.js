@@ -1,5 +1,5 @@
-import { collect, toScreen } from './frame.js'
-import { LabelLayer, zoomedOut } from './labels.js'
+import { collect, toScreen, zoomedOut } from './frame.js'
+import { labelSlot } from './labelSlot.js'
 import { DRAG_START, OrbitControl } from './OrbitControl.js'
 import { cameraPreset, fitPoints, framingScale, presetDirection } from './presets.js'
 import { EASES } from './ease.js'
@@ -16,7 +16,7 @@ import { Camera, PerspectiveCamera } from './scene/cameras.js'
 import { DirectionalLight, HemisphereLight } from './scene/lights.js'
 import { WebGLRenderer } from './webgl/WebGLRenderer.js'
 import { checkOneOf, checkOptions, checkRange, describe, fail, warnOnce } from './validate.js'
-import { lazy } from './lazy.js'
+import { lazy, loadsInFlight } from './lazy.js'
 import { isInstanced } from './scene/kinds.js'
 
 /** @import { OrbitOptions } from './OrbitControl.js' */
@@ -25,6 +25,14 @@ import { isInstanced } from './scene/kinds.js'
 /** @import { FrameDescription, FrameHighlight } from './frame.js' */
 /** @import { Texture, TextureOptions } from './material/Texture.js' */
 /** @import { LabelStats } from './labels.js' */
+
+// HTML labels and overlays (labels.js, with labelLayout.js) are loaded the first time a view has a
+// label or an overlay to show - a scene with none never carries them (phoria2/charts brings them up
+// front). Once here (labelSlot.js), every view makes its layer at once; the views that asked first
+// are drawn again when they arrive.
+const loadLabels = lazy('labels', () => import('./labels.js'))
+/** Views that asked for labels before they were here. @type {Set<View>} */
+const waitingForLabels = new Set()
 /** @import { ImageOptions } from './snapshot.js' */
 /** @import { Tooltip, TooltipContent } from './tooltip.js' */
 /** @import { ToneMapping, BloomOptions, AmbientOcclusionOptions, GroundShadowOptions } from './webgl/WebGLRenderer.js' */
@@ -192,7 +200,8 @@ export class View {
   #applied = 1
   #watch = new ChangeWatch()
   /** @type {(() => void)[]} */ #cleanup = []
-  #labels
+  /** Made the first frame with a label or an overlay, once their code is here (labelLayer). @type {import('./labels.js').LabelLayer | null} */
+  #labels = null
   /** @type {LabelStats | null} */ #labelStats = null
   // pointer interaction
   /** @type {{ click: Set<ViewHandler>, hover: Set<ViewHandler> }} */ #handlers = { click: new Set(), hover: new Set() }
@@ -314,11 +323,6 @@ export class View {
     if (options.tooltip !== undefined) this.tooltip(options.tooltip)
     if (options.description !== undefined) this.description = options.description
     if (options.keyboard !== undefined && options.keyboard !== false) this.#loadKeyboard(options.keyboard)
-    this.#labels = new LabelLayer(this.canvas, {
-      interactive: (label) => labelHandlers(label, 'click').length > 0 || labelHandlers(label, 'hover').length > 0,
-      on: (type, label, e) => this.#labelPointer(type, label, e),
-      changed: () => this.invalidate(),
-    })
     if (options.debug !== undefined) this.debug = options.debug
     if (options.refine !== undefined) this.#setRefine(options.refine)
 
@@ -551,7 +555,7 @@ export class View {
     if (this.#debug && !this.#debugDraw) {
       this.#load.debug(({ DebugDraw }) => {
         if (this.#disposed) return
-        this.#debugDraw = new DebugDraw(this.#labels.root)
+        this.#debugDraw = new DebugDraw(() => this.#labelLayer()?.root ?? null)
         this.invalidate()
       })
     }
@@ -608,10 +612,36 @@ export class View {
   /** @internal
    * A layer over the canvas for HTML of your own - a title, a key, buttons. It tracks the canvas and
    * doesn't take pointer events itself; give children `pointer-events: auto` to make them clickable.
-   * @returns {HTMLDivElement}
+   * Null until the labels' code has loaded - the first ask starts it, and the view draws again then.
+   * @returns {HTMLDivElement | null}
    */
   get overlay() {
-    return this.#labels.root
+    return this.#labelLayer()?.root ?? null
+  }
+
+  /**
+   * The layer of HTML labels and overlays over the canvas, made on first use - or null while their
+   * code loads: asking starts it, and this view is drawn again when it arrives.
+   */
+  #labelLayer() {
+    if (this.#labels || this.#disposed) return this.#labels
+    const labels = labelSlot.module
+    if (labels) {
+      this.#labels = new labels.LabelLayer(this.canvas, {
+        interactive: (label) => labelHandlers(label, 'click').length > 0 || labelHandlers(label, 'hover').length > 0,
+        on: (type, label, e) => this.#labelPointer(type, label, e),
+        changed: () => this.invalidate(),
+      })
+      return this.#labels
+    }
+    waitingForLabels.add(this)
+    loadLabels((module) => {
+      // (filled as the module runs - and here too, for a module already run)
+      labelSlot.module ??= { LabelLayer: module.LabelLayer }
+      for (const view of waitingForLabels) view.invalidate()
+      waitingForLabels.clear()
+    })
+    return null
   }
 
   /**
@@ -715,7 +745,9 @@ export class View {
       this.#drawnAt = now
       this.#debugDraw.stats(this.#debug?.stats ?? false, this.renderer.info, this.#frameMs, now - started)
     }
-    this.#labelStats = this.#labels.update(frame.labels, frame.overlays)
+    this.#labelStats = frame.labels.length || frame.overlays.length || this.#labels
+      ? this.#labelLayer()?.update(frame.labels, frame.overlays) ?? waiting(frame.labels.length)
+      : null
     // a node with its own tooltip needs the tooltip's code
     if (frame.tooltips && !this.#tooltip) this.#loadTooltip()
     this.lastFrame = frame
@@ -1152,8 +1184,15 @@ export class View {
   async toImage(options) {
     const { snapshot } = await import('./snapshot.js')
     // draw - complete, shaders and all - and read back in the same task, while the drawing
-    // buffer is still there
+    // buffer is still there. What loads the first time it's drawn (shadows' passes, bloom, some
+    // materials' GLSL) is waited for and drawn again - a load can start another, so a few rounds
     this.#render(true)
+    for (let round = 0; round < 4; round++) {
+      const loading = loadsInFlight()
+      if (!loading) break
+      await loading
+      this.#render(true)
+    }
     const samples = options?.samples === undefined ? 1 : Math.round(checkRange('View', 'toImage samples', options.samples, 1, 4096))
     if (samples > 1 && this.renderer.canRefine) {
       // refined: that many samples averaged, the last shown
@@ -1161,7 +1200,7 @@ export class View {
       // what the view shows now is that average; refining carries on from it
       this.#samples = samples
     }
-    return snapshot(this.canvas, this.#labels.shown, options ?? {}, this.#labels.leaders)
+    return snapshot(this.canvas, this.#labels?.shown ?? [], options ?? {}, this.#labels?.leaders ?? [])
   }
 
   /**
@@ -1210,7 +1249,8 @@ export class View {
     cancelAnimationFrame(this.#rafId)
     for (const fn of this.#cleanup) fn()
     this.controls?.dispose()
-    this.#labels.dispose()
+    this.#labels?.dispose()
+    waitingForLabels.delete(this)
     this.#tooltip?.dispose()
     this.#keyboard?.dispose()
     this.#debugDraw?.dispose()
@@ -1659,6 +1699,12 @@ function setPlace(cam, place) {
   setTarget(cam, place.target)
   if (place.height !== undefined) cam.height = place.height
 }
+
+/**
+ * A frame's label stats while the labels' code is still loading: none shown yet.
+ * @param {number} total @returns {LabelStats}
+ */
+const waiting = (total) => ({ total, shown: 0, overlapped: 0, dimmed: 0, occluded: 0, offscreen: 0, zoomedOut: 0 })
 
 /** Move a camera's target, keeping the one it has. @param {any} cam @param {Vec3} target */
 function setTarget(cam, target) {

@@ -27,6 +27,7 @@
  * @property {boolean} [lit] only for lit materials
  * @property {boolean} [geometric] when() also asks the geometry (given one) - checked again for its defines
  * @property {string} [slot] a map's feature: the material slot it reads (none apply to a material with no maps)
+ * @property {'materials'} [part] its GLSL loads the first time a material has it (webgl/parts.js)
  * @property {(m: Material, geometry?: Geometry | null) => boolean} when
  * @property {(m: Material, sink: UniformSink) => void} [uniforms]
  */
@@ -91,7 +92,7 @@ export const FEATURES = [
   { name: null, define: null, kinds: MESH, when: (m) => !!m.bumpMap, uniforms: (m, { set }) => set('uBumpScale', m.bumpScale) },
   { name: null, define: null, kinds: MESH, when: (m) => !!m.lightMap, uniforms: (m, { set }) => set('uLightMapIntensity', m.lightMapIntensity) },
   { name: 'cutout', define: 'ALPHA_TEST', kinds: MESH, when: (m) => m.alphaTest > 0 },
-  { name: 'glass', define: 'TRANSMISSION', kinds: MESH, lit: true, when: (m) => m.transmission > 0, uniforms: (m, { set }) => {
+  { name: 'glass', define: 'TRANSMISSION', kinds: MESH, lit: true, part: 'materials', when: (m) => m.transmission > 0, uniforms: (m, { set }) => {
     set('uTransmission', m.transmission)
     // what bends what is behind it (read where the picture behind is there to bend - REFRACTION): its
     // ior, its thickness, and dispersion's half spread of the ior across the colours, as
@@ -102,14 +103,14 @@ export const FEATURES = [
     set('uAttenuation', [a[0], a[1], a[2], Number.isFinite(m.attenuationDistance) ? m.attenuationDistance : 0])
   } },
   {
-    name: 'clearcoat', define: 'CLEARCOAT', kinds: MESH, lit: true, when: (m) => m.clearcoat > 0,
+    name: 'clearcoat', part: 'materials', define: 'CLEARCOAT', kinds: MESH, lit: true, when: (m) => m.clearcoat > 0,
     uniforms: (m, { set }) => {
       set('uClearcoat', m.clearcoat)
       set('uClearcoatRoughness', m.clearcoatRoughness)
     },
   },
   {
-    name: 'sheen', define: 'SHEEN', kinds: MESH, lit: true, when: (m) => m.sheen > 0,
+    name: 'sheen', part: 'materials', define: 'SHEEN', kinds: MESH, lit: true, when: (m) => m.sheen > 0,
     uniforms: (m, { set }) => {
       const c = m.sheenColor, k = m.sheen
       set('uSheenColor', [c[0] * k, c[1] * k, c[2] * k])
@@ -117,11 +118,11 @@ export const FEATURES = [
     },
   },
   {
-    name: 'iridescent', define: 'IRIDESCENCE', kinds: MESH, lit: true, when: (m) => m.iridescence > 0,
+    name: 'iridescent', part: 'materials', define: 'IRIDESCENCE', kinds: MESH, lit: true, when: (m) => m.iridescence > 0,
     uniforms: (m, { set }) => set('uIridescence', [m.iridescence, m.iridescenceIor, m.iridescenceThicknessMin, m.iridescenceThickness]),
   },
   {
-    name: 'brushed', define: 'ANISOTROPY', kinds: MESH, lit: true, when: (m) => m.anisotropy > 0,
+    name: 'brushed', part: 'materials', define: 'ANISOTROPY', kinds: MESH, lit: true, when: (m) => m.anisotropy > 0,
     uniforms: (m, { set }) => {
       set('uAnisotropy', m.anisotropy)
       set('uAnisotropyDirection', [Math.cos(m.anisotropyRotation), Math.sin(m.anisotropyRotation)])
@@ -134,7 +135,7 @@ export const FEATURES = [
       set('uTranslucency', [c[0] * k, c[1] * k, c[2] * k, k])
     },
   },
-  { name: 'toon', define: 'TOON', kinds: MESH, lit: true, when: (m) => m.toon > 0, uniforms: (m, { set }) => set('uToon', Math.max(2, Math.round(m.toon))) },
+  { name: 'toon', define: 'TOON', kinds: MESH, lit: true, part: 'materials', when: (m) => m.toon > 0, uniforms: (m, { set }) => set('uToon', Math.max(2, Math.round(m.toon))) },
   { name: 'flat', define: 'FLAT_SHADING', kinds: MESH, when: (m) => m.flatShading },
   { name: 'double', define: 'DOUBLE_SIDED', kinds: MESH, when: (m) => m.doubleSided },
   // projected maps, for meshes with no UVs - only worth their varyings when there is a map
@@ -190,12 +191,14 @@ export function glassFilter(m, worldMatrix) {
  * keep while it draws a frame, and read for the program's defines and the uniforms of every draw
  * with the material. A feature that asks the geometry is in when the material asks for it. `key`
  * says which apply, one character each - materials with the same key switch on the same code.
- * @typedef {{ all: Feature[], uniforms: Feature[], key: string }} MaterialFeatures
+ * `part` names the group of GLSL one of them loads on first use, or is null.
+ * @typedef {{ all: Feature[], uniforms: Feature[], key: string, part: 'materials' | null }} MaterialFeatures
  * @param {Material} m @param {'mesh' | 'points' | 'lines'} kind
  * @returns {MaterialFeatures}
  */
 export function featuresOf(m, kind) {
   const all = /** @type {Feature[]} */ ([]), uniforms = /** @type {Feature[]} */ ([])
+  let part = /** @type {'materials' | null} */ (null)
   // most materials have no maps: their ten features are passed over without asking each slot
   const maps = m.mapEntries.length > 0
   let key = kind[0]
@@ -203,9 +206,10 @@ export function featuresOf(m, kind) {
     if ((f.slot && !maps) || (f.lit && m.unlit) || !f.when(m)) continue
     all.push(f)
     if (f.uniforms) uniforms.push(f)
+    if (f.part) part = f.part
     key += String.fromCharCode(48 + /** @type {number} */ (INDEX.get(f)))
   }
-  return { all, uniforms, key }
+  return { all, uniforms, key, part }
 }
 
 /**

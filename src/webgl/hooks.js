@@ -4,7 +4,8 @@
 // without it from then on, rather than stopping the frame.
 import { Texture } from '../material/Texture.js'
 import { warnOnce } from '../validate.js'
-import { CLIP_ONLY_FRAGMENT, HOOK_HELPERS, HOOK_SOURCE_NUMBERS, LINES_VERTEX, MESH_VERTEX, POINTS_VERTEX, shaderSource } from './shaders.js'
+import { hasParts, partText } from './parts.js'
+import { CLIP_ONLY_FRAGMENT, HOOK_SOURCE_NUMBERS, LINES_VERTEX, MESH_VERTEX, POINTS_VERTEX, shaderSource } from './shaders.js'
 
 /** @import { Material, ShaderUniform } from '../material/Material.js' */
 /** @import { HookSource } from './shaders.js' */
@@ -39,13 +40,14 @@ const ownUniforms = () => own ??= new Set([MESH_VERTEX, POINTS_VERTEX, LINES_VER
   .flatMap((s) => [...s.matchAll(/uniform\s+\w+\s+(\w+)/g)].map((m) => m[1])))
 
 /**
- * The hooks a material draws with, or null: none, or ones that failed to compile.
+ * The hooks a material draws with, or null: none, ones that failed to compile, or - while the
+ * functions hooks call are still loading (hooksLoading) - none yet.
  * @param {Material} material
  * @returns {Hook | null}
  */
 export function hookFor(material) {
   const s = material.shader
-  if (!s) return null
+  if (!s || !hasParts('hooks')) return null
   const types = Object.entries(s.uniforms).map(([k, v]) => `${glslType(v)} ${k}`).join(';')
   const last = recent.get(s)
   if (last && last.types === types) return last.hook
@@ -62,7 +64,7 @@ export function hookFor(material) {
         defines: [...(s.vertex ? ['HOOK_VERTEX'] : []), ...(s.fragment ? ['HOOK_FRAGMENT'] : []), ...(s.lit ? ['HOOK_LIT'] : []), `HOOKS ${hooks.size + 1}`],
         source: {
           uniforms: ['uniform float uTime;', 'uniform vec3 cameraPosition;', ...types.split(';').filter(Boolean).map((t) => `uniform ${t};`)].join('\n'),
-          helpers: HOOK_HELPERS,
+          helpers: partText('hook-helpers'),
           vertex: s.vertex, fragment: s.fragment, lit: s.lit,
         },
         moves: !!s.vertex,
@@ -73,6 +75,14 @@ export function hookFor(material) {
   recent.set(s, { types, hook })
   return hook
 }
+
+/**
+ * Whether a material's hooks wait for the functions hooks call, still loading - the renderer leaves
+ * it out until they arrive, rather than draw it without its hooks (a flag would show flat for a
+ * frame). Starts loading them the first time it's asked.
+ * @param {Material} material
+ */
+export const hooksLoading = (material) => !!material.shader && !hasParts('hooks')
 
 /**
  * Defines for a pass that isn't the colour pass: the vertex hook always - so a shadow, an outline or

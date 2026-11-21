@@ -543,6 +543,15 @@ function instanceLabelSet(node, labels, layer, viewProjection, view, yScale, out
 }
 
 /**
+ * A label waiting to be zoomed in to: one with a minScale, smaller on screen than it.
+ * @internal @param {{ scale: number, style: { minScale?: number | null } }} label
+ * @param {number} halfHeight half the view's height, CSS pixels
+ */
+export function zoomedOut(label, halfHeight) {
+  return !!label.style.minScale && label.scale * halfHeight < label.style.minScale
+}
+
+/**
  * Where a world position lands in normalised device coordinates (x, y and z, -1 to 1), and whether it
  * is in view: inside the edges, and between the near and far planes. Labels and view.project() both
  * place things with it.

@@ -150,7 +150,7 @@ Methods:
 - `rayAt(x, y)` / `rayAt(event)` - the world `Ray` through a canvas position, for placing things:
   `ray.at(ray.intersectPlane([0, 1, 0], [0, 0, 0]))` is the point on the floor under the pointer
   (`intersectPlane` returns null when the ray runs along the plane or away from it).
-- `await view.toImage()` - a PNG `Blob` of the picture, labels included. `toImage({ samples: 64 })` refines it first, as `refine` does - antialiased, soft shadows exact - whether or not the view refines.
+- `await view.toImage()` - a PNG `Blob` of the picture, labels included - complete: what a scene loads the first time it needs it (shadows, glass and advanced materials, labels) is waited for. `toImage({ samples: 64 })` refines it first, as `refine` does - antialiased, soft shadows exact - whether or not the view refines.
 - `await view.explain()` - a plain-text report of what is drawn, with warnings ("nothing in view",
   "no lights", labels hidden...). Use it to debug a blank or wrong picture.
 - `view.debug` (or the `debug` option) - pictures for a person checking a scene, drawn over it:

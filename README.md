@@ -5,9 +5,9 @@ lines, labels, picking, glTF models and particles, behind an API small enough to
 afternoon - aimed at business apps: charts, labelled scenes, diagrams, dashboards, floor plans and
 product viewers. The [demo gallery](https://kevs3d.co.uk/phoria2/).
 
-- **Small**: about 100 KB gzipped for a lit, interactive scene. Charts, particles, glTF, motion and
+- **Small**: about 90 KB gzipped for a lit, interactive scene. Charts, particles, glTF, motion and
   editing are separate imports, and the heavier parts - shadows, HDR environments, area lights,
-  bloom, GPU picking - load only when a scene uses them.
+  glass and advanced materials, labels, bloom, GPU picking - load only when a scene uses them.
 - **Interaction built in**: tooltips, hover highlights, click and drag handlers, and HTML labels
   that hide when they overlap or go behind something - each an option or a line of code, not a
   layer to build.

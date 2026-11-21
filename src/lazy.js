@@ -6,6 +6,14 @@ import { warnOnce } from './validate.js'
 
 // after a failure, how long before the next want tries again - not every frame
 const RETRY_MS = 5000
+/** Loads under way, each settled once its module is in use (or it failed). @type {Set<Promise<void>>} */
+const inflight = new Set()
+
+/**
+ * Every load under way, done - for a frame that must be complete (toImage) - or null when none is.
+ * @returns {Promise<unknown> | null}
+ */
+export const loadsInFlight = () => (inflight.size ? Promise.all(inflight) : null)
 
 /**
  * A loader for a chunk of code: call it with what to do with the module once loaded. The import
@@ -21,7 +29,7 @@ export function lazy(feature, importer) {
   return (then) => {
     if (state.loading || state.loaded || performance.now() - state.failedAt < RETRY_MS) return
     state.loading = true
-    importer().then((module) => {
+    const done = importer().then((module) => {
       state.loading = false
       state.loaded = true
       then(module)
@@ -30,5 +38,7 @@ export function lazy(feature, importer) {
       state.failedAt = performance.now()
       warnOnce(state, `${feature}: its code couldn't be loaded (${error?.message ?? error}) - left out for now, and tried again when next wanted`)
     })
+    inflight.add(done)
+    done.finally(() => inflight.delete(done))
   }
 }

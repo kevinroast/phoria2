@@ -38,3 +38,23 @@ if (wrong.length) {
   process.exit(1)
 }
 console.log(`check-dist: all ${parts.map((p) => `${want[p]} ${p}`).join(', ')} hook lines are in ${dir}`)
+
+// And the GLSL parts loaded on their own (src/webgl/parts.js): each `#pragma part NAME` line in the
+// shaders must have its part's code somewhere in the build. A part module only imported for its
+// effect is dropped by a bundler (package.json's sideEffects says modules have none) - so a shadow
+// would ask for GLSL that never shipped, and stop the frame.
+const sources = readFileSync(join(root, 'src/webgl/shaders.js'), 'utf8')
+const names = [...sources.matchAll(/^#pragma part ([\w-]+)$/gm)].map((m) => m[1])
+const built = readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.js')).map((f) => readFileSync(join(dir, f), 'utf8')).join('\n')
+// a part is an entry of a table: its name, quoted or not, then its GLSL - a string, any quotes
+const missing = names.filter((name) => !new RegExp(`["']?${name}["']?\\s*:\\s*(?:/\\*\\s*glsl\\s*\\*/\\s*)?["'\`]`).test(built))
+if (!names.length) {
+  console.error('check-dist: no #pragma part lines in src/webgl/shaders.js - has the marker changed? Update this check to match.')
+  process.exit(1)
+}
+if (missing.length) {
+  console.error(`check-dist: ${dir} has lost GLSL parts - a frame that needs one would fail to compile: ${missing.join(', ')}`)
+  console.error('Is a parts module imported only for its effect? Register its table from code that is used (see parts.js).')
+  process.exit(1)
+}
+console.log(`check-dist: all ${names.length} GLSL parts are in ${dir}`)

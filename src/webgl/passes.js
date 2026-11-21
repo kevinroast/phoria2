@@ -13,6 +13,8 @@ import { glassFilter, isGlass } from '../material/features.js'
 import { blit } from './targets.js'
 import { DrawnFrom } from './drawn.js'
 import { BLUE_NOISE } from './blue-noise-data.js'
+import { SHADOW_PARTS } from './parts-shadows.js'
+import { addParts } from './parts.js'
 
 // a rect light's filter is an ellipse this much bigger than its half width and height: an evenly lit
 // rectangle and an evenly filled ellipse spread an edge alike when their spreads (second moments)
@@ -369,6 +371,9 @@ export class Passes {
 
   /** @param {WebGL2RenderingContext} gl @param {Programs} programs @param {Resources} resources @param {TargetPool} targets */
   constructor(gl, programs, resources, targets) {
+    // the GLSL that reads the shadow maps these passes draw, for every lit shader from now on
+    // (registered here, not by importing the module for its effect: bundlers may drop that)
+    addParts('shadows', SHADOW_PARTS)
     this.gl = gl
     this.programs = programs
     this.resources = resources

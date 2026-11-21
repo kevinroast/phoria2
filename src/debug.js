@@ -113,7 +113,10 @@ export class DebugDraw {
   /** @type {number[]} */ #positions = []
   /** @type {number[]} */ #colors = []
 
-  /** @param {HTMLElement | null} overlay where the stats readout goes - the layer over the canvas */
+  /**
+   * @param {() => HTMLElement | null} overlay where the stats readout goes - the layer over the canvas,
+   *   once the labels' code that makes it has loaded (asking starts that)
+   */
   constructor(overlay) {
     this.overlay = overlay
   }
@@ -170,7 +173,8 @@ export class DebugDraw {
    * @param {number} frameMs time between drawn frames @param {number} cpuMs time the last frame took to draw
    */
   stats(where, info, frameMs, cpuMs) {
-    if (!where || !this.overlay || typeof document === 'undefined') {
+    const overlay = where && typeof document !== 'undefined' ? this.overlay() : null
+    if (!where || !overlay) {
       this.#stats?.remove()
       this.#stats = null
       return
@@ -181,7 +185,7 @@ export class DebugDraw {
       this.#stats.className = 'phoria-debug-stats'
       Object.assign(this.#stats.style, { position: 'absolute', zIndex: '3', pointerEvents: 'none', padding: '6px 8px', borderRadius: '6px',
         background: 'rgba(10, 12, 16, 0.72)', color: '#e8ecf2', font: '11px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace', whiteSpace: 'pre' })
-      this.overlay.append(this.#stats)
+      overlay.append(this.#stats)
     }
     const [v, h] = corner.split('-')
     Object.assign(this.#stats.style, { top: v === 'top' ? '8px' : '', bottom: v === 'bottom' ? '8px' : '', left: h === 'left' ? '8px' : '', right: h === 'right' ? '8px' : '' })

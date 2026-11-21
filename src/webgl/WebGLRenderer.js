@@ -3,7 +3,8 @@ import * as mat4 from '../math/mat4.js'
 import { Geometry } from '../geometry/Geometry.js'
 import { Material } from '../material/Material.js'
 import { ACCUMULATE_FRAGMENT, CLIP_ONLY_FRAGMENT, ENCODE_FRAGMENT, FULLSCREEN_VERTEX, MESH_VERTEX } from './shaders.js'
-import { hookFailed, hookFor, setHookUniforms } from './hooks.js'
+import { hookFailed, hookFor, hooksLoading, setHookUniforms } from './hooks.js'
+import { hasParts } from './parts.js'
 import { placementDefines, setShapeUniforms, shapeDefines } from './shape.js'
 import { definesOf, featuresOf, isGlass, secondUvDefines, setUniformsOf } from '../material/features.js'
 import { GLState } from './glstate.js'
@@ -70,7 +71,7 @@ const hookId = (hook) => {
  * hooks, and its programs by what else decides one - the draw's signature (see #draw).
  * `own` is the material's part of a draw's signature: its fog, the maps it reads from a second UV set
  * and its hooks.
- * @typedef {{ features: import('../material/features.js').MaterialFeatures, hook: import('./hooks.js').Hook | null, own: number, programs: Map<number, { program: import('./programs.js').Program, defines: string[] }> }} DrawMemo
+ * @typedef {{ features: import('../material/features.js').MaterialFeatures, hook: import('./hooks.js').Hook | null, own: number, programs: Map<number, { program: import('./programs.js').Program, defines: string[] }>, loading: boolean }} DrawMemo
  */
 
 /**
@@ -341,6 +342,8 @@ export class WebGLRenderer {
    * how many were as the frame before left them - nothing in their light or casters moved.
    */
   info = { drawCalls: 0, triangles: 0, programs: 0, geometries: 0, textures: 0, compiling: 0, renderTextures: 0, shadowMaps: 0, shadowMapsKept: 0 }
+  /** Of info.compiling, the draws left out while their GLSL loads (parts.js) - not compiling yet. */
+  #waitingForParts = 0
   /**
    * Called when something the last frame couldn't draw yet is ready - the code for HDR
    * environments, backgrounds and shadows, which loads the first time a scene has one. The View
@@ -545,6 +548,7 @@ export class WebGLRenderer {
     this.info.drawCalls = 0
     this.info.triangles = 0
     this.info.compiling = 0
+    this.#waitingForParts = 0
     this.info.renderTextures = 0
     this.info.shadowMaps = 0
     this.info.shadowMapsKept = 0
@@ -553,7 +557,9 @@ export class WebGLRenderer {
     const acc = accumulate && this.canRefine ? accumulate : null
     this.#drawFrame(frame, { wait, target, linear, plain: false, accumulate: acc })
 
-    if (this.info.compiling) gpu.whenCompiled()
+    // programs compiling: drawn again when they're done. (What waits for its code to load is drawn
+    // when that arrives - the context hears of it.)
+    if (this.info.compiling > this.#waitingForParts) gpu.whenCompiled()
     if (this.#copy && !target && (!acc || acc.show)) {
       // the picture is the buffer's bottom-left corner; as an image, y runs down from the top
       const copy = this.#copy, source = gpu.canvas, width = this.canvas.width, height = this.canvas.height
@@ -985,7 +991,9 @@ export class WebGLRenderer {
       const own = (material.fog ? 256 : 0) + second * 512 + (hook ? hookId(hook) * 2 ** 20 : 0)
       let programs = state.programs.get(features.key)
       if (!programs) state.programs.set(features.key, programs = new Map())
-      kinds.set(kind, memo = { features, hook, own, programs })
+      // GLSL of its features or its hooks still loading (parts.js): left out until it arrives
+      const loading = (features.part !== null && !hasParts(features.part)) || hooksLoading(material)
+      kinds.set(kind, memo = { features, hook, own, programs, loading })
     }
     return memo
   }
@@ -1014,6 +1022,12 @@ export class WebGLRenderer {
     // over glass, its geometry's colours and second UVs. Those last are the draw's signature: with the
     // material, they find the program its first draw this frame worked out
     const memo = this.#memoFor(material, kind, state)
+    if (memo.loading) {
+      // as a program still compiling: drawn once its code is here
+      this.info.compiling++
+      this.#waitingForParts++
+      return
+    }
     const hook = memo.hook
     const signature = ((instances ? 1 : 0) | (item.clip ? 2 : 0) | (sprites ? 4 : 0) | (receives ? 8 : 0) | (ssao ? 16 : 0) | (behind ? 32 : 0)
       | (geometry.colors !== null ? 64 : 0) | (geometry.uvs2 ? 128 : 0)) + memo.own

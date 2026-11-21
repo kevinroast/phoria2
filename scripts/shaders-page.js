@@ -19,6 +19,18 @@ import {
 import { FEATURES } from '../src/material/features.js'
 import { collect } from '../src/frame.js'
 import { WebGLRenderer } from '../src/webgl/WebGLRenderer.js'
+// every GLSL part registered before the first frame, as if each had loaded: a material waiting for
+// its part is left out of a frame, and its variants would go unchecked (src/webgl/parts.js)
+import { SHADOW_PARTS } from '../src/webgl/parts-shadows.js'
+import { RECT_PARTS } from '../src/webgl/parts-rect.js'
+import { MATERIAL_PARTS } from '../src/webgl/parts-materials.js'
+import { HOOK_PARTS } from '../src/webgl/parts-hooks.js'
+import { addParts } from '../src/webgl/parts.js'
+
+addParts('shadows', SHADOW_PARTS)
+addParts('rect', RECT_PARTS)
+addParts('materials', MATERIAL_PARTS)
+addParts('hooks', HOOK_PARTS)
 
 /** @typedef {{ name: string, ok: boolean, error: string | null }} Result */
 /** @type {{ done: boolean, results: Result[], programs: number, error: string | null }} */

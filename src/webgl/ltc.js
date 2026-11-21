@@ -1,6 +1,8 @@
 // The lookup tables rect-area lights are shaded with, as two small textures - loaded the first time a
 // scene has one (see ltc-data.js for where the tables come from).
 import { LTC_AMPLITUDE, LTC_MATRIX } from './ltc-data.js'
+import { RECT_PARTS } from './parts-rect.js'
+import { addParts } from './parts.js'
 
 /** @param {string} base64 @returns {Uint16Array} half floats */
 function halves(base64) {
@@ -18,6 +20,8 @@ export class Ltc {
   /** @param {WebGL2RenderingContext} gl */
   constructor(gl) {
     this.gl = gl
+    // and the GLSL that shades with them, for every lit shader from now on
+    addParts('rect', RECT_PARTS)
   }
 
   /** The inverse transform for each roughness and view angle: four channels. @returns {WebGLTexture} */

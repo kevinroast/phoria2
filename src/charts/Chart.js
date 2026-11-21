@@ -1,5 +1,7 @@
 // A chart: a Group that builds its marks, axes and legend from a spec, and animates to new data.
 // Everything it makes is ordinary nodes - restyle, pick or add to them like anything else.
+import { LabelLayer } from '../labels.js'
+import { labelSlot } from '../labelSlot.js'
 import { Group, NODE_OPTIONS } from '../scene/Node.js'
 import { Label } from '../scene/drawables.js'
 import { Color } from '../value/Color.js'
@@ -72,6 +74,9 @@ export class Chart extends Group {
 
   /** @param {Record<string, any>} spec mark, data, channels and options - and node options such as position */
   constructor(spec) {
+    // charts always have labels - axes, legends, values - so their code comes up front with them,
+    // rather than loading after the chart's first frame as a scene's would (labelSlot.js)
+    labelSlot.module ??= { LabelLayer }
     if (!spec || typeof spec !== 'object' || Array.isArray(spec)) fail('chart()', `expected a spec such as { mark: 'bar', data, x, y }, got ${describe(spec)}`)
     const node = {}, rest = {}
     for (const [k, v] of Object.entries(spec)) (NODE_KEYS.includes(k) ? node : rest)[k] = v

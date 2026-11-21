@@ -3,9 +3,9 @@
 // vertex arrays work with any program.
 import { warnOnce } from '../validate.js'
 import { MAPS } from '../material/features.js'
-import { BLUE_NOISE_SIZE } from '../shadow.js'
 import { TONE_CONSTANTS } from './tone.js'
 import { ENV_DFG } from './dfg.js'
+import { withParts } from './parts.js'
 
 /** Fixed attribute locations shared by every program. */
 export const ATTRIBUTES = {
@@ -490,7 +490,7 @@ const LIGHT_CONTRIBUTION = /* glsl */ `
  * worked out by the code given - shadowed as the far side is, as what lights it comes through.
  * @param {string} light GLSL declaring vec3 light
  */
-const throughLight = (light) => /* glsl */ `
+export const throughLight = (light) => /* glsl */ `
 #ifdef TRANSLUCENCY
     float behind = clamp(-dot(n, l), 0.0, 1.0);
     if (behind > 0.0) {
@@ -555,41 +555,7 @@ ${throughLight(`vec3 light = uPunctualColor[i] * falloff * cone;
 // a soft glow, a polished one the light's own shape. The tables load with the first rect light.
 const RECT_UNIFORMS = /* glsl */ `
 #if NUM_RECT > 0
-uniform vec3 uRectPosition[NUM_RECT];    // its middle
-uniform vec3 uRectColor[NUM_RECT];       // what its face gives off: colour x intensity x PI / area
-uniform vec3 uRectHalfWidth[NUM_RECT];   // half its width, along it
-uniform vec3 uRectHalfHeight[NUM_RECT];  // half its height, along it - width x height points against the way it shines
-uniform sampler2D uLtcMatrix;            // the lobe's transform (inverted), by roughness and view angle
-uniform sampler2D uLtcAmplitude;         // the highlight's size, and its Fresnel part
-#ifdef SPOT_SHADOWS
-uniform float uRectShadow[NUM_RECT];     // which spot shadow tile is its, or -1
-#endif
-
-// one edge's part of the polygon's vector form factor - a fit to theta / sin(theta) (Hill and Heitz)
-vec3 ltcEdge(vec3 a, vec3 b) {
-  float x = dot(a, b);
-  float y = abs(x);
-  float t = (0.8543985 + (0.4965155 + 0.0145206 * y) * y) / (3.4175940 + (4.1616724 + y) * y);
-  float thetaOverSin = x > 0.0 ? t : 0.5 * inversesqrt(max(1.0 - x * x, 1e-7)) - t;
-  return cross(a, b) * thetaOverSin;
-}
-
-// the rectangle seen through a cosine lobe transformed by mInv: its corners into the lobe's space
-// round the normal, onto the sphere, and the form factor of the part above the horizon
-float ltcIntegral(vec3 n, vec3 v, mat3 mInv, vec3 corners[4]) {
-  vec3 t = v - n * dot(v, n);
-  // looking straight down the normal: any way across it will do
-  t = dot(t, t) > 1e-8 ? normalize(t) : normalize(cross(n, abs(n.z) < 0.9 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0)));
-  mat3 m = mInv * transpose(mat3(t, -cross(n, t), n));
-  vec3 c0 = normalize(m * (corners[0] - vWorldPosition));
-  vec3 c1 = normalize(m * (corners[1] - vWorldPosition));
-  vec3 c2 = normalize(m * (corners[2] - vWorldPosition));
-  vec3 c3 = normalize(m * (corners[3] - vWorldPosition));
-  vec3 f = ltcEdge(c0, c1) + ltcEdge(c1, c2) + ltcEdge(c2, c3) + ltcEdge(c3, c0);
-  // clipped to the horizon: a sphere's form factor as an approximation (Hill and Heitz)
-  float l = length(f);
-  return max((l * l + f.z) / (l + 1.0), 0.0);
-}
+#pragma part rect-uniforms
 #endif
 `
 
@@ -597,59 +563,7 @@ float ltcIntegral(vec3 n, vec3 v, mat3 mInv, vec3 corners[4]) {
 // the light as if it were a point light at its middle; the rest integrates over its shape.
 const RECT_LIGHTS = /* glsl */ `
 #if NUM_RECT > 0
-  {
-    // the lobe for this roughness and view angle - tables of 64 x 64, read at their texels' middles
-    vec2 ltcUv = vec2(roughness, sqrt(1.0 - clamp(dot(n, v), 0.0, 1.0))) * (63.0 / 64.0) + 0.5 / 64.0;
-    vec4 t1 = texture(uLtcMatrix, ltcUv);
-    vec2 t2 = texture(uLtcAmplitude, ltcUv).xy;
-    mat3 glossLobe = mat3(vec3(t1.x, 0.0, t1.y), vec3(0.0, 1.0, 0.0), vec3(t1.z, 0.0, t1.w));
-    // the highlight's Fresnel, over the lobe (Hill)
-    vec3 rectF = f0 * t2.x + (f90 - f0) * t2.y;
-#ifdef CLEARCOAT
-    vec2 coatUv = vec2(coatRoughness, sqrt(1.0 - clamp(dot(surfaceNormal, v), 0.0, 1.0))) * (63.0 / 64.0) + 0.5 / 64.0;
-    vec4 c1 = texture(uLtcMatrix, coatUv);
-    vec2 c2 = texture(uLtcAmplitude, coatUv).xy;
-    mat3 coatLobe = mat3(vec3(c1.x, 0.0, c1.y), vec3(0.0, 1.0, 0.0), vec3(c1.z, 0.0, c1.w));
-    float coatF = 0.04 * c2.x + 0.96 * c2.y;
-#endif
-    for (int i = 0; i < NUM_RECT; i++) {
-      vec3 hw = uRectHalfWidth[i], hh = uRectHalfHeight[i];
-      vec3 toLight = uRectPosition[i] - vWorldPosition;
-      vec3 facing = normalize(cross(hh, hw));
-      vec3 corners[4];
-      corners[0] = uRectPosition[i] + hw - hh;
-      corners[1] = uRectPosition[i] - hw - hh;
-      corners[2] = uRectPosition[i] - hw + hh;
-      corners[3] = uRectPosition[i] + hw + hh;
-      float d = length(toLight);
-      vec3 l = toLight / max(d, 1e-4);
-      // it shines from its front face only - chosen, not branched round, so the shadow lookup below
-      // stays in uniform control flow (a branch there makes D3D's compiler flatten it, slowly)
-      vec3 emitted = dot(toLight, facing) < 0.0 ? uRectColor[i] : vec3(0.0);
-      vec3 radiance = emitted;
-#ifdef SPOT_SHADOWS
-      float tile = uRectShadow[i];
-      if (tile >= 0.0) radiance *= spotShadow(int(tile), surfaceNormal, d);
-#endif
-      // as a point light at its middle: its whole face's light, falling off with the square of the distance
-      float asPoint = 4.0 * length(hw) * length(hh) / PI * max(dot(-l, facing), 0.0) / max(d * d, 1e-4);
-#ifdef TOON
-      color += shade(n, v, l, radiance * asPoint, diffuse, f0, f90, a);
-#else
-      color += radiance * (diffuse * (1.0 - rectF) * ltcIntegral(n, v, mat3(1.0), corners) + rectF * ltcIntegral(n, v, glossLobe, corners));
-#endif
-#ifdef CLEARCOAT
-      coat += radiance * coatF * ltcIntegral(surfaceNormal, v, coatLobe, corners);
-#endif
-#ifdef SHEEN
-      sheen += sheenShade(n, v, l, radiance * asPoint, sheenRoughness * sheenRoughness);
-#endif
-${throughLight(`vec3 light = emitted * asPoint;
-#ifdef SPOT_SHADOWS
-      if (tile >= 0.0) light *= spotShadow(int(tile), -surfaceNormal, d);
-#endif`)}
-    }
-  }
+#pragma part rect-lights
 #endif`
 
 const MESH_FRAGMENT = /* glsl */ `
@@ -864,111 +778,18 @@ vec3 F_Schlick(float VoH, vec3 f0, float f90) {
 }
 
 #ifdef IRIDESCENCE
-// A thin film's interference (Belcour and Barla 2017, as KHR_materials_iridescence and three.js
-// have it): the film's reflectance at an angle, over a base of reflectance f0 - the colours of soap
-// bubbles and oil on water. Thicknesses in nanometres.
-const mat3 XYZ_TO_REC709 = mat3(
-   3.2404542, -0.9692660,  0.0556434,
-  -1.5371385,  1.8760108, -0.2040259,
-  -0.4985314,  0.0415560,  1.0572252);
-
-float filmSchlick(float f0, float c) {
-  return f0 + (1.0 - f0) * pow(1.0 - c, 5.0);
-}
-
-// the eye's response to a path difference, as an RGB colour: a fit to the CIE colour matching functions
-vec3 filmSensitivity(float opd, vec3 shift) {
-  float phase = 2.0 * PI * opd * 1.0e-9;
-  vec3 val = vec3(5.4856e-13, 4.4201e-13, 5.2481e-13);
-  vec3 pos = vec3(1.6810e+06, 1.7953e+06, 2.2084e+06);
-  vec3 spread = vec3(4.3278e+09, 9.3046e+09, 6.6121e+09);
-  vec3 xyz = val * sqrt(2.0 * PI * spread) * cos(pos * phase + shift) * exp(-phase * phase * spread);
-  xyz.x += 9.7470e-14 * sqrt(2.0 * PI * 4.5282e+09) * cos(2.2399e+06 * phase + shift.x) * exp(-4.5282e+09 * phase * phase);
-  return XYZ_TO_REC709 * (xyz / 1.0685e-7);
-}
-
-vec3 filmFresnel(float filmIor, float cosTheta1, float thickness, vec3 baseF0) {
-  // a film too thin to see fades to none
-  float eta = mix(1.0, filmIor, smoothstep(0.0, 0.03, thickness));
-  float sin2 = (1.0 - cosTheta1 * cosTheta1) / (eta * eta);
-  float cos2Sq = 1.0 - sin2;
-  if (cos2Sq < 0.0) return vec3(1.0);
-  float cosTheta2 = sqrt(cos2Sq);
-  // air to film
-  float r12 = filmSchlick(pow((eta - 1.0) / (eta + 1.0), 2.0), cosTheta1);
-  float t121 = 1.0 - r12;
-  float phi12 = eta < 1.0 ? PI : 0.0;
-  float phi21 = PI - phi12;
-  // film to base: the base's index from its reflectance
-  vec3 s = sqrt(clamp(baseF0, 0.0, 0.9999));
-  vec3 baseIor = (1.0 + s) / (1.0 - s);
-  vec3 r1 = pow((baseIor - eta) / (baseIor + eta), vec3(2.0));
-  vec3 r23 = r1 + (1.0 - r1) * pow(1.0 - cosTheta2, 5.0);
-  vec3 phi23 = vec3(baseIor.x < eta ? PI : 0.0, baseIor.y < eta ? PI : 0.0, baseIor.z < eta ? PI : 0.0);
-  float opd = 2.0 * eta * thickness * cosTheta2;
-  vec3 phi = vec3(phi21) + phi23;
-  vec3 r123 = clamp(r12 * r23, 1e-5, 0.9999);
-  vec3 sr123 = sqrt(r123);
-  vec3 rs = t121 * t121 * r23 / (1.0 - r123);
-  vec3 result = r12 + rs;
-  vec3 cm = rs - t121;
-  for (int m = 1; m <= 2; m++) {
-    cm *= sr123;
-    result += cm * 2.0 * filmSensitivity(float(m) * opd, float(m) * phi);
-  }
-  return max(result, vec3(0.0));
-}
-
-// the reflectance face on that Schlick's curve would need to give f at this angle - so the film's
-// colours ride through the lights and the environment as f0 does
-vec3 filmF0(vec3 f, float f90, float c) {
-  float x = clamp(1.0 - c, 0.0, 1.0);
-  float x5 = clamp(x * x * x * x * x, 0.0, 0.9999);
-  return clamp((f - f90 * x5) / (1.0 - x5), 0.0, 1.0);
-}
+#pragma part iridescence
 #endif
 
 #ifdef ANISOTROPY
-// brushed metal: the brushing's direction, the way across it, and roughness along and across it
-vec3 brushT, brushB;
-float brushAT, brushAB;
-
-// GGX stretched along the brushing (KHR_materials_anisotropy): distribution and visibility together
-float anisotropicDV(vec3 v, vec3 l, vec3 h, float NoV, float NoL, float NoH) {
-  float a2 = brushAT * brushAB;
-  vec3 f = vec3(brushAB * dot(brushT, h), brushAT * dot(brushB, h), a2 * NoH);
-  float w2 = a2 / dot(f, f);
-  float gv = NoL * length(vec3(brushAT * dot(brushT, v), brushAB * dot(brushB, v), NoV));
-  float gl = NoV * length(vec3(brushAT * dot(brushT, l), brushAB * dot(brushB, l), NoL));
-  return a2 * w2 * w2 / PI * 0.5 / max(gv + gl, 1e-5);
-}
+#pragma part anisotropy
 #endif
 
 // Light intensity 1 on a white surface facing it gives white: the Lambert term isn't divided by
 // PI, so the specular term is multiplied by it to keep the balance. (glTF intensities in lux and
 // candela are divided by PI when loaded.)
 #ifdef TOON
-// the highlight's colour: white on a non-metal, the surface's colour on a metal, fading as it roughens
-vec3 toonHighlight;
-
-// light in flat tones, antialiased where they meet: a step up a little before each tone's middle,
-// so more of a surface is lit than dark
-float toonTone(float x) {
-  float steps = uToon - 1.0;
-  float b = x * steps + 0.6;
-  float w = fwidth(b);
-  return min(floor(b) + smoothstep(1.0 - w, 1.0, fract(b)), steps) / steps;
-}
-
-// a cartoon's shading: flat tones of the colour, and one hard-edged highlight where GGX's is over
-// half its peak
-vec3 toonShade(vec3 n, vec3 v, vec3 l, vec3 radiance, vec3 diffuse, float a) {
-  float lit = toonTone(clamp(dot(n, l), 0.0, 1.0));
-  float s = D_GGX(clamp(dot(n, normalize(l + v)), 0.0, 1.0), a) * PI * a * a;
-  float w = fwidth(s);
-  float spot = smoothstep(0.5 - w, 0.5 + w, s) * step(0.001, lit);
-  return (diffuse * lit + toonHighlight * spot) * radiance;
-}
+#pragma part toon
 #endif
 
 vec3 shade(vec3 n, vec3 v, vec3 l, vec3 radiance, vec3 diffuse, vec3 f0, float f90, float a) {
@@ -991,41 +812,11 @@ vec3 shade(vec3 n, vec3 v, vec3 l, vec3 radiance, vec3 diffuse, vec3 f0, float f
 }
 
 #ifdef SHEEN
-// cloth's sheen: the Charlie distribution (Estevez and Kulla) with Neubelt's visibility
-vec3 sheenShade(vec3 n, vec3 v, vec3 l, vec3 radiance, float a) {
-  float NoL = clamp(dot(n, l), 0.0, 1.0);
-  if (NoL <= 0.0) return vec3(0.0);
-  vec3 h = normalize(l + v);
-  float NoV = clamp(abs(dot(n, v)), 1e-4, 1.0);
-  float NoH = clamp(dot(n, h), 0.0, 1.0);
-  float invA = 1.0 / a;
-  float sin2h = max(1.0 - NoH * NoH, 0.0078125);
-  float D = (2.0 + invA) * pow(sin2h, invA * 0.5) / (2.0 * PI);
-  float V = clamp(1.0 / (4.0 * (NoL + NoV - NoL * NoV)), 0.0, 1.0);
-  return uSheenColor * D * V * PI * radiance * NoL;
-}
-
-// how much of the surroundings' light the sheen sends back: a fit to its integral (from three.js)
-float sheenEnvironment(float NoV, float r) {
-  float r2 = r * r;
-  float a = r < 0.25 ? -339.2 * r2 + 161.4 * r - 25.9 : -8.48 * r2 + 14.3 * r - 9.95;
-  float b = r < 0.25 ? 44.0 * r2 - 23.7 * r + 3.26 : 1.97 * r2 - 3.27 * r + 0.72;
-  return min(exp(a * NoV + b) + (r < 0.25 ? 0.0 : 0.1 * (r - 0.25)), PI);
-}
+#pragma part sheen
 #endif
 
 #ifdef CLEARCOAT
-// a clear coat's highlight: a glossy dielectric layer (f0 0.04) on the surface's own normal, so
-// normal and bump maps show beneath it, under a smooth coat
-vec3 coatShade(vec3 n, vec3 v, vec3 l, vec3 radiance, float a) {
-  float NoL = clamp(dot(n, l), 0.0, 1.0);
-  if (NoL <= 0.0) return vec3(0.0);
-  vec3 h = normalize(l + v);
-  float NoV = clamp(abs(dot(n, v)), 1e-4, 1.0);
-  float NoH = clamp(dot(n, h), 0.0, 1.0);
-  float VoH = clamp(dot(v, h), 0.0, 1.0);
-  return D_GGX(NoH, a) * V_SmithGGXCorrelated(NoV, NoL, a) * F_Schlick(VoH, vec3(0.04), 1.0) * PI * radiance * NoL;
-}
+#pragma part clearcoat
 #endif
 
 // The built-in 'studio' environment: a soft, bright overhead box over a darker floor, as a
@@ -1121,286 +912,17 @@ vec3 perturbNormal(vec3 n, vec3 m, vec2 uv) {
 #endif
 
 #if defined(SHADOW_SOFT) || defined(SPOT_SHADOWS_SOFT) || defined(POINT_SHADOW_SOFT)
-// Contact-hardening soft shadows (PCSS): look round for what casts the shadow and how far above the
-// surface it is, then filter the edge that much wider - sharp where an object meets what it stands
-// on, soft further off. Points over a disc (a Vogel spiral). The search uses them as they are, so
-// neighbouring pixels agree on how wide the edge is, and counts each less the further out it is - so
-// a caster coming into reach eases the estimate along rather than jumping it, which shows as bands
-// down a long shadow; the filter turns them by a random angle at each pixel, so its few samples blur
-// to an even grain rather than banding.
-const int SOFT_SEARCH = 32;
-// the filter's taps: more the wider it is, so a wide edge - a big light's - is as smooth as a narrow
-// one, up to SOFT_FILTER_MAX; and how wide it may get, in texels
-const int SOFT_FILTER_MAX = 64;
-const float SOFT_RADIUS_MAX = 160.0;
-int softTaps(float texels) {
-  return texels > 40.0 ? 64 : texels > 12.0 ? 48 : 32;
-}
-// how much a search sample counts: 1 at the middle, fading to nothing at the edge
-float softWeight(int i) {
-  return 1.0 - (float(i) + 0.5) / float(SOFT_SEARCH);
-}
-vec2 softTap(int i, int count, float spin) {
-  float r = sqrt((float(i) + 0.5) / float(count));
-  float a = float(i) * 2.39996323 + spin;
-  return vec2(cos(a), sin(a)) * r;
-}
-// Where the search looks: its spiral, turned the pixel's own way, and last the pixel's own spot - so a
-// caster thinner than the spiral's spacing (a gnomon, a pole) is never missed right under it. Turned:
-// in one fixed pattern each sample would draw a copy of a caster's outline across the edge, as it
-// crosses it, sliding as the light moves; turned per pixel the copies blur to a fine grain.
-vec2 softSearchTap(int i, float reach, float spin) {
-  return i == SOFT_SEARCH ? vec2(0.0) : softTap(i, SOFT_SEARCH, spin) * reach;
-}
-// The gap to size the edge by: the average of what the spiral found (world units, 0 where it found
-// nothing), each sample counting less the further out it was - and then the nearer casters counting
-// more: beside where a thing stands the search also finds its far, high parts, and a plain average
-// sized the edge by those, widening it at the contact so the shadow started a little away from what
-// casts it. The pixel's own spot only says whether
-// a caster is there - counted in the average, its depth (read a whole texel at a time) would step the
-// edge's width from texel to texel - and gives the gap only when the spiral missed a thin caster
-// altogether. 0 when nothing was found.
-float softGap(float gaps[SOFT_SEARCH + 1]) {
-  float sum = 0.0, weight = 0.0;
-  for (int i = 0; i < SOFT_SEARCH; i++) {
-    if (gaps[i] > 0.0) {
-      float k = softWeight(i);
-      sum += gaps[i] * k;
-      weight += k;
-    }
-  }
-  if (weight == 0.0) return gaps[SOFT_SEARCH];
-  // again, the nearer casters counting more: one over their gap plus a quarter of the plain average.
-  // Not one over the gap alone - where a high caster's shadow crosses a low one (slats over a post's
-  // foot, a vine over a rock) the few samples on the low one outweighed all the rest a hundred to one,
-  // and whether a pixel's turned search caught them made its edge sharp or soft, pixel to pixel
-  float soften = 0.25 * sum / weight;
-  float near = 0.0, nearWeight = 0.0;
-  for (int i = 0; i < SOFT_SEARCH; i++) {
-    if (gaps[i] > 0.0) {
-      float k = softWeight(i) / (gaps[i] + soften);
-      near += gaps[i] * k;
-      nearWeight += k;
-    }
-  }
-  return near / nearWeight;
-}
-// how much of the push along the normal the soft lookups use: they compare each sample along the
-// surface's slope, which already keeps it from shadowing itself, and the full push lifts a shadow
-// off a contact a few millimetres tall (a gnomon on its dial)
-const float SOFT_PUSH = 0.25;
-// A pixel's own angle to turn the sample discs by, from a 64 x 64 tile of blue noise repeated across
-// the screen: neighbours' angles as different as can be, with no clumps (white noise) and no axis or
-// lattice (interleaved gradient noise, R2) - so the samples' error shows as fine, even grain. A refine
-// sample shifts the tile (uBlueNoiseShift), so each pixel's angle differs from sample to sample and
-// the grain averages away.
-uniform sampler2D uBlueNoise;
-uniform ivec2 uBlueNoiseShift;
-float softSpin() {
-  return 6.2831853 * texelFetch(uBlueNoise, (ivec2(gl_FragCoord.xy) + uBlueNoiseShift) & ${BLUE_NOISE_SIZE - 1}, 0).r;
-}
-// a perspective map's depth (0-1) as a distance from the light
-float softDistance(float d, float near, float far) {
-  return near * far / (far - d * (far - near));
-}
-// How the surface's depth in the map changes across the map, so a sample beside this point is
-// compared at the surface's depth there, not this point's: without it the wide filter sees a sloped
-// or curved surface shadow itself, as fine hatching. From the normal and how world space maps to the
-// map's coordinates (a, b) and depth (g) here - no screen derivatives, so it is safe inside the light
-// loops - and capped at the steepest slope worth trusting.
-vec2 softSlope(vec3 n, vec3 a, vec3 b, vec3 g, float limit) {
-  vec3 e1 = normalize(cross(n, abs(n.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
-  vec3 e2 = cross(n, e1);
-  mat2 j = mat2(dot(a, e1), dot(b, e1), dot(a, e2), dot(b, e2));
-  if (abs(determinant(j)) < 1e-14) return vec2(0.0);
-  vec2 slope = transpose(inverse(j)) * vec2(dot(g, e1), dot(g, e2));
-  float len = length(slope);
-  return len > limit ? slope * (limit / len) : slope;
-}
+#pragma part shadow-soft
 #endif
 
 #ifdef SHADOW
-// 0 in shadow to 1 lit: nine hardware-filtered comparisons, for a soft edge a few texels wide
-float shadowAt(vec3 n, vec3 l) {
-  // push the lookup out along the normal, more on surfaces turned away from the light
-  vec3 p = vWorldPosition + n * uShadowBias * (1.0 - 0.5 * clamp(dot(n, l), 0.0, 1.0));
-  vec4 s = uShadowMatrix * vec4(p, 1.0);
-  vec3 c = s.xyz / s.w;
-  if (c.x <= 0.0 || c.x >= 1.0 || c.y <= 0.0 || c.y >= 1.0 || c.z >= 1.0) return 1.0;
-#ifdef SHADOW_SOFT
-  {
-  vec3 c = (uShadowMatrix * vec4(mix(vWorldPosition, p, SOFT_PUSH), 1.0)).xyz;
-  float spin = softSpin();
-  // the map is orthographic: its coordinates and depth change with world position by its matrix's rows
-  vec3 a = vec3(uShadowMatrix[0][0], uShadowMatrix[1][0], uShadowMatrix[2][0]);
-  vec3 b = vec3(uShadowMatrix[0][1], uShadowMatrix[1][1], uShadowMatrix[2][1]);
-  vec3 g = vec3(uShadowMatrix[0][2], uShadowMatrix[1][2], uShadowMatrix[2][2]);
-  // no steeper than about 80 degrees: depth units a unit of the map's coordinates
-  vec2 slope = softSlope(n, a, b, g, 6.0 / (uShadowSoft.y * uShadowSoft.z));
-  // the casters that could shade this point lie within the widest edge it could have
-  float reach = clamp(c.z * uShadowSoft.y * uShadowSoft.x * uShadowSoft.z, uShadowTexel * 1.5, uShadowTexel * SOFT_RADIUS_MAX);
-  // how far above the surface what it finds is, in world units: under a couple of texels is the
-  // surface's own relief, not a caster
-  float tiny = 2.5 * uShadowTexel / uShadowSoft.z;
-  float gaps[SOFT_SEARCH + 1];
-  for (int i = 0; i <= SOFT_SEARCH; i++) {
-    vec2 o = softSearchTap(i, reach, spin);
-    float z = c.z + dot(slope, o);
-    float gi = (z - texture(uShadowDepth, c.xy + o).r) * uShadowSoft.y;
-    gaps[i] = gi > tiny ? gi : 0.0;
-  }
-  // the edge as wide as the nearest casters are far - or, finding none, the plain lookup below
-  float gap = softGap(gaps);
-  if (gap > 0.0) {
-    float radius = clamp(gap * uShadowSoft.x * uShadowSoft.z, uShadowTexel * 1.5, uShadowTexel * SOFT_RADIUS_MAX);
-    int taps = softTaps(radius / uShadowTexel);
-    float soft = 0.0;
-    for (int i = 0; i < SOFT_FILTER_MAX; i++) {
-      if (i >= taps) break;
-      vec2 o = softTap(i, taps, spin + 1.7) * radius;
-      soft += texture(uShadowMap, vec3(c.xy + o, c.z + dot(slope, o)));
-    }
-    return soft / float(taps);
-  }
-  }
-#endif
-  float lit = 0.0;
-  for (int x = -1; x <= 1; x++) {
-    for (int y = -1; y <= 1; y++) lit += texture(uShadowMap, vec3(c.xy + vec2(x, y) * uShadowTexel * 1.5, c.z));
-  }
-  return lit / 9.0;
-}
+#pragma part shadow
 #endif
 #ifdef SPOT_SHADOWS
-// up to four spot lights' shadows share one depth map, a tile each
-float spotShadowAt(int k, vec3 n, float distance) {
-  // push the lookup out along the normal, more for surfaces further from the light
-  vec3 p = vWorldPosition + n * uSpotShadowBias[k] * distance;
-  vec4 s = uSpotShadowMatrix[k] * vec4(p, 1.0);
-  if (s.w <= 0.0) return 1.0;
-  vec3 c = s.xyz / s.w;
-  vec4 tile = uSpotShadowTile[k];
-  if (c.x <= tile.x || c.x >= tile.z || c.y <= tile.y || c.y >= tile.w || c.z >= 1.0) return 1.0;
-  // nine filtered comparisons, kept inside the tile so a neighbour's shadow doesn't bleed in
-  vec2 lo = tile.xy + uSpotShadowTexel, hi = tile.zw - uSpotShadowTexel;
-#ifdef SPOT_SHADOWS_SOFT
-  vec4 softness = uSpotShadowSoft[k];
-  if (softness.x != 0.0) {
-    vec4 s = uSpotShadowMatrix[k] * vec4(mix(vWorldPosition, p, SOFT_PUSH), 1.0);
-    vec3 c = s.xyz / s.w;
-    float spin = softSpin();
-    float here = softDistance(c.z, softness.y, softness.z);
-    // a rect light's samples spread as it does: an ellipse along its width and height (a spot's a circle)
-    vec4 shape = uSpotShadowShape[k];
-    mat2 shaped = mat2(shape.xy * shape.z, vec2(-shape.y, shape.x) * shape.w);
-    // a perspective map: how its coordinates and depth change with world position here
-    mat4 m = uSpotShadowMatrix[k];
-    vec3 r3 = vec3(m[0][3], m[1][3], m[2][3]);
-    vec3 a = (vec3(m[0][0], m[1][0], m[2][0]) - c.x * r3) / s.w;
-    vec3 b = (vec3(m[0][1], m[1][1], m[2][1]) - c.y * r3) / s.w;
-    vec3 g = (vec3(m[0][2], m[1][2], m[2][2]) - c.z * r3) / s.w;
-    // no steeper than about 80 degrees: depth a world unit along the light, over coordinates a world unit across it
-    float depthPerWorld = softness.y * softness.z / ((softness.z - softness.y) * here * here);
-    vec2 slope = softSlope(n, a, b, g, 6.0 * depthPerWorld * here / softness.w);
-    // the widest edge it could have: from a caster as near the light as any is (the view's near plane,
-    // fitted to them), as far from this point as it can be - a rect light's (softness.x minus its
-    // radius) the wider the nearer the caster is to it
-    float before = max(here - softness.y, 0.0);
-    float reach = clamp((softness.x > 0.0 ? softness.x : -softness.x / softness.y) * before * softness.w / here, uSpotShadowTexel * 1.5, uSpotShadowTexel * SOFT_RADIUS_MAX);
-    float tiny = 2.5 * uSpotShadowTexel * here / softness.w;
-    float gaps[SOFT_SEARCH + 1];
-    for (int i = 0; i <= SOFT_SEARCH; i++) {
-      vec2 o = shaped * softSearchTap(i, reach, spin);
-      float z = c.z + dot(slope, o);
-      float d = texture(uSpotShadowDepth, clamp(c.xy + o, lo, hi)).r;
-      float gi = d < z ? softDistance(z, softness.y, softness.z) - softDistance(d, softness.y, softness.z) : 0.0;
-      gaps[i] = gi > tiny ? gi : 0.0;
-    }
-    float gap = softGap(gaps);
-    if (gap > 0.0) {
-    // a rect light's edge as wide as its size makes it: the gap over the distance from the light to what casts
-    float spread = softness.x > 0.0 ? softness.x : -softness.x / max(here - gap, 1e-3);
-    float radius = clamp(gap * spread * softness.w / here, uSpotShadowTexel * 1.5, uSpotShadowTexel * SOFT_RADIUS_MAX);
-    int taps = softTaps(radius / uSpotShadowTexel);
-    float soft = 0.0;
-    for (int i = 0; i < SOFT_FILTER_MAX; i++) {
-      if (i >= taps) break;
-      vec2 o = shaped * (softTap(i, taps, spin + 1.7) * radius);
-      soft += texture(uSpotShadowMap, vec3(clamp(c.xy + o, lo, hi), c.z + dot(slope, o)));
-    }
-    return soft / float(taps);
-    }
-  }
-#endif
-  float lit = 0.0;
-  for (int x = -1; x <= 1; x++) {
-    for (int y = -1; y <= 1; y++) lit += texture(uSpotShadowMap, vec3(clamp(c.xy + vec2(x, y) * uSpotShadowTexel * 1.5, lo, hi), c.z));
-  }
-  return lit / 9.0;
-}
+#pragma part spot-shadows
 #endif
 #ifdef POINT_SHADOW
-// a point light's shadow: the depth cube looked up along the way from the light, compared with
-// this point's depth in whichever face it falls in
-float pointShadowAt(vec3 light, vec3 n, float distance) {
-  // push the lookup out along the normal, more for surfaces further from the light
-  vec3 d = vWorldPosition + n * uPointShadowBias * distance - light;
-  vec3 a = abs(d);
-  float z = max(a.x, max(a.y, a.z));
-  float near = uPointShadowNearFar.x, far = uPointShadowNearFar.y;
-  if (z >= far) return 1.0;
-  float depth = 0.5 * ((far + near) / (far - near) - 2.0 * far * near / ((far - near) * z)) + 0.5;
-  // nine filtered comparisons, spread across the direction a texel and a half apart
-  vec3 dir = d / length(d);
-  vec3 u = normalize(cross(dir, abs(dir.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
-  vec3 w = cross(dir, u);
-#ifdef POINT_SHADOW_SOFT
-  {
-    // across the way from the light, in units of the direction: a world unit at distance z is 1 / z.
-    // Each sample is compared at the surface's own distance along its ray - where that ray meets
-    // the plane the surface lies in here - so a sloped or curved surface doesn't shadow itself
-    vec3 d = vWorldPosition + n * uPointShadowBias * distance * SOFT_PUSH - light;
-    vec3 a = abs(d);
-    float z = max(a.x, max(a.y, a.z));
-    vec3 dir = d / length(d);
-    vec3 u = normalize(cross(dir, abs(dir.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
-    vec3 w = cross(dir, u);
-    float spin = softSpin();
-    float facing = dot(n, dir);
-    // the widest edge it could have, from a caster as near the light as the cube's near plane
-    float reach = clamp(uPointShadowSoft * max(z - near, 0.0) / z, uPointShadowTexel * 1.5, uPointShadowTexel * SOFT_RADIUS_MAX);
-    float tiny = 2.5 * uPointShadowTexel * z;
-    float gaps[SOFT_SEARCH + 1];
-    for (int i = 0; i <= SOFT_SEARCH; i++) {
-      vec2 t = softSearchTap(i, reach, spin);
-      vec3 ray = dir + u * t.x + w * t.y;
-      float zt = z * clamp(facing / dot(n, normalize(ray)), 0.5, 2.0);
-      float gi = zt - softDistance(texture(uPointShadowDepth, ray).r, near, far);
-      gaps[i] = gi > tiny ? gi : 0.0;
-    }
-    float gap = softGap(gaps);
-    if (gap > 0.0) {
-    float radius = clamp(gap * uPointShadowSoft / z, uPointShadowTexel * 1.5, uPointShadowTexel * SOFT_RADIUS_MAX);
-    int taps = softTaps(radius / uPointShadowTexel);
-    float soft = 0.0;
-    for (int i = 0; i < SOFT_FILTER_MAX; i++) {
-      if (i >= taps) break;
-      vec2 t = softTap(i, taps, spin + 1.7) * radius;
-      vec3 ray = dir + u * t.x + w * t.y;
-      float zt = z * clamp(facing / dot(n, normalize(ray)), 0.5, 2.0);
-      soft += texture(uPointShadowMap, vec4(ray, 0.5 * ((far + near) / (far - near) - 2.0 * far * near / ((far - near) * zt)) + 0.5));
-    }
-    return soft / float(taps);
-    }
-  }
-#endif
-  float spread = uPointShadowTexel * 1.5;
-  float lit = 0.0;
-  for (int x = -1; x <= 1; x++) {
-    for (int y = -1; y <= 1; y++) lit += texture(uPointShadowMap, vec4(dir + (u * float(x) + w * float(y)) * spread, depth));
-  }
-  return lit / 9.0;
-}
+#pragma part point-shadow
 #endif
 
 #if defined(SHADOW_GLASS) || defined(SPOT_SHADOWS_GLASS)
@@ -1440,62 +962,7 @@ vec3 spotShadow(int k, vec3 n, float distance) {
 #endif
 
 #ifdef DEBUG_SHADOW_TEXELS
-// view.debug.shadows: 'texels' - the texel of a shadow map this point falls in, as a checkerboard tint:
-// the sun's map first, then a spot light's tile, then the point light's cube. Big squares mean the map
-// is spread thin, so its edges blur or step.
-vec3 shadowTexels(vec3 color) {
-  // where it is in the map, in texels
-  vec2 at = vec2(0.0);
-  bool found = false;
-#ifdef SHADOW
-  {
-    vec4 s = uShadowMatrix * vec4(vWorldPosition, 1.0);
-    vec2 c = s.xy / s.w;
-    if (c.x > 0.0 && c.x < 1.0 && c.y > 0.0 && c.y < 1.0) {
-      at = c / uShadowTexel;
-      found = true;
-    }
-  }
-#endif
-#ifdef SPOT_SHADOWS
-  for (int k = 0; k < 4; k++) {
-    if (found) break;
-    vec4 s = uSpotShadowMatrix[k] * vec4(vWorldPosition, 1.0);
-    if (s.w <= 0.0) continue;
-    vec2 c = s.xy / s.w;
-    vec4 tile = uSpotShadowTile[k];
-    if (c.x > tile.x && c.x < tile.z && c.y > tile.y && c.y < tile.w) {
-      at = c / uSpotShadowTexel;
-      found = true;
-    }
-  }
-#endif
-#ifdef POINT_SHADOW
-  for (int i = 0; i < NUM_PUNCTUAL; i++) {
-    if (found || float(i) != uPointShadowIndex) continue;
-    // the cube face it falls on, and where on that face
-    vec3 d = vWorldPosition - uPunctualPosition[i];
-    vec3 a = abs(d);
-    vec2 uv = a.x >= a.y && a.x >= a.z ? d.yz / a.x : a.y >= a.z ? d.xz / a.y : d.xy / a.z;
-    float face = a.x >= a.y && a.x >= a.z ? 0.0 : a.y >= a.z ? 1.0 : 2.0;
-    at = (uv * 0.5 + 0.5) * (2.0 / uPointShadowTexel) + face * 4096.0;
-    found = true;
-  }
-#endif
-  // texels smaller than three pixels or so would alias into moire or hatching - and are fine anyway:
-  // shown only where a texel is big enough to see as a square
-  vec2 perPixel = fwidth(at);
-  float shown = 1.0 - smoothstep(0.22, 0.36, max(perPixel.x, perPixel.y));
-  if (!found || shown <= 0.0) return color;
-  vec2 cell = floor(at);
-  float odd = mod(cell.x + cell.y, 2.0);
-  // the surface repainted in strong blue and orange squares at its own brightness - the orange a
-  // little lighter, so they differ in tone as well as hue - with a little light of their own, so they
-  // show in the dark and deep in shadow
-  vec3 square = mix(vec3(0.1, 0.4, 1.0) * 0.8, vec3(1.0, 0.5, 0.1) * 1.25, odd);
-  float tone = dot(color, vec3(0.2126, 0.7152, 0.0722));
-  return mix(color, square * (tone * 1.5 + 0.05), 0.8 * shown);
-}
+#pragma part shadow-texels
 #endif
 
 #ifdef MATCAP
@@ -1537,54 +1004,7 @@ vec3 reflected(vec3 r, vec3 n, float roughness, vec3 irradiance) {
 #endif
 
 #ifdef REFRACTION
-// what is behind, as glass bends it: the view's ray turned at the surface by the ior and carried
-// through the glass's thickness, then looked up where it comes out - at a blurrier level the rougher
-// the glass (as glTF's reference renderer and three.js do: by roughness, scaled by how much the ior
-// bends). A thin shell (thickness 0) doesn't bend it, but still blurs it. In the picture's own
-// encoding, premultiplied
-// how far light goes in glass, along a ray turned by an ior: a solid piece's thickness (as glTF has it),
-// or across a thin wall that thick - further the more slanting, up to four times
-float glassPath(vec3 r, vec3 n) {
-  float t = uRefraction.y * vThicknessScale;
-  return uRefraction.w > 0.0 ? t / max(abs(dot(r, n)), 0.25) : t;
-}
-vec2 bentTo(vec3 n, vec3 v, float ior) {
-  // where the ray comes out: off the line it came in on by as much as the glass bends it - through a
-  // thin wall, the sideways shift of a pane, out parallel to how it went in
-  vec3 r = refract(-v, n, 1.0 / ior);
-  vec4 clip = uViewProjection * vec4(vWorldPosition + r * glassPath(r, n), 1.0);
-  return clamp(clip.xy / clip.w * 0.5 + 0.5, 0.0, 1.0);
-}
-vec4 behindGlass(vec3 n, vec3 v, float roughness) {
-  float lod = log2(float(textureSize(uBehind, 0).x)) * roughness * clamp(uRefraction.x * 2.0 - 2.0, 0.0, 1.0);
-  vec4 behind = textureLod(uBehind, bentTo(n, v, uRefraction.x), lod);
-  // dispersion: each colour bent by an ior of its own, red least and blue most - fringes of colour
-  // where what is behind changes. Refined, each sample spreads them a different amount, and the
-  // three fringes average into a rainbow
-  float spread = uRefraction.z * uSpectrum;
-  if (spread > 0.0) {
-    behind.r = textureLod(uBehind, bentTo(n, v, uRefraction.x - spread), lod).r;
-    behind.b = textureLod(uBehind, bentTo(n, v, uRefraction.x + spread), lod).b;
-  }
-  return behind;
-}
-// what glass's body leaves of light on its way through - Beer-Lambert, over the path the light
-// takes in it (glassPath): attenuationColor is what is left after attenuationDistance, and more glass
-// tints deeper - a thin wall seen edge-on, as a bottle's sides are, the deepest
-vec3 bodyTint(vec3 n, vec3 v) {
-  if (uAttenuation.w <= 0.0) return vec3(1.0);
-  return pow(max(uAttenuation.rgb, 1e-4), vec3(glassPath(refract(-v, n, 1.0 / uRefraction.x), n) / uAttenuation.w));
-}
-// what comes through glass, tinted by its colour as coloured glass tints light, in the picture's
-// encoding - so laid over the glass as blending would lay what is behind
-vec3 throughGlass(vec4 behind, vec3 tint) {
-  if (behind.a <= 0.0) return vec3(0.0);
-#ifdef LINEAR_OUTPUT
-  return behind.rgb * tint;
-#else
-  return linearToSrgb(srgbToLinear(behind.rgb / behind.a) * tint) * behind.a;
-#endif
-}
+#pragma part refraction
 #endif
 
 void main() {
@@ -2183,254 +1603,14 @@ const SOURCES = {
  * @property {string} lit
  */
 
-// Functions every shader hook can call - hooks are statements, so they can't define their own. All of
-// it is built on an integer bit-mix (lowbias32), which GLSL ES 3.00 defines exactly, so lattice
-// values and gradients are the same on every GPU - fract(sin(x) * 43758.5453) is not. Everything 0-1:
-// - hash(x): a float or vector's exact bits, mixed
-// - vnoise(p): value noise - random values at whole-number points, eased between (quintic); cheap,
-//   blocky-looking at low frequencies
-// - snoise(p): simplex noise - gradients on a simplex grid; smoother, less grid-bound, the better
-//   default; snoised(p) also gives its gradient, for normals
-// - vfbm / sfbm (p[, octaves]): octaves of either added up, each turned and scaled by 2.03 so their
-//   grids never line up; sfbmd adds the gradient. Five octaves unless told; 1-12
-// - voronoi(p): cellular (Worley) noise - a random point in every unit cell; returns the distance to
-//   the nearest (F1) and the second nearest (F2), in cells, and a random 0-1 for the nearest's cell
-// And the everyday ones people (and agents) reach for: srgb() to turn a colour as picked into the
-// linear one hooks work in, hsv2rgb() and palette() (Quilez's cosine palette) - both giving linear
-// colour - fresnel() for rim light, rotate2() / rotate3() matrices, remap() and saturate().
-// Every int highp: a fragment shader's ints are mediump unless they say so.
-export const HOOK_HELPERS = /* glsl */ `
-highp uint phoriaMix(highp uint h) {
-  h ^= h >> 16u; h *= 0x7feb352du; h ^= h >> 15u; h *= 0x846ca68bu; h ^= h >> 16u;
-  return h;
-}
-float phoriaUnit(highp uint h) { return float(h >> 8u) * (1.0 / 16777216.0); }
-float hash(float x) { return phoriaUnit(phoriaMix(floatBitsToUint(x))); }
-float hash(vec2 p) { highp uvec2 u = floatBitsToUint(p); return phoriaUnit(phoriaMix(u.x ^ phoriaMix(u.y + 0x9e3779b9u))); }
-float hash(vec3 p) { highp uvec3 u = floatBitsToUint(p); return phoriaUnit(phoriaMix(u.x ^ phoriaMix(u.y ^ phoriaMix(u.z + 0x9e3779b9u)))); }
-// a lattice point's bits: each coordinate times its own large odd number, mixed once
-highp uint phoriaCell(highp ivec3 c) {
-  highp uvec3 u = uvec3(c) * uvec3(0x8da6b343u, 0xd8163841u, 0xcb1ab31fu);
-  return phoriaMix(u.x ^ u.y ^ u.z);
-}
-
-float vnoise(vec3 p) {
-  vec3 i = floor(p), f = p - i;
-  vec3 s = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
-  highp ivec3 c = ivec3(i);
-  float a = mix(phoriaUnit(phoriaCell(c)), phoriaUnit(phoriaCell(c + ivec3(1, 0, 0))), s.x);
-  float b = mix(phoriaUnit(phoriaCell(c + ivec3(0, 1, 0))), phoriaUnit(phoriaCell(c + ivec3(1, 1, 0))), s.x);
-  float d = mix(phoriaUnit(phoriaCell(c + ivec3(0, 0, 1))), phoriaUnit(phoriaCell(c + ivec3(1, 0, 1))), s.x);
-  float e = mix(phoriaUnit(phoriaCell(c + ivec3(0, 1, 1))), phoriaUnit(phoriaCell(c + ivec3(1, 1, 1))), s.x);
-  return mix(mix(a, b, s.y), mix(d, e, s.y), s.z);
-}
-float vnoise(vec2 p) {
-  vec2 i = floor(p), f = p - i;
-  vec2 s = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
-  highp ivec3 c = ivec3(ivec2(i), 0);
-  return mix(mix(phoriaUnit(phoriaCell(c)), phoriaUnit(phoriaCell(c + ivec3(1, 0, 0))), s.x),
-    mix(phoriaUnit(phoriaCell(c + ivec3(0, 1, 0))), phoriaUnit(phoriaCell(c + ivec3(1, 1, 0))), s.x), s.y);
-}
-
-// simplex: a corner's share of the value and the gradient - t^4 times the gradient's ramp, falling
-// to nothing at the corner's reach
-vec2 phoriaGrad2(highp ivec2 c) {
-  float a = phoriaUnit(phoriaCell(ivec3(c, 7))) * 6.28318530718;
-  return vec2(cos(a), sin(a));
-}
-void phoriaCorner2(vec2 x, highp ivec2 c, inout float n, inout vec2 d) {
-  float t = 0.5 - dot(x, x);
-  if (t <= 0.0) return;
-  vec2 g = phoriaGrad2(c);
-  float t2 = t * t, gx = dot(g, x);
-  n += t2 * t2 * gx;
-  d += t2 * t2 * g - 8.0 * t2 * t * gx * x;
-}
-vec3 snoised(vec2 p) {
-  const float F = 0.366025403784, G = 0.211324865405;
-  vec2 i = floor(p + (p.x + p.y) * F);
-  vec2 x0 = p - i + (i.x + i.y) * G;
-  vec2 o = x0.x > x0.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
-  highp ivec2 c = ivec2(i);
-  float n = 0.0;
-  vec2 d = vec2(0.0);
-  phoriaCorner2(x0, c, n, d);
-  phoriaCorner2(x0 - o + G, c + ivec2(o), n, d);
-  phoriaCorner2(x0 - 1.0 + 2.0 * G, c + 1, n, d);
-  // unit gradients peak near 1/70: scaled to -1-1, then to 0-1
-  return vec3(0.5 + 35.0 * n, 35.0 * d);
-}
-float snoise(vec2 p) { return snoised(p).x; }
-
-const vec3 PHORIA_EDGES[12] = vec3[12](vec3(1, 1, 0), vec3(-1, 1, 0), vec3(1, -1, 0), vec3(-1, -1, 0),
-  vec3(1, 0, 1), vec3(-1, 0, 1), vec3(1, 0, -1), vec3(-1, 0, -1), vec3(0, 1, 1), vec3(0, -1, 1), vec3(0, 1, -1), vec3(0, -1, -1));
-void phoriaCorner3(vec3 x, highp ivec3 c, inout float n, inout vec3 d) {
-  float t = 0.6 - dot(x, x);
-  if (t <= 0.0) return;
-  vec3 g = PHORIA_EDGES[phoriaCell(c) % 12u];
-  float t2 = t * t, gx = dot(g, x);
-  n += t2 * t2 * gx;
-  d += t2 * t2 * g - 8.0 * t2 * t * gx * x;
-}
-vec4 snoised(vec3 p) {
-  const float F = 1.0 / 3.0, G = 1.0 / 6.0;
-  vec3 i = floor(p + dot(p, vec3(F)));
-  vec3 x0 = p - i + dot(i, vec3(G));
-  vec3 g = step(x0.yzx, x0.xyz), l = 1.0 - g;
-  vec3 i1 = min(g, l.zxy), i2 = max(g, l.zxy);
-  highp ivec3 c = ivec3(i);
-  float n = 0.0;
-  vec3 d = vec3(0.0);
-  phoriaCorner3(x0, c, n, d);
-  phoriaCorner3(x0 - i1 + G, c + ivec3(i1), n, d);
-  phoriaCorner3(x0 - i2 + 2.0 * G, c + ivec3(i2), n, d);
-  phoriaCorner3(x0 - 1.0 + 3.0 * G, c + 1, n, d);
-  // edge gradients peak near 1/32: scaled to -1-1, then to 0-1
-  return vec4(0.5 + 16.0 * n, 16.0 * d);
-}
-float snoise(vec3 p) { return snoised(p).x; }
-
-// fbm: each octave turned (so grids don't line up into a visible lattice), scaled by 2.03 and moved
-// on, its amplitude halved; the sum divided by the amplitudes, so 0-1 like the noise
-const mat2 PHORIA_TURN2 = mat2(0.8, 0.6, -0.6, 0.8);
-const mat3 PHORIA_TURN3 = mat3(0.00, 0.80, 0.60, -0.80, 0.36, -0.48, -0.60, -0.48, 0.64);
-float vfbm(vec2 p, int octaves) {
-  float v = 0.0, a = 0.5, sum = 0.0;
-  for (int i = 0; i < clamp(octaves, 1, 12); i++) { v += a * vnoise(p); sum += a; p = PHORIA_TURN2 * p * 2.03 + 17.0; a *= 0.5; }
-  return v / sum;
-}
-float vfbm(vec3 p, int octaves) {
-  float v = 0.0, a = 0.5, sum = 0.0;
-  for (int i = 0; i < clamp(octaves, 1, 12); i++) { v += a * vnoise(p); sum += a; p = PHORIA_TURN3 * p * 2.03 + 17.0; a *= 0.5; }
-  return v / sum;
-}
-float sfbm(vec2 p, int octaves) {
-  float v = 0.0, a = 0.5, sum = 0.0;
-  for (int i = 0; i < clamp(octaves, 1, 12); i++) { v += a * snoise(p); sum += a; p = PHORIA_TURN2 * p * 2.03 + 17.0; a *= 0.5; }
-  return v / sum;
-}
-float sfbm(vec3 p, int octaves) {
-  float v = 0.0, a = 0.5, sum = 0.0;
-  for (int i = 0; i < clamp(octaves, 1, 12); i++) { v += a * snoise(p); sum += a; p = PHORIA_TURN3 * p * 2.03 + 17.0; a *= 0.5; }
-  return v / sum;
-}
-// with the gradient: each octave's, carried back through the turns and scalings so far
-vec3 sfbmd(vec2 p, int octaves) {
-  float v = 0.0, a = 0.5, sum = 0.0;
-  vec2 d = vec2(0.0);
-  mat2 m = mat2(1.0);
-  for (int i = 0; i < clamp(octaves, 1, 12); i++) {
-    vec3 n = snoised(p);
-    v += a * n.x;
-    d += a * (transpose(m) * n.yz);
-    sum += a;
-    p = PHORIA_TURN2 * p * 2.03 + 17.0;
-    m = PHORIA_TURN2 * m * 2.03;
-    a *= 0.5;
-  }
-  return vec3(v, d) / sum;
-}
-vec4 sfbmd(vec3 p, int octaves) {
-  float v = 0.0, a = 0.5, sum = 0.0;
-  vec3 d = vec3(0.0);
-  mat3 m = mat3(1.0);
-  for (int i = 0; i < clamp(octaves, 1, 12); i++) {
-    vec4 n = snoised(p);
-    v += a * n.x;
-    d += a * (transpose(m) * n.yzw);
-    sum += a;
-    p = PHORIA_TURN3 * p * 2.03 + 17.0;
-    m = PHORIA_TURN3 * m * 2.03;
-    a *= 0.5;
-  }
-  return vec4(v, d) / sum;
-}
-float vfbm(vec2 p) { return vfbm(p, 5); }
-float vfbm(vec3 p) { return vfbm(p, 5); }
-float sfbm(vec2 p) { return sfbm(p, 5); }
-float sfbm(vec3 p) { return sfbm(p, 5); }
-vec3 sfbmd(vec2 p) { return sfbmd(p, 5); }
-vec4 sfbmd(vec3 p) { return sfbmd(p, 5); }
-
-// cellular noise: each unit cell's own point, from its hash; the nearest and second nearest of the
-// 3 x 3 (or 3 x 3 x 3) cells round p - F1, F2 - and the nearest cell's own random number
-vec3 voronoi(vec2 p) {
-  vec2 i = floor(p), f = p - i;
-  highp ivec2 c = ivec2(i);
-  float f1 = 8.0, f2 = 8.0, id = 0.0;
-  for (int y = -1; y <= 1; y++) {
-    for (int x = -1; x <= 1; x++) {
-      highp uint h = phoriaCell(ivec3(c + ivec2(x, y), 11));
-      vec2 o = vec2(float(x), float(y)) + vec2(phoriaUnit(h), phoriaUnit(phoriaMix(h ^ 0x68e31da4u))) - f;
-      float d = dot(o, o);
-      if (d < f1) { f2 = f1; f1 = d; id = phoriaUnit(phoriaMix(h + 0x1b56c4e9u)); }
-      else if (d < f2) f2 = d;
-    }
-  }
-  return vec3(sqrt(f1), sqrt(f2), id);
-}
-vec3 voronoi(vec3 p) {
-  vec3 i = floor(p), f = p - i;
-  highp ivec3 c = ivec3(i);
-  float f1 = 8.0, f2 = 8.0, id = 0.0;
-  for (int z = -1; z <= 1; z++) {
-    for (int y = -1; y <= 1; y++) {
-      for (int x = -1; x <= 1; x++) {
-        highp uint h = phoriaCell(c + ivec3(x, y, z)) ^ 0x2545f491u;
-        h = phoriaMix(h);
-        vec3 o = vec3(float(x), float(y), float(z)) - f
-          + vec3(phoriaUnit(h), phoriaUnit(phoriaMix(h ^ 0x68e31da4u)), phoriaUnit(phoriaMix(h ^ 0xb5297a4du)));
-        float d = dot(o, o);
-        if (d < f1) { f2 = f1; f1 = d; id = phoriaUnit(phoriaMix(h + 0x1b56c4e9u)); }
-        else if (d < f2) f2 = d;
-      }
-    }
-  }
-  return vec3(sqrt(f1), sqrt(f2), id);
-}
-
-// a colour as picked (sRGB) to the linear colour hooks work in
-vec3 srgb(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
-// hue, saturation and value 0-1 to a linear colour - the colour a colour picker shows
-vec3 hsv2rgb(vec3 hsv) {
-  vec3 k = clamp(abs(mod(hsv.x * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
-  return srgb(hsv.z * mix(vec3(1.0), k, hsv.y));
-}
-vec3 hsv2rgb(float h, float s, float v) { return hsv2rgb(vec3(h, s, v)); }
-// a cosine palette (Quilez): a + b cos(2 pi (c t + d)), its four vectors as picked; a linear colour
-vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) { return srgb(clamp(a + b * cos(6.28318530718 * (c * t + d)), 0.0, 1.0)); }
-// how edge-on a surface is seen: 0 facing the camera, 1 side on, sharpened by the power - rim light
-float fresnel(vec3 normal, vec3 position, float power) {
-  vec3 v = normalize(cameraPosition - position);
-  return pow(1.0 - clamp(abs(dot(normalize(normal), v)), 0.0, 1.0), power);
-}
-// turning: rotate2(a) * v anticlockwise by a radians; rotate3(axis, a) * v about an axis
-mat2 rotate2(float a) { float s = sin(a), c = cos(a); return mat2(c, s, -s, c); }
-mat3 rotate3(vec3 axis, float a) {
-  vec3 u = normalize(axis);
-  float s = sin(a), c = cos(a), t = 1.0 - c;
-  return mat3(t * u.x * u.x + c, t * u.x * u.y + s * u.z, t * u.x * u.z - s * u.y,
-    t * u.x * u.y - s * u.z, t * u.y * u.y + c, t * u.y * u.z + s * u.x,
-    t * u.x * u.z + s * u.y, t * u.y * u.z - s * u.x, t * u.z * u.z + c);
-}
-// x from one range to another, not clamped
-float remap(float x, float a, float b, float c, float d) { return c + (x - a) * (d - c) / (b - a); }
-vec2 remap(vec2 x, float a, float b, float c, float d) { return c + (x - a) * (d - c) / (b - a); }
-vec3 remap(vec3 x, float a, float b, float c, float d) { return c + (x - a) * (d - c) / (b - a); }
-// clamped to 0-1, as HLSL has it
-float saturate(float x) { return clamp(x, 0.0, 1.0); }
-vec2 saturate(vec2 x) { return clamp(x, 0.0, 1.0); }
-vec3 saturate(vec3 x) { return clamp(x, 0.0, 1.0); }
-vec4 saturate(vec4 x) { return clamp(x, 0.0, 1.0); }
-`
-
 // a hook's own lines are numbered from 1 in a source string of their own, so compile errors point
 // at the line of the hook, not of the generated shader
 export const HOOK_SOURCE_NUMBERS = { vertex: 101, fragment: 102, lit: 103 }
 
 /**
  * Vertex and fragment source for a kind of drawable, or a pass's own pair, with a set of feature
- * defines - and a material's shader hooks, when it has them.
+ * defines - and a material's shader hooks, when it has them. The parts loaded on their own
+ * (parts.js) are filled in.
  * @param {ShaderKind | [string, string]} kind
  * @param {string[]} defines e.g. ['LIT', 'MAP']
  * @param {HookSource | null} [hooks]
@@ -2438,7 +1618,7 @@ export const HOOK_SOURCE_NUMBERS = { vertex: 101, fragment: 102, lit: 103 }
  */
 export function shaderSource(kind, defines, hooks = null) {
   const header = `#version 300 es\n${defines.map((d) => `#define ${d}\n`).join('')}`
-  const [vs, fs] = typeof kind === 'string' ? SOURCES[kind] : kind
+  const [vs, fs] = (typeof kind === 'string' ? SOURCES[kind] : kind).map(withParts)
   if (!hooks) return [header + vs, header + fs]
   if (typeof kind === 'string') checkMarkers(kind, vs, fs, hooks)
   const first = 2 + defines.length

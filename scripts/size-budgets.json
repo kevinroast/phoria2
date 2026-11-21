@@ -1,17 +1,17 @@
 {
   "view app": {
-    "limit": 72,
-    "target": 69.5,
-    "why": "reset 2026-11-02 to the real size, 69.2 KB at 1.2.0 with the keyboard's code split out again, after 1.0's materials, labels by zoom, outlines and accessibility hooks had long passed the old 46 KB limit; the target is today's size, so any growth shows, and the limit about 4% over it. Earlier: slice 7 43.0 KB, slice 6 44.9 KB, parallel compiling 45.3 KB, the agent eval's fixes 45.6 KB"
+    "limit": 94.5,
+    "target": 91,
+    "why": "reset 2026-11-21 to the real size, 90.8 KB at 1.9.1+, after 1.3-1.9's materials, lights, glass, refine and renderer work had grown it to 100.3 KB; the optional GLSL (reading shadows, rect lights, advanced materials, hook helpers) and HTML labels now load on first use, 9.5 KB off. Target today's size, so any growth shows; limit about 4% over. Earlier: 69.2 KB at 1.2.0, slice 7 43.0 KB, slice 6 44.9 KB, parallel compiling 45.3 KB, the agent eval's fixes 45.6 KB"
   },
   "chart app": {
-    "limit": 93,
-    "target": 90,
-    "why": "reset 2026-11-02 to the real size, 89.7 KB at 1.2.0 (core as the view app, plus the charts sub-path and its summaries); target today's size, limit about 4% over. Earlier: 64.2 KB with inline container legends"
+    "limit": 134,
+    "target": 129.5,
+    "why": "reset 2026-11-21 to the real size, 129.1 KB at 1.9.1+ (core as the view app, plus the charts sub-path, which brings HTML labels up front - charts always have them); target today's size, limit about 4% over. Earlier: 89.7 KB at 1.2.0, 64.2 KB with inline container legends"
   },
   "product viewer": {
-    "limit": 80,
-    "target": 77,
-    "why": "reset 2026-11-02 to the real size, 76.8 KB at 1.2.0 (core plus glTF); target today's size, limit about 4% over. Earlier: 52.3 KB after the agent eval's fixes"
+    "limit": 103,
+    "target": 99,
+    "why": "reset 2026-11-21 to the real size, 98.9 KB at 1.9.1+ (core plus glTF; its shadows' and environment's passes load on first use). Target today's size, limit about 4% over. Earlier: 76.8 KB at 1.2.0, 52.3 KB after the agent eval's fixes"
   }
 }

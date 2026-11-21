@@ -3,6 +3,7 @@
 // any text on the page. Overlapping labels give way by priority (see labelLayout.js).
 import { alignColumns, layoutLabels, leaderEnd, placeBox, stackColumns } from './labelLayout.js'
 import { addStyle } from './css.js'
+import { zoomedOut } from './frame.js'
 
 /** @import { FrameLabel } from './frame.js' */
 
@@ -437,11 +438,4 @@ export class LabelLayer {
   }
 }
 
-/**
- * A label waiting to be zoomed in to: one with a minScale, smaller on screen than it.
- * @internal @param {{ scale: number, style: { minScale?: number | null } }} label
- * @param {number} halfHeight half the view's height, CSS pixels
- */
-export function zoomedOut(label, halfHeight) {
-  return !!label.style.minScale && label.scale * halfHeight < label.style.minScale
-}
+

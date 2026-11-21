@@ -4,6 +4,7 @@
 // under the browser's limit of about 16 live contexts).
 import { fail } from '../validate.js'
 import { lazy } from '../lazy.js'
+import { onParts } from './parts.js'
 import { Programs } from './programs.js'
 import { Resources } from './resources.js'
 import { TargetPool } from './targets.js'
@@ -91,9 +92,12 @@ export class GLContext {
     }
     canvas.addEventListener('webglcontextlost', lost)
     canvas.addEventListener('webglcontextrestored', restored)
+    // GLSL a material waited for has loaded (parts.js): every renderer draws it now
+    const stopHearing = onParts(() => this.#ready())
     this.#removeListeners = () => {
       canvas.removeEventListener('webglcontextlost', lost)
       canvas.removeEventListener('webglcontextrestored', restored)
+      stopHearing()
     }
     // ...or, let go of long enough ago that it was lost, asks for it back: drawing waits until the
     // browser restores it, then goes ahead as after any lost context
