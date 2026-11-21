@@ -649,7 +649,8 @@ function project(position, viewProjection, view, yScale) {
 
 // The six planes (a, b, c, d with the normal pointing inwards) of a view-projection matrix.
 /** @param {Float32Array} m @returns {Float32Array[]} */
-function frustumPlanes(m) {
+/** @internal The six planes of a view-projection's frustum, facing in. @param {ArrayLike<number>} m */
+export function frustumPlanes(m) {
   const rows = (i) => [m[i], m[4 + i], m[8 + i], m[12 + i]]
   const r0 = rows(0), r1 = rows(1), r2 = rows(2), r3 = rows(3)
   return [
@@ -665,8 +666,8 @@ function frustumPlanes(m) {
   })
 }
 
-/** @param {Float32Array[]} planes @param {ArrayLike<number>} c @param {number} radius */
-function sphereInFrustum(planes, c, radius) {
+/** @internal Is a sphere at least partly inside them? @param {Float32Array[]} planes @param {ArrayLike<number>} c @param {number} radius */
+export function sphereInFrustum(planes, c, radius) {
   for (const p of planes) {
     if (p[0] * c[0] + p[1] * c[1] + p[2] * c[2] + p[3] < -radius) return false
   }

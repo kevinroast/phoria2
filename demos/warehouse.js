@@ -21,8 +21,9 @@ const ROW_LENGTH = BAYS * BAY
 function surface(name, repeat, metal = false) {
   const url = (map) => `textures/${name}_${map}_1k.jpg`
   const arm = new Texture({ url: url('arm'), colorSpace: 'linear', repeat })
+  // roughness multiplies the map's: 1 takes the texture's own, as it was made to be read
   return new Material({
-    map: { url: url('diff'), repeat }, normalMap: { url: url('nor_gl'), repeat }, roughnessMap: arm, aoMap: arm,
+    roughness: 1, map: { url: url('diff'), repeat }, normalMap: { url: url('nor_gl'), repeat }, roughnessMap: arm, aoMap: arm,
     ...(metal ? { metalness: 1, metalnessMap: arm } : {}),
   })
 }

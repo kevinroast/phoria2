@@ -7,7 +7,8 @@ import { hookFor, passDefines, setHookUniforms } from './hooks.js'
 import { setShapeUniforms, shapeDefines } from './shape.js'
 import { makeTarget } from './targets.js'
 import * as mat4 from '../math/mat4.js'
-import { drawKind } from '../scene/kinds.js'
+import { drawKind, isInstanced } from '../scene/kinds.js'
+import { frustumPlanes, sphereInFrustum } from '../frame.js'
 
 /** @import { Programs } from './programs.js' */
 /** @import { Resources } from './resources.js' */
@@ -170,7 +171,17 @@ export class Picker {
    */
   #drawRegion(frame, x, y, width, height, pixelRatio) {
     const gl = this.gl
-    const items = pickable(frame)
+    // a projection that blows the region around the pixel up to fill the target
+    const s = REGION
+    // centred on the pointer itself, so the middle texel is the pointer and the hit ray is the pointer's
+    const cx = (x / width) * 2 - 1, cy = 1 - (y / height) * 2
+    const zoom = new Float32Array([width / s, 0, 0, 0, 0, height / s, 0, 0, 0, 0, 1, 0, -cx * width / s, -cy * height / s, 0, 1])
+    mat4.multiply(this.#projection, zoom, frame.camera.projection)
+    mat4.multiply(this.#viewProjection, this.#projection, frame.camera.view)
+    // only what can reach the few pixels round the pointer - of a warehouse's thousands of loads, the
+    // dozen near it. The ids are places in this list
+    const planes = frustumPlanes(this.#viewProjection)
+    const items = pickable(frame, planes)
     if (!items.length) return null
     const target = this.#ensureTarget()
     gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer)
@@ -182,14 +193,6 @@ export class Picker {
     gl.depthMask(true)
     gl.clearBufferuiv(gl.COLOR, 0, [0, 0, 0, 0])
     gl.clearBufferfv(gl.DEPTH, 0, [1])
-
-    // a projection that blows the region around the pixel up to fill the target
-    const s = REGION
-    // centred on the pointer itself, so the middle texel is the pointer and the hit ray is the pointer's
-    const cx = (x / width) * 2 - 1, cy = 1 - (y / height) * 2
-    const zoom = new Float32Array([width / s, 0, 0, 0, 0, height / s, 0, 0, 0, 0, 1, 0, -cx * width / s, -cy * height / s, 0, 1])
-    mat4.multiply(this.#projection, zoom, frame.camera.projection)
-    mat4.multiply(this.#viewProjection, this.#projection, frame.camera.view)
 
     items.forEach((item, i) => this.#draw(item, i + 1, frame, height, pixelRatio))
     gl.bindVertexArray(null)
@@ -321,8 +324,43 @@ export class Picker {
   }
 }
 
-/** The frame's drawables that can be picked: visible (as drawn) and pickable all the way up. @param {FrameDescription} frame */
-function pickable(frame) {
+/**
+ * Can a drawable be left out of the pick by its bounds? A plain solid mesh can. Not points or lines -
+ * a sprite or a wide line reaches past its bounds by pixels - nor instances, spread anywhere, nor
+ * what its owner asked not to be culled, nor a vertex hook that doesn't say how far it moves things.
+ * @param {DrawItem} item
+ */
+function cullable(item) {
+  const node = /** @type {any} */ (item.node)
+  if (drawKind(node) !== 'mesh' || isInstanced(node) || node.frustumCulled === false) return false
+  const hooks = item.material.shader
+  return !hooks?.vertex || typeof hooks.bounds === 'number'
+}
+
+/**
+ * Does a mesh's bounding sphere reach into the pick's view? @param {DrawItem} item @param {Float32Array[]} planes
+ */
+function nearPointer(item, planes) {
+  const box = item.geometry.bounds, lo = box.min, hi = box.max, m = item.worldMatrix
+  const x = (lo[0] + hi[0]) / 2, y = (lo[1] + hi[1]) / 2, z = (lo[2] + hi[2]) / 2
+  CENTRE[0] = m[0] * x + m[4] * y + m[8] * z + m[12]
+  CENTRE[1] = m[1] * x + m[5] * y + m[9] * z + m[13]
+  CENTRE[2] = m[2] * x + m[6] * y + m[10] * z + m[14]
+  // squared lengths, one root - Math.hypot is slow, and this runs for thousands of meshes
+  const scale = Math.sqrt(Math.max(m[0] * m[0] + m[1] * m[1] + m[2] * m[2], m[4] * m[4] + m[5] * m[5] + m[6] * m[6], m[8] * m[8] + m[9] * m[9] + m[10] * m[10]))
+  const dx = hi[0] - lo[0], dy = hi[1] - lo[1], dz = hi[2] - lo[2]
+  const hooks = item.material.shader
+  const pad = hooks?.vertex ? /** @type {number} */ (hooks.bounds) : 0
+  return sphereInFrustum(planes, CENTRE, Math.sqrt(dx * dx + dy * dy + dz * dz) / 2 * scale + pad)
+}
+const CENTRE = new Float32Array(3)
+
+/**
+ * The frame's drawables that can be picked: visible (as drawn), pickable all the way up, and - a
+ * plain mesh - reaching into the pick's view. One pass: a frame can hold thousands.
+ * @param {FrameDescription} frame @param {Float32Array[]} planes the pick's view
+ */
+function pickable(frame, planes) {
   /** @type {Map<any, boolean>} */
   const seen = new Map()
   const ok = (/** @type {any} */ n) => {
@@ -331,8 +369,18 @@ function pickable(frame) {
     if (v === undefined) seen.set(n, v = n.pickable !== false && ok(n.parent))
     return v
   }
-  const items = [...frame.opaque, ...frame.transparent].filter((item) => ok(item.node))
   // what is drawn over everything goes last, so it is picked over everything too
-  return [...items.filter((item) => item.material.depthTest), ...items.filter((item) => !item.material.depthTest)]
+  /** @type {DrawItem[]} */
+  const tested = []
+  /** @type {DrawItem[]} */
+  const over = []
+  for (const list of [frame.opaque, frame.transparent]) {
+    for (const item of list) {
+      if (!ok(item.node) || (cullable(item) && !nearPointer(item, planes))) continue
+      ;(item.material.depthTest ? tested : over).push(item)
+    }
+  }
+  for (const item of over) tested.push(item)
+  return tested
 }
 
