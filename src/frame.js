@@ -440,16 +440,23 @@ export function collect(scene, camera, { display = true, labels = display, light
   // its uniforms again, and three materials of 1,000 boxes interleaved by depth bound 4,000 textures
   // a frame - its group placed by its nearest draw, and front to back within it. When every draw
   // has its own material this is front to back, as before.
-  /** @type {Map<unknown, number>} */
-  const nearest = new Map()
+  // Each material's keys worked out once - its variant (for the kind it's first drawn as), its number
+  // and its nearest draw - however many items share it
+  /** @type {Map<unknown, { kind: string, variant: number, material: number, near: number }>} */
+  const byMaterial = new Map()
   for (const item of frame.opaque) {
-    const near = nearest.get(item.material)
-    if (near === undefined || item.depth < near) nearest.set(item.material, item.depth)
+    const m = byMaterial.get(item.material)
+    if (!m) byMaterial.set(item.material, { kind: kindOf(item.node), variant: variantNumber(variantOfItem(item)), material: materialNumber(item.material), near: item.depth })
+    else if (item.depth < m.near) m.near = item.depth
   }
   // each item with its variant, material and group's place as numbers, sorted, then put back - no
   // lookups while sorting
-  const keyed = frame.opaque.map((item) => ({ item, order: item.node.renderOrder, variant: variantNumber(variantOfItem(item)),
-    near: /** @type {number} */ (nearest.get(item.material)), material: materialNumber(item.material) }))
+  const keyed = frame.opaque.map((item) => {
+    const m = /** @type {{ kind: string, variant: number, material: number, near: number }} */ (byMaterial.get(item.material))
+    // a material drawn as more than one kind (a mesh's and a points' both) has a variant for each
+    const variant = m.kind === kindOf(item.node) ? m.variant : variantNumber(variantOfItem(item))
+    return { item, order: item.node.renderOrder, variant, near: m.near, material: m.material }
+  })
   keyed.sort((x, y) => x.order - y.order || x.variant - y.variant || x.near - y.near || x.material - y.material || x.item.depth - y.item.depth)
   for (let i = 0; i < keyed.length; i++) frame.opaque[i] = keyed[i].item
   // transparent: back to front so blending composes correctly

@@ -49,21 +49,25 @@ export function fitShadow(direction, casters, receivers, size = SHADOW_MAP_SIZE,
   const view = mat4.lookAt(mat4.create(), [0, 0, 0], d, up)
 
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity
+  // a box's reach along each of the view's axes: its middle's, give or take its half-size against the
+  // axis - the same as its eight corners', for a third of the work (thousands of casters a frame)
+  const ax = Math.abs(view[0]), ay = Math.abs(view[4]), az = Math.abs(view[8])
+  const bx = Math.abs(view[1]), by = Math.abs(view[5]), bz = Math.abs(view[9])
+  const cx = Math.abs(view[2]), cy = Math.abs(view[6]), cz = Math.abs(view[10])
   const corners = (/** @type {Box3} */ b, /** @type {boolean} */ across) => {
-    for (let i = 0; i < 8; i++) {
-      const px = i & 1 ? b.max[0] : b.min[0], py = i & 2 ? b.max[1] : b.min[1], pz = i & 4 ? b.max[2] : b.min[2]
-      const x = view[0] * px + view[4] * py + view[8] * pz
-      const y = view[1] * px + view[5] * py + view[9] * pz
-      const z = view[2] * px + view[6] * py + view[10] * pz
-      if (across) {
-        if (x < x0) x0 = x
-        if (x > x1) x1 = x
-        if (y < y0) y0 = y
-        if (y > y1) y1 = y
-      }
-      if (z < z0) z0 = z
-      if (z > z1) z1 = z
+    const mx = (b.min[0] + b.max[0]) / 2, my = (b.min[1] + b.max[1]) / 2, mz = (b.min[2] + b.max[2]) / 2
+    const ex = (b.max[0] - b.min[0]) / 2, ey = (b.max[1] - b.min[1]) / 2, ez = (b.max[2] - b.min[2]) / 2
+    if (across) {
+      const x = view[0] * mx + view[4] * my + view[8] * mz, rx = ax * ex + ay * ey + az * ez
+      const y = view[1] * mx + view[5] * my + view[9] * mz, ry = bx * ex + by * ey + bz * ez
+      if (x - rx < x0) x0 = x - rx
+      if (x + rx > x1) x1 = x + rx
+      if (y - ry < y0) y0 = y - ry
+      if (y + ry > y1) y1 = y + ry
     }
+    const z = view[2] * mx + view[6] * my + view[10] * mz, rz = cx * ex + cy * ey + cz * ez
+    if (z - rz < z0) z0 = z - rz
+    if (z + rz > z1) z1 = z + rz
   }
   // across the light's view: the area it was given, or else the casters; in depth, everything that
   // casts - so a caster outside the area, between it and the light, still shadows it
