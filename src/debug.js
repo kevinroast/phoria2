@@ -125,15 +125,23 @@ export class DebugDraw {
    * Add the helpers to a frame about to be drawn, after everything in it. Returns how many items were
    * added to each list, to take out again once it is drawn.
    * @param {FrameDescription} frame @param {DebugOptions} o
-   * @param {{ camera: Camera, hovered: Hit | null, bounds: Box3 }} at
+   * @param {{ camera: Camera, hovered: Hit | null, bounds: () => Box3 }} at bounds: what the camera draws, asked for only by helpers sized to it
    * @returns {{ opaque: number, transparent: number }}
    */
   add(frame, o, at) {
     this.#positions = []
     this.#colors = []
-    const items = [...frame.opaque, ...frame.transparent]
-    const size = at.bounds.isEmpty() ? 1 : Math.max(at.bounds.getRadius(), 1e-3)
-    const middle = at.bounds.isEmpty() ? new Vec3() : at.bounds.getCenter()
+    const target = /** @type {any} */ (at.camera).target
+    // the scene's size, for the helpers drawn to scale - a walk of everything, so only when one is on
+    let size = 1, middle = new Vec3()
+    if (o.lights || o.normals || o.axes || (o.camera && target)) {
+      const box = at.bounds()
+      if (!box.isEmpty()) {
+        size = Math.max(box.getRadius(), 1e-3)
+        middle = box.getCenter()
+      }
+    }
+    const items = o.bounds || o.normals ? [...frame.opaque, ...frame.transparent] : []
     if (o.lights) this.#lights(frame, size, middle)
     if (o.shadows) this.#shadows(frame)
     if (o.bounds) this.#bounds(items, o.bounds === 'hovered' ? at.hovered : null, o.bounds === 'hovered')
@@ -143,7 +151,6 @@ export class DebugDraw {
       this.#segment([0, 0, 0], [0, size * 0.5, 0], [0.3, 1, 0.3])
       this.#segment([0, 0, 0], [0, 0, size * 0.5], [0.3, 0.5, 1])
     }
-    const target = /** @type {any} */ (at.camera).target
     if (o.camera && target) this.#cross(target, size * 0.04, COLORS.camera)
     if (!this.#positions.length) return { opaque: 0, transparent: 0 }
 
@@ -170,7 +177,7 @@ export class DebugDraw {
    * The corner readout, refreshed a few times a second.
    * @param {DebugOptions['stats']} where
    * @param {{ drawCalls: number, triangles: number, programs: number, textures: number, geometries: number, compiling: number, shadowMaps?: number, shadowMapsKept?: number }} info
-   * @param {number} frameMs time between drawn frames @param {number} cpuMs time the last frame took to draw
+   * @param {number} frameMs time between drawn frames @param {number} cpuMs the last frame's main-thread work: its update, the change check, collecting and drawing
    */
   stats(where, info, frameMs, cpuMs) {
     const overlay = where && typeof document !== 'undefined' ? this.overlay() : null

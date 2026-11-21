@@ -90,7 +90,7 @@ describe('the helpers', () => {
     const frame = collect(scene, camera)
     const before = frame.opaque.length
     const draw = new DebugDraw(() => null)
-    const added = draw.add(frame, o, { camera, hovered, bounds: scene.boundsFrom(camera) })
+    const added = draw.add(frame, o, { camera, hovered, bounds: () => scene.boundsFrom(camera) })
     if (!added.opaque) return 0
     return frame.opaque[before].geometry.positions.length / 6
   }

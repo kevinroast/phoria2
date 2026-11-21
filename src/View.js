@@ -184,6 +184,8 @@ export class View {
   #ownCanvas = false
   #rafId = 0
   #lastTime = 0
+  /** When the frame being worked on began, for the stats corner; 0 outside a tick. */
+  #tickStarted = 0
   #dirty = true
   #onScreen = true
   #width = 0
@@ -411,7 +413,7 @@ export class View {
    */
   #draw(frame, options) {
     const debug = this.#debug && this.#debugDraw
-      ? this.#debugDraw.add(frame, this.#debug, { camera: this.camera, hovered: this.#hovered, bounds: this.scene.boundsFrom(this.camera) })
+      ? this.#debugDraw.add(frame, this.#debug, { camera: this.camera, hovered: this.#hovered, bounds: () => this.scene.boundsFrom(this.camera) })
       : null
     this.renderer.renderFrame(frame, options)
     if (debug) {
@@ -723,6 +725,9 @@ export class View {
 
   /** @param {boolean} wait wait for shaders, for a complete frame (step, toImage) */
   #render(wait) {
+    // the stats corner's cpu: the whole frame's work - from the tick's start (the app's frame
+    // callback, the scene's update, the change check) or else from here
+    const started = this.#tickStarted || performance.now()
     if (this.#autoFrame) {
       // fitted to the canvas as laid out now: a page still being built (a grid of tiles filling up)
       // can change its shape before the browser reports the resize, which comes after this frame
@@ -735,7 +740,6 @@ export class View {
     }
     const frame = this.#collect()
     this.#occlude(frame)
-    const started = performance.now()
     this.#draw(frame, { wait })
     if (this.#debugDraw) {
       const now = performance.now()
@@ -1289,6 +1293,7 @@ export class View {
   /** @param {number} now */
   #tick = (now) => {
     this.#rafId = 0
+    this.#tickStarted = performance.now()
     const dt = this.#lastTime ? Math.min(this.maxDelta, (now - this.#lastTime) / 1000) : 0
     this.#lastTime = now
     try {
@@ -1310,6 +1315,7 @@ export class View {
         this.#samples = this.#refineSample(n, false, n + 1 === /** @type {Required<RefineOptions>} */ (this.#refine).samples) ? n + 1 : 0
       }
     } finally {
+      this.#tickStarted = 0
       // the next frame comes even if this one threw - the error still reaches the console, but one
       // bad handler doesn't freeze the view. In manual mode it sleeps until something asks for a frame
       this.#schedule()

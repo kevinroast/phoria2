@@ -29,6 +29,7 @@ export class ChangeWatch {
   /** @type {string[]} */ #previousStrings = []
   #time = 0
   /** Render textures' own scenes being walked now - two scenes showing each other's are walked once each. @type {Set<object>} */ #walking = new Set()
+  /** Materials already laid out in this signature: shared by thousands of parts, each is laid out once. @type {Set<object>} */ #materials = new Set()
 
   /**
    * Has anything that affects the picture changed since the last call? The first call says yes.
@@ -41,6 +42,7 @@ export class ChangeWatch {
     this.#time = time
     this.#count = 0
     this.#strings = []
+    this.#materials.clear()
     this.#camera(camera)
     this.#scene(scene, camera)
 
@@ -60,22 +62,33 @@ export class ChangeWatch {
     this.#previousCount = -1
   }
 
+  /** Room for n more numbers. @param {number} n */
+  #reserve(n) {
+    if (this.#count + n <= this.#values.length) return
+    let size = this.#values.length * 2
+    while (size < this.#count + n) size *= 2
+    const grown = new Float64Array(size)
+    grown.set(this.#values)
+    this.#values = grown
+    const previous = new Float64Array(size)
+    previous.set(this.#previous)
+    this.#previous = previous
+  }
+
   /** @param {number} v */
   #push(v) {
-    if (this.#count === this.#values.length) {
-      const grown = new Float64Array(this.#values.length * 2)
-      grown.set(this.#values)
-      this.#values = grown
-      const previous = new Float64Array(grown.length)
-      previous.set(this.#previous)
-      this.#previous = previous
-    }
+    if (this.#count === this.#values.length) this.#reserve(1)
     this.#values[this.#count++] = v
   }
 
   /** @param {ArrayLike<number>} a */
   #pushAll(a) {
-    for (let i = 0; i < a.length; i++) this.#push(a[i])
+    const n = a.length
+    this.#reserve(n)
+    const values = this.#values
+    let c = this.#count
+    for (let i = 0; i < n; i++) values[c++] = a[i]
+    this.#count = c
   }
 
   /** @param {any} camera */
@@ -169,6 +182,14 @@ export class ChangeWatch {
       this.#push(node.version)
     }
     this.#push(idOf(m))
+    // its values where it first appears; later parts with it add only its id
+    if (this.#materials.has(m)) return
+    this.#materials.add(m)
+    this.#material(m)
+  }
+
+  /** @param {any} m */
+  #material(m) {
     this.#pushAll(m.color)
     this.#pushAll(m.emissive)
     this.#push(m.emissiveIntensity)

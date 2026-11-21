@@ -76,6 +76,33 @@ describe('outlines', () => {
     }
   })
 
+  it('lay out a shared material once, and still see it change, swap or go from any part', async () => {
+    const { Material } = await import('../src/index.js')
+    const scene = new Scene()
+    const shared = new Material({ color: '#888888' }), other = new Material({ color: '#224466' })
+    const parts = Array.from({ length: 50 }, (_, i) => scene.add(new Mesh({ geometry: box(), material: shared, position: [i, 0, 0] })))
+    const cam = camera(), watch = new ChangeWatch()
+    watch.changed(scene, cam)
+    expect(watch.changed(scene, cam)).toBe(false)
+    const changes = [
+      () => shared.color.set('#ff0000'),
+      () => { shared.roughness = 0.2 },
+      () => { parts[30].material = other },
+      () => other.color.set('#00ff00'),
+      // the part the shared material was first laid out at stops showing it
+      () => { parts[0].visible = false },
+      () => shared.color.set('#0000ff'),
+      () => { parts[0].visible = true },
+      () => { parts[0].material = other },
+      () => { parts[49].material = other },
+    ]
+    for (const change of changes) {
+      change()
+      expect(watch.changed(scene, cam), String(change)).toBe(true)
+      expect(watch.changed(scene, cam), 'then still: ' + String(change)).toBe(false)
+    }
+  })
+
   /** Draw an outlined box twice (the passes load after the first), recording shaders and GL calls. @param {object} [options] */
   const drawOutlined = async (options = {}) => {
     const { gl, count, sources } = fakeGL()
