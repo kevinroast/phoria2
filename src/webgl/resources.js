@@ -36,7 +36,17 @@ const MOST_REGIONS = 16, GRID = 4
  * @property {WebGLBuffer | null} [colorBuffer] per-instance colours, likewise
  * @property {Record<string, WebGLBuffer>} [attributes] the geometry's buffers by attribute
  * @property {string} [layout] the data's shape when made; while it holds, changes refill in place
+ * @property {Record<string, number>} [filled] vertices of each attribute sent so far - all of them when
+ *   made; of a geometry drawn without an index, refills send only those drawn
+ * @property {number} [filledTo] the fewest of those: drawing more needs a refill
  */
+
+/**
+ * Whether a geometry's buffers hold every vertex it draws now - one drawn without an index (a
+ * particle emitter filling up) may have had only its first few sent.
+ * @param {MeshBuffers} entry @param {Geometry} geometry
+ */
+const sentEnough = (entry, geometry) => !!geometry.indices || (entry.filledTo ?? Infinity) >= geometry.drawnVertices
 
 /**
  * The sizes of everything uploaded - equal layouts can reuse the same buffers.
@@ -186,19 +196,34 @@ export class Resources {
     const same = entry?.geometry === geometry
     withTangents = withNormals && (withTangents || (same && !!entry?.attributes?.tangent))
     if (entry && same && entry.version === geometry.version && (!instances || entry.instanceVersion === instances.version) &&
-      withTangents === !!entry.attributes?.tangent) return entry
+      withTangents === !!entry.attributes?.tangent && sentEnough(entry, geometry)) return entry
     const layout = layoutOf(geometry, instances, withNormals, withTangents)
     if (entry && same && entry.layout === layout) {
       // the data changed but kept its shape (moving vertices, particles, instances): refill in place
-      if (entry.version !== geometry.version) {
+      const changed = entry.version !== geometry.version
+      if (changed || !sentEnough(entry, geometry)) {
         const a = /** @type {Record<string, WebGLBuffer>} */ (entry.attributes)
-        this.#refill(a.position, geometry.positions)
-        if (withNormals) this.#refill(a.normal, geometry.normals)
-        if (geometry.uvs) this.#refill(a.uv, geometry.uvs)
-        if (geometry.uvs2) this.#refill(a.uv2, geometry.uvs2)
-        if (geometry.colors) this.#refill(a.color, geometry.colors)
-        if (withTangents) this.#refill(a.tangent, tangentsOf(geometry))
-        if (geometry.indices) {
+        const filled = /** @type {Record<string, number>} */ (entry.filled)
+        // Just what changed: the arrays the changer named, when this is the very next version (a
+        // particle step names its positions, not its unchanging colours) - and, drawn without an
+        // index, just the vertices drawn: a part-full emitter sends its live particles, not its all.
+        // An array sent short of what is drawn now is sent again, changed or not.
+        const only = entry.version === geometry.version - 1 ? geometry.changedOnly : null
+        const n = geometry.indices ? geometry.vertexCount : geometry.drawnVertices
+        const fill = (/** @type {string} */ name, /** @type {string} */ array, /** @type {number} */ size) => {
+          const data = /** @type {Float32Array | null} */ (/** @type {any} */ (geometry)[array])
+          if (!data || (filled[name] >= n && (!changed || (only && !only.includes(array))))) return
+          this.#refill(a[name], data, n * size)
+          filled[name] = n
+        }
+        fill('position', 'positions', 3)
+        if (withNormals) fill('normal', 'normals', 3)
+        if (geometry.uvs) fill('uv', 'uvs', 2)
+        if (geometry.uvs2) fill('uv2', 'uvs2', 2)
+        if (geometry.colors) fill('color', 'colors', 3)
+        entry.filledTo = Math.min(...Object.values(filled))
+        if (withTangents && changed) this.#refill(a.tangent, tangentsOf(geometry))
+        if (geometry.indices && changed) {
           // the element binding belongs to the vertex array, so bind that first
           this.gl.bindVertexArray(entry.vao)
           this.gl.bufferSubData(this.gl.ELEMENT_ARRAY_BUFFER, 0, geometry.indices)
@@ -274,8 +299,10 @@ export class Resources {
     }
     gl.bindVertexArray(null)
 
+    // every array sent whole
+    const filled = Object.fromEntries(Object.keys(attributes).filter((k) => k !== 'tangent').map((k) => [k, geometry.vertexCount]))
     entry = { vao, buffers, count: geometry.elementCount, indexType, geometry, version: geometry.version,
-      instanceVersion: instances?.version ?? 0, matrixBuffer, colorBuffer, attributes, layout }
+      instanceVersion: instances?.version ?? 0, matrixBuffer, colorBuffer, attributes, layout, filled, filledTo: geometry.vertexCount }
     cache.set(key, entry)
     return entry
   }
@@ -301,11 +328,15 @@ export class Resources {
     return elements / 3 * count
   }
 
-  /** @param {WebGLBuffer | null | undefined} buffer @param {Float32Array} data */
-  #refill(buffer, data) {
+  /**
+   * Send an array into its buffer again, from the start - all of it, or its first `length` values.
+   * @param {WebGLBuffer | null | undefined} buffer @param {Float32Array} data @param {number} [length]
+   */
+  #refill(buffer, data, length) {
     const gl = this.gl
     gl.bindBuffer(gl.ARRAY_BUFFER, /** @type {WebGLBuffer} */ (buffer))
-    gl.bufferSubData(gl.ARRAY_BUFFER, 0, data)
+    if (length === undefined || length >= data.length) gl.bufferSubData(gl.ARRAY_BUFFER, 0, data)
+    else if (length > 0) gl.bufferSubData(gl.ARRAY_BUFFER, 0, data, 0, length)
   }
 
   /**

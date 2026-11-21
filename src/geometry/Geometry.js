@@ -38,6 +38,13 @@ export class Geometry {
 
   /** @internal Bumped by needsUpdate() so renderers know to re-upload. */
   version = 0
+  /**
+   * @internal Of its arrays, the only ones the last needsUpdate() changed - said by whoever changed
+   * them and knows (an Emitter, whose colours seldom change), so a renderer refills just those
+   * ('positions', 'colors', ...). null: any of them. needsUpdate() clears it; set it after.
+   * @type {readonly string[] | null}
+   */
+  changedOnly = null
 
   /**
    * Draw only the first `drawCount` vertices (indices, when indexed), or all of them when null -
@@ -145,6 +152,7 @@ export class Geometry {
    * @returns {this}
    */
   needsUpdate() {
+    this.changedOnly = null
     this.source = null
     if (this.#autoNormals) this.#normals = null
     return this.#changed()

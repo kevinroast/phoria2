@@ -1,4 +1,4 @@
-import { DirectionalLight, Group, HemisphereLight, Mesh, PointLight, View, box, cylinder, extrude, icosphere, lathe, outline, plane } from 'phoria2'
+import { Box3, DirectionalLight, Group, HemisphereLight, Mesh, PointLight, View, box, cylinder, extrude, icosphere, lathe, outline, plane } from 'phoria2'
 import { Emitter } from 'phoria2/particles'
 import { glow, random } from './kit.js'
 
@@ -11,11 +11,13 @@ import { glow, random } from './kit.js'
 // the water's height and edge, and the outside and top of the stone rim round it
 const WATER = 0.5, BASIN = 1.95, RIM = 2.22, RIM_TOP = 0.66
 // how high each set's particles go
-const ROOM = { fountain: 3.2, flame: 3.6, snow: 0 }
+const ROOM = { fountain: 3.2, snow: 0 }
+// the flame close up: the brazier and its fire filling the view, the rocks round it running off the edges
+const FLAME_CLOSE = new Box3([-2.65, 0.2, -2.65], [2.65, 3.7, 2.65])
 const PRESETS = {
   fountain: {
-    rate: 420, origin: [0, 1.45, 0], originSpread: 0.06, velocity: [0, 5.2, 0], velocitySpread: [1.2, 0.6, 1.2],
-    gravity: [0, -9.8, 0], drag: 0, lifetime: [2.5, 3], color: ['#e6f6ff', '#7cc4ff', '#2a6cff'], size: 0.13,
+    rate: 1000, origin: [0, 1.45, 0], originSpread: 0.06, velocity: [0, 5.2, 0], velocitySpread: [1.2, 0.6, 1.2],
+    gravity: [0, -9.8, 0], drag: 0, lifetime: [2.5, 3], color: ['#e6f6ff', '#7cc4ff', '#2a6cff'], size: 0.05,
     blending: 'additive',
     // drops landing in the water or on the rim are gone; those that miss splash on the paving - a
     // bounce or two, losing most of their speed, then gone
@@ -33,12 +35,12 @@ const PRESETS = {
   },
   flame: {
     rate: 320, origin: [0, 1.05, 0], originSpread: 0.35, velocity: [0, 1.4, 0], velocitySpread: 0.35,
-    gravity: [0, 1.8, 0], drag: 0.4, lifetime: [0.7, 1.2], color: ['#fff3c0', '#ffa630', '#d2400c', '#300800'], size: 0.65,
+    gravity: [0, 1.8, 0], drag: 0.4, lifetime: [0.7, 1.2], color: ['#fff3c0', '#ffa630', '#d2400c', '#300800'], size: 0.5,
     blending: 'additive', onParticle: null,
   },
   snow: {
-    rate: 260, origin: [0, 9, 0], originSpread: 9, velocity: [0, -1, 0], velocitySpread: [0.3, 0.2, 0.3],
-    gravity: [0, 0, 0], drag: 0, lifetime: [9, 10], color: ['#ffffff', '#f2f6ff'], size: 0.09,
+    rate: 500, origin: [0, 9, 0], originSpread: 9, velocity: [0, -1, 0], velocitySpread: [0.3, 0.2, 0.3],
+    gravity: [0, 0, 0], drag: 0, lifetime: [9, 10], color: ['#ffffff', '#f2f6ff'], size: 0.15,
     blending: 'normal',
     // a slow sideways drift that differs from flake to flake, and gone on reaching the ground
     onParticle: (p) => {
@@ -104,7 +106,8 @@ export default function run({ canvas, gui, info }) {
 
   const flakes = glow(32, { core: 0.4 })
   const soft = glow()
-  const emitter = scene.add(new Emitter({ max: 6000, material: { map: soft } }))
+  // enough for the most the rate slider gives, at snow's ten-second lives
+  const emitter = scene.add(new Emitter({ max: 20000, material: { map: soft } }))
   const sets = { fountain, flame: brazier, snow: village }
   const settings = { preset: 'flame', bloom: true, burst: () => emitter.burst(400, { velocitySpread: 5 }) }
   const apply = () => {
@@ -119,15 +122,15 @@ export default function run({ canvas, gui, info }) {
     view.camera.position.set(0, settings.preset === 'snow' ? 5 : 3.5, 11)
     view.camera.target?.set(0, 1.2, 0)
     // the set piece, and the air its particles fill above it
-    const room = sets[settings.preset].bounds.expandByPoint([0, ROOM[settings.preset], 0])
-    view.frame(room, { padding: settings.preset === 'snow' ? 0.15 : 0.3 })
+    const room = settings.preset === 'flame' ? FLAME_CLOSE : sets[settings.preset].bounds.expandByPoint([0, ROOM[settings.preset], 0])
+    view.frame(room, { padding: { flame: 0.1, snow: 0.15 }[settings.preset] ?? 0.3 })
     gui.updateDisplay()
   }
   apply()
 
   const f = gui.addFolder('Emitter')
   f.add(settings, 'preset', Object.keys(PRESETS)).onChange(apply)
-  f.add(emitter, 'rate', 0, 1000, 10)
+  f.add(emitter, 'rate', 0, 2000, 10)
   f.add(emitter, 'drag', 0, 3, 0.05)
   f.add(emitter.gravity, 'y', -15, 5, 0.1).name('gravity')
   f.add(emitter.material, 'size', 0.03, 1.5, 0.01)

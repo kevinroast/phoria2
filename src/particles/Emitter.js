@@ -86,6 +86,12 @@ const HINTS = {
 const DEFAULT_MATERIAL = { size: 0.1, vertexColors: true, blending: 'additive', depthWrite: false }
 
 const tmpMat = new Float32Array(16)
+// a spawn's random offsets, reused rather than made for each particle
+const OFFSET = new Float64Array(3), SPREAD = new Float64Array(3)
+// whether each palette id fades through colours, worked out once a step
+const FADES = new Uint8Array(256)
+// what a step changes when no colour did (Geometry.changedOnly)
+const MOVED = Object.freeze(['positions', 'sizes', 'opacities', 'angles'])
 
 /**
  * Particles drawn as points. Add it to a scene and it runs itself.
@@ -137,6 +143,13 @@ export class Emitter extends Points {
   /** Last frame's origin, so a moving source leaves an even trail rather than clumps. */
   #lastOrigin = /** @type {Vec3 | null} */ (null)
   #particle = /** @type {Particle} */ ({ position: new Vec3(), velocity: new Vec3(), age: 0, lifetime: 0 })
+  // A particle's colour, size and opacity are set when it is born, and painted again as it ages only
+  // where they change over its life. When the colours or looks change, every live particle is
+  // painted again on the next step.
+  #repaint = false
+  // Whether any colour changed since the last upload: with one colour, a particle born or moved
+  // into a slot is painted as the one before it, so a step sends its positions alone.
+  #colorsChanged = true
 
   /** @param {EmitterOptions} [options] */
   constructor(options = {}) {
@@ -188,7 +201,10 @@ export class Emitter extends Points {
   get count() { return this.#alive }
 
   /** The colours particles fade through - one or several. @param {ColorInput | ColorInput[]} v */
-  set color(v) { this.#palettes[0] = colorStops(v) }
+  set color(v) {
+    this.#palettes[0] = colorStops(v)
+    this.#repaint = true
+  }
   /** @returns {[number, number, number][]} */
   get color() { return /** @type {[number, number, number][]} */ (this.#palettes[0].map((s) => [...s])) }
 
@@ -246,38 +262,50 @@ export class Emitter extends Points {
    */
   step(dt) {
     if (dt <= 0) return
-    const p = this.geometry.positions
-    const v = this.#velocities, ages = this.#ages, lives = this.#lifetimes
-    const g = this.gravity, keep = Math.exp(-this.drag * dt)
-    const hook = this.onParticle, particle = this.#particle
-    const angles = this.geometry.angles, spins = this.#spins
+    const g = this.geometry
+    // In passes, each one loop doing one thing: a loop that also removes, paints and calls hooks is
+    // compiled unevenly - the same step took 0.7 ms or 10 ms at 50,000 particles depending on which
+    // of its branches the engine saw first. Every particle is still handled once a step.
+    let alive = moveAll(this.#alive, g.positions, this.#velocities, this.#ages, this.gravity, Math.exp(-this.drag * dt), dt)
+    const angles = g.angles, spins = this.#spins
+    if (angles && spins) for (let i = 0; i < alive; i++) angles[i] += spins[i] * dt
+    // the dead out: the last live particle into each one's place, then looked at in turn
+    const ages = this.#ages, lives = this.#lifetimes
+    for (let i = nextDead(ages, lives, 0, alive); i < alive; i = nextDead(ages, lives, i, alive)) {
+      this.#remove(i)
+      alive--
+    }
 
-    for (let i = 0; i < this.#alive;) {
-      const age = ages[i] += dt
-      if (age >= lives[i]) {
-        this.#remove(i)
-        continue
-      }
-      const i3 = i * 3
-      for (let k = 0; k < 3; k++) {
-        v[i3 + k] = (v[i3 + k] + g[k] * dt) * keep
-        p[i3 + k] += v[i3 + k] * dt
-      }
-      if (angles && spins) angles[i] += spins[i] * dt
-      this.#paint(i, age / lives[i])
-      if (hook) {
+    // painted as it ages: every particle when the looks change over a life (or just changed), else
+    // only those fading through colours - none, usually, and then nothing is painted
+    const looks = this.#repaint || (!!g.sizes && this.#size.length > 1) || (!!g.opacities && this.#opacity.length > 1)
+    this.#repaint = false
+    const fades = FADES.fill(0), palettes = this.#palettes
+    let anyFade = false
+    for (let id = 0; id < palettes.length; id++) if (palettes[id].length > 1) anyFade = !!(fades[id] = 1)
+    if (looks || anyFade) {
+      const ids = this.#palette
+      for (let i = 0; i < alive; i++) if (looks || fades[ids[i]]) this.#paint(i, ages[i] / lives[i])
+    }
+
+    const hook = this.onParticle
+    if (hook) {
+      const p = g.positions, v = this.#velocities, particle = this.#particle
+      for (let i = 0; i < alive;) {
+        const i3 = i * 3
         particle.position.set(p[i3], p[i3 + 1], p[i3 + 2])
         particle.velocity.set(v[i3], v[i3 + 1], v[i3 + 2])
-        particle.age = age
+        particle.age = ages[i]
         particle.lifetime = lives[i]
         if (hook(particle) === false) {
           this.#remove(i)
+          alive--
           continue
         }
         p.set(particle.position, i3)
         v.set(particle.velocity, i3)
+        i++
       }
-      i++
     }
 
     // new particles, spread along the path the origin took this frame
@@ -318,9 +346,10 @@ export class Emitter extends Points {
     const i = this.#alive++, i3 = i * 3
     const p = this.geometry.positions, v = this.#velocities
     const t = Math.random()
-    const o = randomInBall(this.originSpread)
-    const s = this.velocitySpread
-    const dv = typeof s === 'number' ? randomInBall(s) : [(Math.random() * 2 - 1) * s[0], (Math.random() * 2 - 1) * s[1], (Math.random() * 2 - 1) * s[2]]
+    const o = randomInBall(this.originSpread, OFFSET)
+    const s = this.velocitySpread, dv = SPREAD
+    if (typeof s === 'number') randomInBall(s, dv)
+    else for (let k = 0; k < 3; k++) dv[k] = (Math.random() * 2 - 1) * s[k]
     for (let k = 0; k < 3; k++) {
       v[i3 + k] = this.velocity[k] + dv[k]
       p[i3 + k] = a[k] + (b[k] - a[k]) * t + o[k] + v[i3 + k] * head
@@ -345,14 +374,21 @@ export class Emitter extends Points {
     if (i === last) return
     const p = this.geometry.positions, c = /** @type {Float32Array} */ (this.geometry.colors), v = this.#velocities
     p.copyWithin(i * 3, last * 3, last * 3 + 3)
-    c.copyWithin(i * 3, last * 3, last * 3 + 3)
+    const i3 = i * 3, l3 = last * 3
+    if (c[i3] !== c[l3] || c[i3 + 1] !== c[l3 + 1] || c[i3 + 2] !== c[l3 + 2]) {
+      c.copyWithin(i3, l3, l3 + 3)
+      this.#colorsChanged = true
+    }
     v.copyWithin(i * 3, last * 3, last * 3 + 3)
     this.#ages[i] = this.#ages[last]
     this.#lifetimes[i] = this.#lifetimes[last]
     this.#palette[i] = this.#palette[last]
-    for (const a of [this.geometry.sizes, this.geometry.opacities, this.geometry.angles, this.#sizeFactors, this.#spins]) {
-      if (a) a[i] = a[last]
-    }
+    const { sizes, opacities, angles } = this.geometry, factors = this.#sizeFactors, spins = this.#spins
+    if (sizes) sizes[i] = sizes[last]
+    if (opacities) opacities[i] = opacities[last]
+    if (angles) angles[i] = angles[last]
+    if (factors) factors[i] = factors[last]
+    if (spins) spins[i] = spins[last]
   }
 
   /** @param {number} i @param {number} t 0-1 through its life */
@@ -360,11 +396,19 @@ export class Emitter extends Points {
     const { sizes, opacities } = this.geometry
     if (sizes) sizes[i] = along(this.#size, t) * (this.#sizeFactors ? this.#sizeFactors[i] : 1)
     if (opacities) opacities[i] = along(this.#opacity, t)
-    const c = /** @type {Float32Array} */ (this.geometry.colors), stops = this.#palettes[this.#palette[i]]
+    const c = /** @type {Float32Array} */ (this.geometry.colors), stops = this.#palettes[this.#palette[i]], i3 = i * 3
     if (stops.length === 1) {
-      c.set(stops[0], i * 3)
+      const [r, g, b] = stops[0]
+      // (compared as the array keeps it)
+      if (c[i3] !== Math.fround(r) || c[i3 + 1] !== Math.fround(g) || c[i3 + 2] !== Math.fround(b)) {
+        c[i3] = r
+        c[i3 + 1] = g
+        c[i3 + 2] = b
+        this.#colorsChanged = true
+      }
       return
     }
+    this.#colorsChanged = true
     const x = Math.min(Math.max(t, 0), 1) * (stops.length - 1)
     const s = Math.min(Math.floor(x), stops.length - 2), f = x - s
     const a = stops[s], b = stops[s + 1]
@@ -374,8 +418,12 @@ export class Emitter extends Points {
   }
 
   #upload() {
-    this.geometry.drawCount = this.#alive
-    this.geometry.needsUpdate()
+    const g = this.geometry
+    g.drawCount = this.#alive
+    g.needsUpdate()
+    // the colours, only when one changed - see #colorsChanged
+    if (!this.#colorsChanged) g.changedOnly = MOVED
+    this.#colorsChanged = false
   }
 
   /** The followed node's position in the emitter's space, or the origin. @returns {Vec3} */
@@ -400,7 +448,10 @@ export class Emitter extends Points {
       else this.velocitySpread = Vec3.fromInput(s, owner)
     }
     if (o.lifetime !== undefined) this.lifetime = lifetimeRange(o.lifetime)
-    if (o.color !== undefined) this.#palettes[0] = colorStops(o.color)
+    if (o.color !== undefined) {
+      this.#palettes[0] = colorStops(o.color)
+      this.#repaint = true
+    }
   }
 
   /** @param {LookOptions & { rate?: number, gravity?: Vec3Input, drag?: number, follow?: Node | null, onParticle?: ((p: Particle) => boolean | void) | null }} o */
@@ -427,6 +478,7 @@ export class Emitter extends Points {
     if (!g.sizes && (!plain(this.#size) || this.#sizeSpread)) g.sizes = new Float32Array(max).fill(1)
     if (!this.#sizeFactors && this.#sizeSpread) this.#sizeFactors = new Float32Array(max).fill(1)
     if (!g.opacities && !plain(this.#opacity)) g.opacities = new Float32Array(max).fill(1)
+    if (o.size !== undefined || o.sizeSpread !== undefined || o.opacity !== undefined) this.#repaint = true
     if (!g.angles && (this.#spin[0] || this.#spin[1])) {
       g.angles = new Float32Array(max)
       this.#spins = new Float32Array(max)
@@ -454,12 +506,46 @@ export class Emitter extends Points {
     let id = this.#paletteIds.get(key)
     if (id === undefined) {
       id = this.#palettes.length < 256 ? this.#palettes.length : 1 + (this.#paletteIds.size % 255)
+      // an old burst's colours given over to new ones: particles still fading through them repaint
+      if (this.#palettes[id]) this.#repaint = true
       for (const [k, v] of this.#paletteIds) if (v === id) this.#paletteIds.delete(k)
       this.#paletteIds.set(key, id)
     }
     this.#palettes[id] = stops
     return id
   }
+}
+
+/**
+ * Every live particle a step on: older, its velocity pulled by gravity and slowed by drag, moved by
+ * it. One plain loop over typed arrays, and nothing else.
+ * @param {number} alive @param {Float32Array} p positions @param {Float32Array} v velocities
+ * @param {Float32Array} ages @param {ArrayLike<number>} gravity @param {number} keep what drag leaves
+ * @param {number} dt @returns {number} alive, as given
+ */
+function moveAll(alive, p, v, ages, gravity, keep, dt) {
+  const gx = gravity[0] * dt, gy = gravity[1] * dt, gz = gravity[2] * dt
+  for (let i = 0, i3 = 0; i < alive; i++, i3 += 3) {
+    ages[i] += dt
+    const vx = (v[i3] + gx) * keep, vy = (v[i3 + 1] + gy) * keep, vz = (v[i3 + 2] + gz) * keep
+    v[i3] = vx
+    v[i3 + 1] = vy
+    v[i3 + 2] = vz
+    p[i3] += vx * dt
+    p[i3 + 1] += vy * dt
+    p[i3 + 2] += vz * dt
+  }
+  return alive
+}
+
+/**
+ * The first particle from `from` on that has lived its life, or `alive` when none has.
+ * @param {Float32Array} ages @param {Float32Array} lives @param {number} from @param {number} alive
+ */
+function nextDead(ages, lives, from, alive) {
+  let i = from
+  while (i < alive && ages[i] < lives[i]) i++
+  return i
 }
 
 /** @param {unknown} v @returns {Node | null} */
@@ -516,14 +602,20 @@ function colorStops(v) {
   return list.map((c) => Color.fromInput(/** @type {ColorInput} */ (c), 'Emitter').toSRGB())
 }
 
-/** A random point within a ball of radius r, evenly spread. @param {number} r @returns {number[]} */
-function randomInBall(r) {
-  if (!r) return [0, 0, 0]
+/**
+ * A random point within a ball of radius r, evenly spread, into `out`.
+ * @param {number} r @param {Float64Array} out @returns {Float64Array}
+ */
+function randomInBall(r, out) {
+  if (!r) return out.fill(0)
   let x, y, z
   do {
     x = Math.random() * 2 - 1
     y = Math.random() * 2 - 1
     z = Math.random() * 2 - 1
   } while (x * x + y * y + z * z > 1)
-  return [x * r, y * r, z * r]
+  out[0] = x * r
+  out[1] = y * r
+  out[2] = z * r
+  return out
 }
