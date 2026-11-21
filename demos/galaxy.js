@@ -26,7 +26,7 @@ export default function run({ canvas, gui }) {
   }
 
   let f = gui.addFolder('Galaxy')
-  f.add(settings, 'stars', 5000, 500000, 5000).onChange(rebuild)
+  f.add(settings, 'stars', 5000, 1000000, 5000).onChange(rebuild)
   f.add(settings, 'arms', 1, 7, 1).onChange(rebuild)
   f.add(settings, 'twist', 0, 2, 0.05).onChange(rebuild)
   f.add(settings, 'spread', 0.05, 1, 0.05).onChange(rebuild)
