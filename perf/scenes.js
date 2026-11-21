@@ -17,7 +17,7 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js'
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js'
-import { HEIGHT, WIDTH, canvas, cloud, complete, disposeThree, frames, orbiter, phoriaBare, picture, random, record, stage, sync, threeBare } from './harness.js'
+import { HEIGHT, WIDTH, canvas, cloud, complete, disposeThree, frames, median, orbiter, phoriaBare, picture, random, record, stage, sync, threeBare } from './harness.js'
 
 const PI = Math.PI
 const HDR = 'hdr/studio_small_09_1k.hdr'
@@ -616,6 +616,175 @@ async function particles() {
 }
 
 /** The scenes here, as bench.js lists them: key, name, run. @type {[string, string, () => Promise<void>][]} */
+
+// --- a scene built from parts ---
+
+// Racking as separate meshes - uprights, beams, pallets, loads: about 5,000, sharing nine colours, every
+// one casting and receiving the sun's shadow - as a scene built from parts is (the warehouse demo).
+// Besides the frame, it times each library's own frame loop: phoria2's View on its own (its change
+// check in renderMode 'auto', its scene update) against three.js's render in a loop, where per-part
+// costs that render() alone doesn't show live.
+const PART_COLOURS = ['#2f5f9e', '#e0701c', '#8a6a4a', '#b8925c', '#a9824f', '#c7a774', '#9a7444', '#dfe6ea', '#6b3a2a']
+/** The parts, as [colour index, position, scale] - the same in both. */
+function racking() {
+  const r = random(11)
+  /** @type {[number, number[], number[]][]} */
+  const parts = []
+  const ROWS = 14, BAYS = 14, LEVELS = 4, BAY = 2.7, LEVEL = 1.55, DEPTH = 1.1, AISLE = 3.4
+  const width = ROWS / 2 * (DEPTH * 2 + AISLE), length = BAYS * BAY
+  for (let row = 0; row < ROWS; row++) {
+    const z = -width / 2 + Math.floor(row / 2) * (DEPTH * 2 + AISLE) + AISLE / 2 + DEPTH / 2 + (row % 2) * DEPTH
+    for (let bay = 0; bay <= BAYS; bay++) {
+      const x = -length / 2 + bay * BAY
+      for (const side of [-1, 1]) parts.push([0, [x, LEVEL * LEVELS / 2, z + side * (DEPTH / 2 - 0.04)], [0.08, LEVEL * LEVELS, 0.08]])
+      if (bay === BAYS) continue
+      for (let level = 0; level < LEVELS; level++) {
+        const y = level * LEVEL + 0.12
+        for (const side of [-1, 1]) parts.push([1, [x + BAY / 2, y, z + side * (DEPTH / 2 - 0.04)], [BAY - 0.08, 0.12, 0.06]])
+        for (const slot of [0, 1]) {
+          const px = x + BAY * (slot ? 0.73 : 0.27), h = 0.55 + r() * 0.7
+          parts.push([2, [px, y + 0.13, z], [1.1, 0.14, 0.95]])
+          parts.push([3 + Math.floor(r() * 6), [px, y + 0.2 + h / 2, z], [1.0, h, 0.86]])
+        }
+      }
+    }
+  }
+  return parts
+}
+const PART_CAMERA = [-30, 34, 46]
+
+/**
+ * Median main-thread time of an animation frame while a loop runs: requestAnimationFrame is wrapped
+ * to time each callback, so it counts what the library does in its frame - not only its render().
+ * @param {() => void} start @param {() => void} stop
+ */
+async function loopFrame(start, stop, n = 60) {
+  const raf = window.requestAnimationFrame
+  /** @type {number[]} */
+  const times = []
+  window.requestAnimationFrame = (cb) => raf.call(window, (now) => {
+    const t = performance.now()
+    cb(now)
+    times.push(performance.now() - t)
+  })
+  try {
+    start()
+    await new Promise((r) => setTimeout(r, 400))
+    times.length = 0
+    while (times.length < n) await new Promise((r) => raf.call(window, r))
+  } finally {
+    stop()
+    window.requestAnimationFrame = raf
+  }
+  return median(times)
+}
+
+async function parts() {
+  const all = racking()
+  // where to hover: across the racks, as drawn
+  const points = Array.from({ length: 12 }, (_, i) => [160 + ((i * 263) % 480), 160 + ((i * 151) % 280)])
+
+  // phoria2
+  let c = canvas()
+  let t0 = performance.now()
+  const view = phoriaBare(c, { position: PART_CAMERA, target: [0, 0, 0] })
+  phoriaLights(view, { castShadow: true })
+  view.scene.add(phoriaFloor(90))
+  const geometry = P.box(1), materials = PART_COLOURS.map((color) => new P.Material({ color, roughness: 0.7 }))
+  const meshes = all.map(([m, position, scale]) => view.scene.add(new P.Mesh({ geometry, material: materials[m], position, scale, castShadow: true, receiveShadow: true })))
+  /** @type {Record<string, number>} */
+  const p = { build: (await complete(view)) - t0 }
+  view.render()
+  picture('parts-phoria2', c)
+  // one load sliding back and forth
+  const moved = meshes[meshes.length >> 1], home = moved.position[0]
+  let pi = 0
+  const pMove = () => { moved.position.x = home + Math.sin(pi++ * 0.2) * 0.5 }
+  p.moving = await frames(() => { pMove(); view.render() }, view.renderer.gl)
+  p.still = await frames(() => view.render(), view.renderer.gl)
+  // the View's own loop: one part moving, in each render mode; then nothing moving in 'auto' - the
+  // change check alone, as nothing is drawn
+  const loop = (/** @type {'auto' | 'always'} */ mode, /** @type {boolean} */ move) => loopFrame(() => {
+    view.renderMode = mode
+    view.start(() => { if (move) pMove() })
+  }, () => {
+    view.stop()
+    view.renderMode = 'manual'
+  })
+  p.loopAuto = await loop('auto', true)
+  p.loopAlways = await loop('always', true)
+  p.loopIdle = await loop('auto', false)
+  view.render()
+  view.pick(points[0][0], points[0][1])
+  await new Promise((r) => setTimeout(r, 300))
+  view.render()
+  const hover = []
+  for (const [x, y] of points) {
+    const t = performance.now()
+    const request = view.renderer.pickAsync(/** @type {any} */ (view.lastFrame), x, y)
+    hover.push(performance.now() - t)
+    await request
+  }
+  p.hover = median(hover)
+  view.dispose()
+  c.remove()
+
+  // three.js
+  c = canvas()
+  t0 = performance.now()
+  const t = threeBare(c, PART_CAMERA)
+  t.renderer.shadowMap.enabled = true
+  threeLights(t, { castShadow: true, bounds: 30 })
+  t.scene.add(threeFloor(90))
+  const box = new THREE.BoxGeometry(1, 1, 1), tMaterials = PART_COLOURS.map((color) => new THREE.MeshStandardMaterial({ color, roughness: 0.7 }))
+  const tMeshes = all.map(([m, position, scale]) => {
+    const mesh = new THREE.Mesh(box, tMaterials[m])
+    mesh.position.set(position[0], position[1], position[2])
+    mesh.scale.set(scale[0], scale[1], scale[2])
+    mesh.castShadow = mesh.receiveShadow = true
+    t.scene.add(mesh)
+    return mesh
+  })
+  const draw = () => t.renderer.render(t.scene, t.camera)
+  draw()
+  sync(t.gl)
+  /** @type {Record<string, number>} */
+  const tr = { build: performance.now() - t0 }
+  draw()
+  picture('parts-three', c)
+  const tMoved = tMeshes[tMeshes.length >> 1], tHome = tMoved.position.x
+  let ti = 0
+  const tMove = () => { tMoved.position.x = tHome + Math.sin(ti++ * 0.2) * 0.5 }
+  tr.moving = await frames(() => { tMove(); draw() }, t.gl)
+  // nothing moving: the app tells three.js its shadow map can be kept
+  t.renderer.shadowMap.autoUpdate = false
+  tr.still = await frames(draw, t.gl)
+  t.renderer.shadowMap.autoUpdate = true
+  // its loop: render every frame, one part moving
+  let id = 0
+  tr.loopAlways = await loopFrame(() => {
+    const step = () => { tMove(); draw(); id = requestAnimationFrame(step) }
+    id = requestAnimationFrame(step)
+  }, () => cancelAnimationFrame(id))
+  const raycaster = new THREE.Raycaster()
+  const tPick = []
+  for (const [x, y] of points) {
+    const time = performance.now()
+    raycaster.setFromCamera(new THREE.Vector2((x / WIDTH) * 2 - 1, 1 - (y / HEIGHT) * 2), t.camera)
+    raycaster.intersectObjects(t.scene.children, true)
+    tPick.push(performance.now() - time)
+  }
+  tr.hover = median(tPick)
+  disposeThree(t)
+
+  const name = `${all.length.toLocaleString('en')} parts`
+  recordAll(name, p, tr, { moving: 'frame, one part moving', still: 'frame, nothing moving (three: shadow map kept by hand)' })
+  record(name, "loop, main thread, one part moving - 'always' / three's loop", 'ms', p.loopAlways, tr.loopAlways)
+  record(name, "loop, main thread, one part moving - 'auto'", 'ms', p.loopAuto, null)
+  record(name, "loop, main thread, nothing moving - 'auto' (draws nothing)", 'ms', p.loopIdle, null)
+  record(name, 'hover pick, main thread', 'ms', p.hover, tr.hover)
+}
+
 export const MORE_SCENES = [
   ['spots', 'spot + point shadows', spotShadows],
   ['lights', 'max lights', manyLights],
@@ -629,4 +798,5 @@ export const MORE_SCENES = [
   ['lines', '10k thick lines', thickLines],
   ['section', '2k meshes, section plane', sectionPlane],
   ['particles', '50k particles', particles],
+  ['parts', '5k parts', parts],
 ]
