@@ -5,9 +5,9 @@ lines, labels, picking, glTF models and particles, behind an API small enough to
 afternoon - aimed at business apps: charts, labelled scenes, diagrams, dashboards, floor plans and
 product viewers. The [demo gallery](https://kevs3d.co.uk/phoria2/).
 
-- **Small**: about 70 KB gzipped for a lit, interactive scene, and about 116 KB for everything;
-  charts, particles, glTF, motion and editing are separate imports, and the heavier parts (shadows,
-  HDR environments, GPU picking) load only when used.
+- **Small**: about 100 KB gzipped for a lit, interactive scene. Charts, particles, glTF, motion and
+  editing are separate imports, and the heavier parts - shadows, HDR environments, area lights,
+  bloom, GPU picking - load only when a scene uses them.
 - **Interaction built in**: tooltips, hover highlights, click and drag handlers, and HTML labels
   that hide when they overlap or go behind something - each an option or a line of code, not a
   layer to build.
@@ -26,12 +26,16 @@ product viewers. The [demo gallery](https://kevs3d.co.uk/phoria2/).
 - **Product viewer polish as options**: `ambientOcclusion` shades the creases, `groundShadow` sets
   a soft shadow under the model with no light needed, and `fxaa` smooths edges - each one option,
   loaded only when turned on.
-- **Render textures**: a `RenderTexture` is what a camera sees, as any material's map - live camera
-  feeds on monitors, a minimap, a second view beside a product - drawn by the view as it draws.
-- **Accessible**: `keyboard: true` lets people step through bars, points and parts with the
+- **Studio quality if you need it**: glass that refracts, dispersion and coloured shadows; clearcoat,
+  sheen, iridescence, brushed metal and translucency; rect-area lights with soft, contact-hardening
+  shadows; HDR environments, bloom and fog. `refine: true` keeps drawing while nothing moves to
+  increase quality further and allow depth of field.
+- **Render textures**: a `RenderTexture` is what a camera sees, as any material's texture - live
+  camera feeds on monitors, a minimap, a second view beside a product.
+- **Accessible**: `keyboard: true` lets users step through bars, points and parts with the
   arrow keys while a screen reader says what each one is; motion follows the system's
   reduced-motion setting.
-- **Integrates well**: physics, solid modelling and path finding can be added using libraries made
+- **Integrates well**: physics, solid modelling and path finding can be added using libraries best
   for them - the gallery shows phoria2 rendering with Rapier, Manifold and recast-navigation.
 - **No runtime dependencies.** ES modules, with TypeScript types.
 
@@ -61,7 +65,7 @@ Skills standard, so other agents that read skills can use the folder as it is.
 npm install phoria2
 ```
 
-Or straight from a CDN, with no build step:
+Or straight from a CDN, with no build step (the latest version):
 
 ```html
 <script type="module">
@@ -171,8 +175,9 @@ model.variant = 'Peacock Velvet'                    // one of model.variants - i
 
 ## As an HTML tag
 
-No script of your own: load `phoria2/element` once, and `<phoria-view>` shows a model, a chart or
-a scene. Attributes are View options, kebab-cased.
+No script of your own: load `phoria2/element` once (here the latest version; pin it as above for a
+page that must not change), and `<phoria-view>` shows a model, a chart or a scene. Attributes are
+View options, kebab-cased.
 
 ```html
 <script type="module" src="https://cdn.jsdelivr.net/npm/phoria2/dist/element.js"></script>
@@ -252,7 +257,7 @@ A full example, with a chart that follows its data, is in
 
 | Import | |
 |---|---|
-| `phoria2` | the view, scene graph, cameras, lights, materials, geometry, curves, textures, picking, labels, bloom, ambient occlusion, ground shadows, FXAA, render textures, `create()` from JSON |
+| `phoria2` | the view, scene graph, cameras, lights, materials, geometry, curves, textures, picking, labels, glass and advanced materials, area lights, bloom, ambient occlusion, ground shadows, FXAA, `refine`, render textures, `create()` from JSON |
 | `phoria2/charts` | `chart()` - charts from a spec of mark, data and channels, or of a function in cartesian or curved coordinates, and the scales they use |
 | `phoria2/particles` | `Emitter` and `Body` |
 | `phoria2/gltf` | `loadGLTF()` - glTF 2.0 models with their materials, material variants and animations |
