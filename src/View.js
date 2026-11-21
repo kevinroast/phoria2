@@ -58,7 +58,10 @@ const waitingForLabels = new Set()
  *   and above, fitted to the scene
  * @property {boolean | OrbitOptions} [orbit] mouse/touch camera control (default false)
  * @property {ColorInput | Texture | TextureOptions | null} [background] shortcut for scene.background: a colour or a panorama
- * @property {RenderMode} [renderMode] when to draw (default 'auto': only when something changed)
+ * @property {RenderMode} [renderMode] when to draw (default 'auto': only when something changed, so a still view
+ *   costs nothing). 'always' draws every frame without that check - a little faster for scenes that move every
+ *   frame, at the cost of the idle saving and refine. 'manual' only when asked: view.render(), or view.invalidate()
+ *   for the next frame
  * @property {FramingKeep | { keep?: FramingKeep, aspect?: number }} [framing] what stays in view when the canvas
  *   changes shape: 'height' (default - the width varies), 'width', or 'both' (nothing framed is ever cut off); or
  *   { keep, aspect }, where aspect is the width / height the camera was set up for (default: the canvas's shape

@@ -168,8 +168,9 @@ export default function run({ canvas, gui, info }) {
   gui.add(settings, 'forklifts').name('forklifts running')
   // 0 is the plain filtered edge; above it, contact-hardening - crisp where a load meets its pallet
   gui.add(sun, 'shadowSoftness', 0, 1, 0.05).name('shadow softness')
-  // TEMP, for comparing with the three.js copy: draw every frame, without the change check
-  gui.add({ always: false }, 'always').name('draw every frame').onChange((on) => { view.renderMode = on ? 'always' : 'auto' })
+  // 'auto' (the default) draws only when something changed - a still hall costs nothing; 'always'
+  // draws every frame without that check: a little faster while everything moves
+  gui.add({ always: false }, 'always').name("renderMode 'always'").onChange((on) => { view.renderMode = on ? 'always' : 'auto' })
   gui.add({ stats: true }, 'stats').name('stats corner').onChange((on) => { view.debug = on ? { stats: 'bottom-left' } : false })
 
   const materials = new Set(Object.values(MATERIALS).flat()).size
