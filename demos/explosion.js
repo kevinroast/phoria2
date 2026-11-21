@@ -23,6 +23,9 @@ const FRONT = 16            // the flame front's speed through the fuel, units a
 const SHOCK = 34            // the blast wave's speed over the ground
 const FUEL = 1.2            // how much fuel the tank holds, as a share of the cloud it was tuned on
 const DELAY = 0.2           // seconds from the tank splitting to the fuel catching
+// seconds before the first blast goes off by itself: time for its shaders to compile and the code
+// it loads on first use to arrive, so it isn't half over by the time it shows
+const FIRST_BLAST = 2
 const SKY = '#2c3140'
 // what a parcel of fuel cools through as it burns, by how rich the mix was: rich in the middle,
 // burning long and hot; lean at the edge of the cloud, a quick orange flash and then soot. Each
@@ -123,6 +126,8 @@ export default function run({ canvas, gui, info }) {
   const settings = { speed: 1, detonate: () => detonate(), reset: () => reset() }
   /** @type {{ t: number, lit: number | null, front: number, shock: number, shaken: boolean }} */
   const blast = { t: -1, lit: null, front: 0, shock: 0, shaken: false }
+  // counting down to the first blast; 0 once it has gone off, or been pre-empted
+  let firstBlastIn = FIRST_BLAST
   // the fireball: a vortex ring rising - its height, ring radius, how hard it rolls, and how fast it rises
   const ball = { y: TANK[1], ring: 1.5, roll: 0, rise: 0 }
   let dt = 0, peak = 1, shake = 0
@@ -188,6 +193,7 @@ export default function run({ canvas, gui, info }) {
   }
 
   function detonate() {
+    firstBlastIn = 0
     for (const e of emitters) e.clear()
     Object.assign(blast, { t: 0, lit: null, front: 0, shock: 0, shaken: false })
     Object.assign(ball, { y: TANK[1], ring: 1.5, roll: 0, rise: 0 })
@@ -210,6 +216,7 @@ export default function run({ canvas, gui, info }) {
 
   // everything back as it was: the tank whole on its saddles, the ground clean, the air clear
   function reset() {
+    firstBlastIn = 0
     for (const e of emitters) e.clear()
     Object.assign(blast, { t: -1, lit: null, front: 0, shock: 0, shaken: false })
     tank.visible = true
@@ -244,9 +251,10 @@ export default function run({ canvas, gui, info }) {
 
   const camera = view.camera
   let shown = ''
-  detonate()
   return view.start((frameDt) => {
     dt = frameDt
+    // the first blast, a moment after the start - unless Detonate or Start again came first
+    if (firstBlastIn > 0 && (firstBlastIn -= frameDt) <= 0) detonate()
     const s = frameDt * settings.speed
     if (blast.t >= 0) {
       blast.t += s
