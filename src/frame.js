@@ -8,7 +8,7 @@ import { fitPointShadow, fitShadow, fitSpotShadow, SPOT_TILES } from './shadow.j
 import { worldPlane } from './clip.js'
 import { sampleLight } from './refine.js'
 import { hiddenInstance } from './scene/drawables.js'
-import { variantOf } from './material/features.js'
+import { featureMask, variantOfMask } from './material/features.js'
 import { drawKind, isInstanced } from './scene/kinds.js'
 
 /** @import { Scene } from './scene/Scene.js' */
@@ -208,6 +208,8 @@ function coneOver(at, direction, boxes) {
  * @property {Scene} scene what was collected - for render textures that draw the view's own scene
  * @property {[any, FrameClip | null][]} solids opaque meshes that cast a ground shadow, seen or not - all but
  *   those that only receive shadows (floors); made into draw items by solidItems() when wanted
+ * @property {Record<'mesh' | 'points' | 'lines', Map<unknown, number>>} [masks] @internal the opaque
+ *   materials' features (featureMask), found once for sorting here and read again by the renderer
  */
 
 /**
@@ -390,15 +392,13 @@ export function collect(scene, camera, { display = true, labels = display, light
   // opaque: front to back lets the depth test reject hidden pixels early; grouping by material
   // variant - worked out once an item, for its kind - keeps shader switches down
   // a material's variant found once, however many items share it
-  /** @type {Map<unknown, Map<string, string>>} */
-  const byMaterial = new Map()
+  // - its features, as a number (featureMask), kept on the frame for the renderer
+  const masks = frame.masks = { mesh: new Map(), points: new Map(), lines: new Map() }
   const variantOfItem = (/** @type {DrawItem} */ item) => {
-    const kind = kindOf(item.node)
-    let kinds = byMaterial.get(item.material)
-    if (!kinds) byMaterial.set(item.material, kinds = new Map())
-    let v = kinds.get(kind)
-    if (v === undefined) kinds.set(kind, v = variantOf(item.material, kind))
-    return v
+    const kind = kindOf(item.node), m = item.material
+    let mask = masks[kind].get(m)
+    if (mask === undefined) masks[kind].set(m, mask = featureMask(m, kind))
+    return variantOfMask(mask, kind, !!m.shader)
   }
   // Within a variant, a material's draws together - switching materials rebinds every map and sets
   // its uniforms again, and three materials of 1,000 boxes interleaved by depth bound 4,000 textures

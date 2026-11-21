@@ -33,6 +33,8 @@
  */
 
 const MESH = /** @type {const} */ (['mesh'])
+// a draw's worked-out uniforms, reused rather than made for every draw (what is sent is copied)
+const EMISSIVE = new Float32Array(3), SPECULAR = new Float32Array(4)
 const ALL = /** @type {const} */ (['mesh', 'points', 'lines'])
 
 /**
@@ -73,7 +75,10 @@ export const FEATURES = [
     name: null, define: null, kinds: MESH, when: () => true,
     uniforms: (m, { set }) => {
       const e = m.emissive, k = m.emissiveIntensity
-      set('uEmissive', [e[0] * k, e[1] * k, e[2] * k])
+      EMISSIVE[0] = e[0] * k
+      EMISSIVE[1] = e[1] * k
+      EMISSIVE[2] = e[2] * k
+      set('uEmissive', EMISSIVE)
       set('uRoughness', m.roughness)
       set('uMetalness', m.metalness)
       set('uNormalScale', m.normalScale)
@@ -81,7 +86,11 @@ export const FEATURES = [
       set('uEnvStrength', m.environmentIntensity)
       // a non-metal's reflectance face on, from its ior and specular settings, and at grazing angles
       const ior = (m.ior - 1) / (m.ior + 1), sc = m.specularColor, si = m.specularIntensity
-      set('uSpecular', [Math.min(ior * ior * sc[0], 1) * si, Math.min(ior * ior * sc[1], 1) * si, Math.min(ior * ior * sc[2], 1) * si, si])
+      SPECULAR[0] = Math.min(ior * ior * sc[0], 1) * si
+      SPECULAR[1] = Math.min(ior * ior * sc[1], 1) * si
+      SPECULAR[2] = Math.min(ior * ior * sc[2], 1) * si
+      SPECULAR[3] = si
+      set('uSpecular', SPECULAR)
     },
   },
   // each map: its sampler, and - read through UVs - its own repeat, rotation and offset
@@ -165,6 +174,12 @@ export const FEATURES = [
 // only a kind's own, and for a short key of which apply
 const BY_KIND = Object.fromEntries(['mesh', 'points', 'lines'].map((kind) => [kind, FEATURES.filter((f) => f.kinds.includes(/** @type {any} */ (kind)))]))
 const INDEX = new Map(FEATURES.map((f, i) => [f, i]))
+// Each feature's bit, as a power of two: a material's features are one number, their bits added up
+// - more than 32 of them, so as plain numbers (exact to 2^53), not 32-bit operators. Materials with
+// the same features share what is worked out from them (featuresOf, variantOf), made once.
+const BITS = Object.fromEntries(Object.entries(BY_KIND).map(([kind, list]) => [kind, list.map((f) => 2 ** /** @type {number} */ (INDEX.get(f)))]))
+/** @param {number} mask @param {number} bit */
+const has = (mask, bit) => Math.floor(mask / bit) % 2 === 1
 
 /**
  * Glass: a material that lets light through, lit - it bends what is behind it, and colours the light
@@ -197,20 +212,50 @@ export function glassFilter(m, worldMatrix) {
  * @returns {MaterialFeatures}
  */
 export function featuresOf(m, kind) {
-  const all = /** @type {Feature[]} */ ([]), uniforms = /** @type {Feature[]} */ ([])
-  let part = /** @type {'materials' | null} */ (null)
-  // most materials have no maps: their ten features are passed over without asking each slot
-  const maps = m.mapEntries.length > 0
-  let key = kind[0]
-  for (const f of BY_KIND[kind]) {
-    if ((f.slot && !maps) || (f.lit && m.unlit) || !f.when(m)) continue
-    all.push(f)
-    if (f.uniforms) uniforms.push(f)
-    if (f.part) part = f.part
-    key += String.fromCharCode(48 + /** @type {number} */ (INDEX.get(f)))
-  }
-  return { all, uniforms, key, part }
+  return featuresOfMask(featureMask(m, kind), kind)
 }
+
+/**
+ * The features a mask (featureMask) says apply - shared by every material with them.
+ * @param {number} mask @param {'mesh' | 'points' | 'lines'} kind
+ * @returns {MaterialFeatures}
+ */
+export function featuresOfMask(mask, kind) {
+  let features = SHARED[kind].get(mask)
+  if (!features) {
+    const all = /** @type {Feature[]} */ ([]), uniforms = /** @type {Feature[]} */ ([])
+    let part = /** @type {'materials' | null} */ (null)
+    let key = kind[0]
+    BY_KIND[kind].forEach((f, i) => {
+      if (!has(mask, BITS[kind][i])) return
+      all.push(f)
+      if (f.uniforms) uniforms.push(f)
+      if (f.part) part = f.part
+      key += String.fromCharCode(48 + /** @type {number} */ (INDEX.get(f)))
+    })
+    SHARED[kind].set(mask, features = Object.freeze({ all, uniforms, key, part }))
+  }
+  return features
+}
+
+/**
+ * Which of a kind's features apply to a material, as one number: their bits added up. One walk of
+ * the table, nothing made - most materials have no maps, and their ten are passed over without
+ * asking each slot.
+ * @param {Material} m @param {'mesh' | 'points' | 'lines'} kind
+ */
+export function featureMask(m, kind) {
+  const list = BY_KIND[kind], bits = BITS[kind], maps = m.mapEntries.length > 0
+  let mask = 0
+  for (let i = 0; i < list.length; i++) {
+    const f = list[i]
+    if ((f.slot && !maps) || (f.lit && m.unlit) || !f.when(m)) continue
+    mask += bits[i]
+  }
+  return mask
+}
+/** Each kind's features by mask, shared by every material with them. @type {Record<string, Map<number, MaterialFeatures>>} */
+const SHARED = { mesh: new Map(), points: new Map(), lines: new Map() }
 
 /**
  * The defines a material's features switch on, given the geometry drawn.
@@ -238,11 +283,24 @@ export function setUniformsOf(features, m, sink) {
  * @returns {string}
  */
 export function variantOf(m, kind) {
-  const maps = m.mapEntries.length > 0
-  let key = ''
-  for (const f of BY_KIND[kind]) if (f.name && !(f.slot && !maps) && (!f.lit || !m.unlit) && f.when(m)) key += key ? `+${f.name}` : f.name
-  return m.shader ? (key ? `${key}+hooks` : 'hooks') : key
+  return variantOfMask(featureMask(m, kind), kind, !!m.shader)
 }
+
+/**
+ * The variant key of a material whose features are `mask` (featureMask), with hooks or not.
+ * @param {number} mask @param {'mesh' | 'points' | 'lines'} kind @param {boolean} hooks
+ * @returns {string}
+ */
+export function variantOfMask(mask, kind, hooks) {
+  let names = NAMES[kind].get(mask)
+  if (names === undefined) {
+    names = BY_KIND[kind].filter((f, i) => f.name && has(mask, BITS[kind][i])).map((f) => f.name).join('+')
+    NAMES[kind].set(mask, names)
+  }
+  return hooks ? (names ? `${names}+hooks` : 'hooks') : names
+}
+/** Each kind's variant names by mask. @type {Record<string, Map<number, string>>} */
+const NAMES = { mesh: new Map(), points: new Map(), lines: new Map() }
 
 /**
  * The defines a material switches on, for a kind of drawable and its geometry.

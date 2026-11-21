@@ -65,3 +65,29 @@ describe('section caps', () => {
     expect(defines.some((d) => d.includes('ALPHA_TEST') && d.includes('MAP'))).toBe(true)
   })
 })
+
+// A material's features as one number (featureMask): what follows from them - the feature lists,
+// the program key, the variant name - is made once and shared by every material with the same
+// features, rather than made again for each material every frame.
+describe('materials with the same features', () => {
+  it('share what follows from their features - and a material with another feature gets its own', async () => {
+    const { featuresOf, featureMask } = await import('../src/material/features.js')
+    const a = new Material({ color: 'red', roughness: 0.3 }), b = new Material({ color: 'blue', roughness: 0.8 })
+    expect(featureMask(a, 'mesh')).toBe(featureMask(b, 'mesh'))
+    expect(featuresOf(a, 'mesh')).toBe(featuresOf(b, 'mesh'))
+    const coated = new Material({ color: 'blue', clearcoat: 1 })
+    expect(featuresOf(coated, 'mesh')).not.toBe(featuresOf(a, 'mesh'))
+    expect(featuresOf(coated, 'mesh').all.map((f) => f.define)).toContain('CLEARCOAT')
+    // ... and a change to a material is seen at once: it is asked again, not remembered
+    a.clearcoat = 1
+    expect(featuresOf(a, 'mesh')).toBe(featuresOf(coated, 'mesh'))
+    expect(variantOf(a, 'mesh')).toBe(variantOf(coated, 'mesh'))
+  })
+
+  it('name their variants as before - the features joined, and hooks last', () => {
+    const plain = new Material()
+    expect(variantOf(plain, 'mesh')).toBe('lit')
+    expect(variantOf(new Material({ clearcoat: 1, doubleSided: true }), 'mesh')).toBe('lit+clearcoat+double')
+    expect(variantOf(new Material({ unlit: true, shader: { fragment: 'diffuse.rgb *= 0.5;' } }), 'mesh')).toBe('unlit+hooks')
+  })
+})

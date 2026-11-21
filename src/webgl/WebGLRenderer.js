@@ -6,7 +6,7 @@ import { ACCUMULATE_FRAGMENT, CLIP_ONLY_FRAGMENT, ENCODE_FRAGMENT, FULLSCREEN_VE
 import { hookFailed, hookFor, hooksLoading, setHookUniforms } from './hooks.js'
 import { hasParts } from './parts.js'
 import { placementDefines, setShapeUniforms, shapeDefines } from './shape.js'
-import { definesOf, featuresOf, isGlass, secondUvDefines, setUniformsOf } from '../material/features.js'
+import { definesOf, featuresOf, featuresOfMask, isGlass, secondUvDefines, setUniformsOf } from '../material/features.js'
 import { GLState } from './glstate.js'
 import { collect, solidItems } from '../frame.js'
 import { Box3 } from '../value/Box3.js'
@@ -60,6 +60,7 @@ const hookId = (hook) => {
  * @property {WebGLTexture | null} behind the picture behind the see-through things - the opaque ones
  *   drawn - mipmapped, for glass to bend; taken when the frame has glass
  * @property {Map<Material, Map<string, DrawMemo>>} memo each material's features, hooks and programs
+ * @property {Record<string, Map<unknown, number>> | undefined} masks the frame's materials' features, as collect found them
  *   for this frame, by kind of drawable - worked out by its first draw, read by the rest
  * @property {Map<string, Map<number, { program: import('./programs.js').Program, defines: string[] }>>} programs
  *   the programs found this frame, by a material's features (their key), then the draw's signature -
@@ -663,7 +664,7 @@ export class WebGLRenderer {
       wait, linear: (linear && float) || !!target?.srgb, width, height,
       environment: passes && typeof env === 'object' ? passes.environment(env) : null, shadows: [], occlusion: null, ...this.#lightsOf(frame),
       fogLight: frame.fog ? lightBehind(frame.fog.color, TONE_MAPPING[this.toneMapping], this.exposure) : null,
-      behind: null, memo: new Map(), programs: new Map(),
+      behind: null, memo: new Map(), programs: new Map(), masks: frame.masks,
     }
     if (passes && typeof env === 'object' && env.image && !state.environment) {
       warnOnce(env, env.isHDR ? "this device can't render to float textures, which HDR environments need - lighting without it"
@@ -988,7 +989,9 @@ export class WebGLRenderer {
     if (!kinds) state.memo.set(material, kinds = new Map())
     let memo = kinds.get(kind)
     if (!memo) {
-      const features = featuresOf(material, kind), hook = hookFor(material)
+      // the features collect found for the sort, when it did (opaque things); else found now
+      const mask = state.masks?.[kind].get(material)
+      const features = mask === undefined ? featuresOf(material, kind) : featuresOfMask(mask, kind), hook = hookFor(material)
       // what else of the material decides its program, as a number to add to the draw's signature:
       // its fog, the maps it reads from a second UV set, its hooks - alike in those and in features,
       // materials share their programs
