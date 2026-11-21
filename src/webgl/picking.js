@@ -7,7 +7,7 @@ import { hookFor, passDefines, setHookUniforms } from './hooks.js'
 import { setShapeUniforms, shapeDefines } from './shape.js'
 import { makeTarget } from './targets.js'
 import * as mat4 from '../math/mat4.js'
-import { drawKind, isInstanced } from '../scene/kinds.js'
+import { drawKind } from '../scene/kinds.js'
 import { frustumPlanes, sphereInFrustum } from '../frame.js'
 
 /** @import { Programs } from './programs.js' */
@@ -325,33 +325,23 @@ export class Picker {
 }
 
 /**
- * Can a drawable be left out of the pick by its bounds? A plain solid mesh can. Not points or lines -
- * a sprite or a wide line reaches past its bounds by pixels - nor instances, spread anywhere, nor
- * what its owner asked not to be culled, nor a vertex hook that doesn't say how far it moves things.
+ * Can a drawable be left out of the pick by its bounds? A plain solid mesh can - collect kept its
+ * bounding sphere (reach -1: instances, frustumCulled: false, a vertex hook without bounds). Not points
+ * or lines: a sprite or a wide line reaches past its bounds by pixels.
  * @param {DrawItem} item
  */
 function cullable(item) {
-  const node = /** @type {any} */ (item.node)
-  if (drawKind(node) !== 'mesh' || isInstanced(node) || node.frustumCulled === false) return false
-  const hooks = item.material.shader
-  return !hooks?.vertex || typeof hooks.bounds === 'number'
+  return /** @type {number} */ (item.reach) >= 0 && drawKind(item.node) === 'mesh'
 }
 
 /**
  * Does a mesh's bounding sphere reach into the pick's view? @param {DrawItem} item @param {Float32Array[]} planes
  */
 function nearPointer(item, planes) {
-  const box = item.geometry.bounds, lo = box.min, hi = box.max, m = item.worldMatrix
-  const x = (lo[0] + hi[0]) / 2, y = (lo[1] + hi[1]) / 2, z = (lo[2] + hi[2]) / 2
-  CENTRE[0] = m[0] * x + m[4] * y + m[8] * z + m[12]
-  CENTRE[1] = m[1] * x + m[5] * y + m[9] * z + m[13]
-  CENTRE[2] = m[2] * x + m[6] * y + m[10] * z + m[14]
-  // squared lengths, one root - Math.hypot is slow, and this runs for thousands of meshes
-  const scale = Math.sqrt(Math.max(m[0] * m[0] + m[1] * m[1] + m[2] * m[2], m[4] * m[4] + m[5] * m[5] + m[6] * m[6], m[8] * m[8] + m[9] * m[9] + m[10] * m[10]))
-  const dx = hi[0] - lo[0], dy = hi[1] - lo[1], dz = hi[2] - lo[2]
-  const hooks = item.material.shader
-  const pad = hooks?.vertex ? /** @type {number} */ (hooks.bounds) : 0
-  return sphereInFrustum(planes, CENTRE, Math.sqrt(dx * dx + dy * dy + dz * dz) / 2 * scale + pad)
+  CENTRE[0] = /** @type {number} */ (item.x)
+  CENTRE[1] = /** @type {number} */ (item.y)
+  CENTRE[2] = /** @type {number} */ (item.z)
+  return sphereInFrustum(planes, CENTRE, /** @type {number} */ (item.reach))
 }
 const CENTRE = new Float32Array(3)
 
@@ -376,7 +366,8 @@ function pickable(frame, planes) {
   const over = []
   for (const list of [frame.opaque, frame.transparent]) {
     for (const item of list) {
-      if (!ok(item.node) || (cullable(item) && !nearPointer(item, planes))) continue
+      // the pointer's region first: cheap, and leaves the few to ask whether they can be picked
+      if ((cullable(item) && !nearPointer(item, planes)) || !ok(item.node)) continue
       ;(item.material.depthTest ? tested : over).push(item)
     }
   }

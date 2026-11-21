@@ -982,14 +982,18 @@ export class View {
     const frame = this.lastFrame
     if (!frame) return null
     let work = 0
-    for (const { node, geometry, instances, material } of [...frame.opaque, ...frame.transparent]) {
-      // a shader hook moves vertices where only the GPU knows, and a cut-out's holes are in its
-      // texture, which the CPU can't read: picked there, however small the scene
-      if (material.shader?.vertex || material.alphaTest > 0) return frame
-      const mode = /** @type {any} */ (node).drawMode
-      work += instances ? instances.count : mode === 'points' ? geometry.drawnVertices : mode === 'lines' ? geometry.drawnCount / 2 : geometry.drawnCount / 3
+    for (const list of [frame.opaque, frame.transparent]) {
+      for (const { node, geometry, instances, material } of list) {
+        // a shader hook moves vertices where only the GPU knows, and a cut-out's holes are in its
+        // texture, which the CPU can't read: picked there, however small the scene
+        if (material.shader?.vertex || material.alphaTest > 0) return frame
+        const mode = /** @type {any} */ (node).drawMode
+        work += instances ? instances.count : mode === 'points' ? geometry.drawnVertices : mode === 'lines' ? geometry.drawnCount / 2 : geometry.drawnCount / 3
+        // big enough for the GPU: no need to count the rest (a warehouse's thousands of parts)
+        if (work > GPU_PICKING) return frame
+      }
     }
-    return work > GPU_PICKING ? frame : null
+    return null
   }
 
   /**

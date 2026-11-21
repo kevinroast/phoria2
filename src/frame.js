@@ -126,6 +126,11 @@ function worldBox(i) {
  * @property {InstancedMesh | null} instances
  * @property {number} depth view-space distance of the bounds centre, for sorting
  * @property {FrameClip | null} clip the plane cutting it, if any
+ * @property {number} [x] its bounding sphere's middle in the world, as culling found it
+ * @property {number} [y]
+ * @property {number} [z]
+ * @property {number} [reach] that sphere's radius in the world (a vertex hook's bounds added); -1 when its
+ *   bounds can't cull it - instances, frustumCulled: false, a vertex hook that doesn't say how far it moves
  */
 
 /**
@@ -529,7 +534,9 @@ function drawItem(node, view, planes, clip) {
 
   // distance in front of the camera, along its view direction
   const depth = -(view[2] * center[0] + view[6] * center[1] + view[10] * center[2] + view[14])
-  return { node, geometry, material, worldMatrix, instances, depth, clip: cuts }
+  // its sphere, kept for what culls again - picking, round the pointer
+  const reach = !instances && node.frustumCulled && typeof pad === 'number' ? radius * scale + pad : -1
+  return { node, geometry, material, worldMatrix, instances, depth, clip: cuts, x: center[0], y: center[1], z: center[2], reach }
 }
 
 /**
