@@ -186,6 +186,10 @@ export class View {
   #lastTime = 0
   /** When the frame being worked on began, for the stats corner; 0 outside a tick. */
   #tickStarted = 0
+  /** The tick has just taken the scene's signature, and found it changed: the frame it draws needn't take it again. */
+  #watchFresh = false
+  /** The tick's scene update has just brought every world matrix up to date, and no handler has run since. */
+  #worldFresh = false
   #dirty = true
   #onScreen = true
   #width = 0
@@ -397,7 +401,7 @@ export class View {
    * @returns {FrameDescription}
    */
   #collect(options) {
-    this.scene.updateWorldTree()
+    if (!this.#worldFresh) this.scene.updateWorldTree()
     const frame = collect(this.scene, this.camera, options)
     if (this.autoLight && frame.lights.length === 0) this.#addAutoLights(frame)
     frame.time = this.time
@@ -728,6 +732,8 @@ export class View {
     // the stats corner's cpu: the whole frame's work - from the tick's start (the app's frame
     // callback, the scene's update, the change check) or else from here
     const started = this.#tickStarted || performance.now()
+    // fitting the camera to the scene moves it, after the signature was taken
+    const fitting = this.#autoFrame
     if (this.#autoFrame) {
       // fitted to the canvas as laid out now: a page still being built (a grid of tiles filling up)
       // can change its shape before the browser reports the resize, which comes after this frame
@@ -759,8 +765,10 @@ export class View {
     // a new picture: the average starts again from it
     this.#samples = 0
     // remember what was drawn - including what drawing changed, such as fitting the camera - so
-    // the next frame compares against it and doesn't draw the same picture again
-    if (this.renderMode === 'auto') this.#watch.changed(this.scene, this.camera, this.time)
+    // the next frame compares against it and doesn't draw the same picture again. Not when this
+    // frame's tick has just taken it and nothing since has moved: a second walk of every node
+    if (this.renderMode === 'auto' && (fitting || !this.#watchFresh)) this.#watch.changed(this.scene, this.camera, this.time)
+    this.#watchFresh = false
     // things may have moved under a still pointer - or the keyboard's focus moved on screen
     if ((this.#pointer || this.#keyFocus) && this.#needsHover()) this.#pickPending = true
     return frame
@@ -1302,11 +1310,16 @@ export class View {
         this.#onFrame?.(dt, this.time)
         this.scene.motionReduced = this.reducedMotion
         this.scene.update(dt, this.time)
+        // its world matrices are current: the frame drawn in this tick needn't work them out again
+        this.#worldFresh = true
       }
       this.#updateControls(dt)
       if (this.#pickPending) this.#updateHover()
-      const draw = this.#dirty || this.renderMode === 'always' ||
-        (this.renderMode === 'auto' && this.#watch.changed(this.scene, this.camera, this.time))
+      let draw = this.#dirty || this.renderMode === 'always'
+      if (!draw && this.renderMode === 'auto') {
+        // the scene's signature, just taken: drawing needn't take it again
+        draw = this.#watchFresh = this.#watch.changed(this.scene, this.camera, this.time)
+      }
       if (draw) {
         this.render()
       } else if (this.#refining()) {
@@ -1316,6 +1329,8 @@ export class View {
       }
     } finally {
       this.#tickStarted = 0
+      this.#watchFresh = false
+      this.#worldFresh = false
       // the next frame comes even if this one threw - the error still reaches the console, but one
       // bad handler doesn't freeze the view. In manual mode it sleeps until something asks for a frame
       this.#schedule()
@@ -1374,6 +1389,8 @@ export class View {
     if (p && hit && this.#tooltip) this.#tooltip.show(hit, p.clientX, p.clientY)
     else this.#tooltip?.hide()
     if (same) return
+    // hover handlers may move things
+    this.#worldFresh = false
     if (this.#highlightFor(before) || this.#highlightFor(hit) || this.#debugHovers()) this.invalidate()
     if (this.#handlers.click.size || this.lastFrame?.interactive) {
       this.canvas.style.cursor = hit && nearestAbove(hit.node, 'onDrag') ? 'grab' : hit && this.#clickable(hit) ? 'pointer' : ''

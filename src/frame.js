@@ -276,6 +276,9 @@ export function collect(scene, camera, { display = true, labels = display, light
   const casters = []
   /** @type {any[]} */
   const receivers = []
+  // for each receiver, its place in casters when it casts too (most solids do), else -1: its box is the caster's
+  /** @type {number[]} */
+  const receiverCaster = []
   // the solids under each capped clip
   /** @type {Map<FrameClip, DrawItem[]>} */
   const capped = new Map()
@@ -303,10 +306,14 @@ export function collect(scene, camera, { display = true, labels = display, light
     }
     if (node.isDrawable) {
       const item = drawItem(node, view, planes, clip)
-      if (node.castShadow && node.drawMode !== 'points' && node.drawMode !== 'lines') casters.push([node, clip, item])
+      const casts = node.castShadow && node.drawMode !== 'points' && node.drawMode !== 'lines'
+      if (casts) casters.push([node, clip, item])
       // what a ground shadow is of: solid meshes, not floors that only receive shadows
       if (node.drawMode === 'triangles' && !node.material.transparent && (node.castShadow || !node.receiveShadow)) frame.solids.push([node, clip])
-      if (node.receiveShadow) receivers.push(node)
+      if (node.receiveShadow) {
+        receivers.push(node)
+        receiverCaster.push(casts ? casters.length - 1 : -1)
+      }
       if (item) {
         // point sprites with a map nearly always have soft alpha edges, so they blend too
         const blended = node.material.transparent || (node.drawMode === 'points' && node.material.map)
@@ -348,17 +355,36 @@ export function collect(scene, camera, { display = true, labels = display, light
   // spot and rect lights share the spot shadows' tiles
   const spots = frame.lights.filter((l) => (l.kind === 'spot' || l.kind === 'rect') && l.castShadow)
   const points = frame.lights.filter((l) => l.kind === 'point' && l.castShadow)
-  const items = sun >= 0 || spots.length || points.length ? /** @type {DrawItem[]} */ (casters.map(([n, clip, seen]) => seen ?? drawItem(n, view, null, clip)).filter(Boolean)) : []
+  // what casts, with its world box - found once for every light fitted round it, into boxes kept from
+  // frame to frame, as there can be thousands; nothing holds on to them
+  /** @type {DrawItem[]} */
+  const items = []
+  /** @type {Box3[]} */
+  const boxes = []
+  /** @type {Box3[]} */
+  const casterBoxes = []
+  if (sun >= 0 || spots.length || points.length) {
+    for (let i = 0; i < casters.length; i++) {
+      const [n, clip, seen] = casters[i]
+      const box = casterBoxes[i] = n.expandBounds(worldBox(i))
+      const item = seen ?? drawItem(n, view, null, clip)
+      if (item) {
+        items.push(item)
+        boxes.push(box)
+      }
+    }
+  }
   if (lightSample && items.length) for (const light of [...(sun >= 0 ? [frame.lights[sun]] : []), ...spots]) sampleLight(light, lightSample)
   if (spots.length > SPOT_TILES) warnOnce(scene, `more than ${SPOT_TILES} spot and rect-area lights cast shadows - the extras don't`)
   if (points.length > 1) warnOnce(scene, 'more than one point light casts shadows - only the first does')
-  // each caster's and receiver's world box, found once for every light fitted round them
-  // - into boxes kept from frame to frame, as there can be thousands; nothing holds on to them
-  const boxes = items.length ? items.map((c, i) => c.node.expandBounds(worldBox(i))) : []
-  const receiving = items.length ? receivers.map((n, i) => n.expandBounds(worldBox(items.length + i))) : []
+  // and what receives: a receiver that casts too has its box already
+  const receiving = items.length ? receivers.map((n, i) => receiverCaster[i] >= 0 ? casterBoxes[receiverCaster[i]] : n.expandBounds(worldBox(casters.length + i))) : []
+  // where every caster is fitted round, those that cast add nothing as receivers (spot lights leave
+  // their own fitting out of the casters, so they get all of them)
+  const receivingOnly = items.length ? receiving.filter((_, i) => receiverCaster[i] < 0) : []
   if (items.length && points.length) {
     const light = points[0]
-    const fit = fitPointShadow(/** @type {Vec3} */ (light.position), light.range ?? 0, boxes, receiving)
+    const fit = fitPointShadow(/** @type {Vec3} */ (light.position), light.range ?? 0, boxes, receivingOnly)
     if (fit) {
       // each face draws only what it can see
       const faces = fit.viewProjections.map((viewProjection) => {
@@ -391,7 +417,7 @@ export function collect(scene, camera, { display = true, labels = display, light
   }
   if (items.length && sun >= 0) {
     const light = frame.lights[sun]
-    const fit = fitShadow(/** @type {Vec3} */ (light.direction), boxes, receiving, undefined, /** @type {any} */ (light.node).shadowBounds)
+    const fit = fitShadow(/** @type {Vec3} */ (light.direction), boxes, receivingOnly, undefined, /** @type {any} */ (light.node).shadowBounds)
     if (fit) {
       frame.lights.splice(sun, 1)
       frame.lights.unshift(light)
