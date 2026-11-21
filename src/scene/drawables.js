@@ -135,6 +135,9 @@ function instanceLabels(owner, v) {
   return { text: o.text, at, ...style, priority: byRow ? o.priority : style.priority }
 }
 
+/** Scratch for a drawable's world box, unioned into the caller's at once. */
+const OWN = new Box3()
+
 const DRAWABLE_OPTIONS = [...NODE_OPTIONS, 'geometry', 'material', 'castShadow', 'receiveShadow', 'renderOrder', 'frustumCulled', 'data']
 
 const DRAWABLE_HINTS = {
@@ -217,9 +220,9 @@ export class Drawable extends Node {
   /** @internal @param {Box3} box */
   expandBounds(box) {
     if (!this.geometry.vertexCount) return box
-    const own = this.geometry.bounds.clone().applyMatrix4(this.worldMatrix)
-    box.union(padForHooks(own, this.material))
-    return box
+    // into a scratch box, not a clone: asked for every shadow caster every frame
+    const own = OWN.copy(this.geometry.bounds).applyMatrix4(this.worldMatrix)
+    return box.union(padForHooks(own, this.material))
   }
 
   /** @internal @returns {Record<string, unknown>} */

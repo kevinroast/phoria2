@@ -56,17 +56,16 @@ export class Box3 {
   /** Transform by a 4x4, keeping it axis aligned (bounds of the 8 transformed corners). @param {ArrayLike<number>} m @returns {this} */
   applyMatrix4(m) {
     if (this.isEmpty()) return this
-    const [x0, y0, z0] = this.min, [x1, y1, z1] = this.max
+    const { min, max } = this
+    const ax = min[0], ay = min[1], az = min[2], bx = max[0], by = max[1], bz = max[2]
     this.makeEmpty()
-    for (const x of [x0, x1]) {
-      for (const y of [y0, y1]) {
-        for (const z of [z0, z1]) {
-          this.expandByXYZ(
-            m[0] * x + m[4] * y + m[8] * z + m[12],
-            m[1] * x + m[5] * y + m[9] * z + m[13],
-            m[2] * x + m[6] * y + m[10] * z + m[14])
-        }
-      }
+    // the eight corners, without arrays - this runs for every shadow caster every frame
+    for (let i = 0; i < 8; i++) {
+      const x = i & 1 ? bx : ax, y = i & 2 ? by : ay, z = i & 4 ? bz : az
+      this.expandByXYZ(
+        m[0] * x + m[4] * y + m[8] * z + m[12],
+        m[1] * x + m[5] * y + m[9] * z + m[13],
+        m[2] * x + m[6] * y + m[10] * z + m[14])
     }
     return this
   }
