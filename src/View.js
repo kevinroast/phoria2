@@ -86,7 +86,7 @@ const waitingForLabels = new Set()
  * @property {boolean | RefineOptions} [refine] while nothing changes, keep drawing the scene and show
  *   the average: edges antialiased far past multisampling, and soft shadows exact - each sample's
  *   shadows drawn from a different point across the light. It shows once 16 samples are in, improves
- *   until `samples` (default 256; 32 on touch screens), then the GPU rests; any change starts it
+ *   until `samples` (default 64; 32 on touch screens), then the GPU rests; any change starts it
  *   again. Needs float render targets (nearly every device); without them, the plain frame. Default off
  * @property {boolean} [autoLight] light a scene that has no lights, with one console note (default true)
  * @property {number} [maxDelta] longest frame step in seconds, so a background tab doesn't jump (default 0.1)
@@ -105,7 +105,7 @@ const waitingForLabels = new Set()
 
 /**
  * @typedef {object} RefineOptions
- * @property {number} [samples] how many to average before resting (default 256; 32 on touch screens)
+ * @property {number} [samples] how many to average before resting (default 64; 32 on touch screens)
  */
 
 /** @typedef {'click' | 'hover'} ViewEvent */

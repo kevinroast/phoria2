@@ -24,11 +24,13 @@ import { across, Vec3 } from './value/Vec3.js'
 export const REVEAL = 16
 
 /**
- * The default number of samples: on a touch screen, where the GPU is a phone's, an eighth.
+ * The default number of samples: 64 - past that a picture changes by less than the eye sees (a
+ * large softbox's penumbrae, the slowest to settle, within 2/255 on all but half a percent of
+ * pixels of 256 samples' average) - and on a touch screen, where the GPU is a phone's, half that.
  * @returns {number}
  */
 export function defaultSamples() {
-  return globalThis.matchMedia?.('(pointer: coarse)').matches ? 32 : 256
+  return globalThis.matchMedia?.('(pointer: coarse)').matches ? 32 : 64
 }
 
 /**

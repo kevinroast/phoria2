@@ -170,9 +170,9 @@ describe('View refine', () => {
     return log
   }
 
-  it('is off unless asked; true is 256 samples, or as many as given', () => {
+  it('is off unless asked; true is 64 samples, or as many as given', () => {
     expect(viewOf().refine).toBe(null)
-    expect(viewOf({ refine: true }).refine).toEqual({ samples: 256 })
+    expect(viewOf({ refine: true }).refine).toEqual({ samples: 64 })
     expect(viewOf({ refine: { samples: 40 } }).refine).toEqual({ samples: 40 })
     expect(() => viewOf({ refine: { count: 8 } })).toThrow("use 'samples'")
     expect(() => viewOf({ refine: { samples: 0 } })).toThrow('samples')
