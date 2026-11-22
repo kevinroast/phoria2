@@ -109,7 +109,7 @@ export default function run({ canvas, gui }) {
     material: {
       roughness: 0.75,
       shader: {
-        uniforms: { uCheck: 0.02 },
+        uniforms: { uCheck: 0.04 },
         fragment: `
           if (vNormal.y > 0.5) {
             vec2 p = vWorldPosition.xz / uCheck;
@@ -125,22 +125,25 @@ export default function run({ canvas, gui }) {
   scene.add(new Mesh({ geometry: cylinder({ radius: 0.2, height: 0.02, segments: 64 }), position: [0, FLOOR + 0.01, 0], material: metal, receiveShadow: true }))
   scene.add(new Mesh({ geometry: cove(), material: { color: '#d2d2d5', roughness: 0.92, doubleSided: true }, receiveShadow: true }))
 
-  // the studio: a little fill all round, two softboxes (warm left, cool right) and the key, a strip
-  // behind - the glass lit through, so its coloured shadow falls towards you. Each a rect-area light,
-  // its glowing panel beside it to be seen in the glass; the panels only receive shadows, so they stay
-  // out of the glass's ground shadow
+  // the studio: a little fill all round, two softboxes (warm left, cool right) and a strip behind -
+  // each a rect-area light, its glowing panel beside it to be seen in the glass; the panels only
+  // receive shadows, so they stay out of the glass's ground shadow. And the key: a small light high
+  // behind, out of sight, lighting the glass through so its coloured shadow falls towards you. Small,
+  // so the shadow keeps its shape refined, when each light's shadow is cast from all over it - the
+  // tall strip's spreads to nothing
   scene.add(new HemisphereLight({ sky: '#f2f2f6', ground: '#9a9a9e', intensity: 0.15 }))
   const target = [0, 0.045, 0]
   for (const [x, color, glow] of [[-0.52, '#ffe0bd', '#ffd9ae'], [0.52, '#cfe3ff', '#c4dcff']]) {
     const at = [/** @type {number} */ (x), 0.3, 0.22]
-    scene.add(new RectAreaLight({ position: at, target, width: 0.42, height: 0.55, intensity: 0.35, color: /** @type {string} */ (color), castShadow: true }))
+    scene.add(new RectAreaLight({ position: at, target, width: 0.42, height: 0.55, intensity: 0.3, color: /** @type {string} */ (color), castShadow: true }))
     const dx = target[0] - at[0], dz = target[2] - at[2]
     scene.add(new Mesh({
       geometry: box({ width: 0.42, height: 0.55, depth: 0.012 }), position: [at[0] - dx * 0.01, at[1], at[2] - dz * 0.01],
       rotation: [0, Math.atan2(dx, dz), 0], material: { color: '#222226', emissive: /** @type {string} */ (glow), emissiveIntensity: 2.2, roughness: 0.6 }, receiveShadow: true,
     }))
   }
-  scene.add(new RectAreaLight({ position: [0, 0.2, -0.5], direction: [0, -0.1, 1], width: 0.045, height: 0.7, intensity: 2.5, castShadow: true }))
+  scene.add(new RectAreaLight({ position: [0, 0.2, -0.5], direction: [0, -0.1, 1], width: 0.045, height: 0.7, intensity: 0.45, castShadow: true }))
+  scene.add(new RectAreaLight({ position: [0, 0.42, -0.42], target: [0, 0.03, 0], width: 0.1, height: 0.1, intensity: 3, castShadow: true }))
   scene.add(new Mesh({
     geometry: box({ width: 0.045, height: 0.7, depth: 0.01 }), position: [0, 0.2, -0.51],
     material: { color: '#222226', emissive: '#ffffff', emissiveIntensity: 3.2 }, receiveShadow: true,
