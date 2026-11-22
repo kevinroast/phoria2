@@ -14,6 +14,7 @@ import { TargetPool } from './targets.js'
 /** @import { Bloom } from './bloom.js' */
 /** @import { Effects } from './effects.js' */
 /** @import { Ltc } from './ltc.js' */
+/** @import { Caustics } from './caustics.js' */
 /** @import { Scene } from '../scene/Scene.js' */
 
 /** @typedef {{ onReady: (() => void) | null }} ContextUser */
@@ -38,6 +39,8 @@ export class GLContext {
   effects = null
   /** Rect-area lights' lookup tables - loaded the first time a frame has one. @type {Ltc | null} */
   ltc = null
+  /** Caustics - loaded the first time a light asks for them. @type {Caustics | null} */
+  caustics = null
   lost = false
   /** Counts frames across every renderer, so programs know when their per-frame uniforms are stale. */
   frame = 0
@@ -52,6 +55,7 @@ export class GLContext {
     bloom: lazy('bloom', () => import('./bloom.js')),
     effects: lazy('ambient occlusion, ground shadows and FXAA', () => import('./effects.js')),
     ltc: lazy('rect-area lights', () => import('./ltc.js')),
+    caustics: lazy('caustics', () => import('./caustics.js')),
   }
   /** @type {() => void} */ #removeListeners
 
@@ -151,7 +155,7 @@ export class GLContext {
 
   /** The modules loaded so far, for resetting after a lost context and freeing at the end. */
   #loaded() {
-    return [this.passes, this.picker, this.bloom, this.effects, this.ltc].filter((m) => m !== null)
+    return [this.passes, this.picker, this.bloom, this.effects, this.ltc, this.caustics].filter((m) => m !== null)
   }
 
   /**
@@ -213,6 +217,20 @@ export class GLContext {
     if (this.effects) return this.effects
     this.#load.effects(({ Effects }) => {
       this.effects = new Effects(this.gl, this.programs, this.targets)
+      this.#ready()
+    })
+    return null
+  }
+
+  /**
+   * Caustics, once loaded; the first call starts loading them, and every renderer on this context is
+   * told when they arrive.
+   * @returns {Caustics | null}
+   */
+  loadCaustics() {
+    if (this.caustics) return this.caustics
+    this.#load.caustics(({ Caustics }) => {
+      this.caustics = new Caustics(this.gl, this.programs, this.resources, this.targets)
       this.#ready()
     })
     return null

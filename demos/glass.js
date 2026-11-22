@@ -72,7 +72,7 @@ export default function run({ canvas, gui }) {
   scene.environment = 'studio'
   scene.environmentIntensity = 0.7
 
-  const settings = { place: 0, turn: false, aperture: 0, focus: 0 }
+  const settings = { place: 0, size: 1, turn: false, aperture: 0, focus: 0 }
 
   // the set: a pale floor, satin, so the coloured light reads on it - and behind, a sweep printed with
   // bold black and white stripes, for the glass to bend and split. The stripes are a few lines of
@@ -140,16 +140,18 @@ base.rgb *= mix(0.05, 1.0, smoothstep(-w, w, k));` } } }))
   // a little light from all round, so nothing is quite black
   scene.add(new HemisphereLight({ sky: '#9aa4b8', ground: '#2a2826', intensity: 0.15 }))
   // the key: a softbox high to the left and in front, casting the glass's coloured light back across
-  // the floor - drawn as its glowing face, for the facets to catch
-  const key = scene.add(new RectAreaLight({ color: '#fff4e6', intensity: 20, castShadow: true }))
+  // the floor - drawn as its glowing face, for the facets to catch. With caustics, the solid pieces
+  // gather its light into bright pools in their shadows, the prism and the gem split into colours -
+  // sharper the smaller the softbox, as a big light softens them away
+  const key = scene.add(new RectAreaLight({ color: '#fff4e6', intensity: 20, castShadow: true, caustics: true }))
   const keyPanel = scene.add(new Mesh({ geometry: new Geometry({ positions: [], indices: [] }), castShadow: false, receiveShadow: false, pickable: false,
     material: { color: '#000000', emissive: '#fff4e6', emissiveIntensity: 7, doubleSided: true } }))
   const placeKey = () => {
     const a = 2.2 + settings.place * 0.6
     key.position.set(Math.cos(a) * 3.4, 3.4, Math.sin(a) * -3.4 + 0.6)
     key.target = [0, 0.3, -1.5]
-    key.width = 1.6
-    key.height = 0.96
+    key.width = 1.6 * settings.size
+    key.height = 0.96 * settings.size
     scene.updateWorldTree()
     const [hw, hh] = key.worldEdges, p = key.worldPosition
     const at = (/** @type {number} */ s, /** @type {number} */ t) => [0, 1, 2].map((i) => p[i] + hw[i] * s + hh[i] * t)
@@ -158,6 +160,8 @@ base.rgb *= mix(0.05, 1.0, smoothstep(-w, w, k));` } } }))
 
   const l = gui.addFolder('Softbox')
   l.add(settings, 'place', -1, 1, 0.01).name('position').onChange(placeKey)
+  l.add(settings, 'size', 0.05, 1, 0.01).name('size').onChange(placeKey)
+  l.add(key, 'caustics')
   gui.add(settings, 'turn').name('turn the pieces')
   gui.add({ refine: true }, 'refine').name('refine when still').onChange((on) => { view.refine = on })
   // depth of field, shown as the picture refines: the lens's radius, and the focus nearer or further

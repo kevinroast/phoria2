@@ -26,6 +26,17 @@ export function idOf(o) {
   return id
 }
 
+/**
+ * Whether shader hooks can change a shape as a depth pass draws it: a vertex hook moves it; a
+ * fragment hook cuts holes where it discards or sets the alpha (base.a, or all of base). One that
+ * only colours (base.rgb, emissive, normal) can't.
+ * @param {{ vertex: string, fragment: string }} shader
+ */
+export function changesShape(shader) {
+  if (shader.vertex) return true
+  return /\bdiscard\b|\bbase\s*(?:[*/+-]?=(?!=)|\.\s*[rgbaxyzwstpq]*[aw][rgbaxyzwstpq]*\b)/.test(shader.fragment)
+}
+
 export class DrawnFrom {
   /** @type {number[]} */ #last = []
   /** @type {number[]} */ #next = []
@@ -68,8 +79,10 @@ export class DrawnFrom {
     r.push(casters.length)
     for (const item of casters) {
       const { node, geometry, material, worldMatrix, instances, clip } = item
-      // shader hooks move or cut the shape, perhaps with time: the map is drawn every frame
-      if (material.shader) this.#keepable = false
+      // shader hooks that move or cut the shape, perhaps with time: the map is drawn every frame. A
+      // fragment hook that only colours - a pattern on a floor - leaves a depth map as it was; glass
+      // is drawn with what its hooks do to its normal as well (caustics), so any hook there
+      if (material.shader && (glass || changesShape(material.shader))) this.#keepable = false
       r.push(idOf(node), idOf(geometry), geometry.version, geometry.drawnCount)
       for (let i = 0; i < 16; i++) r.push(worldMatrix[i])
       if (instances) r.push(instances.version, instances.count)
@@ -90,6 +103,11 @@ export class DrawnFrom {
       }
     }
     return this
+  }
+
+  /** Whether the last record couldn't be kept - something in it moves by itself (a shader hook). */
+  get moving() {
+    return !this.#keepable
   }
 
   /** Never kept: drawn every frame. @returns {this} */

@@ -223,9 +223,17 @@ export class DirectionalLight extends AimedLight {
   static kind = 'directional'
   /** @internal @type {LightGroup} */
   static group = 'directional'
-  static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'castShadow', 'shadowBounds', 'shadowSoftness'] }
+  static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'castShadow', 'shadowBounds', 'shadowSoftness', 'caustics'] }
 
   castShadow = false
+  /**
+   * Caustics: the light glass bends on its way through, focused into bright lines and pools on what
+   * is behind it - the bright spot under a glass, a prism's rainbow, the net of light on a pool's
+   * floor. Needs castShadow; one light a scene, the first that asks. Bent by glass with
+   * `thickness` (thin walls only tint its shadow), from this light's view only - what is behind the glass from here. Drawn again only when the light or the
+   * glass changes (every frame with a shader hook); needs a device that can draw to float textures.
+   */
+  caustics = false
   /**
    * Contact-hardening shadows: sharp where its shadow meets what casts it, softening further away, as
    * under a large light. 0-1: 0 (the default) keeps the plain filtered edge; at 1, the most, the edge
@@ -238,10 +246,11 @@ export class DirectionalLight extends AimedLight {
   /** @type {Box3 | null} */
   #shadowBounds = null
 
-  /** @param {AimedLightOptions & { castShadow?: boolean, shadowBounds?: Box3Input | null, shadowSoftness?: number }} [options] */
+  /** @param {AimedLightOptions & { castShadow?: boolean, shadowBounds?: Box3Input | null, shadowSoftness?: number, caustics?: boolean }} [options] */
   constructor(options = {}) {
     super(options)
     if (options.castShadow !== undefined) this.castShadow = !!options.castShadow
+    if (options.caustics !== undefined) this.caustics = !!options.caustics
     if (options.shadowBounds !== undefined) this.#setShadowBounds(options.shadowBounds)
     if (options.shadowSoftness !== undefined) this.shadowSoftness = softnessOf(this.constructor.name, options.shadowSoftness)
   }
@@ -261,7 +270,7 @@ export class DirectionalLight extends AimedLight {
 
   /** @internal @returns {FrameLight} */
   toFrameLight() {
-    return { ...super.toFrameLight(), direction: this.worldDirection, castShadow: this.castShadow, shadowSoftness: this.shadowSoftness }
+    return { ...super.toFrameLight(), direction: this.worldDirection, castShadow: this.castShadow, shadowSoftness: this.shadowSoftness, caustics: this.caustics }
   }
 
   /** @param {Box3Input | null} v */
@@ -281,7 +290,7 @@ export class DirectionalLight extends AimedLight {
 
   /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
-    return { ...super.cloneOptions(), castShadow: this.castShadow, shadowBounds: this.#shadowBounds, shadowSoftness: this.shadowSoftness }
+    return { ...super.cloneOptions(), castShadow: this.castShadow, shadowBounds: this.#shadowBounds, shadowSoftness: this.shadowSoftness, caustics: this.caustics }
   }
 
   /** @internal @returns {Record<string, unknown>} */
@@ -289,7 +298,7 @@ export class DirectionalLight extends AimedLight {
     const b = this.#shadowBounds
     return { ...super.jsonOptions(), ...(this.castShadow ? { castShadow: true } : {}),
       ...(b ? { shadowBounds: { min: Array.from(b.min), max: Array.from(b.max) } } : {}),
-      ...(this.shadowSoftness ? { shadowSoftness: this.shadowSoftness } : {}) }
+      ...(this.shadowSoftness ? { shadowSoftness: this.shadowSoftness } : {}), ...(this.caustics ? { caustics: true } : {}) }
   }
 }
 
@@ -350,7 +359,7 @@ export class SpotLight extends AimedLight {
   static kind = 'spot'
   /** @internal @type {LightGroup} */
   static group = 'punctual'
-  static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'range', 'angle', 'penumbra', 'castShadow', 'shadowSoftness'] }
+  static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'range', 'angle', 'penumbra', 'castShadow', 'shadowSoftness', 'caustics'] }
 
   range = 0
   /** Cast shadows: up to four spot lights a scene can. Anything round the light itself - its own lamp - doesn't block it. */
@@ -366,11 +375,20 @@ export class SpotLight extends AimedLight {
    * 0.2-0.5 is subtler. Costs more per pixel near shadow edges - most on phones.
    */
   shadowSoftness = 0
+  /**
+   * Caustics: the light glass bends on its way through, focused into bright lines and pools on what
+   * is behind it - the bright spot under a glass, a prism's rainbow, the net of light on a pool's
+   * floor. Needs castShadow; one light a scene, the first that asks. Bent by glass with
+   * `thickness` (thin walls only tint its shadow), from this light's view only - what is behind the glass from here. Drawn again only when the light or the
+   * glass changes (every frame with a shader hook); needs a device that can draw to float textures.
+   */
+  caustics = false
 
-  /** @param {AimedLightOptions & { range?: number, angle?: number, penumbra?: number, castShadow?: boolean, shadowSoftness?: number }} [options] */
+  /** @param {AimedLightOptions & { range?: number, angle?: number, penumbra?: number, castShadow?: boolean, shadowSoftness?: number, caustics?: boolean }} [options] */
   constructor(options = {}) {
     super(options)
     if (options.castShadow !== undefined) this.castShadow = !!options.castShadow
+    if (options.caustics !== undefined) this.caustics = !!options.caustics
     if (options.shadowSoftness !== undefined) this.shadowSoftness = softnessOf('SpotLight', options.shadowSoftness)
     if (options.range !== undefined) this.range = rangeOf('SpotLight', options.range)
     if (options.angle !== undefined) {
@@ -386,12 +404,12 @@ export class SpotLight extends AimedLight {
   /** @internal @returns {FrameLight} */
   toFrameLight() {
     return { ...super.toFrameLight(), position: this.worldPosition, direction: this.worldDirection, range: this.range,
-      angle: this.angle, penumbra: this.penumbra, castShadow: this.castShadow, shadowSoftness: this.shadowSoftness, shadowTile: -1 }
+      angle: this.angle, penumbra: this.penumbra, castShadow: this.castShadow, shadowSoftness: this.shadowSoftness, caustics: this.caustics, shadowTile: -1 }
   }
 
   /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
-    return { ...super.cloneOptions(), range: this.range, angle: this.angle, penumbra: this.penumbra, castShadow: this.castShadow, shadowSoftness: this.shadowSoftness }
+    return { ...super.cloneOptions(), range: this.range, angle: this.angle, penumbra: this.penumbra, castShadow: this.castShadow, shadowSoftness: this.shadowSoftness, caustics: this.caustics }
   }
 
   /** @internal @returns {Record<string, unknown>} */
@@ -403,6 +421,7 @@ export class SpotLight extends AimedLight {
     if (this.penumbra !== 0.1) json.penumbra = this.penumbra
     if (this.castShadow) json.castShadow = true
     if (this.shadowSoftness) json.shadowSoftness = this.shadowSoftness
+    if (this.caustics) json.caustics = true
     return json
   }
 }
@@ -422,7 +441,7 @@ export class RectAreaLight extends AimedLight {
   static kind = 'rect'
   /** @internal @type {LightGroup} */
   static group = 'rect'
-  static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'width', 'height', 'castShadow'] }
+  static get OPTIONS() { return [...LIGHT_OPTIONS, 'direction', 'target', 'width', 'height', 'castShadow', 'caustics'] }
   static HINTS = {
     ...LIGHT_HINTS,
     size: "use 'width' and 'height'",
@@ -442,13 +461,22 @@ export class RectAreaLight extends AimedLight {
    * its own panel - doesn't block it.
    */
   castShadow = false
+  /**
+   * Caustics: the light glass bends on its way through, focused into bright lines and pools on what
+   * is behind it - the bright spot under a glass, a prism's rainbow, the net of light on a pool's
+   * floor. Needs castShadow; one light a scene, the first that asks. Bent by glass with
+   * `thickness` (thin walls only tint its shadow), from the light's middle (refined, from all over it - a big light's soften) and its view only. Drawn again only when the light or the
+   * glass changes (every frame with a shader hook); needs a device that can draw to float textures.
+   */
+  caustics = false
 
-  /** @param {AimedLightOptions & { width?: number, height?: number, castShadow?: boolean }} [options] */
+  /** @param {AimedLightOptions & { width?: number, height?: number, castShadow?: boolean, caustics?: boolean }} [options] */
   constructor(options = {}) {
     super(options)
     if (options.width !== undefined) this.width = sizeOf('width', options.width)
     if (options.height !== undefined) this.height = sizeOf('height', options.height)
     if (options.castShadow !== undefined) this.castShadow = !!options.castShadow
+    if (options.caustics !== undefined) this.caustics = !!options.caustics
   }
 
   /**
@@ -475,12 +503,12 @@ export class RectAreaLight extends AimedLight {
   toFrameLight() {
     const [halfWidth, halfHeight] = this.worldEdges
     return { ...super.toFrameLight(), position: this.worldPosition, direction: this.worldDirection, halfWidth, halfHeight,
-      castShadow: this.castShadow, shadowTile: -1 }
+      castShadow: this.castShadow, caustics: this.caustics, shadowTile: -1 }
   }
 
   /** @internal @returns {Record<string, unknown>} */
   cloneOptions() {
-    return { ...super.cloneOptions(), width: this.width, height: this.height, castShadow: this.castShadow }
+    return { ...super.cloneOptions(), width: this.width, height: this.height, castShadow: this.castShadow, caustics: this.caustics }
   }
 
   /** @internal @returns {Record<string, unknown>} */
@@ -490,6 +518,7 @@ export class RectAreaLight extends AimedLight {
     if (this.width !== 1) json.width = this.width
     if (this.height !== 1) json.height = this.height
     if (this.castShadow) json.castShadow = true
+    if (this.caustics) json.caustics = true
     return json
   }
 }

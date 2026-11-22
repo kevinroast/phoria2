@@ -151,11 +151,19 @@ void cutOut() {}
 export const CLIP_ONLY_FRAGMENT = /* glsl */ `
 precision highp float;
 in vec3 vWorldPosition;
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
+#ifdef CAUSTIC_GLASS
+// caustics' glass, seen from the light: where it is (fragColor), its normal - the sides and the hook's
+// bending as drawn - and that it is there, and how it bends: its thickness in world units, ior, and
+// dispersion's spread of the ior
+layout(location = 1) out vec4 fragNormal;
+layout(location = 2) out vec4 fragGlass;
+uniform vec3 uCausticGlass;
+#endif
 #if defined(ALPHA_TEST) || defined(HOOK_FRAGMENT)
 in vec2 vUv;
 #endif
-#if defined(HOOK_FRAGMENT) || defined(NORMALS)
+#if defined(HOOK_FRAGMENT) || defined(NORMALS) || defined(CAUSTIC_GLASS)
 in vec3 vNormal;
 #endif
 #ifdef NORMALS
@@ -177,7 +185,7 @@ void main() {
   clipAway(vWorldPosition);
 #if defined(NORMALS) && defined(FLAT_SHADING)
   vec3 normal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
-#elif defined(HOOK_FRAGMENT) || defined(NORMALS)
+#elif defined(HOOK_FRAGMENT) || defined(NORMALS) || defined(CAUSTIC_GLASS)
   vec3 normal = normalize(vNormal);
 #if defined(NORMALS) && defined(DOUBLE_SIDED)
   if (!gl_FrontFacing) normal = -normal;
@@ -198,6 +206,10 @@ void main() {
   // a glass caster in a shadow map's glass layer: the light it lets through - the layer multiplies
   // them - and, kept by the nearest, its depth from the light
   fragColor = vec4(uGlassFilter, gl_FragCoord.z);
+#elif defined(CAUSTIC_GLASS)
+  fragColor = vec4(vWorldPosition, 1.0);
+  fragNormal = vec4(normal, 1.0);
+  fragGlass = vec4(uCausticGlass, 1.0);
 #else
   fragColor = vec4(1.0);
 #endif
@@ -739,6 +751,11 @@ uniform vec4 uSpotShadowSoft[4];             // each tile's edge spread a unit o
 uniform vec4 uSpotShadowShape[4];            // its soft edge's shape on the map: the light's width that way (x, y), width and height over the longer (z, w)
 #endif
 #endif
+#ifdef CAUSTICS
+uniform sampler2D uCaustics;   // the caustic light as glass bends it: 1 unbent, more where it focuses, less where it spreads
+uniform mat4 uCausticMatrix;   // world to the caustics' [0, 1] coordinates
+uniform float uCausticTile;    // whose light: -1 the sun's, else the spot shadow tile it shares
+#endif
 #ifdef POINT_SHADOW
 uniform samplerCubeShadow uPointShadowMap; // a point light's depth all round it, a cube face each way
 uniform float uPointShadowIndex;           // which punctual light it is
@@ -939,27 +956,45 @@ vec3 glassLayer(sampler2D layer, vec3 c, vec4 tile) {
   return c.z > glass.a + 0.004 ? glass.rgb : vec3(1.0);
 }
 #endif
+#ifdef CAUSTICS
+// caustics: how much of the caustic light glass gathers here (more than 1) or spreads away (less);
+// 1 outside them
+vec3 causticAt() {
+  vec4 c = uCausticMatrix * vec4(vWorldPosition, 1.0);
+  if (c.w <= 0.0) return vec3(1.0);
+  vec2 p = c.xy / c.w;
+  if (p.x <= 0.0 || p.y <= 0.0 || p.x >= 1.0 || p.y >= 1.0) return vec3(1.0);
+  return textureLod(uCaustics, p, 0.0).rgb;
+}
+#endif
 #ifdef SHADOW
-// the shadow-casting directional light's share that reaches here, coloured by any glass it came through
+// the shadow-casting directional light's share that reaches here, coloured by any glass it came
+// through - and gathered or spread by it, for the caustic light
 vec3 sunShadow(vec3 n, vec3 l) {
-  float lit = shadowAt(n, l);
+  vec3 lit = vec3(shadowAt(n, l));
 #ifdef SHADOW_GLASS
   vec4 s = uShadowMatrix * vec4(vWorldPosition + n * uShadowBias, 1.0);
-  return lit * glassLayer(uShadowGlass, s.xyz / s.w, vec4(0.0, 0.0, 1.0, 1.0));
-#else
-  return vec3(lit);
+  lit *= glassLayer(uShadowGlass, s.xyz / s.w, vec4(0.0, 0.0, 1.0, 1.0));
 #endif
+#ifdef CAUSTICS
+  if (uCausticTile < 0.0) lit *= causticAt();
+#endif
+  return lit;
 }
 #endif
 #ifdef SPOT_SHADOWS
-// a spot or rect light's share that reaches here, coloured by any glass it came through
+// a spot or rect light's share that reaches here, coloured by any glass it came through - and
+// gathered or spread by it, for the caustic light
 vec3 spotShadow(int k, vec3 n, float distance) {
-  float lit = spotShadowAt(k, n, distance);
+  vec3 lit = vec3(spotShadowAt(k, n, distance));
 #ifdef SPOT_SHADOWS_GLASS
   vec4 s = uSpotShadowMatrix[k] * vec4(vWorldPosition + n * uSpotShadowBias[k] * distance, 1.0);
-  if (s.w > 0.0) return lit * glassLayer(uSpotShadowGlass, s.xyz / s.w, uSpotShadowTile[k]);
+  if (s.w > 0.0) lit *= glassLayer(uSpotShadowGlass, s.xyz / s.w, uSpotShadowTile[k]);
 #endif
-  return vec3(lit);
+#ifdef CAUSTICS
+  if (float(k) == uCausticTile) lit *= causticAt();
+#endif
+  return lit;
 }
 #endif
 

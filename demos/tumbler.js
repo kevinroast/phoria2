@@ -128,9 +128,9 @@ export default function run({ canvas, gui }) {
   // the studio: a little fill all round, two softboxes (warm left, cool right) and a strip behind -
   // each a rect-area light, its glowing panel beside it to be seen in the glass; the panels only
   // receive shadows, so they stay out of the glass's ground shadow. And the key: a small light high
-  // behind, out of sight, lighting the glass through so its coloured shadow falls towards you. Small,
-  // so the shadow keeps its shape refined, when each light's shadow is cast from all over it - the
-  // tall strip's spreads to nothing
+  // behind, out of sight, lighting the glass through so its coloured shadow falls towards you - with
+  // caustics, the drink and the heavy base gathering its light into a bright pool in the shadow. Small
+  // (3 cm), as a big light softens caustics and shadows away - refined, each is cast from all over it
   scene.add(new HemisphereLight({ sky: '#f2f2f6', ground: '#9a9a9e', intensity: 0.15 }))
   const target = [0, 0.045, 0]
   for (const [x, color, glow] of [[-0.52, '#ffe0bd', '#ffd9ae'], [0.52, '#cfe3ff', '#c4dcff']]) {
@@ -143,7 +143,7 @@ export default function run({ canvas, gui }) {
     }))
   }
   scene.add(new RectAreaLight({ position: [0, 0.2, -0.5], direction: [0, -0.1, 1], width: 0.045, height: 0.7, intensity: 0.45, castShadow: true }))
-  scene.add(new RectAreaLight({ position: [0, 0.42, -0.42], target: [0, 0.03, 0], width: 0.1, height: 0.1, intensity: 3, castShadow: true }))
+  const key = scene.add(new RectAreaLight({ position: [0, 0.42, -0.42], target: [0, 0.03, 0], width: 0.03, height: 0.03, intensity: 3, castShadow: true, caustics: true }))
   scene.add(new Mesh({
     geometry: box({ width: 0.045, height: 0.7, depth: 0.01 }), position: [0, 0.2, -0.51],
     material: { color: '#222226', emissive: '#ffffff', emissiveIntensity: 3.2 }, receiveShadow: true,
@@ -186,6 +186,7 @@ export default function run({ canvas, gui }) {
   pour()
 
   gui.add(settings, 'drink', Object.keys(LIQUIDS)).onChange(pour)
+  gui.add(key, 'caustics')
   gui.add({ refine: true }, 'refine').name('refine when still').onChange((on) => { view.refine = on })
 
   return view.start()

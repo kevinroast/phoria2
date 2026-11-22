@@ -796,10 +796,10 @@ Mistakes to avoid:
 |---|---|
 | `AmbientLight` | `color`, `intensity` |
 | `HemisphereLight` | `sky`, `ground`, `intensity` |
-| `DirectionalLight` | `color`, `intensity`, `direction` (the way it travels, e.g. `[-1, -2, -1]`), `castShadow`, `shadowBounds`, `shadowSoftness` |
+| `DirectionalLight` | `color`, `intensity`, `direction` (the way it travels, e.g. `[-1, -2, -1]`), `castShadow`, `shadowBounds`, `shadowSoftness`, `caustics` |
 | `PointLight` | `color`, `intensity`, `position`, `range` - inverse-square falloff, so intensity ~ distance squared (30 lights things ~5 m away); `castShadow`, `shadowSoftness` |
-| `SpotLight` | point light options plus `direction`, `angle`, `penumbra` |
-| `RectAreaLight` | `color`, `intensity`, `position`, `direction` or `target`, `width`, `height`, `castShadow` - a glowing rectangle: softboxes, panels, windows, screens |
+| `SpotLight` | point light options plus `direction`, `angle`, `penumbra`, `caustics` |
+| `RectAreaLight` | `color`, `intensity`, `position`, `direction` or `target`, `width`, `height`, `castShadow`, `caustics` - a glowing rectangle: softboxes, panels, windows, screens |
 
 Intensity 1 on a directional light lights a white surface facing it to white.
 
@@ -821,7 +821,8 @@ the world area that gets shadows - so the map stays sharp there.
 A shadow map is drawn again only when its light or something casting into it changes - orbiting a
 still scene, or another view of the same scene, reuses it - so lights that don't move cost little.
 Nothing to set: moving a caster, changing its geometry, instances or cut-out, or moving the light
-redraws it. A caster with shader hooks redraws its maps every frame. `renderer.info.shadowMaps` and
+redraws it. A caster whose shader hooks move it (a vertex hook) or cut it (`discard`, or setting
+`base.a`) redraws its maps every frame; a hook that only colours doesn't. `renderer.info.shadowMaps` and
 `shadowMapsKept` count each frame's maps drawn and kept (the `debug: { stats: true }` corner shows them).
 
 **Soft shadows**: `shadowSoftness` on any shadow-casting light gives contact-hardening shadows - sharp
@@ -842,7 +843,22 @@ where things touch, wider away; it shares the four spot light shadows, covering 
 66 degrees of straight ahead. Its lookup tables (about 47 KB) load with the first one. Draw the panel
 yourself, as an emissive mesh, if it should be seen.
 
+**Caustics**: `caustics: true` on one shadow-casting directional, spot or rect-area light bends it
+through glass on its way: the light gathers into bright lines and pools on what is behind the glass,
+and thins round them - the bright spot under a glass of whisky, a prism's rainbow (with `dispersion`),
+the net of light on a pool's floor. The glass bends it by its `ior` through its `thickness` (a solid
+piece, as a lens: in one face and out the other) - give the glass `castShadow: true` and a
+`thickness`; thin walls (`thinWalled`) only tint the light, so a tumbler's thin sides don't hide the
+drink inside, which does the bending. A shader hook that bends glass's `normal` - water's waves -
+bends the light too. One light a scene (more asking warn); it lands on whatever casts or receives
+shadows. A big light softens caustics as it softens shadows - crisp ones want a small light (a rect
+light a few cm across, a spot, a sun with low `shadowSoftness`). Like a shadow map they're drawn again
+only when the light, the glass or what it lands on changes (every frame with a hook on the glass);
+they need float render targets, and are skipped with a warning without. Limits: one bend through
+each piece of glass, from the light's view only - what is behind the glass from the light.
+
 ```js
+scene.add(new RectAreaLight({ position: [0, 0.4, -0.4], target: [0, 0.03, 0], width: 0.03, height: 0.03, intensity: 3, castShadow: true, caustics: true }))  // a small key behind a glass: its light focused in front
 scene.add(new PointLight({ position: [0, 0.1, 0], intensity: 0.5, range: 4, castShadow: true }))  // a candle in a jack-o'-lantern
 scene.add(new DirectionalLight({ direction: [-1, -2, -1], castShadow: true, shadowSoftness: 0.15 }))  // a sun: sharp at contact, softer off
 scene.add(new RectAreaLight({ position: [-2, 3, 1], target: [0, 0.5, 0], width: 2, height: 1.2, intensity: 30, castShadow: true }))  // a softbox

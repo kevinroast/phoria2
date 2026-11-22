@@ -689,6 +689,15 @@ export class WebGLRenderer {
       if (map.kept) this.info.shadowMapsKept++
       else this.info.shadowMaps++
     }
+    // caustics: the light glass bends, for the light that asks - read by the lit programs as its
+    // shadow's are; they need float targets
+    if (passes && frame.caustics && frame.caustics.light.castShadow) {
+      if (!gpu.targets.float) warnOnce(frame.caustics.light.node, "caustics need a device that can draw to float textures - this one can't, so the light is drawn without them")
+      else {
+        const caustics = gpu.loadCaustics()
+        if (caustics) state.shadows.push(caustics.draw(frame.caustics, passes, frame.spectrum ?? 1, frame.time ?? 0, frame.camera.position))
+      }
+    }
     // outlines' mask, drawn before the scene, so the scene's own target need not be left
     const outline = passes && frame.outlines.length ? passes.outlineMask(frame.outlines, frame, width, height, this.pixelRatio, this.outlineAntialias) : null
 

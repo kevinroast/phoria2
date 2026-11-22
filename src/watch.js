@@ -297,6 +297,7 @@ export class ChangeWatch {
     if (light.direction) this.#pushAll(light.direction)
     if (light.target) this.#pushAll(light.target)
     if (light.castShadow) this.#push(1)
+    if (light.caustics) this.#push(2)
     if ('shadowSoftness' in light) this.#push(light.shadowSoftness)
     if (light.shadowBounds) {
       this.#pushAll(light.shadowBounds.min)

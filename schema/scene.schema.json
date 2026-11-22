@@ -353,6 +353,10 @@
               "$ref": "#/$defs/vec3",
               "description": "A point it shines towards, instead of direction."
             },
+            "caustics": {
+              "type": "boolean",
+              "description": "Glass with thickness bends this light into caustics - bright lines and pools on what is behind it. Needs castShadow; one light a scene."
+            },
             "castShadow": {
               "type": "boolean"
             },
@@ -440,6 +444,10 @@
               "minimum": 0,
               "maximum": 1
             },
+            "caustics": {
+              "type": "boolean",
+              "description": "Glass with thickness bends this light into caustics - bright lines and pools on what is behind it. Needs castShadow; one light a scene."
+            },
             "castShadow": {
               "type": "boolean"
             },
@@ -484,6 +492,10 @@
               "type": "number",
               "exclusiveMinimum": 0,
               "description": "The other way."
+            },
+            "caustics": {
+              "type": "boolean",
+              "description": "Glass with thickness bends this light into caustics - bright lines and pools on what is behind it. Needs castShadow; one light a scene."
             },
             "castShadow": {
               "type": "boolean",

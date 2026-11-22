@@ -68,6 +68,10 @@ const PREPARE = {
   carbide: `const { position: p, target: t } = view.camera
     p.set(t[0] + (p[0] - t[0]) * 0.7, t[1] + (p[1] - t[1]) * 0.7, t[2] + (p[2] - t[2]) * 0.7)
     view.invalidate()`,
+  // the pool seen closer, its water and caustics filling the card
+  water: `const { position: p, target: t } = view.camera
+    p.set(t[0] + (p[0] - t[0]) * 0.62, t[1] + (p[1] - t[1]) * 0.62, t[2] + (p[2] - t[2]) * 0.62)
+    view.invalidate()`,
   cells: `Object.assign(document.querySelector('.cells-poster').style, { paddingTop: '16px', scrollbarWidth: 'none' })`,
   // the colour poster two by two on shorter rows - the picture is narrow enough for its one-column
   // layout - its notes left out, so the picture shows all four views
@@ -245,9 +249,11 @@ try {
     }
     let data
     if (!PAGE.includes(name) && await evaluate('!!window.view?.toImage')) {
-      // the view's own picture, scaled down and re-encoded in the page
+      // the view's own picture, scaled down and re-encoded in the page - refined, as the view shows it
+      // when still, where it refines (its own samples)
       data = await evaluate(`(async () => {
-        const bitmap = await createImageBitmap(await window.view.toImage())
+        const refine = window.view.refine
+        const bitmap = await createImageBitmap(await window.view.toImage(refine ? { samples: refine.samples ?? 64 } : {}))
         const small = new OffscreenCanvas(${WIDTH * SCALE}, ${HEIGHT * SCALE})
         small.getContext('2d').drawImage(bitmap, 0, 0, small.width, small.height)
         const bytes = new Uint8Array(await (await small.convertToBlob({ type: 'image/webp', quality: 0.8 })).arrayBuffer())

@@ -4,11 +4,11 @@ import { Mat4 } from './value/Mat4.js'
 import { Vec3 } from './value/Vec3.js'
 import { Box3 } from './value/Box3.js'
 import { warnOnce } from './validate.js'
-import { fitPointShadow, fitShadow, fitSpotShadow, SPOT_TILES } from './shadow.js'
+import { fitPointShadow, fitShadow, fitSpotShadow, SOFT_SPREAD, softnessOf, SPOT_TILES } from './shadow.js'
 import { worldPlane } from './clip.js'
 import { sampleLight } from './refine.js'
 import { hiddenInstance } from './scene/drawables.js'
-import { featureMask, variantOfMask } from './material/features.js'
+import { featureMask, isGlass, variantOfMask } from './material/features.js'
 import { drawKind, isInstanced } from './scene/kinds.js'
 
 /** @import { Scene } from './scene/Scene.js' */
@@ -51,6 +51,7 @@ const OVER_LIMIT = {
  * @property {number} [penumbra] spot
  * @property {boolean} [castShadow] directional, spot, point, rect
  * @property {number} [shadowSoftness] directional, spot, point: contact-hardening soft shadows, 0 for the plain edge
+ * @property {boolean} [caustics] directional, spot, rect: glass bends this light into caustics
  * @property {number} [shadowTile] spot, rect: which spot shadow is its, or -1
  * @property {Vec3} [shadowFrom] rect, in a refine sample: where its shadow is drawn from - a point
  *   on it - rather than its middle
@@ -171,6 +172,22 @@ function worldBox(i) {
  */
 
 /**
+ * The light glass bends into caustics, and what bends it: one light's, fitted round its glass and
+ * as far again round it, where the bent light lands.
+ * @typedef {object} CausticFrame
+ * @property {FrameLight} light
+ * @property {number} tile its spot shadow tile, or -1 for the sun's shadow
+ * @property {Mat4} viewProjection world to the caustics' clip space
+ * @property {Vec3 | null} from where the light comes from (spot, rect - a refine sample's point on it), or null for the sun
+ * @property {Vec3} direction the way it travels (the sun's, or the spot's or rect's middle)
+ * @property {number} reach how far bent light is followed, world units
+ * @property {number} blur how far the light's size spreads its caustics, in caustic texels - a big
+ *   light's are soft; a refine sample, drawn from a point on the light, a little only
+ * @property {DrawItem[]} glass the glass with thickness that bends it
+ * @property {DrawItem[]} surfaces the solids it lands on, casting or only receiving
+ */
+
+/**
  * A point light's view of the scene for its shadow: six faces of a cube round it.
  * @typedef {object} PointShadowFrame
  * @property {FrameLight} light
@@ -206,6 +223,7 @@ function worldBox(i) {
  * @property {ShadowFrame | null} shadow the shadow-casting light's view, when there is one and something casts
  * @property {SpotShadowFrame[]} spotShadows spot lights' shadows, up to four
  * @property {PointShadowFrame | null} pointShadow a point light's shadow, all round it
+ * @property {CausticFrame | null} [caustics] the light glass bends, for the light that asks for it
  * @property {FrameCap[]} caps section planes' caps to fill, after the opaque pass
  * @property {{ drawn: number, culled: number }} stats
  * @property {number} [time] the View's clock in seconds, for shader hooks that read uTime
@@ -262,6 +280,7 @@ export function collect(scene, camera, { display = true, labels = display, light
     shadow: null,
     spotShadows: [],
     pointShadow: null,
+    caustics: null,
     caps: [],
     stats: { drawn: 0, culled: 0 },
     time: 0,
@@ -437,6 +456,8 @@ export function collect(scene, camera, { display = true, labels = display, light
     }
   }
 
+  frame.caustics = items.length ? causticsOf(frame, items, boxes, receivers, receiverCaster, view, scene) : null
+
   // opaque: front to back lets the depth test reject hidden pixels early; grouping by material
   // variant - worked out once an item, for its kind - keeps shader switches down
   // a material's variant found once, however many items share it
@@ -474,6 +495,85 @@ export function collect(scene, camera, { display = true, labels = display, light
   // transparent: back to front so blending composes correctly
   frame.transparent.sort((x, y) => x.node.renderOrder - y.node.renderOrder || y.depth - x.depth)
   return frame
+}
+
+/** Caustics are this many texels square. */
+export const CAUSTIC_SIZE = 512
+
+/**
+ * The caustic light's view, when a light asks for caustics and glass with thickness casts in its
+ * shadow - fitted round that glass and as far again each way, where the bent light lands, and deep
+ * enough for what receives it. Null otherwise.
+ * @param {FrameDescription} frame @param {DrawItem[]} items what casts @param {Box3[]} boxes their world boxes
+ * @param {any[]} receivers @param {number[]} receiverCaster @param {Mat4} view @param {Scene} scene
+ * @returns {CausticFrame | null}
+ */
+function causticsOf(frame, items, boxes, receivers, receiverCaster, view, scene) {
+  const asking = frame.lights.filter((l) => l.caustics && l.castShadow && (l.kind === 'directional' || l.kind === 'spot' || l.kind === 'rect'))
+  if (!asking.length) return null
+  if (asking.length > 1) warnOnce(scene, 'more than one light asks for caustics - only the first has them')
+  const light = asking[0]
+  // its shadow: the sun's map, or a spot tile
+  const sun = light.kind === 'directional'
+  if (sun ? frame.shadow?.light !== light : !((light.shadowTile ?? -1) >= 0)) return null
+  // glass with thickness bends it; thin walls only tint its shadow
+  // each piece as far again round it, where its light lands - glass spread over a room covers that
+  // room, not as far again round all of it
+  const region = new Box3()
+  /** @type {DrawItem[]} */
+  const glass = []
+  // the biggest piece, for how far its light is followed and softened
+  let grow = 0
+  for (let i = 0; i < items.length; i++) {
+    const m = items[i].material, b = boxes[i]
+    if (!isGlass(m) || !(m.thickness > 0) || m.thinWalled || items[i].node.drawMode !== 'triangles' || b.isEmpty()) continue
+    glass.push(items[i])
+    // as far as its light can fall past it and spread: about its height, or half its thickness - a
+    // pool's surface is flat but its light goes down to its floor - and a tenth of its width at least
+    const w = items[i].worldMatrix
+    const g = Math.max(b.max[1] - b.min[1], 0.5 * m.thickness * Math.hypot(w[0], w[1], w[2]), 0.1 * Math.max(b.max[0] - b.min[0], b.max[2] - b.min[2]))
+    grow = Math.max(grow, g)
+    region.expandByXYZ(b.min[0] - g, b.min[1] - g, b.min[2] - g)
+    region.expandByXYZ(b.max[0] + g, b.max[1] + g, b.max[2] + g)
+  }
+  if (!glass.length || region.isEmpty()) return null
+  const size = region.getSize()
+  // what it lands on: the solids, casting or only receiving
+  /** @type {DrawItem[]} */
+  const surfaces = items.filter((item) => !item.material.transparent)
+  /** @type {Box3[]} */
+  const landing = []
+  for (let i = 0; i < receivers.length; i++) {
+    const node = receivers[i]
+    if (node.material.transparent || node.drawMode !== 'triangles') continue
+    landing.push(node.expandBounds(new Box3()))
+    if (receiverCaster[i] >= 0) continue
+    const item = drawItem(node, view, null, null)
+    if (item) surfaces.push(item)
+  }
+  const direction = /** @type {Vec3} */ (light.direction)
+  // the light's size spreads its caustics as it softens its shadow: by about its size times how far
+  // the light falls past the glass over how far it came - in texels across the region
+  const across = Math.max(size[0], size[1], size[2])
+  const texel = across / CAUSTIC_SIZE
+  const blurOf = (/** @type {number} */ world) => Math.min(24, Math.max(1.5, world / texel))
+  if (sun) {
+    const fit = fitShadow(direction, [region], landing, CAUSTIC_SIZE)
+    if (!fit) return null
+    // a sun's softness is an angle (SOFT_SPREAD at 1)
+    const blur = blurOf(SOFT_SPREAD * softnessOf(light) * grow)
+    return { light, tile: -1, viewProjection: fit.viewProjection, from: null, direction, reach: grow * 3, blur, glass, surfaces }
+  }
+  const from = /** @type {Vec3} */ (light.shadowFrom ?? light.position)
+  const fit = fitSpotShadow(from, direction, coneOver(from, direction, [region]), light.range ?? 0, [region], landing)
+  if (!fit) return null
+  const distance = Math.max(Math.hypot(...region.getCenter().sub(from)), 1e-3)
+  // a rect light's size; a spot's softness, as its shadow's (SOFT_SPREAD of the gap at 1); a refine
+  // sample's point on the light, none - the samples spread it
+  const extent = light.hardShadow ? 0
+    : light.kind === 'rect' ? 2 * Math.max(/** @type {Vec3} */ (light.halfWidth).len(), /** @type {Vec3} */ (light.halfHeight).len()) * grow / distance
+      : 2 * SOFT_SPREAD * softnessOf(light) * grow
+  return { light, tile: /** @type {number} */ (light.shadowTile), viewProjection: fit.viewProjection, from, direction, reach: grow * 3, blur: blurOf(extent), glass, surfaces }
 }
 
 /** A drawable's kind of program. @param {any} node @returns {'mesh' | 'points' | 'lines'} */

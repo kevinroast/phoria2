@@ -118,6 +118,15 @@ export function explain(info) {
   } else if (frame.lights.some((l) => l.castShadow) && !frame.spotShadows.length && !frame.pointShadow) {
     warnings.push('a light has castShadow but nothing casts - set castShadow: true on the meshes too')
   }
+  // caustics: the light that asks, and why one asking might show none
+  const caustic = frame.caustics
+  if (caustic) {
+    lines.push(`Caustics: from the ${caustic.light.kind} light, bent by ${plural(caustic.glass.length, 'glass object')}, softened ${fmt(caustic.blur)} texels`)
+  } else if (frame.lights.some((l) => l.caustics)) {
+    const asking = /** @type {any} */ (frame.lights.find((l) => l.caustics))
+    warnings.push(!asking.castShadow ? 'a light asks for caustics but has no castShadow - set castShadow: true on it'
+      : "a light asks for caustics but no glass with thickness casts in its shadow - give the glass castShadow: true and a 'thickness' (thin walls only tint the light)")
+  }
   const lit = items.filter((i) => !i.material.unlit && /** @type {any} */ (i.node).drawMode === 'triangles')
   if (lit.length && !frame.lights.length && frame.environment === 'none' && !info.autoLight) {
     warnings.push(`${plural(lit.length, 'lit object')} but no lights and autoLight is off - they draw black; add a light, set scene.environment = 'studio' or use unlit materials`)
