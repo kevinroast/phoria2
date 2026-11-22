@@ -221,6 +221,8 @@ function worldBox(i) {
  * @property {Scene} scene what was collected - for render textures that draw the view's own scene
  * @property {[any, FrameClip | null][]} solids opaque meshes that cast a ground shadow, seen or not - all but
  *   those that only receive shadows (floors); made into draw items by solidItems() when wanted
+ * @property {[any, FrameClip | null][]} glassy glass (transmission) meshes that cast a ground shadow - more
+ *   lightly than solids, as most of the light goes through them
  * @property {Record<'mesh' | 'points' | 'lines', Map<unknown, number>>} [masks] @internal the opaque
  *   materials' features (featureMask), found once for sorting here and read again by the renderer
  */
@@ -270,6 +272,7 @@ export function collect(scene, camera, { display = true, labels = display, light
     outlines: [],
     tooltips: false,
     solids: [],
+    glassy: [],
     scene,
   }
   // lights in each limited group so far
@@ -314,7 +317,11 @@ export function collect(scene, camera, { display = true, labels = display, light
       const casts = node.castShadow && node.drawMode !== 'points' && node.drawMode !== 'lines'
       if (casts) casters.push([node, clip, item])
       // what a ground shadow is of: solid meshes, not floors that only receive shadows
-      if (node.drawMode === 'triangles' && !node.material.transparent && (node.castShadow || !node.receiveShadow)) frame.solids.push([node, clip])
+      if (node.drawMode === 'triangles' && (node.castShadow || !node.receiveShadow)) {
+        if (!node.material.transparent) frame.solids.push([node, clip])
+        // glass casts one too, if lighter: a glass on a table is seen to stand on it
+        else if (node.material.transmission > 0) frame.glassy.push([node, clip])
+      }
       if (node.receiveShadow) {
         receivers.push(node)
         receiverCaster.push(casts ? casters.length - 1 : -1)
@@ -473,12 +480,13 @@ export function collect(scene, camera, { display = true, labels = display, light
 const kindOf = drawKind
 
 /**
- * A frame's solids as draw items, none culled - for passes that see more than the camera does.
- * @param {FrameDescription} frame
+ * A frame's solids (or another of its lists of them, such as its glass) as draw items, none culled -
+ * for passes that see more than the camera does.
+ * @param {FrameDescription} frame @param {[any, FrameClip | null][]} [list] (default frame.solids)
  * @returns {DrawItem[]}
  */
-export function solidItems(frame) {
-  return /** @type {DrawItem[]} */ (frame.solids.map(([node, clip]) => drawItem(node, frame.camera.view, null, clip)).filter(Boolean))
+export function solidItems(frame, list = frame.solids) {
+  return /** @type {DrawItem[]} */ (list.map(([node, clip]) => drawItem(node, frame.camera.view, null, clip)).filter(Boolean))
 }
 
 // a drawable's bounds' middle in the world, for drawItem

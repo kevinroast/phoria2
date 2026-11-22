@@ -67,6 +67,27 @@ describe("a frame's solids - what casts a ground shadow", () => {
   })
 })
 
+describe("a frame's glass - a lighter ground shadow", () => {
+  it('glass meshes cast it, apart from the solids; faded see-through things still do not', () => {
+    const scene = new Scene()
+    const solid = scene.add(new Mesh({ geometry: box(1) }))
+    const glass = scene.add(new Mesh({ geometry: box(1), material: { transmission: 1, thickness: 1 }, position: [2, 0, 0] }))
+    scene.add(new Mesh({ geometry: box(1), material: { transparent: true, opacity: 0.5 }, position: [-2, 0, 0] }))
+    scene.updateWorldTree()
+    const frame = collect(scene, camera())
+    expect(frame.solids.map(([node]) => node)).toEqual([solid])
+    expect(frame.glassy.map(([node]) => node)).toEqual([glass])
+  })
+
+  it('draws glass into a depth of its own, darkening half as much', async () => {
+    const { gl, sources } = watchedGL()
+    const scene = new Scene()
+    scene.add(new Mesh({ geometry: box(1), material: { transmission: 1, thickness: 1 } }))
+    await withEffects({ groundShadow: true }, scene, gl)
+    expect(sources.some((s) => s.includes('#define GLASS') && s.includes('uGlassShadow'))).toBe(true)
+  })
+})
+
 describe('the effects in a frame', () => {
   afterEach(() => {
     vi.restoreAllMocks()

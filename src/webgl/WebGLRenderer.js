@@ -313,6 +313,7 @@ const LIGHT_PACKING = {
 function solidsBox(frame) {
   const box = new Box3()
   for (const [node] of frame.solids) node.expandBounds(box)
+  for (const [node] of frame.glassy ?? []) node.expandBounds(box)
   return box
 }
 
@@ -683,7 +684,7 @@ export class WebGLRenderer {
     const solids = effects && passes && (groundShadow || (occlusion && occlusion.radius === null)) ? solidsBox(frame) : null
     // ambient occlusion and the ground shadow, each drawn into targets of its own before the scene
     state.occlusion = effects && passes && occlusion ? effects.occlusion(frame, passes, occlusion, width, height, solids ? solids.getRadius() * 2 : 1) : null
-    const ground = effects && passes && groundShadow && solids ? effects.groundShadow(solidItems(frame), solids, passes, groundShadow) : null
+    const ground = effects && passes && groundShadow && solids ? effects.groundShadow(solidItems(frame), solidItems(frame, frame.glassy ?? []), solids, passes, groundShadow) : null
     for (const map of [...state.shadows, ...(ground ? [ground] : [])]) {
       if (map.kept) this.info.shadowMapsKept++
       else this.info.shadowMaps++

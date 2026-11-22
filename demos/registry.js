@@ -43,6 +43,7 @@ export const DEMOS = [
   { name: 'shadows', title: 'hard or soft shadows - sun, spot and point lights', hint: 'Drag to orbit · pick a light below' },
   { name: 'area lights', title: 'an area light in a photo studio - softbox light, glossy reflections, soft shadows, bloom' },
   { name: 'glass', title: 'glass items - refraction, tinted glass, coloured shadows, prism and a cut gem example' },
+  { name: 'tumbler', title: 'a whisky tumbler product shot - glass over glass, liquid and ice on classic checkerboard, softbox highlights, glass shadow' },
   { name: 'point lights', title: "jack-o'-lantern - candle inside casting shadows, light escaping through the carved face, bloom" },
   { name: 'viewer', title: 'glTF product viewer - full material maps, baked occlusion, an HDR studio, shadows, animation' },
   { name: 'render textures', title: 'live camera feeds - sweeping CCTV, overhead map and a robot camera, each a live RenderTexture' },

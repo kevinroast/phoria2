@@ -178,14 +178,14 @@ export function explain(info) {
   if (fx && (fx.bloom || fx.ambientOcclusion || fx.groundShadow || fx.fxaa)) {
     const settings = (/** @type {Record<string, number | null>} */ o, /** @type {Record<string, string>} */ auto = {}) =>
       Object.entries(o).filter(([k, v]) => v !== null || auto[k]).map(([k, v]) => `${k} ${v === null ? auto[k] : fmt(v)}`).join(', ')
-    const solids = frame.solids.length
+    const solids = frame.solids.length, glass = frame.glassy?.length ?? 0
     lines.push(`Effects: ${[
       fx.bloom && `bloom (${settings(fx.bloom)})`,
       fx.ambientOcclusion && `ambient occlusion (${settings(fx.ambientOcclusion, { radius: 'auto' })})`,
-      fx.groundShadow && `ground shadow under ${plural(solids, 'solid')} (${settings(fx.groundShadow, { height: 'auto', y: 'auto', size: 'auto' })})`,
+      fx.groundShadow && `ground shadow under ${plural(solids, 'solid')}${glass ? ` and ${glass} glass` : ''} (${settings(fx.groundShadow, { height: 'auto', y: 'auto', size: 'auto' })})`,
       fx.fxaa && 'FXAA',
     ].filter(Boolean).join(', ')}`)
-    if (fx.groundShadow && !solids) {
+    if (fx.groundShadow && !solids && !glass) {
       warnings.push("groundShadow is on but nothing casts it - every mesh only receives shadows (receiveShadow on, castShadow off), or is see-through; set castShadow: true on what should cast")
     }
     const fromAllRound = frame.environment !== 'none' || frame.lights.some((l) => !l.group)
