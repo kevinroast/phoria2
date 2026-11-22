@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Geometry } from '../src/geometry/Geometry.js'
-import { axes, box, cylinder, edges, extrude, icosphere, lathe, plane, sphere, torus } from '../src/geometry/generators.js'
+import { axes, box, cylinder, edges, extrude, icosphere, lathe, plane, roundedBox, sphere, torus, torusKnot } from '../src/geometry/generators.js'
 import { fromPolygons } from '../src/geometry/fromPolygons.js'
 
 // --- helpers ---------------------------------------------------------------------------------
@@ -311,6 +311,70 @@ describe('torus', () => {
     expect(() => torus({ tubeSegment: 8 })).toThrow("torus(): unknown option 'tubeSegment' - did you mean 'tubeSegments'?")
     expect(() => torus({ tubularSegments: 8 })).toThrow("use 'segments'")
     expect(() => torus({ tubeSegments: 0 })).toThrow("torus(): 'tubeSegments' must be a whole number 3 or more, got 0")
+  })
+})
+
+describe('roundedBox', () => {
+  it('is a box with its edges and corners rounded, one smooth outward surface', () => {
+    const g = roundedBox({ width: 2, height: 1, depth: 1.5, radius: 0.2, segments: 4 })
+    expectWellFormed(g)
+    expectUVsUpright(g)
+    expectBounds(g, [-1, -0.5, -0.75], [1, 0.5, 0.75])
+    expect(volume(g)).toBeGreaterThan(0)
+    // every vertex lies the radius out from the inner box, its normal pointing that way
+    const inner = [0.8, 0.3, 0.55]
+    for (let i = 0; i < g.vertexCount; i++) {
+      const p = vec(g.positions, i), n = vec(g.normals, i)
+      const q = p.map((x, k) => Math.max(-inner[k], Math.min(inner[k], x)))
+      expect(len(sub(p, q))).toBeCloseTo(0.2, 5)
+      expect(dot(n, sub(p, q))).toBeCloseTo(0.2, 5)
+    }
+    expect(g.toJSON()).toEqual({ type: 'roundedBox', width: 2, height: 1, depth: 1.5, radius: 0.2, segments: 4 })
+  })
+
+  it('takes a number, rounds a tenth of the smallest side by default, and can round right up to a pebble', () => {
+    expect(roundedBox(2).toJSON()).toEqual({ type: 'roundedBox', width: 2, height: 2, depth: 2, radius: 0.2, segments: 4 })
+    const pebble = roundedBox({ size: 1, radius: 0.5, segments: 3 })
+    expectWellFormed(pebble)
+    expect(volume(pebble)).toBeCloseTo(4 / 3 * Math.PI * 0.125, 1)
+  })
+
+  it('rejects bad options helpfully', () => {
+    expect(() => roundedBox({ size: 1, radius: 0.6 })).toThrow("roundedBox(): 'radius' is at most half the smallest side (0.5), got 0.6")
+    expect(() => roundedBox({ bevelSegments: 3 })).toThrow("use 'segments'")
+    expect(() => roundedBox({ segments: 0 })).toThrow('whole number')
+  })
+})
+
+describe('torusKnot', () => {
+  it('is a closed tube round the Y axis, faces out from its centre line', () => {
+    const g = torusKnot({ radius: 1, tube: 0.2, segments: 96, tubeSegments: 12 })
+    expect(g.vertexCount).toBe(97 * 13)
+    expect(g.indices).toHaveLength(96 * 12 * 6)
+    expectWellFormed(g)
+    expectUVsUpright(g)
+    expect(volume(g)).toBeGreaterThan(0)
+    // furthest out from the Y axis: the loops' outer edge, radius plus tube; up and down: a third of the radius plus tube
+    let out = 0, up = 0
+    for (let i = 0; i < g.vertexCount; i++) {
+      const [x, y, z] = vec(g.positions, i)
+      out = Math.max(out, Math.hypot(x, z))
+      up = Math.max(up, y)
+    }
+    expect(out).toBeCloseTo(1.2, 2)
+    expect(up).toBeCloseTo(1 / 3 + 0.2, 2)
+    expect(g.toJSON()).toEqual({ type: 'torusKnot', radius: 1, tube: 0.2, p: 2, q: 3, segments: 96, tubeSegments: 12 })
+  })
+
+  it('winds as asked: (3, 5) and (2, 3) are different knots', () => {
+    const a = torusKnot({ p: 3, q: 5, segments: 200 }), b = torusKnot()
+    expectWellFormed(a)
+    expect(Array.from(a.positions.slice(0, 300))).not.toEqual(Array.from(b.positions.slice(0, 300)))
+  })
+
+  it('rejects bad options helpfully', () => {
+    expect(() => torusKnot({ tubularSegments: 64 })).toThrow("use 'segments'")
+    expect(() => torusKnot({ p: 1.5 })).toThrow("'p' must be a whole number")
   })
 })
 

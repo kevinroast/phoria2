@@ -9,6 +9,10 @@ import { PhoriaError } from './validate.js'
  * @property {string} [type] 'image/png' (default), 'image/jpeg' or 'image/webp'
  * @property {number} [quality] 0-1 for jpeg and webp
  * @property {boolean} [labels] paint the visible labels into the image (default true)
+ * @property {number} [scale] draw it this many times the canvas's size - 2 for print, 0.25 for a thumbnail
+ *   (default 1); lines, points and labels scale with it
+ * @property {number} [width] draw it this many pixels wide, the height following the canvas's shape
+ * @property {number} [height] draw it this many pixels high, the width following the canvas's shape
  * @property {number} [samples] refine it first: this many pictures averaged, each from a slightly
  *   different point in each pixel and with each shadow from a different point across its light -
  *   antialiased edges and exact soft shadows (default 1: the picture as drawn). Needs float render

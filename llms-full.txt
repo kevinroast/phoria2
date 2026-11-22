@@ -150,7 +150,7 @@ Methods:
 - `rayAt(x, y)` / `rayAt(event)` - the world `Ray` through a canvas position, for placing things:
   `ray.at(ray.intersectPlane([0, 1, 0], [0, 0, 0]))` is the point on the floor under the pointer
   (`intersectPlane` returns null when the ray runs along the plane or away from it).
-- `await view.toImage()` - a PNG `Blob` of the picture, labels included - complete: what a scene loads the first time it needs it (shadows, glass and advanced materials, labels) is waited for. `toImage({ samples: 64 })` refines it first, as `refine` does - antialiased, soft shadows exact - whether or not the view refines.
+- `await view.toImage()` - a PNG `Blob` of the picture, labels included - complete: what a scene loads the first time it needs it (shadows, glass and advanced materials, labels) is waited for. `toImage({ samples: 64 })` refines it first, as `refine` does - antialiased, soft shadows exact - whether or not the view refines. Another size: `toImage({ scale: 2 })` (twice the canvas's pixels, for print), `{ width: 320 }` or `{ height: 1080 }` (the other follows the canvas's shape) - drawn again at that size, lines, points and labels scaled with it; the canvas is put back after.
 - `await view.explain()` - a plain-text report of what is drawn, with warnings ("nothing in view",
   "no lights", labels hidden...). Use it to debug a blank or wrong picture.
 - `view.debug` (or the `debug` option) - pictures for a person checking a scene, drawn over it:
@@ -346,10 +346,12 @@ Generators return a `Geometry`; each takes one options object (a number is the m
 | | Options |
 |---|---|
 | `box(size \| { width, height, depth })` | centred on the origin |
+| `roundedBox(size \| { width, height, depth, radius, segments })` | a box with rounded edges and corners - dice, ice cubes, phones, buttons; `radius` up to half the smallest side (default a tenth of it), `segments` round each edge (4) |
 | `sphere({ radius, segments, rings })` | |
 | `plane(size \| { width, depth })` | in the x-z plane, facing up (+Y) |
 | `cylinder({ radius, radiusTop, height, segments })` | along Y, centred; `radiusTop: 0` is a cone, its tip at the + end of the axis (up) |
 | `torus({ radius, tube })`, `icosphere({ radius, detail })` | |
+| `torusKnot({ radius, tube, p, q })` | a tube along a knot round Y: winds `p` times round the ring and `q` through its hole (2, 3: the trefoil) - the classic material swatch |
 | `lathe({ points, segments, axis })` | a profile of `[radius, y]` pairs, bottom up, turned about Y - pistons, bottles, bolts (listed top down, it faces inward) |
 | `extrude({ shape, holes, depth, axis })` | an outline of `[x, y]` pairs (and hole outlines) pushed along Z, centred - plates, brackets, logos |
 | `grid({ size, divisions })` | floor grid, for `Lines` |
@@ -1365,9 +1367,10 @@ An `Emitter` is a `Points` node that runs itself. Options: `max` (most alive at 
 spreads in every direction - explosions; `[x, y, z]` per axis), `lifetime` (seconds or `[min, max]`),
 `color` (one, or a list each particle fades through), `gravity`, `drag` (share of velocity lost per
 second), `follow` (a node whose position is the origin each frame - a trail), `onParticle(p)`
-(every live particle each frame; return false to remove it), plus node and material options; the
-default material is small additive points. `burst(count, spawnOptions)`, `clear()`, `set(options)`,
-`count`.
+(every live particle each frame; return false to remove it), `seed` (a number: the same random
+choices in the same order every load - stepped by the same `dt`, exactly the same; `clear()` starts
+them again), plus node and material options; the default material is small additive points.
+`burst(count, spawnOptions)`, `clear()`, `set(options)`, `count`, `seed`.
 
 How particles look over their lives: `size` (a multiple of the material's size, or a list each particle
 goes through - `[0.5, 3]` billows), `sizeSpread` (each one's size varies by up to this share, 0-1),

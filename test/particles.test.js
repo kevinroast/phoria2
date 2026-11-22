@@ -113,6 +113,43 @@ describe('Emitter copies', () => {
   })
 })
 
+describe('Emitter seed', () => {
+  const run = (/** @type {any} */ options) => {
+    const e = new Emitter({ max: 200, rate: 300, originSpread: 0.5, velocitySpread: 1, lifetime: [0.5, 2], size: [1, 2], sizeSpread: 0.3, spin: 2, ...options })
+    for (let i = 0; i < 20; i++) e.step(1 / 60)
+    return { e, positions: Array.from(e.geometry.positions.slice(0, e.count * 3)) }
+  }
+
+  it('makes the same particles every time for the same seed and steps', () => {
+    const a = run({ seed: 7 }), b = run({ seed: 7 })
+    expect(a.positions.length).toBeGreaterThan(0)
+    expect(b.positions).toEqual(a.positions)
+    expect(run({ seed: 8 }).positions).not.toEqual(a.positions)
+    // without one, Math.random: not the seeded run
+    expect(run({}).positions).not.toEqual(a.positions)
+  })
+
+  it('plays out again from clear(), and from a new seed', () => {
+    const { e, positions } = run({ seed: 3 })
+    e.clear()
+    for (let i = 0; i < 20; i++) e.step(1 / 60)
+    expect(Array.from(e.geometry.positions.slice(0, e.count * 3))).toEqual(positions)
+    e.seed = 3
+    e.clear()
+    expect(e.seed).toBe(3)
+    e.seed = null
+    expect(e.seed).toBe(null)
+  })
+
+  it('is kept by clone() and toJSON(), and checked', () => {
+    const e = new Emitter({ seed: 11 })
+    expect(e.clone().seed).toBe(11)
+    expect(e.toJSON().seed).toBe(11)
+    expect(new Emitter().toJSON().seed).toBe(undefined)
+    expect(() => new Emitter({ seed: /** @type {any} */ ('x') })).toThrow("'seed' is a number")
+  })
+})
+
 describe('Body', () => {
   it('moves a node it is attached to', () => {
     const scene = new Scene()

@@ -1236,6 +1236,36 @@
           "additionalProperties": false,
           "properties": {
             "type": {
+              "const": "roundedBox"
+            },
+            "size": {
+              "type": "number"
+            },
+            "width": {
+              "type": "number"
+            },
+            "height": {
+              "type": "number"
+            },
+            "depth": {
+              "type": "number"
+            },
+            "radius": {
+              "type": "number",
+              "description": "Of the rounded edges and corners, up to half the smallest side."
+            },
+            "segments": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
               "const": "sphere"
             },
             "radius": {
@@ -1317,6 +1347,40 @@
             },
             "tube": {
               "type": "number"
+            },
+            "segments": {
+              "type": "integer",
+              "minimum": 3
+            },
+            "tubeSegments": {
+              "type": "integer",
+              "minimum": 3
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "torusKnot"
+            },
+            "radius": {
+              "type": "number"
+            },
+            "tube": {
+              "type": "number"
+            },
+            "p": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Times it winds round the ring."
+            },
+            "q": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Times it winds through the hole."
             },
             "segments": {
               "type": "integer",

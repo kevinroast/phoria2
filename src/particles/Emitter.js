@@ -11,6 +11,7 @@ import { Node } from '../scene/Node.js'
 import { Color } from '../value/Color.js'
 import { Vec3 } from '../value/Vec3.js'
 import { checkNumber, describe, fail } from '../validate.js'
+import { seeded } from '../math/random.js'
 
 /** @import { MaterialOptions } from '../material/Material.js' */
 /** @import { NodeOptions } from '../scene/Node.js' */
@@ -50,13 +51,17 @@ import { checkNumber, describe, fail } from '../validate.js'
  *   renderOrder?: number,
  *   onParticle?: ((p: Particle) => boolean | void) | null,
  *   sort?: boolean,
+ *   seed?: number | null,
  * } & LookOptions} EmitterOptions
  * max: most live particles at once (default 1000). rate: particles born per second (default 100).
  * gravity: acceleration, e.g. [0, -9.8, 0] (default none). drag: share of velocity lost per second
  * (default 0). follow: a node whose position becomes the origin each frame - a trail that stays
  * behind it. onParticle: called for every live particle each frame after it moves; return false to
  * remove it (a particle hitting something). sort: draw furthest first, for soft particles with
- * blending 'normal' (smoke) that would otherwise layer wrongly.
+ * blending 'normal' (smoke) that would otherwise layer wrongly. seed: the same random choices - where
+ * each particle starts, its speed, life, size and spin - in the same order every time, so the effect
+ * comes out the same on every load (stepped by the same dt each frame, exactly the same); clear()
+ * starts them again. Without one, Math.random().
  */
 
 /**
@@ -74,7 +79,7 @@ import { checkNumber, describe, fail } from '../validate.js'
 const SPAWN_OPTIONS = ['origin', 'originSpread', 'velocity', 'velocitySpread', 'lifetime', 'color']
 const LOOK_OPTIONS = ['size', 'sizeSpread', 'opacity', 'spin']
 const BEHAVIOUR_OPTIONS = ['rate', 'gravity', 'drag', 'follow', 'onParticle', ...LOOK_OPTIONS]
-const OPTIONS = [...Points.OPTIONS, ...SPAWN_OPTIONS, 'max', ...BEHAVIOUR_OPTIONS]
+const OPTIONS = [...Points.OPTIONS, ...SPAWN_OPTIONS, 'max', 'seed', ...BEHAVIOUR_OPTIONS]
 const HINTS = {
   count: "use 'max' for the most particles alive at once, 'rate' for how many are born per second",
   lifetimeRnd: "give 'lifetime' a [min, max] range",
@@ -123,6 +128,8 @@ export class Emitter extends Points {
 
   #max
   #alive = 0
+  /** @type {number | null} */ #seed = null
+  /** Each call the next random number in [0, 1): seeded, or Math.random. */ #random = Math.random
   #due = 0
   /** @type {Float32Array} */ #velocities
   /** @type {Float32Array} */ #ages
@@ -172,6 +179,7 @@ export class Emitter extends Points {
     // particles spread anywhere, and stale slots would make bounds meaningless
     if (options.frustumCulled === undefined) this.frustumCulled = false
 
+    this.seed = options.seed ?? null
     this.#setBehaviour(options)
     this.#setSpawn(options)
     this.onUpdate((_, dt) => this.step(dt))
@@ -251,8 +259,25 @@ export class Emitter extends Points {
   clear() {
     this.#alive = 0
     this.#due = 0
+    // a seeded emitter starts its random choices again, so it plays out as it did
+    if (this.#seed !== null) this.#random = seeded(this.#seed)
     this.#upload()
     return this
+  }
+
+  /**
+   * The seed its random choices come from, or null for Math.random. Setting it starts them again.
+   * @returns {number | null}
+   */
+  get seed() {
+    return this.#seed
+  }
+
+  /** @param {number | null} v */
+  set seed(v) {
+    if (v !== null && (typeof v !== 'number' || !Number.isFinite(v))) fail('Emitter', `'seed' is a number, or null for Math.random, got ${describe(v)}`)
+    this.#seed = v
+    this.#random = v === null ? Math.random : seeded(v)
   }
 
   /**
@@ -314,7 +339,7 @@ export class Emitter extends Points {
     this.#due += this.rate * dt
     const born = Math.floor(this.#due)
     this.#due -= born
-    for (let n = 0; n < born; n++) this.#spawn(from, origin, (n + Math.random()) / born * dt)
+    for (let n = 0; n < born; n++) this.#spawn(from, origin, (n + this.#random()) / born * dt)
     this.#lastOrigin = origin.clone()
     this.#upload()
   }
@@ -325,7 +350,7 @@ export class Emitter extends Points {
     const rest = super.cloneOptions()
     delete rest.geometry
     return { ...rest, ...this.#saveSpawn(), max: this.#max, rate: this.rate, gravity: this.gravity.clone(),
-      drag: this.drag, follow: this.follow, onParticle: this.onParticle, color: this.color, ...this.#looks() }
+      drag: this.drag, follow: this.follow, onParticle: this.onParticle, color: this.color, seed: this.#seed, ...this.#looks() }
   }
 
   /** @internal @returns {Record<string, unknown>} */
@@ -336,7 +361,7 @@ export class Emitter extends Points {
       origin: this.origin.toArray(), originSpread: this.originSpread, velocity: this.velocity.toArray(),
       velocitySpread: typeof this.velocitySpread === 'number' ? this.velocitySpread : this.velocitySpread.toArray(),
       lifetime: [...this.lifetime], color: this.#palettes[0].map((s) => new Color().setSRGB(s[0], s[1], s[2]).toJSON()),
-      ...this.#looks() }
+      ...(this.#seed !== null ? { seed: this.#seed } : {}), ...this.#looks() }
   }
 
   // birth one particle somewhere between a and b, already `head` seconds into its life
@@ -345,24 +370,25 @@ export class Emitter extends Points {
     if (this.#alive >= this.#max) return
     const i = this.#alive++, i3 = i * 3
     const p = this.geometry.positions, v = this.#velocities
-    const t = Math.random()
-    const o = randomInBall(this.originSpread, OFFSET)
+    const random = this.#random
+    const t = random()
+    const o = randomInBall(this.originSpread, OFFSET, random)
     const s = this.velocitySpread, dv = SPREAD
-    if (typeof s === 'number') randomInBall(s, dv)
-    else for (let k = 0; k < 3; k++) dv[k] = (Math.random() * 2 - 1) * s[k]
+    if (typeof s === 'number') randomInBall(s, dv, random)
+    else for (let k = 0; k < 3; k++) dv[k] = (random() * 2 - 1) * s[k]
     for (let k = 0; k < 3; k++) {
       v[i3 + k] = this.velocity[k] + dv[k]
       p[i3 + k] = a[k] + (b[k] - a[k]) * t + o[k] + v[i3 + k] * head
     }
     const [min, max] = this.lifetime
-    this.#lifetimes[i] = min + Math.random() * (max - min)
+    this.#lifetimes[i] = min + random() * (max - min)
     this.#ages[i] = head
     this.#palette[i] = this.#spawnPalette
-    if (this.#sizeFactors) this.#sizeFactors[i] = 1 + (Math.random() * 2 - 1) * this.#sizeSpread
+    if (this.#sizeFactors) this.#sizeFactors[i] = 1 + (random() * 2 - 1) * this.#sizeSpread
     const angles = this.geometry.angles, spins = this.#spins
     if (angles && spins) {
-      spins[i] = this.#spin[0] + Math.random() * (this.#spin[1] - this.#spin[0])
-      angles[i] = Math.random() * Math.PI * 2 + spins[i] * head
+      spins[i] = this.#spin[0] + random() * (this.#spin[1] - this.#spin[0])
+      angles[i] = random() * Math.PI * 2 + spins[i] * head
     }
     this.#paint(i, head / this.#lifetimes[i])
   }
@@ -604,15 +630,15 @@ function colorStops(v) {
 
 /**
  * A random point within a ball of radius r, evenly spread, into `out`.
- * @param {number} r @param {Float64Array} out @returns {Float64Array}
+ * @param {number} r @param {Float64Array} out @param {() => number} random @returns {Float64Array}
  */
-function randomInBall(r, out) {
+function randomInBall(r, out, random) {
   if (!r) return out.fill(0)
   let x, y, z
   do {
-    x = Math.random() * 2 - 1
-    y = Math.random() * 2 - 1
-    z = Math.random() * 2 - 1
+    x = random() * 2 - 1
+    y = random() * 2 - 1
+    z = random() * 2 - 1
   } while (x * x + y * y + z * z > 1)
   out[0] = x * r
   out[1] = y * r

@@ -158,6 +158,7 @@ contract('Emitter', {
     sizeSpread: { value: 0.3, read: (e) => e.sizeSpread, default: 0, bad: 'some', error: 'sizeSpread' },
     opacity: { value: [0, 1, 0], read: (e) => e.opacity, default: [1], bad: [1, 'x'], error: 'opacity' },
     spin: { value: [-1, 2], read: (e) => e.spin, default: [0, 0], bad: 'fast', error: 'spin' },
+    seed: { value: 7, read: (e) => e.seed, default: null, bad: 'random', error: 'seed' },
   },
 })
 

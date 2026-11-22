@@ -13,7 +13,7 @@ import { AmbientLight, DirectionalLight, HemisphereLight, PointLight, RectAreaLi
 import { registeredTypes } from './registry.js'
 
 /** Generator types usable in geometry descriptions: { type: 'box', size: 2 }. */
-export const GEOMETRY_TYPES = ['box', 'sphere', 'plane', 'cylinder', 'torus', 'icosphere', 'lathe', 'extrude', 'axes', 'grid']
+export const GEOMETRY_TYPES = ['box', 'roundedBox', 'sphere', 'plane', 'cylinder', 'torus', 'torusKnot', 'icosphere', 'lathe', 'extrude', 'axes', 'grid']
 
 // Built on first use, not at module load, so these modules can import each other in any order.
 /** @type {Map<string, new (options: any) => Node> | null} */
@@ -42,7 +42,7 @@ const SUBPATH_TYPES = { chart: "import { chart } from 'phoria2/charts' first, wh
 const GEOMETRY_ALIASES = {
   cube: 'box', ball: 'sphere', globe: 'sphere', quad: 'plane', tube: 'cylinder', ring: 'torus', donut: 'torus',
   BoxGeometry: 'box', SphereGeometry: 'sphere', PlaneGeometry: 'plane', CylinderGeometry: 'cylinder',
-  TorusGeometry: 'torus', IcosahedronGeometry: 'icosphere', GridHelper: 'grid', AxesHelper: 'axes',
+  TorusGeometry: 'torus', TorusKnotGeometry: 'torusKnot', RoundedBoxGeometry: 'roundedBox', IcosahedronGeometry: 'icosphere', GridHelper: 'grid', AxesHelper: 'axes',
   LatheGeometry: 'lathe', ExtrudeGeometry: 'extrude', ShapeGeometry: 'extrude',
 }
 

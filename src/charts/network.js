@@ -1,6 +1,7 @@
 // The network mark: nodes as instanced spheres, links as lines, laid out by force, by tiers or from
 // the data. Layouts are deterministic (seeded), and updates start from where nodes already are, so a
 // live map changes colour without moving.
+import { seeded } from '../math/random.js'
 import { Geometry } from '../geometry/Geometry.js'
 import { icosphere } from '../geometry/generators.js'
 import { InstancedMesh, Lines, Points } from '../scene/drawables.js'
@@ -9,16 +10,6 @@ import { describe, fail } from '../validate.js'
 import { grow, labelsOf } from './marks.js'
 
 /** @import { MarkContext, Mark } from './marks.js' */
-
-/** Seeded random numbers (mulberry32): the same graph lays out the same way every time. @param {number} seed */
-function random(seed) {
-  return () => {
-    seed = (seed + 0x6d2b79f5) | 0
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
 
 // link widths in pixels for thin, medium and thick links
 const WIDTHS = [1.2, 2.5, 4.5]
@@ -261,7 +252,7 @@ export function networkMark(ctx) {
     // the same nodes and links as last time, all placed: they stay where they are - an update that
     // only recolours costs nothing here
     if (sameGraph(keys, pairs)) return keys.map((key) => [.../** @type {number[]} */ (placed.get(key))])
-    const n = keys.length, rand = random(o.seed ?? 1)
+    const n = keys.length, rand = seeded(o.seed ?? 1)
     const warm = keys.some((key) => placed.has(key))
     const steps = o.steps ?? (warm ? 60 : 300)
     // links between every pair: breadth first from each node; parts not joined sit a hop beyond the furthest

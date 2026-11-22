@@ -198,6 +198,8 @@ export class View {
   #width = 0
   #height = 0
   #pixelRatio = 1
+  /** While toImage() draws larger or smaller: how much, against the canvas's own buffer. */
+  #imageFactor = 1
   #explicitPixelRatio = false
   #autoFrame = false
   // where a preset camera started, so fitting it on the first frame never undoes the app's own move
@@ -794,7 +796,8 @@ export class View {
     if (!this.#explicitPixelRatio) this.#pixelRatio = Math.min(globalThis.devicePixelRatio || 1, 2)
     this.#width = w
     this.#height = h
-    this.renderer.setSize(w, h, this.#pixelRatio)
+    // toImage() drawing larger keeps its size through a resize mid-capture
+    this.renderer.setSize(w, h, this.#pixelRatio * this.#imageFactor)
     this.camera.aspect = w / h
     // keeping the framing can move the camera; that isn't the app placing it, so a camera still
     // waiting to be fitted to the scene stays waiting
@@ -1194,14 +1197,35 @@ export class View {
   }
 
   /**
-   * The current picture as an image file (PNG by default), with the visible labels painted in.
+   * The current picture as an image file (PNG by default), with the visible labels painted in. At
+   * the canvas's own size, or larger or smaller: `scale` times it, or `width` or `height` in pixels
+   * (the other follows the canvas's shape) - drawn again at that size, lines, points and labels
+   * scaled with it, not stretched.
    *
    *     const png = await view.toImage()
+   *     const print = await view.toImage({ scale: 2, samples: 64 })   // twice the size, refined
+   *     const thumb = await view.toImage({ width: 320, type: 'image/jpeg', quality: 0.8 })
    * @param {ImageOptions} [options]
    * @returns {Promise<Blob>}
    */
   async toImage(options) {
     const { snapshot } = await import('./snapshot.js')
+    const factor = this.#imageScale(options ?? {})
+    // drawn at the size asked for, and back to the canvas's own once it's read
+    const restore = factor === 1 ? null : this.#scaleBuffer(factor)
+    try {
+      return await this.#capture(snapshot, options)
+    } finally {
+      restore?.()
+    }
+  }
+
+  /**
+   * Draw the picture complete and read it, in one task - the drawing buffer is only there until the
+   * browser shows it. @param {typeof import('./snapshot.js').snapshot} snapshot @param {ImageOptions} [options]
+   * @returns {Promise<Blob>}
+   */
+  async #capture(snapshot, options) {
     // draw - complete, shaders and all - and read back in the same task, while the drawing
     // buffer is still there. What loads the first time it's drawn (shadows' passes, bloom, some
     // materials' GLSL) is waited for and drawn again - a load can start another, so a few rounds
@@ -1220,6 +1244,59 @@ export class View {
       this.#samples = samples
     }
     return snapshot(this.canvas, this.#labels?.shown ?? [], options ?? {}, this.#labels?.leaders ?? [])
+  }
+
+  /**
+   * How much larger than the drawing buffer toImage() draws: its scale, or the width or height asked
+   * for over the buffer's - kept within what the GPU can draw.
+   * @param {ImageOptions} o @returns {number}
+   */
+  #imageScale(o) {
+    const sized = o.width !== undefined || o.height !== undefined
+    if (o.scale !== undefined && sized) fail('View', "toImage() takes 'scale' or a 'width' / 'height', not both")
+    const bw = this.canvas.width, bh = this.canvas.height
+    let factor = 1
+    if (o.scale !== undefined) factor = checkRange('View', 'toImage scale', o.scale, 0, Infinity, { above: true })
+    else if (sized) {
+      const fw = o.width === undefined ? null : checkRange('View', 'toImage width', o.width, 0, Infinity, { above: true }) / bw
+      const fh = o.height === undefined ? null : checkRange('View', 'toImage height', o.height, 0, Infinity, { above: true }) / bh
+      if (fw !== null && fh !== null && Math.abs(fw / fh - 1) > 0.01) {
+        fail('View', `toImage() draws the canvas's shape (${bw} x ${bh}): give a 'width' or a 'height' and the other follows, or 'scale'`)
+      }
+      factor = fw ?? /** @type {number} */ (fh)
+    }
+    if (factor === 1) return 1
+    // the GPU's largest drawing buffer
+    const gl = this.renderer.gl
+    const dims = gl.getParameter(gl.MAX_VIEWPORT_DIMS)
+    const most = Math.min(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) || Infinity, gl.getParameter(gl.MAX_TEXTURE_SIZE) || Infinity, dims?.[0] || Infinity, dims?.[1] || Infinity)
+    if (Math.max(bw, bh) * factor > most) {
+      warnOnce(this, `toImage(): ${Math.round(bw * factor)} x ${Math.round(bh * factor)} is more than this GPU draws (${most} across) - made as large as it can`)
+      factor = most / Math.max(bw, bh)
+    }
+    return factor
+  }
+
+  /**
+   * Draw at `factor` times the drawing buffer's size - the canvas kept its size on the page - until
+   * the returned function puts it back. @param {number} factor @returns {() => void}
+   */
+  #scaleBuffer(factor) {
+    const style = this.canvas.style, was = [style.width, style.height]
+    // its size on the page stays put while its buffer grows (a canvas sized by its buffer would grow)
+    style.width = `${this.#width}px`
+    style.height = `${this.#height}px`
+    this.#imageFactor = factor
+    this.renderer.setSize(this.#width, this.#height, this.#pixelRatio * factor)
+    return () => {
+      this.#imageFactor = 1
+      this.renderer.setSize(this.#width, this.#height, this.#pixelRatio)
+      style.width = was[0]
+      style.height = was[1]
+      // the canvas was drawn larger: drawn again at its own size
+      this.#dirty = true
+      this.#schedule()
+    }
   }
 
   /**

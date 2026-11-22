@@ -10,10 +10,12 @@ const TAU = Math.PI * 2
 /** What each generator takes (a number alone sets the first, where that makes sense). */
 export const GENERATOR_OPTIONS = {
   box: ['size', 'width', 'height', 'depth', 'segments'],
+  roundedBox: ['size', 'width', 'height', 'depth', 'radius', 'segments'],
   sphere: ['radius', 'segments', 'rings'],
   plane: ['size', 'width', 'depth', 'segments'],
   cylinder: ['radius', 'radiusTop', 'height', 'segments', 'caps', 'axis'],
   torus: ['radius', 'tube', 'segments', 'tubeSegments'],
+  torusKnot: ['radius', 'tube', 'p', 'q', 'segments', 'tubeSegments'],
   icosphere: ['radius', 'detail'],
   lathe: ['points', 'segments', 'axis'],
   extrude: ['shape', 'holes', 'depth', 'axis'],
@@ -28,6 +30,27 @@ export const GENERATOR_OPTIONS = {
  * @property {number} [height] along y, default size
  * @property {number} [depth] along z, default size
  * @property {number} [segments] subdivisions across each face, default 1
+ */
+
+/**
+ * @typedef {object} RoundedBoxOptions
+ * @property {number} [size] sets width, height and depth together, default 1
+ * @property {number} [width] along x, default size
+ * @property {number} [height] along y, default size
+ * @property {number} [depth] along z, default size
+ * @property {number} [radius] of the rounded edges and corners, up to half the smallest side; default a
+ *   tenth of the smallest side
+ * @property {number} [segments] steps round each rounded edge, default 4
+ */
+
+/**
+ * @typedef {object} TorusKnotOptions
+ * @property {number} [radius] the knot's size: from the centre to the middle of its loops, default 1
+ * @property {number} [tube] radius of the tube, default 0.3
+ * @property {number} [p] times the tube winds round the ring, default 2
+ * @property {number} [q] times it winds through the hole, default 3 (2 and 3: a trefoil)
+ * @property {number} [segments] along the tube, default 128
+ * @property {number} [tubeSegments] around the tube, default 16
  */
 
 /**
@@ -143,6 +166,65 @@ const BOX_FACES = [
   [[0, 0, 1], [1, 0, 0], [0, 1, 0]],
   [[0, 0, -1], [-1, 0, 0], [0, 1, 0]],
 ]
+
+/**
+ * A box with rounded edges and corners, centred on the origin - a dice, an ice cube, a phone, a
+ * button. Its flat faces and the rounding between them are one smooth surface; each face's UVs run
+ * as box()'s do, across the face and its half of the rounding.
+ * @example roundedBox({ size: 1, radius: 0.15 })
+ * @example roundedBox({ width: 2, height: 0.4, depth: 1, radius: 0.1, segments: 6 })
+ * @param {number | RoundedBoxOptions} [options] a number sets width, height and depth
+ * @returns {Geometry}
+ */
+export function roundedBox(options) {
+  const owner = 'roundedBox()'
+  const o = resolve(owner, options, GENERATOR_OPTIONS.roundedBox, (n) => ({ size: n }), {
+    bevelSegments: "roundedBox(): use 'segments' for the steps round each rounded edge",
+    smoothness: "roundedBox(): use 'segments' for the steps round each rounded edge",
+  })
+  const all = size(owner, 'size', o.size, 1)
+  const half = [size(owner, 'width', o.width, all) / 2, size(owner, 'height', o.height, all) / 2, size(owner, 'depth', o.depth, all) / 2]
+  const smallest = Math.min(...half)
+  const radius = o.radius === undefined ? smallest * 0.2 : size(owner, 'radius', o.radius, 0)
+  if (radius > smallest * (1 + 1e-9)) fail(owner, `'radius' is at most half the smallest side (${smallest}), got ${radius}`)
+  const segments = count(owner, 'segments', o.segments, 4)
+  // along each axis: the rows across the rounding, in even steps of angle round the edge as a face's
+  // grid sees them (r tan of the angle out from the flat part), with the flat middle between
+  const inner = half.map((h) => Math.max(0, h - radius))
+  const along = inner.map((e) => {
+    const out = []
+    for (let i = segments; i >= 0; i--) out.push(-e - radius * Math.tan((i / segments) * Math.PI / 4))
+    // fully rounded along this axis (radius half its side): no flat middle, so no row twice
+    for (let i = e > 0 ? 0 : 1; i <= segments; i++) out.push(e + radius * Math.tan((i / segments) * Math.PI / 4))
+    return out
+  })
+  const axis = (/** @type {number[]} */ v) => v.findIndex((c) => c !== 0)
+  const m = new Builder()
+  const p = [0, 0, 0], q = [0, 0, 0]
+  for (const [n, right, up] of BOX_FACES) {
+    const start = m.count
+    const ra = axis(right), ua = axis(up), na = axis(n)
+    const across = along[ra], down = [...along[ua]].reverse()
+    for (let j = 0; j < down.length; j++) {
+      for (let i = 0; i < across.length; i++) {
+        // the point on the box's face, then pulled onto the rounding round the inner box
+        for (let k = 0; k < 3; k++) {
+          p[k] = n[k] * half[na] + right[k] * across[i] + up[k] * down[j]
+          q[k] = Math.max(-inner[k], Math.min(inner[k], p[k]))
+        }
+        let nx = p[0] - q[0], ny = p[1] - q[1], nz = p[2] - q[2]
+        const len = Math.hypot(nx, ny, nz) || 1
+        nx /= len
+        ny /= len
+        nz /= len
+        const u = (across[i] + half[ra]) / (2 * half[ra]), v = (half[ua] - down[j]) / (2 * half[ua])
+        m.vertex(q[0] + nx * radius, q[1] + ny * radius, q[2] + nz * radius, nx, ny, nz, u, v)
+      }
+    }
+    m.grid(start, across.length - 1, down.length - 1)
+  }
+  return m.build({ type: 'roundedBox', width: half[0] * 2, height: half[1] * 2, depth: half[2] * 2, radius, segments })
+}
 
 /**
  * A UV sphere centred on the origin. u runs once around (with a seam column of repeated vertices
@@ -315,6 +397,64 @@ export function torus(options) {
   }
   m.grid(0, segments, tubeSegments)
   return m.build({ type: 'torus', radius, tube, segments, tubeSegments })
+}
+
+/**
+ * A tube following a (p, q) torus knot, round the Y axis like torus(): it winds p times round the
+ * ring while going q times through its hole - (2, 3) is the trefoil. p and q with a common factor
+ * give linked rings rather than one knot. u runs along the tube, v round it.
+ * @example torusKnot({ radius: 1, tube: 0.3 })
+ * @example torusKnot({ p: 3, q: 5, tube: 0.15, segments: 256 })
+ * @param {TorusKnotOptions} [options]
+ * @returns {Geometry}
+ */
+export function torusKnot(options) {
+  const owner = 'torusKnot()'
+  const o = resolve(owner, options, GENERATOR_OPTIONS.torusKnot, null, {
+    tubularSegments: "torusKnot(): use 'segments' for the divisions along the tube",
+    radialSegments: "torusKnot(): use 'tubeSegments' for the divisions around the tube",
+  })
+  const radius = size(owner, 'radius', o.radius, 1)
+  const tube = size(owner, 'tube', o.tube, 0.3)
+  const pw = count(owner, 'p', o.p, 2)
+  const qw = count(owner, 'q', o.q, 3)
+  const segments = count(owner, 'segments', o.segments, 128, 3)
+  const tubeSegments = count(owner, 'tubeSegments', o.tubeSegments, 16, 3)
+  // the knot's centre line at t, round the Y axis: in and out q times a turn, up and down with it
+  const centre = (/** @type {number} */ t) => {
+    const r = radius * (2 + Math.cos(qw * t)) / 3
+    return [r * Math.sin(pw * t), radius * Math.sin(qw * t) / 3, r * Math.cos(pw * t)]
+  }
+  const m = new Builder()
+  for (let i = 0; i <= segments; i++) {
+    const u = i / segments
+    const t = ((i % segments) / segments) * TAU
+    const c = centre(t), ahead = centre(t + 1e-4)
+    // a frame round the line: along it (tangent), and two directions across it
+    const tx = ahead[0] - c[0], ty = ahead[1] - c[1], tz = ahead[2] - c[2]
+    const sx = ahead[0] + c[0], sy = ahead[1] + c[1], sz = ahead[2] + c[2]
+    let bx = ty * sz - tz * sy, by = tz * sx - tx * sz, bz = tx * sy - ty * sx
+    let nx = by * tz - bz * ty, ny = bz * tx - bx * tz, nz = bx * ty - by * tx
+    const bl = Math.hypot(bx, by, bz) || 1, nl = Math.hypot(nx, ny, nz) || 1
+    bx /= bl
+    by /= bl
+    bz /= bl
+    nx /= nl
+    ny /= nl
+    nz /= nl
+    for (let j = 0; j <= tubeSegments; j++) {
+      // v runs round the tube the same way as its faces, so the UVs read upright
+      const v = 1 - j / tubeSegments
+      const a = ((j % tubeSegments) / tubeSegments) * TAU
+      // round the tube the way that winds its faces outward
+      const ca = Math.cos(a), sa = -Math.sin(a)
+      const ox = ca * nx + sa * bx, oy = ca * ny + sa * by, oz = ca * nz + sa * bz
+      m.vertex(c[0] + tube * ox, c[1] + tube * oy, c[2] + tube * oz, ox, oy, oz, u, v)
+    }
+  }
+  // a row of the grid is a ring round the tube; the rows run along it
+  m.grid(0, tubeSegments, segments)
+  return m.build({ type: 'torusKnot', radius, tube, p: pw, q: qw, segments, tubeSegments })
 }
 
 /**
