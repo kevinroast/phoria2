@@ -181,6 +181,8 @@ function worldBox(i) {
  * @property {Vec3 | null} from where the light comes from (spot, rect - a refine sample's point on it), or null for the sun
  * @property {Vec3} direction the way it travels (the sun's, or the spot's or rect's middle)
  * @property {number} reach how far bent light is followed, world units
+ * @property {number} tolerance how near, along the light, bent light must land to a surface to light it -
+ *   a few texels, as wide as the blur spreads it
  * @property {number} blur how far the light's size spreads its caustics, in caustic texels - a big
  *   light's are soft; a refine sample, drawn from a point on the light, a little only
  * @property {DrawItem[]} glass the glass with thickness that bends it
@@ -517,8 +519,8 @@ function causticsOf(frame, items, boxes, receivers, receiverCaster, view, scene)
   const sun = light.kind === 'directional'
   if (sun ? frame.shadow?.light !== light : !((light.shadowTile ?? -1) >= 0)) return null
   // glass with thickness bends it; thin walls only tint its shadow
-  // each piece as far again round it, where its light lands - glass spread over a room covers that
-  // room, not as far again round all of it
+  // each piece twice as far again round it, where its light lands (a prism throws it well past itself) -
+  // glass spread over a room covers that room, not as far again round all of it
   const region = new Box3()
   /** @type {DrawItem[]} */
   const glass = []
@@ -533,8 +535,8 @@ function causticsOf(frame, items, boxes, receivers, receiverCaster, view, scene)
     const w = items[i].worldMatrix
     const g = Math.max(b.max[1] - b.min[1], 0.5 * m.thickness * Math.hypot(w[0], w[1], w[2]), 0.1 * Math.max(b.max[0] - b.min[0], b.max[2] - b.min[2]))
     grow = Math.max(grow, g)
-    region.expandByXYZ(b.min[0] - g, b.min[1] - g, b.min[2] - g)
-    region.expandByXYZ(b.max[0] + g, b.max[1] + g, b.max[2] + g)
+    region.expandByXYZ(b.min[0] - 2 * g, b.min[1] - 2 * g, b.min[2] - 2 * g)
+    region.expandByXYZ(b.max[0] + 2 * g, b.max[1] + 2 * g, b.max[2] + 2 * g)
   }
   if (!glass.length || region.isEmpty()) return null
   const size = region.getSize()
@@ -557,12 +559,14 @@ function causticsOf(frame, items, boxes, receivers, receiverCaster, view, scene)
   const across = Math.max(size[0], size[1], size[2])
   const texel = across / CAUSTIC_SIZE
   const blurOf = (/** @type {number} */ world) => Math.min(24, Math.max(1.5, world / texel))
+  // where bent light landed is blurred too, so a surface counts it a little way off, along the light
+  const toleranceOf = (/** @type {number} */ blur) => (blur + 3) * texel
   if (sun) {
     const fit = fitShadow(direction, [region], landing, CAUSTIC_SIZE)
     if (!fit) return null
     // a sun's softness is an angle (SOFT_SPREAD at 1)
     const blur = blurOf(SOFT_SPREAD * softnessOf(light) * grow)
-    return { light, tile: -1, viewProjection: fit.viewProjection, from: null, direction, reach: grow * 3, blur, glass, surfaces }
+    return { light, tile: -1, viewProjection: fit.viewProjection, from: null, direction, reach: grow * 4, blur, tolerance: toleranceOf(blur), glass, surfaces }
   }
   const from = /** @type {Vec3} */ (light.shadowFrom ?? light.position)
   const fit = fitSpotShadow(from, direction, coneOver(from, direction, [region]), light.range ?? 0, [region], landing)
@@ -573,7 +577,8 @@ function causticsOf(frame, items, boxes, receivers, receiverCaster, view, scene)
   const extent = light.hardShadow ? 0
     : light.kind === 'rect' ? 2 * Math.max(/** @type {Vec3} */ (light.halfWidth).len(), /** @type {Vec3} */ (light.halfHeight).len()) * grow / distance
       : 2 * SOFT_SPREAD * softnessOf(light) * grow
-  return { light, tile: /** @type {number} */ (light.shadowTile), viewProjection: fit.viewProjection, from, direction, reach: grow * 3, blur: blurOf(extent), glass, surfaces }
+  const blur = blurOf(extent)
+  return { light, tile: /** @type {number} */ (light.shadowTile), viewProjection: fit.viewProjection, from, direction, reach: grow * 4, blur, tolerance: toleranceOf(blur), glass, surfaces }
 }
 
 /** A drawable's kind of program. @param {any} node @returns {'mesh' | 'points' | 'lines'} */

@@ -131,16 +131,47 @@ describe('caustics drawn', () => {
     expect(ready).toBeGreaterThan(0)
   })
 
-  it('with dispersion, once a colour', async () => {
-    const { gl, drawLog, sources } = floatGL()
+  it('with dispersion, once a colour of the spectrum - without, once', async () => {
+    const drawn = async (/** @type {number} */ dispersion) => {
+      const { gl, drawLog, sources } = floatGL()
+      const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
+      renderer.setSize(64, 64)
+      const { s } = scene(new DirectionalLight({ direction: [0, -1, 0], castShadow: true, caustics: true }), { ...glass, dispersion })
+      await vi.waitFor(() => {
+        renderer.render(s, camera())
+        expect(sources.some((src) => src.includes('#define CAUSTICS'))).toBe(true)
+      })
+      return splats(drawLog)
+    }
+    const plain = await drawn(0), split = await drawn(1)
+    expect(split).toBe(plain * 7)
+  })
+
+  it('the lit programs add the bent light and take the straight light that went through glass', async () => {
+    const { gl, sources } = floatGL()
     const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
     renderer.setSize(64, 64)
-    const { s } = scene(new DirectionalLight({ direction: [0, -1, 0], castShadow: true, caustics: true }), { ...glass, dispersion: 1 })
+    const { s } = scene(new SpotLight({ position: [0, 4, 0], direction: [0, -1, 0], angle: 0.3, castShadow: true, caustics: true }))
     await vi.waitFor(() => {
       renderer.render(s, camera())
       expect(sources.some((src) => src.includes('#define CAUSTICS'))).toBe(true)
     })
-    expect(splats(drawLog) % 3).toBe(0)
+    const lit = sources.find((src) => src.includes('#define CAUSTICS') && src.includes('uCausticLanding'))
+    expect(lit).toBeDefined()
+    // the straight share loses the glass's, and the bent light - its cone taken at the glass - is added
+    expect(lit).toContain('lit *= causticStraight()')
+    expect(lit).toContain('radiance += uPunctualColor[i] * falloff * causticBent()')
+  })
+
+  it('faceted glass bends by its faces: drawn flat for the caustics', async () => {
+    const { gl, sources } = floatGL()
+    const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
+    renderer.setSize(64, 64)
+    const { s } = scene(new DirectionalLight({ direction: [0, -1, 0], castShadow: true, caustics: true }), { ...glass, flatShading: true })
+    await vi.waitFor(() => {
+      renderer.render(s, camera())
+      expect(sources.some((src) => src.includes('#define CAUSTIC_GLASS') && src.includes('#define FLAT_SHADING'))).toBe(true)
+    })
   })
 
   it("without float targets, a warning and the light drawn without them", async () => {

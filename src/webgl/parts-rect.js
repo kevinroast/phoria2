@@ -77,6 +77,9 @@ float ltcIntegral(vec3 n, vec3 v, mat3 mInv, vec3 corners[4]) {
 #ifdef SPOT_SHADOWS
       float tile = uRectShadow[i];
       if (tile >= 0.0) radiance *= spotShadow(int(tile), surfaceNormal, d);
+#ifdef CAUSTICS
+      if (tile >= 0.0 && tile == uCausticTile) radiance += emitted * causticBent();
+#endif
 #endif
       // as a point light at its middle: its whole face's light, falling off with the square of the distance
       float asPoint = 4.0 * length(hw) * length(hh) / PI * max(dot(-l, facing), 0.0) / max(d * d, 1e-4);

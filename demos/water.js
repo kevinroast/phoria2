@@ -22,7 +22,8 @@ const TILES = `
 `
 
 // the water's waves: a small sea of them - sixteen, from 1.6 m long down to about 33 cm, mostly running
-// with the breeze (down the pool) and fanned round it, each at its deep-water speed (longer is
+// with the breeze (down the pool, uWind) and fanned a little round it - off the diagonals, where they
+// beat against the long wall's shadow edge and flicker - each at its deep-water speed (longer is
 // faster). The short ones are the steeper: their curvature focuses the light at the floor, while the
 // long ones' slope only sways the view through the water. Trochoidal (Gerstner): sharp crests and
 // broad troughs gather the light into fine bright lines on the tiles rather than soft blobs. Only the
@@ -30,12 +31,12 @@ const TILES = `
 const WAVES = `
   vec2 p = vWorldPosition.xz;
   vec3 n = vec3(0.0, 1.0, 0.0);
-  float wind = 1.35;
+  float wind = uWind;
   for (int i = 0; i < 16; i++) {
     float k = float(i);
     float len = 1.6 * pow(0.9, k);
     float f = 6.2832 / len;
-    float a = wind + 0.85 * sin(k * 2.39996 + 0.5);
+    float a = wind + 0.55 * sin(k * 2.39996 + 0.5);
     vec2 d = vec2(cos(a), sin(a));
     float phase = dot(d, p) * f - uTime * sqrt(9.8 * f) * 0.55 + k * 1.93;
     // steepness: slope at most this; sharpness: how far the crests pinch
@@ -78,12 +79,12 @@ export default function run({ canvas, gui }) {
     material: {
       color: '#ffffff', transmission: 1, thickness: DEPTH + WATER, ior: 1.33, roughness: 0.03,
       attenuationColor: '#46b8d2', attenuationDistance: 3,
-      shader: { uniforms: { uWave: 0.35 }, fragment: WAVES },
+      shader: { uniforms: { uWave: 0.35, uWind: Math.PI / 2 }, fragment: WAVES },
     },
   }))
   const waves = /** @type {NonNullable<typeof water.material.shader>} */ (water.material.shader)
 
-  const settings = { sun: 0.32, waves: 0.35 }
+  const settings = { sun: 0.32, waves: 0.35, wind: 90 }
   const placeSun = () => {
     // from low in the south-west round to high overhead
     const up = 0.35 + settings.sun * 1.1, round = 0.6
@@ -92,6 +93,7 @@ export default function run({ canvas, gui }) {
   placeSun()
   gui.add(settings, 'sun', 0, 1, 0.01).name('sun height').onChange(placeSun)
   gui.add(settings, 'waves', 0, 1, 0.01).onChange((v) => { waves.uniforms.uWave = v })
+  gui.add(settings, 'wind', 0, 180, 1).name('wind direction').onChange((v) => { waves.uniforms.uWind = (v * Math.PI) / 180 })
   gui.add(sun, 'caustics')
 
   return view.start()

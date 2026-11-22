@@ -1133,6 +1133,7 @@ export class WebGLRenderer {
       for (const shadow of shadows) {
         program.set(shadow.sampler, shadow.texture)
         if (shadow.glass) program.set(shadow.glass.sampler, shadow.glass.texture)
+        if (shadow.textures) for (const [sampler, texture] of Object.entries(shadow.textures)) program.set(sampler, texture)
         if (shadow.soft) {
           program.set(shadow.soft.sampler, shadow.soft.value)
           program.set('uBlueNoise', shadow.soft.noise)

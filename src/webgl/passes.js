@@ -336,11 +336,13 @@ const ENV_LEVELS = 6
  * a pass that returns one of these.
  * @typedef {{ define: string, uniforms: Record<string, unknown>, sampler: string, texture: WebGLTexture,
  *   soft: { define: string, sampler: string, value: { texture: WebGLTexture, sampler: WebGLSampler }, noise: WebGLTexture } | null,
- *   glass: { define: string, sampler: string, texture: WebGLTexture } | null, kept: boolean }} ShadowMap
+ *   glass: { define: string, sampler: string, texture: WebGLTexture } | null, kept: boolean,
+ *   textures?: Record<string, WebGLTexture | null> }} ShadowMap
  *   soft: for contact-hardening shadows, the define that turns them on and the map read as depths -
  *   its own sampler object, as the texture itself is set up to compare - and the blue noise each
  *   pixel turns its samples by (uBlueNoise)
  *   glass: coloured shadows - the map's glass layer, what glass casters let through (#glassLayers)
+ *   textures: more it reads, by sampler (caustics' landing and cover)
  *   kept: the map is as the last frame drew it - nothing in its light or its casters changed
  *   (drawn.js) - so it wasn't drawn again
  */

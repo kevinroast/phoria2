@@ -68,6 +68,10 @@ const PREPARE = {
   carbide: `const { position: p, target: t } = view.camera
     p.set(t[0] + (p[0] - t[0]) * 0.7, t[1] + (p[1] - t[1]) * 0.7, t[2] + (p[2] - t[2]) * 0.7)
     view.invalidate()`,
+  // the prism and its rainbow seen closer
+  prism: `const { position: p, target: t } = view.camera
+    p.set(t[0] + (p[0] - t[0]) * 0.55, t[1] + (p[1] - t[1]) * 0.55, t[2] + (p[2] - t[2]) * 0.55)
+    view.invalidate()`,
   // the pool seen closer, its water and caustics filling the card
   water: `const { position: p, target: t } = view.camera
     p.set(t[0] + (p[0] - t[0]) * 0.62, t[1] + (p[1] - t[1]) * 0.62, t[2] + (p[2] - t[2]) * 0.62)

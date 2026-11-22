@@ -844,18 +844,26 @@ where things touch, wider away; it shares the four spot light shadows, covering 
 yourself, as an emissive mesh, if it should be seen.
 
 **Caustics**: `caustics: true` on one shadow-casting directional, spot or rect-area light bends it
-through glass on its way: the light gathers into bright lines and pools on what is behind the glass,
-and thins round them - the bright spot under a glass of whisky, a prism's rainbow (with `dispersion`),
-the net of light on a pool's floor. The glass bends it by its `ior` through its `thickness` (a solid
-piece, as a lens: in one face and out the other) - give the glass `castShadow: true` and a
-`thickness`; thin walls (`thinWalled`) only tint the light, so a tumbler's thin sides don't hide the
-drink inside, which does the bending. A shader hook that bends glass's `normal` - water's waves -
-bends the light too. One light a scene (more asking warn); it lands on whatever casts or receives
-shadows. A big light softens caustics as it softens shadows - crisp ones want a small light (a rect
-light a few cm across, a spot, a sun with low `shadowSoftness`). Like a shadow map they're drawn again
-only when the light, the glass or what it lands on changes (every frame with a hook on the glass);
-they need float render targets, and are skipped with a warning without. Limits: one bend through
-each piece of glass, from the light's view only - what is behind the glass from the light.
+through glass on its way: the light that goes through the glass leaves its straight path and lands
+where the glass sends it - gathered into bright lines and pools, thinned round them - the bright spot
+under a glass of whisky, the net of light on a pool's floor, a prism's rainbow (with `dispersion`:
+the spectrum, red bent least, violet most). Bent light lands whether the light reaches there
+directly or not: a narrow spot through a prism in a dark room throws its rainbow on a wall the beam
+never touches. The glass bends it in through its near face and out through its far one (each face's
+own normal - a prism's second face, a lens's back; `flatShading` glass by its flat faces), by its
+`ior`; light caught inside by total internal reflection is lost. Give the glass `castShadow: true`
+and a `thickness`; thin walls (`thinWalled`) only tint the light, so a tumbler's thin sides don't hide
+the drink, which does the bending. A sheet with no far side (water's surface, a plane) takes its
+`thickness` as the depth the light goes through - a pool's floor. A shader hook that bends glass's
+`normal` - water's waves - bends the light too. One light a scene (more asking warn); it lands on
+whatever casts or receives shadows, within about twice the glass's size of it. A big light softens
+caustics as it softens shadows - crisp ones want a small light (a rect light a few cm across, a narrow
+spot, a sun with low `shadowSoftness`). For a rainbow: an upright prism, a narrow beam, high
+`dispersion` (4-6), and a pale surface in its path. Like a shadow map they're drawn again only when the
+light, the glass or what it lands on changes (every frame with a hook on the glass); they need float
+render targets, and are skipped with a warning without. Limits: one pass through each piece of glass
+from the light's view - what is behind the glass from the light; bent light lights a surface as if it
+came from the light's direction.
 
 ```js
 scene.add(new RectAreaLight({ position: [0, 0.4, -0.4], target: [0, 0.03, 0], width: 0.03, height: 0.03, intensity: 3, castShadow: true, caustics: true }))  // a small key behind a glass: its light focused in front
