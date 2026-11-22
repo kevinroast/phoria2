@@ -188,7 +188,7 @@ export default function run({ canvas, gui, info }) {
       }
     }
     const i = view.renderer.info
-    const text = `${meshes.toLocaleString()} meshes sharing ${materials} materials · ${i.drawCalls.toLocaleString()} draw calls · shadow map ${i.shadowMapsKept ? 'kept' : 'drawn'} - ${settings.forklifts ? 'stop the forklifts to keep it' : 'nothing casting moves'} · hover a load`
+    const text = `${meshes.toLocaleString()} meshes sharing ${materials} materials · ${i.drawCalls.toLocaleString()} draw calls · shadow map ${i.shadowMapsKept ? 'cached' : 'drawn'} - ${settings.forklifts ? 'stop the forklifts to cache it' : 'nothing casting moves'}`
     if (text !== shown) info.textContent = shown = text
   })
 }

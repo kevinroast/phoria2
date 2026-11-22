@@ -24,7 +24,7 @@ export const DEMOS = [
   { name: 'floorplan', title: 'a data hall floor plan - isometric or plan view, rack heat map, image export' },
   { name: 'planner', title: 'office floor planner - drag furniture in, select, move and turn it with a handle, snapping, undo' },
   { name: 'city', title: 'a city as data - up to 40,000 instanced buildings coloured by use type' },
-  { name: 'warehouse', title: 'a distribution centre built from parts - up to 11,000 separate meshes, a dozen shared materials, hover a load' },
+  { name: 'warehouse', title: 'a distribution centre built from parts - up to 11,000 separate meshes, a dozen shared materials' },
   
   { section: 'Features', name: 'hello', title: 'a minimal scene, with the whole program' },
   { name: 'scene-json', title: 'a scene as plain JSON - edit it, add to it, rebuild it, export it' },
