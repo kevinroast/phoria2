@@ -15,8 +15,8 @@ export const DRAG_START = 4
  * @property {boolean} [zoom] false to leave the wheel scrolling the page (default true)
  * @property {boolean} [zoomToCursor] the wheel zooms towards the point under the pointer (default true)
  * @property {boolean} [pan] right-drag (or two-finger drag) pans (default true)
- * @property {number} [inertia] how much of a fling carries on after release: the fraction of its speed kept
- *   every 1/60 s - 0 stops dead, 0.95 glides a long way (default 0.85)
+ * @property {number | boolean} [inertia] how much of a fling carries on after release: the fraction of its speed kept
+ *   every 1/60 s - 0 stops dead, 0.95 glides a long way (default 0.85); true is the default, false is 0
  * @property {boolean | number} [autoRotate] spin around the target; a number is radians per second (default false)
  * @property {number} [minDistance] how close zooming gets to the target; for an orthographic camera, the
  *   smallest height of the view (default 0.1)
@@ -41,6 +41,9 @@ const HINTS = {
 const LIMIT = Math.PI / 2 - 0.001
 // fastest fling, radians per second
 const MAX_FLING = 4
+
+/** How much of a fling's speed is kept each 1/60 s, by default. */
+const INERTIA = 0.85
 
 /** Check the numbers and modes in orbit options. @param {Record<string, any>} o */
 function checkSettings(o) {
@@ -78,7 +81,7 @@ export class OrbitControl {
   zoom = true
   zoomToCursor = true
   pan = true
-  inertia = 0.85
+  inertia = INERTIA
   /** @type {boolean | number} */
   autoRotate = false
   minDistance = 0.1
@@ -110,6 +113,8 @@ export class OrbitControl {
     if (!camera || !('target' in camera)) fail('OrbitControl', 'expects a camera, e.g. new OrbitControl(view.camera, view.canvas)')
     this.camera = camera
     this.element = element
+    // inertia on or off: the default glide, or none
+    if (typeof options.inertia === 'boolean') options = { ...options, inertia: options.inertia ? INERTIA : 0 }
     checkSettings(options)
     Object.assign(this, options)
     // the limits must still make sense with the defaults they're paired with

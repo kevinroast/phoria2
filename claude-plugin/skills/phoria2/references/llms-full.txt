@@ -105,7 +105,7 @@ const view = new View({ canvas: '#c', orbit: true })
 |---|---|---|
 | `canvas` | a new full-window canvas | element or CSS selector |
 | `camera` | `'perspective'`: a three-quarter view from the front right and above, fitted to the scene on the first frame | a preset - `'perspective'`, `'isometric'`, `'top'`, `'front'`, `'side'` (fitted to the scene on the first frame, unless you place or frame the camera first) - camera options (`{ position, target, fov }`), or a camera |
-| `orbit` | `false` | `true`, or options: `{ autoRotate, inertia, minDistance, maxDistance, minPitch, maxPitch, pan, zoom, mode }`. `autoRotate`: `true` (a slow turn) or radians per second; it pauses while the user drags. `mode`: `'orbit'` (the default) or `'map'` - drags pan and the view never turns, for plans. `minDistance`/`maxDistance` limit zooming: the distance to the target, or for an orthographic camera the height of the view. Left-drag orbits, right-drag pans, wheel zooms |
+| `orbit` | `false` | `true`, or options: `{ autoRotate, inertia, minDistance, maxDistance, minPitch, maxPitch, pan, zoom, mode }`. `autoRotate`: `true` (a slow turn) or radians per second; it pauses while the user drags. `inertia`: how much of a fling's speed is kept each 1/60 s - 0.85 by default, 0 stops dead, 0.95 glides a long way (`true` and `false` are the default and 0). `mode`: `'orbit'` (the default) or `'map'` - drags pan and the view never turns, for plans. `minDistance`/`maxDistance` limit zooming: the distance to the target, or for an orthographic camera the height of the view. Left-drag orbits, right-drag pans, wheel zooms |
 | `background` | transparent | a colour |
 | `highlight` | none | a colour mixed into whatever is under the pointer |
 | `tooltip` | none | `(hit) => content` - see Interaction |
@@ -376,8 +376,9 @@ extrude({
 
 Your own: `new Geometry({ positions, normals?, uvs?, uvs2?, colors?, indices? })` - flat arrays, xyz per
 vertex; `colors` are rgb 0-1 per vertex (use `material: { vertexColors: true }`); `uvs2` is a second UV
-set, for baked occlusion and light maps (below). To animate one - cloth, a wave, a morph - write
-`geometry.positions` in place and call `geometry.needsUpdate()` each frame; normals you didn't give are
+set, for baked occlusion and light maps (below). The arrays you pass are copied, so writing to them
+afterwards changes nothing: to animate one - cloth, a wave, a morph - write `geometry.positions` (and
+`geometry.colors`) in place and call `geometry.needsUpdate()` each frame; normals you didn't give are
 worked out again to follow the shape.
 
 ## Materials
@@ -507,6 +508,18 @@ a grey shadow - the light it lets through, tinted by its colour and its body - f
 spot and rect-area lights; from a point light its shadow is grey. Glass shows what was drawn before
 anything see-through: glass seen through glass shows the solids behind both, not the farther
 glass, and near the picture's edge what would bend in from off screen is the edge itself.
+
+A thin wall bends what is behind it only a little; the strong bending of a drinking glass - the
+floor magnified through a heavy base, a pattern swept round by the drink - comes from its solid
+parts. So model a heavy base as a solid disc of its own (`thickness` its depth), apart from the
+thin-walled vessel. **A liquid in a glass** is glass seen through glass, so make it one of two ways:
+- see-through (wine, water, whisky): the liquid as its own solid glass piece - `transmission: 1`,
+  `thickness` about its width, `attenuationColor`/`attenuationDistance` for its colour - with a
+  higher `renderOrder` than the vessel (`renderOrder: 1`), so it is drawn after it and bends the
+  solids behind both; where the two overlap it covers the vessel's near wall, and its own
+  reflections stand in for the wall's.
+- opaque (milk, paint, a creamy drink): an ordinary glossy material (`roughness` 0.1-0.3), which the
+  vessel's glass shows and bends as it does any solid.
 
 **Clearcoat**: `clearcoat` (0-1) puts a clear glossy layer over the surface - car paint, lacquered
 wood, varnish - with its own sharp reflection over the base's softer one; `clearcoatRoughness` (0,
@@ -640,7 +653,7 @@ And the everyday ones, with `cameraPosition` (vec3, the camera in world space) t
 
 - **`uniforms`**, by GLSL name: a number (float), two to four numbers (vec2-vec4), a colour string or
   Color (vec3, sent linear) or a Texture (sampler2D, read with `texture(uName, uv)`). Change one on
-  `material.shader.uniforms` (`mesh.material.shader.uniforms.uAmp = 0.5`) and the View redraws; assign
+  `material.shader.uniforms` (`mesh.material.shader.uniforms.uAmp = 0.5`, `uniforms.uTint = '#f80'` - checked as when made) and the View redraws; assign
   a new `material.shader` to change the code. Names starting `gl_` or `phoria`, `uTime`, and phoria2's
   own uniforms (`uColor`, `uModel`, `uOpacity`...) are taken.
 - **`uTime`**: a hook that reads it keeps the View drawing while time runs - no frame loop of your own.

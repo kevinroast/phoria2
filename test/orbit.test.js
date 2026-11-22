@@ -174,6 +174,12 @@ describe('orbit over time', () => {
     expect(still.control.spherical.yaw).toBe(yaw)
   })
 
+  it('takes inertia as on or off too: true the default glide, false none', () => {
+    expect(orbit({ inertia: true }).control.inertia).toBe(0.85)
+    expect(orbit({ inertia: false }).control.inertia).toBe(0)
+    expect(() => orbit({ inertia: 'lots' })).toThrow('inertia')
+  })
+
   it('does nothing over time when disabled', () => {
     const { control } = orbit({ autoRotate: true, enabled: false })
     control.update(1)

@@ -514,12 +514,27 @@ function shaderHooks(v) {
   /** @type {Record<string, ShaderUniform>} */
   const own = {}
   for (const [name, value] of Object.entries(uniforms)) {
-    if (!/^[A-Za-z_]\w*$/.test(name)) fail('Material', `shader uniform '${name}' isn't a GLSL name - letters, digits and _, not starting with a digit`)
-    if (RESERVED.test(name)) fail('Material', `shader uniform '${name}' is a name phoria2 keeps${name === 'uTime' ? " - uTime is there already, the View's clock in seconds" : name === 'cameraPosition' ? " - cameraPosition is there already, the camera's world position" : HELPERS.includes(name) ? ` - ${name}() is a function every hook can call` : ''}`)
+    checkUniformName(name)
     own[name] = uniformValue(name, value)
   }
   const bounds = v.bounds === undefined || v.bounds === null ? null : Math.max(0, checkNumber('Material', 'shader bounds', v.bounds))
-  return { vertex: v.vertex ?? '', fragment: v.fragment ?? '', lit: v.lit ?? '', uniforms: own, bounds }
+  // changed in place later (`shader.uniforms.uTint = '#f80'`), a value is checked and kept as one given
+  // here is - a colour string as a Color - not left as given, where its type would be guessed wrong
+  const live = new Proxy(own, {
+    set(target, name, value) {
+      if (typeof name !== 'string') return Reflect.set(target, name, value)
+      checkUniformName(name)
+      target[name] = uniformValue(name, value)
+      return true
+    },
+  })
+  return { vertex: v.vertex ?? '', fragment: v.fragment ?? '', lit: v.lit ?? '', uniforms: live, bounds }
+}
+
+/** A shader uniform's name: GLSL's, and not one phoria2 keeps. @param {string} name */
+function checkUniformName(name) {
+  if (!/^[A-Za-z_]\w*$/.test(name)) fail('Material', `shader uniform '${name}' isn't a GLSL name - letters, digits and _, not starting with a digit`)
+  if (RESERVED.test(name)) fail('Material', `shader uniform '${name}' is a name phoria2 keeps${name === 'uTime' ? " - uTime is there already, the View's clock in seconds" : name === 'cameraPosition' ? " - cameraPosition is there already, the camera's world position" : HELPERS.includes(name) ? ` - ${name}() is a function every hook can call` : ''}`)
 }
 
 /** A uniform's value as kept: numbers and arrays as given, colours as Colors, textures as Textures. @param {string} name @param {unknown} v @returns {ShaderUniform} */

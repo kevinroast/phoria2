@@ -59,6 +59,26 @@ describe('material.shader', () => {
     expect(make({ vertex: 'x;', uniforms: { uBad: [1, 2, 3, 4, 5] } })).toThrow('two to four numbers')
     expect(() => new Material(/** @type {any} */ ({ onBeforeCompile: () => {} }))).toThrow("use 'shader'")
   })
+
+  it('takes values changed in place as it takes them at first - a colour string as a colour', () => {
+    const m = new Material({ shader: { fragment: 'base.rgb *= uTint;', uniforms: { uTint: '#ffffff', uAmp: 1 } } })
+    const s = /** @type {NonNullable<Material['shader']>} */ (m.shader)
+    const before = hookFor(m)
+    // a 7-character string kept as given would be declared vec7 - a hook that doesn't compile
+    s.uniforms.uTint = '#dd8a1e'
+    expect(s.uniforms.uTint).toBeInstanceOf(Color)
+    expect(/** @type {Color} */ (s.uniforms.uTint).getHex()).toBe(0xdd8a1e)
+    // the same types: the same program
+    expect(hookFor(m)).toBe(before)
+    s.uniforms.uAmp = 2
+    expect(s.uniforms.uAmp).toBe(2)
+    // a new one is checked too
+    s.uniforms.uDir = [0, 1]
+    expect(s.uniforms.uDir).toEqual([0, 1])
+    expect(() => { s.uniforms.uBad = 'not a colour' }).toThrow()
+    expect(() => { s.uniforms.uTime = 1 }).toThrow('uTime is there already')
+    expect(() => { s.uniforms.uBad = [1, 2, 3, 4, 5] }).toThrow('two to four numbers')
+  })
 })
 
 describe('splicing hooks into the shaders', () => {
