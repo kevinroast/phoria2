@@ -93,9 +93,10 @@ export default function run({ canvas, gui }) {
   const view = new View({
     canvas, background: '#c6c6c9', fxaa: true, refine: true,
     camera: { position: [0.07, 0.15, 0.27], target: [0, 0.042, 0], fov: 28, near: 0.02, far: 30 },
-    orbit: { minDistance: 0.12, maxDistance: 1.1, minPitch: 0.03, maxPitch: 1.5, pan: false },
-    // the glass's soft contact shadow on the table: glass casts it more lightly than a solid would
-    groundShadow: { y: TABLE, size: 0.24, height: 0.06, softness: 0.4, opacity: 1 },
+    orbit: { minDistance: 0.12, maxDistance: 1.1, minPitch: 0.03, maxPitch: 1.5 },
+    // the glass's soft contact shadow on the table, round its foot - glass leaves it off the table
+    // right under it, which is seen through the glass
+    groundShadow: { y: TABLE, size: 0.24, height: 0.06, softness: 0.8, opacity: 1 },
   })
   const scene = view.scene
   scene.environment = 'studio'

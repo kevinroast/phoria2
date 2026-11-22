@@ -26,7 +26,9 @@ import { DrawnFrom } from './drawn.js'
 
 /**
  * @typedef {object} Ground a ground shadow, ready to lay on the ground
- * @property {WebGLTexture} texture how dark each texel is
+ * @property {WebGLTexture} texture how dark each texel is: the solids' shadow (r), glass's (g)
+ * @property {WebGLTexture | null} glass the glass layer, at full size - where glass rests on the ground,
+ *   its own shadow is left off
  * @property {[number, number, number, number]} rect its middle (x, z), half its width, and the ground's height
  * @property {number} opacity
  * @property {boolean} kept as the last frame drew it - the solids and the settings unchanged
@@ -127,35 +129,40 @@ void main() {
 
 // the ground shadow's darkness from the depth seen from below - darkest where things touch the
 // ground, fading to nothing at the shadow's height - at half the depth's size, each texel the mean of
-// the four depth texels under it
+// the four depth texels under it: the solids' (r) and glass's (g)
 const GROUND_DARKNESS_FRAGMENT = /* glsl */ `
 precision highp float;
 uniform sampler2D uDepth;
 #ifdef GLASS
-// glass's own depth, darkening less: most of the light goes through it
+// glass's layer: the light the glass above lets through (rgb, multiplied) and the lowest one's
+// depth (a). Clear glass darkens it uGlassShadow (x), glass that stops all the light uGlassShadow (y)
 uniform sampler2D uGlass;
-uniform float uGlassShadow;
+uniform vec2 uGlassShadow;
 #endif
 out vec4 fragColor;
 float dark(sampler2D map, ivec2 p) {
   float d = texelFetch(map, p, 0).r;
   return d < 1.0 ? 1.0 - d : 0.0;
 }
-float darkAt(ivec2 p) {
-  float c = dark(uDepth, p);
+// solid, glass
+vec2 darkAt(ivec2 p) {
+  vec2 c = vec2(dark(uDepth, p), 0.0);
 #ifdef GLASS
-  c = max(c, dark(uGlass, p) * uGlassShadow);
+  vec4 g = texelFetch(uGlass, p, 0);
+  float through = dot(g.rgb, vec3(0.2126, 0.7152, 0.0722));
+  if (g.a < 1.0) c.y = (1.0 - g.a) * mix(uGlassShadow.y, uGlassShadow.x, through);
 #endif
   return c;
 }
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy) * 2;
-  float c = (darkAt(p) + darkAt(p + ivec2(1, 0)) + darkAt(p + ivec2(0, 1)) + darkAt(p + ivec2(1, 1))) * 0.25;
-  fragColor = vec4(c, 0.0, 0.0, 1.0);
+  vec2 c = (darkAt(p) + darkAt(p + ivec2(1, 0)) + darkAt(p + ivec2(0, 1)) + darkAt(p + ivec2(1, 1))) * 0.25;
+  fragColor = vec4(c, 0.0, 1.0);
 }
 `
 
-// a gaussian along one axis, a tap a texel, as wide as the softness asks
+// a gaussian along one axis, a tap a texel, as wide as the softness asks - the solids' and glass's
+// darkness
 const GROUND_BLUR_FRAGMENT = /* glsl */ `
 precision highp float;
 uniform sampler2D uSource;
@@ -165,13 +172,14 @@ out vec4 fragColor;
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy), last = textureSize(uSource, 0) - 1;
   float sigma = max(float(uRadius) * 0.5, 0.5);
-  float sum = texelFetch(uSource, p, 0).r, total = 1.0;
+  vec2 sum = texelFetch(uSource, p, 0).rg;
+  float total = 1.0;
   for (int i = 1; i <= uRadius; i++) {
     float g = exp(-float(i * i) / (2.0 * sigma * sigma));
-    sum += (texelFetch(uSource, clamp(p + uStep * i, ivec2(0), last), 0).r + texelFetch(uSource, clamp(p - uStep * i, ivec2(0), last), 0).r) * g;
+    sum += (texelFetch(uSource, clamp(p + uStep * i, ivec2(0), last), 0).rg + texelFetch(uSource, clamp(p - uStep * i, ivec2(0), last), 0).rg) * g;
     total += 2.0 * g;
   }
-  fragColor = vec4(sum / total, 0.0, 0.0, 1.0);
+  fragColor = vec4(sum / total, 0.0, 1.0);
 }
 `
 
@@ -191,11 +199,33 @@ precision highp float;
 in vec2 vUv;
 uniform sampler2D uShadow;
 uniform float uOpacity;
+#ifdef GLASS
+// the glass layer at full size: its lowest glass's depth (a), 1 where there is none
+uniform sampler2D uGlass;
+#endif
 out vec4 fragColor;
 void main() {
   vec2 edge = smoothstep(0.0, 0.1, min(vUv, 1.0 - vUv));
+  vec2 s = texture(uShadow, vUv).rg;
+  float dark = s.r;
+#ifdef GLASS
+  // glass's shadow round it, but not where it rests - touching the ground, its lowest point in the
+  // bottom few hundredths of the shadow's height: the ground under its foot is what is seen through
+  // it, lit by the light it lets through (the lights' coloured shadows). Not under an overhang - a
+  // tumbler flaring out above its foot, or the curve of a rounded foot, which a low view sees under -
+  // where the ground is in its shadow. Read at full size, and pulled in a few texels from the foot's
+  // edge (the highest of eight taps round it), so the shadow runs just under the rim of the foot
+  float a = texture(uGlass, vUv).a;
+  vec2 step = 3.0 / vec2(textureSize(uGlass, 0));
+  for (int i = 0; i < 8; i++) {
+    float t = float(i) * 0.7853982;
+    a = max(a, texture(uGlass, vUv + vec2(cos(t), sin(t)) * step).a);
+  }
+  float resting = 1.0 - smoothstep(0.015, 0.035, a);
+  dark = max(dark, s.g * (1.0 - resting));
+#endif
   // premultiplied black, as much as the shadow is dark
-  fragColor = vec4(0.0, 0.0, 0.0, texture(uShadow, vUv).r * uOpacity * edge.x * edge.y);
+  fragColor = vec4(0.0, 0.0, 0.0, dark * uOpacity * edge.x * edge.y);
 }
 `
 
@@ -238,8 +268,10 @@ const GROUND_SIZE = 512
 const GROUND_BLUR_SIZE = GROUND_SIZE / 2
 // the widest blur, in texels of that
 const GROUND_BLUR_RADIUS = 32
-// how dark glass's ground shadow is, against a solid's
-const GLASS_GROUND_SHADOW = 0.5
+// how dark glass's ground shadow is, against a solid's - round it; never under it, which is seen
+// through the glass (darkening it turned a glass of whisky nearly black from above). Clear glass,
+// letting all the light through, still bends it away; glass that stops it all - a dark drink - more
+const GLASS_GROUND_SHADOW = [0.7, 1]
 
 export class Effects {
   /** Where the solids were last: the ground shadow keeps its square until they move well out of it. @type {[number, number, number] | null} */ #square = null
@@ -335,8 +367,8 @@ export class Effects {
 
   /**
    * A ground shadow for this frame, before the picture is drawn: the solids' depth from below the
-   * ground, made into darkness and blurred - glass's too, half as dark. Null when there is nothing to
-   * cast it.
+   * ground, made into darkness and blurred - glass's too, round it but not where it rests, darker the
+   * more it stops the light (GLASS_GROUND_SHADOW). Null when there is nothing to cast it.
    * @param {DrawItem[]} solids @param {DrawItem[]} glass @param {Box3} box their world bounds @param {Passes} passes
    * @param {{ opacity: number, softness: number, height: number | null, y: number | null, size: number | null }} settings
    * @returns {Ground | null}
@@ -351,17 +383,18 @@ export class Effects {
     const half = this.#squareFor((x0 + x1) / 2, (z0 + z1) / 2, settings.size !== null ? settings.size / 2 : Math.max(x1 - x0, z1 - z0) * 0.5 + height * 0.75)
     const [cx, cz, h] = half
     const depth = this.targets.get('ground-depth', { width: GROUND_SIZE, height: GROUND_SIZE, color: null, depth: 'texture' })
-    const glassDepth = glass.length ? this.targets.get('ground-glass-depth', { width: GROUND_SIZE, height: GROUND_SIZE, color: null, depth: 'texture' }) : null
+    // glass's layer: what it lets through, and its depth - more than 8 bits where floats can be drawn to
+    const glassLayer = glass.length ? this.targets.get('ground-glass', { width: GROUND_SIZE, height: GROUND_SIZE, color: this.targets.float ? gl.RGBA16F : gl.RGBA8 }) : null
     const a = this.targets.get('ground-a', { width: GROUND_BLUR_SIZE, height: GROUND_BLUR_SIZE })
     const b = this.targets.get('ground-b', { width: GROUND_BLUR_SIZE, height: GROUND_BLUR_SIZE })
 
     // depth up from the ground: x and z across the square, height up to `height`
     const viewProjection = new Float32Array([1 / h, 0, 0, 0, 0, 0, 2 / height, 0, 0, 1 / h, 0, 0, -cx / h, -cz / h, (-2 * ground) / height - 1, 1])
     const radius = Math.round(1 + settings.softness * (GROUND_BLUR_RADIUS - 1))
-    const result = { texture: /** @type {WebGLTexture} */ (a.texture), rect: /** @type {[number, number, number, number]} */ ([cx, cz, h, ground]), opacity: settings.opacity, kept: false }
+    const result = { texture: /** @type {WebGLTexture} */ (a.texture), glass: glassLayer ? /** @type {WebGLTexture} */ (glassLayer.texture) : null, rect: /** @type {[number, number, number, number]} */ ([cx, cz, h, ground]), opacity: settings.opacity, kept: false }
     // like a shadow map, it doesn't depend on the camera: drawn again only when the solids, its
     // square or its blur changed - or the pool handed out new targets
-    result.kept = this.#groundDrawn.begin().object(depth).object(a).object(b).numbers(viewProjection).number(radius).casters(solids).object(glassDepth).casters(glass).same()
+    result.kept = this.#groundDrawn.begin().object(depth).object(a).object(b).numbers(viewProjection).number(radius).casters(solids).object(glassLayer).casters(glass, true).same()
     if (result.kept) return result
     gl.bindFramebuffer(gl.FRAMEBUFFER, depth.framebuffer)
     gl.viewport(0, 0, GROUND_SIZE, GROUND_SIZE)
@@ -372,22 +405,18 @@ export class Effects {
     gl.disable(gl.CULL_FACE)
     gl.clear(gl.DEPTH_BUFFER_BIT)
     passes.drawDepth(solids, viewProjection)
-    if (glassDepth) {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, glassDepth.framebuffer)
-      gl.clear(gl.DEPTH_BUFFER_BIT)
-      passes.drawDepth(glass, viewProjection)
-    }
+    if (glassLayer) passes.glassLayer(glassLayer, glass, viewProjection)
 
     // darkness, then blurred across and down
     gl.disable(gl.DEPTH_TEST)
     gl.depthMask(false)
     gl.viewport(0, 0, GROUND_BLUR_SIZE, GROUND_BLUR_SIZE)
-    const darkness = this.programs.ready('ground-darkness', glassDepth ? ['GLASS'] : [], GROUND_DARKNESS)
+    const darkness = this.programs.ready('ground-darkness', glassLayer ? ['GLASS'] : [], GROUND_DARKNESS)
     gl.useProgram(darkness.program)
     gl.bindFramebuffer(gl.FRAMEBUFFER, a.framebuffer)
     darkness.set('uDepth', depth.depthTexture)
-    if (glassDepth) {
-      darkness.set('uGlass', glassDepth.depthTexture)
+    if (glassLayer) {
+      darkness.set('uGlass', glassLayer.texture)
       darkness.set('uGlassShadow', GLASS_GROUND_SHADOW)
     }
     this.programs.drawFullscreen()
@@ -415,11 +444,12 @@ export class Effects {
    */
   drawGround(ground, frame) {
     const gl = this.gl
-    const program = this.programs.ready('ground', [], GROUND)
+    const program = this.programs.ready('ground', ground.glass ? ['GLASS'] : [], GROUND)
     gl.useProgram(program.program)
     program.set('uViewProjection', frame.camera.viewProjection)
     program.set('uRect', ground.rect)
     program.set('uShadow', ground.texture)
+    if (ground.glass) program.set('uGlass', ground.glass)
     program.set('uOpacity', ground.opacity)
     gl.enable(gl.DEPTH_TEST)
     gl.depthFunc(gl.LEQUAL)

@@ -70,7 +70,7 @@ export default function run({ canvas, gui }) {
   const scene = view.scene
   // the studio's light all round, for the glass to reflect - kept low, the softbox is the key
   scene.environment = 'studio'
-  scene.environmentIntensity = 0.45
+  scene.environmentIntensity = 0.7
 
   const settings = { place: 0, turn: false, aperture: 0, focus: 0 }
 

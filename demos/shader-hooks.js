@@ -97,7 +97,6 @@ export default function run({ canvas, gui, info }) {
   // the studio for the metal's reflections, turned down so it doesn't flatten the colours; a warm key
   // light and a little cool fill
   scene.environment = 'studio'
-  scene.environmentIntensity = 0.55
   scene.add(new HemisphereLight({ sky: '#6f8bd0', ground: '#1a1612', intensity: 0.25 }))
   scene.add(new DirectionalLight({ color: '#fff0dc', direction: [-0.5, -1, -0.4], intensity: 2.4, castShadow: true }))
   scene.add(new Mesh({ geometry: plane(40), material: { color: '#141826', roughness: 0.85 }, receiveShadow: true, pickable: false }))

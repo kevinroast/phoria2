@@ -79,12 +79,19 @@ describe("a frame's glass - a lighter ground shadow", () => {
     expect(frame.glassy.map(([node]) => node)).toEqual([glass])
   })
 
-  it('draws glass into a depth of its own, darkening half as much', async () => {
-    const { gl, sources } = watchedGL()
+  it('draws glass into a layer of its own - what each lets through - darker the more it stops, laid round the glass not under it', async () => {
+    const { gl, sources, drawLog } = watchedGL()
     const scene = new Scene()
+    // clear glass, and a dark drink: red-brown, over 2 attenuation distances
     scene.add(new Mesh({ geometry: box(1), material: { transmission: 1, thickness: 1 } }))
+    scene.add(new Mesh({ geometry: box(1), material: { transmission: 1, thickness: 1, attenuationColor: '#3a1709', attenuationDistance: 0.5 }, position: [0, 0.2, 0] }))
     await withEffects({ groundShadow: true }, scene, gl)
     expect(sources.some((s) => s.includes('#define GLASS') && s.includes('uGlassShadow'))).toBe(true)
+    // the ground's glass layer: each glass drawn with its filter - the drink's nearly black
+    const filters = drawLog.filter((d) => d.program.values.uGlassFilter).map((d) => d.program.values.uGlassFilter)
+    expect(filters.length).toBeGreaterThanOrEqual(1)
+    const darkest = Math.min(...filters.map((f) => Math.max(...f)))
+    expect(darkest).toBeLessThan(0.01)
   })
 })
 

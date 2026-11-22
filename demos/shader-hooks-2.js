@@ -87,7 +87,6 @@ export default function run({ canvas, gui }) {
   })
   const { scene } = view
   scene.environment = 'studio'
-  scene.environmentIntensity = 0.5
   scene.add(new HemisphereLight({ sky: '#6f8bd0', ground: '#1a1612', intensity: 0.3 }))
   scene.add(new DirectionalLight({ color: '#fff0dc', direction: [-0.4, -1, -0.5], intensity: 2.2, castShadow: true }))
   const floor = scene.add(new Mesh({ name: 'floor', geometry: plane(18), material: { roughness: 0.9, shader: FLOOR }, receiveShadow: true }))

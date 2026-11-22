@@ -555,9 +555,8 @@ export default function run({ canvas, gui, info }) {
     camera: { position: [5.5, 6.5, 15], target: [0, 0.4, 0.4], fov: 40 },
   })
   const { scene } = view
-  // a dim studio for the metal to reflect; the arena itself is dark, lit from above
+  // the studio for the metal to reflect; the arena itself is dark, lit from above
   scene.environment = 'studio'
-  scene.environmentIntensity = 0.35
   scene.add(new AmbientLight({ intensity: 0.12 }))
   scene.add(new DirectionalLight({ direction: [0.45, -1, -0.5], intensity: 2.2, castShadow: true }))
   scene.add(new SpotLight({ color: '#fff4e0', position: [0, 18, 1], direction: [0, -1, -0.05], angle: 0.5, penumbra: 0.6, range: 40, intensity: 220 }))

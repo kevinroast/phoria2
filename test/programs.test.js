@@ -46,6 +46,17 @@ describe('a program\'s uniforms', () => {
     expect(lit.uniforms.some((/** @type {any} */ u) => u.name === 'uFogColor')).toBe(false)
   })
 
+  it("the built-in studio environment is scaled by the scene's environmentIntensity", () => {
+    const { gl, live } = fakeGL()
+    const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
+    renderer.setSize(10, 10)
+    const scene = new Scene({ environment: 'studio', environmentIntensity: 0.3 })
+    scene.add(new Mesh({ geometry: box(1) }))
+    renderer.render(scene, camera())
+    const lit = [...live].find((o) => o.kind === 'program' && o.shaders.some((/** @type {any} */ s) => s.source.includes('#define STUDIO')))
+    expect(lit.values.uEnvIntensity).toBeCloseTo(0.3)
+  })
+
   it('sets int and uint arrays and vectors, and binds each sampler kind to its own target', () => {
     const { gl, live } = fakeGL()
     const programs = new Programs(gl)

@@ -1105,8 +1105,9 @@ export class WebGLRenderer {
         if (env) {
           program.set('uEnvMaxLod', env.maxLod)
           program.set('uEnvSH', env.sh)
-          program.set('uEnvIntensity', frame.environmentIntensity)
         }
+        // an image's light, or the built-in studio's, scaled by the scene's environmentIntensity
+        if (env || state.studio) program.set('uEnvIntensity', frame.environmentIntensity)
         for (const shadow of shadows) for (const [name, value] of Object.entries(shadow.uniforms)) program.set(name, value)
       }
     }

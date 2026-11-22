@@ -46,7 +46,6 @@ export default function run({ canvas, info }) {
     tooltip: (hit) => (hit.node === tiles ? tooltipFor(hit.datum) : null) })
   const { scene } = view
   scene.environment = 'studio'
-  scene.environmentIntensity = 0.6
   scene.add(new DirectionalLight({ direction: [-0.4, -1, -0.5], intensity: 1.3, castShadow: true }))
   scene.add(new Mesh({ geometry: plane(60), position: [0, -0.01, 0], material: { color: '#1b1b21', roughness: 0.9 }, receiveShadow: true, pickable: false }))
 

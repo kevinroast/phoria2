@@ -864,7 +864,8 @@ view.groundShadow = { opacity: 0.5, softness: 0.8 }   // change any time; false 
 - **`groundShadow`** is the product viewer's soft floor shadow: the solids seen from below the
   ground, darkest where they touch it, blurred - no light or shadow map needed, and it shows with or
   without a floor mesh. Every opaque mesh casts it except floors that only receive shadows
-  (`receiveShadow` on, `castShadow` off); glass (`transmission`) casts it half as dark - a glass on a
+  (`receiveShadow` on, `castShadow` off); glass (`transmission`) casts it round itself but not under
+  itself (that ground is what is seen through it), darker the more light it stops - so a glass on a
   table stands in a soft shadow, which its own light-through shadow barely gives. `opacity` (0.6), `softness` (0-1, 0.5), `height` (how far up
   things still cast; default half the solids' size), `y` (the ground; default the solids' bottom),
   `size` (the shadow's square; default from the solids).

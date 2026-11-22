@@ -700,7 +700,9 @@ ${ALL_ROUND_UNIFORMS}
 uniform sampler2D uEnvMap;   // equirectangular, prefiltered: each mip a step rougher
 uniform float uEnvMaxLod;
 uniform vec3 uEnvSH[9];      // irradiance as spherical harmonics, already divided by PI
-uniform float uEnvIntensity;
+#endif
+#if defined(ENV_MAP) || defined(STUDIO)
+uniform float uEnvIntensity; // the scene's environmentIntensity
 #endif
 ${DIRECTIONAL_UNIFORMS}
 ${PUNCTUAL_UNIFORMS}
@@ -984,7 +986,7 @@ vec3 irradianceAt(vec3 n) {
 #ifdef ENV_MAP
   e += envIrradiance(n) * uEnvIntensity * uEnvStrength;
 #elif defined(STUDIO)
-  e += studio(n) * 0.35 * uEnvStrength;
+  e += studio(n) * 0.35 * uEnvIntensity * uEnvStrength;
 #endif
   return e;
 }
@@ -996,7 +998,7 @@ vec3 reflected(vec3 r, vec3 n, float roughness, vec3 irradiance) {
   return textureLod(uEnvMap, equirectUv(r), roughness * uEnvMaxLod).rgb * uEnvIntensity * uEnvStrength;
 #elif defined(STUDIO)
   // leaned towards the surface normal
-  return mix(studio(r), studio(n), roughness * roughness) * uEnvStrength;
+  return mix(studio(r), studio(n), roughness * roughness) * uEnvIntensity * uEnvStrength;
 #else
   return irradiance * 0.5;
 #endif

@@ -660,6 +660,18 @@ export class Passes {
   }
 
   /**
+   * A glass layer of glass casters from one view, filling the target: the light they let through,
+   * multiplied, and the nearest one's depth (#glassLayers) - for the ground shadow, seen from below.
+   * @param {import('./targets.js').Target} target @param {DrawItem[]} casters @param {ArrayLike<number>} viewProjection
+   */
+  glassLayer(target, casters, viewProjection) {
+    this.#glassLayers(target, (size) => {
+      this.gl.viewport(0, 0, size, size)
+      this.drawDepth(casters, viewProjection, { filter: true })
+    })
+  }
+
+  /**
    * A shadow map's glass layer's target, from the pool - asked for every frame the map has glass,
    * drawn into or kept, so the pool keeps it.
    * @param {string} name @param {number} mapSize the depth map's size; the layer is smaller
