@@ -9,14 +9,11 @@ https://kevs3d.co.uk/phoria2/ - source: https://github.com/kevinroast/phoria2
 ## When to use it
 
 phoria2 is for 3D that shows something: 3D charts from a data spec (bar, scatter, line, area,
-surface, network), labelled diagrams and floor plans, cutaway explainers with callouts, animated
-infographics on a timeline, dashboards of many small views, product viewers for glTF models, and
-editors that drag, snap and undo. Picking, tooltips, hover highlights, HTML labels, shadows and
-image-based light are built in, and a view draws only when something changes, so idle pages cost
-nothing. A dashboard of many small views just works - each tile its own `new View({ canvas })`,
-with no limit on WebGL contexts to manage (after the first four, views share one). Apps come out short: typically a few dozen lines. For games, custom shaders or
-post-processing pipelines, three.js is the better fit: phoria2 has no shader hook (no custom
-effects), no refraction, and no shadow-softness setting.
+surface, network), labelled diagrams and floor plans, cutaway explainers, animated infographics on a
+timeline, dashboards of many small views (each tile its own `new View({ canvas })`, any number on a
+page), product viewers for glTF models, and editors that drag, snap and undo. Picking, tooltips, HTML
+labels, shadows, glass and image-based light are built in, and a view draws only when something
+changes. It is not a game engine: no render pipeline of your own and no physics beyond simple bodies.
 
 ## Install
 
@@ -54,10 +51,8 @@ When this page doesn't settle something, read the source with its comments in
 `node_modules/phoria2/src` (`src/View.js`, `src/scene/`, `src/geometry/`, `src/charts/`...), not the
 minified `dist/` files - but import from the entry points, not from `src/`.
 
-**Versions** follow semver from 1.0: everything on this page and in the types keeps working through
-1.x, defaults included. Exact pixels and error wording can change; nothing is removed without a
-release that warns first, naming the replacement. A warning that something is deprecated says what
-to write instead - do that.
+**Versions**: semver from 1.0 - everything on this page keeps working through 1.x. A deprecation
+warning names what to write instead: do that.
 
 ## Conventions
 
@@ -75,6 +70,16 @@ to write instead - do that.
   turns about wherever they are; `camera.target = [x, y, z]` copies the point in.
 - **One options object per constructor.** Unknown option names throw an error that says what to use
   instead - read it, it usually names the fix.
+
+**Common mistakes**:
+
+- A blank or wrong picture: `console.log(await view.explain())` first - it names the usual causes.
+- The canvas needs a size from CSS (without one it is 300 x 150).
+- `opacity` fades a material (below 1 it blends); `transparent: true` blends at any opacity (soft-edged
+  maps, hooks that fade); `transmission` is glass - it bends and tints what is behind, not a fade.
+- Shadows need `castShadow` on the light and on the meshes, and `receiveShadow` on what they fall on.
+- To stand a generated shape along another axis, use the generator's `axis` (`cylinder({ axis: 'x' })`)
+  rather than rotating the mesh.
 
 ## The minimal app
 
@@ -104,8 +109,8 @@ const view = new View({ canvas: '#c', orbit: true })
 | Option | Default | |
 |---|---|---|
 | `canvas` | a new full-window canvas | element or CSS selector |
-| `camera` | `'perspective'`: a three-quarter view from the front right and above, fitted to the scene on the first frame | a preset - `'perspective'`, `'isometric'`, `'top'`, `'front'`, `'side'` (fitted to the scene on the first frame, unless you place or frame the camera first) - camera options (`{ position, target, fov }`), or a camera |
-| `orbit` | `false` | `true`, or options: `{ autoRotate, inertia, minDistance, maxDistance, minPitch, maxPitch, pan, zoom, mode }`. `autoRotate`: `true` (a slow turn) or radians per second; it pauses while the user drags. `inertia`: how much of a fling's speed is kept each 1/60 s - 0.85 by default, 0 stops dead, 0.95 glides a long way (`true` and `false` are the default and 0). `mode`: `'orbit'` (the default) or `'map'` - drags pan and the view never turns, for plans. `minDistance`/`maxDistance` limit zooming: the distance to the target, or for an orthographic camera the height of the view. Left-drag orbits, right-drag pans, wheel zooms |
+| `camera` | `'perspective'`: a three-quarter view from the front right and above | a preset - `'perspective'`, `'isometric'`, `'top'`, `'front'`, `'side'` (fitted to the scene on the first frame, unless you place or frame the camera first) - camera options (`{ position, target, fov }`), or a camera |
+| `orbit` | `false` | `true`, or options: `{ autoRotate, inertia, minDistance, maxDistance, minPitch, maxPitch, pan, zoom, mode }` - `pan` and `zoom` on (`true`), pitch limits just short of straight down and up (about ±PI/2). `autoRotate`: `true` (a slow turn) or radians per second; it pauses while the user drags. `inertia`: how much of a fling's speed is kept each 1/60 s - 0.85 by default, 0 stops dead, 0.95 glides a long way (`true` and `false` are the default and 0). `mode`: `'orbit'` (the default; `'map'` with `camera: 'top'`) or `'map'` - drags pan and the view never turns, for plans. `minDistance`/`maxDistance` limit zooming: the distance to the target, or for an orthographic camera the height of the view. Left-drag orbits, right-drag pans, wheel zooms |
 | `background` | transparent | a colour |
 | `highlight` | none | a colour mixed into whatever is under the pointer |
 | `tooltip` | none | `(hit) => content` - see Interaction |
@@ -119,7 +124,9 @@ const view = new View({ canvas: '#c', orbit: true })
 | `refine` | `false` | while nothing changes, keep drawing and show the average once 16 samples are in: edges antialiased far past multisampling, soft shadows exact for a sun (its `shadowSoftness` an angle) and a rect light (its own size) - each sample's from a point across the light - and grain-free for spot and point lights. `true` (64 samples; 32 on touch screens) or `{ samples }`; any change starts again; needs float render targets. Also `view.refine` |
 | `autoLight` | `true` | light a scene that has no lights (a chart needs none of its own); `false` to leave it dark |
 | `pixelRatio` | `min(devicePixelRatio, 2)` | |
-| `context` | `'auto'` | WebGL context: own for the first four views on a page, then one shared context - so a page can hold any number of views |
+| `context` | `'auto'` | WebGL context: own for the first four views on a page, then one shared context - so a page can hold any number of views; `'own'` or `'shared'` to choose |
+| `antialias` | `true` | multisampled edges; `false` is cheaper (pair with `fxaa`) |
+| `debug` | off | helpers drawn over the scene - see `view.debug` below |
 | `keyboard` | `false` | `true` or `{ label: (hit) => text }`: use without a pointer, with a screen reader - see Interaction |
 | `description` | none | what the view shows, for screen readers (the canvas's label); made from the scene when `keyboard` is on |
 | `reducedMotion` | `'auto'` | as the system's reduced-motion setting: `frame()` jumps rather than glides, auto-rotation holds, charts change at once. `true` or `false` to choose |
@@ -131,10 +138,11 @@ Members: `view.scene`, `view.camera` (assign a camera or a preset name to switch
 Methods:
 
 - `start(fn?)` - `fn(dt, t)` every frame. Time and node update handlers run anyway; you only need
-  `start` for your own per-frame code.
+  `start` for your own per-frame code. `stop()` freezes time (handlers and `fn`) until `start()`;
+  changes still redraw.
 - `frame(node?, { padding, direction, duration })` - move the camera so a node (default: the whole
-  scene) fills the view, keeping the viewing direction - centred across, and a little below the
-  middle so it stands rather than hangs. It fits what the camera draws - not hidden nodes, nor a
+  scene) fills the view, keeping the viewing direction - centred across, a little below the middle.
+  It fits what the camera draws - not hidden nodes, nor a
   chart's axis labels for the edges it isn't showing - so a chart fills the view. `padding` is the
   margin around it as a fraction of its size: `0` is a tight fit, `0.2` (the default) leaves a
   fifth, `0.5` half. `direction` looks from a preset's direction (`'perspective'`, `'top'`,
@@ -153,28 +161,14 @@ Methods:
 - `await view.toImage()` - a PNG `Blob` of the picture, labels included - complete: what a scene loads the first time it needs it (shadows, glass and advanced materials, labels) is waited for. `toImage({ samples: 64 })` refines it first, as `refine` does - antialiased, soft shadows exact - whether or not the view refines. Another size: `toImage({ scale: 2 })` (twice the canvas's pixels, for print), `{ width: 320 }` or `{ height: 1080 }` (the other follows the canvas's shape) - drawn again at that size, lines, points and labels scaled with it; the canvas is put back after.
 - `await view.explain()` - a plain-text report of what is drawn, with warnings ("nothing in view",
   "no lights", labels hidden...). Use it to debug a blank or wrong picture.
-- `view.debug` (or the `debug` option) - pictures for a person checking a scene, drawn over it:
-  `true` for all but normals, or `{ lights, shadows, bounds, normals, axes, camera, stats }`.
-  - `lights`: an arrow for each directional light (over the scene's middle, the way it shines), a
-    small sphere and a ring at its range for point lights, a cone for spot lights - in the light's colour.
-  - `shadows`: the box (directional) or cone (spot) each shadow map is drawn from, in yellow - the
-    usual reason a shadow is cut off, blocky or soft. `'texels'` also lays the shadow map's texels over
-    everything that receives it, as a blue and orange checkerboard: big squares mean the map is spread
-    thin, so its edges blur or step - give the light a tighter `shadowBounds`. Squares show only where a
-    texel is three pixels or more across, so zoom in on an edge that looks soft.
-  - `bounds`: each drawable's world box, in cyan - what culling, `view.frame()` and shadow fitting
-    see. `'hovered'`: only what is under the pointer (an instance's own box).
-  - `normals`: a short magenta line along each vertex normal - for lighting that looks wrong on
-    imported or generated geometry. Meshes up to 5,000 vertices when all are shown; `'hovered'` shows
-    the mesh under the pointer, whatever its size.
-  - `axes`: x, y and z at the origin, red, green and blue. `camera`: the point the orbit turns round.
-  - `stats`: a corner readout - fps and frame time, the CPU time of a frame, draw calls, triangles,
-    programs, textures and geometries; `true` is top left, or `'top-right'`, `'bottom-left'`,
-    `'bottom-right'`.
-
-  The helpers are lines in the scene's depth that also show faintly through what is in front of
-  them. They aren't part of the scene: never picked, framed, saved or counted, and `explain()` says
-  when debug drawing is on. Their code loads the first time debug is turned on.
+- `view.debug` (or the `debug` option) - helpers for a person checking a scene, drawn over it (never
+  picked, framed or saved): `true` for all but normals, or `{ lights, shadows, bounds, normals, axes,
+  camera, stats }`. `lights`: where each light is and points. `shadows`: the box or cone each shadow
+  map covers - why a shadow is cut off or soft; `'texels'` shows its texels on what receives it (big
+  squares: give the light a tighter `shadowBounds`). `bounds`: world boxes (`'hovered'`: only what is
+  under the pointer). `normals`: vertex normals (`'hovered'` for big meshes). `axes`, `camera` (the
+  orbit's pivot). `stats`: fps, frame time, draw calls, triangles - `true` top left, or `'top-right'`,
+  `'bottom-left'`, `'bottom-right'`.
 
   ```js
   view.debug = { lights: true, shadows: true, bounds: 'hovered', stats: 'bottom-right' }
@@ -182,7 +176,6 @@ Methods:
 - `render()`, `invalidate()` (redraw after changing data the view can't see), `dispose()`.
 
 If a page shows nothing or the wrong thing, `console.log(await view.explain())` before anything else.
-Errors thrown for bad options name the option and usually the fix.
 
 ## Changing things later
 
@@ -217,7 +210,7 @@ node.bounds              // world-space Box3: .min, .max, .getCenter(), .getSize
 node.boundsFrom(camera)  // the same, for only what that camera draws (hidden and showFrom-off parts left out)
 node.worldPosition       // read only
 node.updateWorld()       // world matrices up to date now - ancestors, the node, everything under it -
-                         // to read worldPosition or bounds after moving things, before the next frame
+                         // to read worldPosition after moving things, before the next frame (bounds does this itself)
 node.updateWorldTree()   // the same for the node and everything under it, when its parent is already current
 ```
 
@@ -247,7 +240,8 @@ backdrop) ignores it.
 
 ## Drawables
 
-All drawables take `geometry`, `material`, `castShadow`, `receiveShadow`, `renderOrder` and `data`.
+All drawables take `geometry`, `material`, `castShadow`, `receiveShadow`, `renderOrder`, `data` and
+`frustumCulled` (true; `false` for things a vertex hook moves out of their bounds).
 
 ```js
 new Mesh({ geometry: box(1), material: { color: '#c33', roughness: 0.3 } })
@@ -269,9 +263,8 @@ view.start((dt) => { flow.material.dashOffset += dt * 0.8 })   // traffic moving
 ```
 
 **Points** each their own size, opacity or angle: give the geometry `sizes` (multiples of the material's
-`size`), `opacities` (0-1) or `angles` (radians, turning the point's `map`), one per vertex. Such points
-are drawn as camera-facing squares, so any size works and they stay whole at the edge of the view.
-`sort: true` draws them furthest first each frame - for soft points with `blending: 'normal'`
+`size`), `opacities` (0-1) or `angles` (radians, turning the point's `map`), one per vertex. `sort: true` (a Points
+option) draws them furthest first each frame - for soft points with `blending: 'normal'`
 (smoke, cloud) that would otherwise layer wrongly; with additive blending order doesn't matter.
 
 **InstancedMesh** - many copies of one geometry in one draw call, for bars, racks, nodes:
@@ -287,8 +280,7 @@ material's colour, which is white unless you set one - so the instance colour sh
 of rows in `data`. For very large data, write `bars.instanceMatrices` (16 numbers per instance,
 column-major) directly and call `bars.needsUpdate()`. An instance scaled to 0 is hidden: it draws
 nothing, and bounds, framing, shadows and labels leave it out - so a pool can keep spare instances.
-Positions and quaternions also take `{ x, y, z }` and `{ x, y, z, w }`, as physics engines return
-them, so a physics bridge is one line a body:
+Positions and quaternions also take `{ x, y, z }` and `{ x, y, z, w }`, as physics engines return them:
 `bricks.setInstance(i, { position: body.translation(), quaternion: body.rotation() })`.
 
 **Labels** are HTML elements pinned to 3D points (style them with CSS). Options: `text`, `position`,
@@ -345,16 +337,16 @@ Generators return a `Geometry`; each takes one options object (a number is the m
 
 | | Options |
 |---|---|
-| `box(size \| { width, height, depth })` | centred on the origin |
+| `box(size \| { width, height, depth, segments })` | centred on the origin |
 | `roundedBox(size \| { width, height, depth, radius, segments })` | a box with rounded edges and corners - dice, ice cubes, phones, buttons; `radius` up to half the smallest side (default a tenth of it), `segments` round each edge (4) |
-| `sphere({ radius, segments, rings })` | |
-| `plane(size \| { width, depth })` | in the x-z plane, facing up (+Y) |
-| `cylinder({ radius, radiusTop, height, segments })` | along Y, centred; `radiusTop: 0` is a cone, its tip at the + end of the axis (up) |
-| `torus({ radius, tube })`, `icosphere({ radius, detail })` | |
+| `sphere(radius \| { radius, segments, rings })` | |
+| `plane(size \| { width, depth, segments })` | in the x-z plane, facing up (+Y); `segments` subdivides it - vertex hooks need them to bend it |
+| `cylinder({ radius, radiusTop, height, segments, caps })` | along Y, centred; `radiusTop: 0` is a cone, its tip at the + end of the axis (up); `caps: false` leaves the ends open |
+| `torus({ radius, tube, segments, tubeSegments })`, `icosphere({ radius, detail })` | |
 | `torusKnot({ radius, tube, p, q })` | a tube along a knot round Y: winds `p` times round the ring and `q` through its hole (2, 3: the trefoil) - the classic material swatch |
 | `lathe({ points, segments, axis })` | a profile of `[radius, y]` pairs, bottom up, turned about Y - pistons, bottles, bolts (listed top down, it faces inward) |
 | `extrude({ shape, holes, depth, axis })` | an outline of `[x, y]` pairs (and hole outlines) pushed along Z, centred - plates, brackets, logos |
-| `grid({ size, divisions })` | floor grid, for `Lines` |
+| `grid({ size, divisions })`, `axes({ size })` | a floor grid, and x, y, z lines from the origin (red, green, blue: `vertexColors: true`) - for `Lines` |
 | `edges(geometry, { angle })` | the edges of any geometry, for `Lines`: where faces turn more than `angle` degrees (default 1) - 30 keeps round surfaces clean, outlining a part as a drawing does |
 
 `axis: 'x' | 'y' | 'z'` lays `cylinder`, `lathe` and `extrude` along another axis - no rotating the mesh
@@ -408,29 +400,31 @@ One material type, given as a plain object:
 **Exact colour**: an `unlit` material draws exactly the colour it is given - `'#e15759'` is
 `#e15759` on screen and in `toImage()`, whatever the tone mapping - and so do instance colours,
 vertex colours, colour maps, lines and points. Use it for swatches, legends, status colours and
-brand colours. A lit surface doesn't keep its colour: light and tone mapping are meant to change
-it. Vertex colours blend across each face in linear light, so a ramp between two vertices differs
-slightly from a 2D tool's; subdivide for a closer match.
+brand colours. A lit surface doesn't keep its colour: light and tone mapping are meant to change it.
 
-Properties: `color`, `opacity`, `roughness` (0.5), `metalness` (0), `emissive`,
-`emissiveIntensity`, `unlit`, `flatShading`, `doubleSided`, `vertexColors`, `fog` (true), `blending`
+Properties: `color`, `opacity` (1), `transparent` (false; blends at any opacity - soft-edged maps, hooks that
+fade), `roughness` (0.5), `metalness` (0), `emissive`, `emissiveIntensity`, `unlit`, `flatShading`, `doubleSided`, `vertexColors`, `fog` (true), `blending`
 (`'normal'`, `'additive'` - adds light, for glows and sparks - or `'multiply'` - darkens what is behind, as a colour
 filter does: cyan over magenta is blue), `alphaTest` (cut-outs: drop pixels with less alpha - leaves, fences),
-`map`, `normalMap`/`normalScale`, `bumpMap`/`bumpScale`, `roughnessMap`, `metalnessMap`, `aoMap`,
+`depthWrite`/`depthTest` (true), `map`, `normalMap`/`normalScale`, `bumpMap`/`bumpScale`, `roughnessMap`, `metalnessMap`, `aoMap`/`aoMapIntensity` (1),
 `emissiveMap`, `lightMap`/`lightMapIntensity`, `environmentIntensity` (1), `transmission`/`thickness`/`thinWalled`/`attenuationColor`/`attenuationDistance`/`dispersion`, `clearcoat`/`clearcoatRoughness`, `sheen`/`sheenColor`/`sheenRoughness`, `iridescence`/`iridescenceIor`/`iridescenceThickness`/`iridescenceThicknessMin`/`iridescenceThicknessMap`, `ior`/
-`specularIntensity`/`specularColor`, `anisotropy`/`anisotropyRotation`, `translucency`/`translucencyColor`, `matcap`, `toon` (below); `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
+`specularIntensity`/`specularColor`, `anisotropy`/`anisotropyRotation`, `translucency`/`translucencyColor`, `matcap`, `toon`, `triplanar`, `shader` (below); `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
 `mesh.material.color.set('#0f0')`, `mesh.material.opacity = 0.5`, or a whole new one: `mesh.material = { color: 'red' }`
 (options become a Material, as in the constructor; `mesh.geometry = box(2)` likewise).
 
+**Textures**: a map is a url (`map: 'wood.jpg'`), `new Texture({ url | image, ... })` or `await
+loadTexture(url, options)` (resolves when loaded). Options: `wrap` (`'repeat'` | `'clamp'` | `'mirror'`),
+`repeat` ([u, v] times across), `offset`, `rotation` (radians, about `center`, [0, 0] the corner - [0.5,
+0.5] the middle; applied in that order, as glTF's `KHR_texture_transform`; animate them to scroll or
+spin), `colorSpace` (`'srgb'`; data maps are read as data unless set on purpose), `uvSet` (0, or 1 for
+the second UV set), `mipmaps` (true), `anisotropy` (8 - keeps floors sharp into the distance; 1 for
+off), `filter` (`'linear'` | `'nearest'`), `flipY` (false). Each map keeps its own placement.
+
 A **bump map** is a height texture (red channel) shown as bumps - no normal map to make, so it suits
-heights drawn in code. `bumpScale` is how high a height of 1 stands, in the mesh's units. Textures
-take `anisotropy` (default 8, up to the GPU's limit, 1 for off), which keeps floors and roads sharp
-into the distance. A cut-out (`alphaTest`) is what is left of it everywhere: its shadow, its outline, ambient
+heights drawn in code. `bumpScale` is how high a height of 1 stands, in the mesh's units. A cut-out (`alphaTest`) is what is left of it everywhere: its shadow, its outline, ambient
 occlusion, and picking - hover, click and tooltips go through its holes to what is behind (picked on
 the GPU, which reads the texture). `pickAll`, `pickArea` and `Raycaster` see only geometry, so to them a
-cut-out is its whole shape. A Texture given to a
-data map (`normalMap`, `bumpMap`, `roughnessMap`, `metalnessMap`, `aoMap`) is read as data, not colour,
-unless its `colorSpace` was set on purpose - `normalMap: await loadTexture('n.png')` just works.
+cut-out is its whole shape.
 
 **Canvas and video textures**: a texture's `image` can be a canvas - draw on it, then call
 `texture.needsUpdate()` - or a `<video>`, whose frames upload by themselves while it plays, with
@@ -440,8 +434,8 @@ and only that rectangle is sent, rather than the whole canvas every frame (sever
 frame add up). `new Texture({ url: 'promo.mp4' })` (or .webm, .ogv, .mov, .m4v) makes the video
 for you, muted and looping so browsers let it start by itself; `texture.image` is that `<video>` -
 pause, seek or unmute it as any other. A browser that blocks autoplay leaves it on its first frame
-until `texture.image.play()` from a click. Video textures make no mipmaps (they would be remade
-every frame) unless `mipmaps: true`. Put one on an unlit plane for a screen:
+until `texture.image.play()` from a click. Video textures make no mipmaps unless `mipmaps: true`. Put
+one on an unlit plane for a screen:
 `{ map: new Texture({ url: 'promo.mp4', wrap: 'clamp' }), unlit: true }`.
 
 **Render textures** - what a camera sees, as a map: a camera feed on a monitor, a minimap on a
@@ -463,15 +457,9 @@ scene.add(new Mesh({ geometry: plane({ width: 3.2, depth: 2 }), rotation: [Math.
 - It draws the view's scene, or `scene` for another. Plainly: lights, shadows, fog and background,
   none of the view's effects (bloom, ambient occlusion, ground shadow, FXAA), no labels. Whatever
   shows the texture is left out of it, so a monitor never films itself.
-- Its colours are the main view's, read the right way up. `mipmaps` (default true) keeps it smooth
-  seen small or at an angle; `wrap` defaults to 'clamp'. `renderer.info.renderTextures` and
+- Its colours are the main view's. `mipmaps` (default true); `wrap` defaults to 'clamp'. `renderer.info.renderTextures` and
   `view.explain()` say how many were drawn. It can't be saved with `toJSON()` (its camera is a live
   object). `feed.dispose()` frees it.
-
-**Placing a texture**: `repeat` ([u, v] times across), `offset`, and `rotation` (radians, about
-`center`: [0, 0], the corner, by default - [0.5, 0.5] for the middle) - applied in that order, as glTF's
-`KHR_texture_transform` does, and each map keeps its own: a fabric's colour can repeat 7 times while
-its normal map repeats twice. Animate them to scroll or spin a pattern.
 
 **Baked occlusion and light maps**: occlusion and lighting baked in Blender, Unreal or Unity need
 every surface on its own patch of texture, so they come on a second UV set while the first tiles
@@ -484,98 +472,50 @@ round (`lightMapIntensity`, 1) - the soft, cheap lighting of architectural scene
 scene's environment - its light and its reflections - one material takes: lower for a matte floor in
 a shiny showroom, higher to make one product catch the light, without changing the scene's.
 
-**Glass**: `transmission` (0-1) lets light through as glass does. Unlike `opacity`, which fades
-everything - reflections too, so faded things look washed out, as dimmed chart bars should - glass
-keeps its reflections whole, and shows less of what is behind it towards its edges, where it
-reflects nearly everything. Its colour tints what shows through it, as coloured glass does:
-`{ color: '#3d7fd6', transmission: 1 }` is blue glass. `thickness` (0) is how thick it is, in its
-own units: what is behind is bent by its `ior` over that distance, as through a solid lens or a
-bottle's wall - about the object's own depth for a solid piece; 0 is a thin shell (a bubble, a
-window), which doesn't bend it. A thick piece can tint by its body too, deeper the thicker it is -
-tinted bottle glass, a coloured liquid: `attenuationColor` is the colour light turns after going
-`attenuationDistance` through it (default Infinity: no tint), so
-`{ transmission: 1, thickness: 1, attenuationColor: '#e0a030', attenuationDistance: 0.5 }` is a
-block of amber. `dispersion` (0) splits what a thick piece bends into its colours - rainbow fringes
-where what is behind changes, as through a prism or a cut gem: 20 over the glass's Abbe number, so
-0.3-0.5 for window and bottle glass, about 1 for flint glass and crystal, 2 or more to show it off.
-With `refine` on, the fringes settle into a smooth rainbow. A vessel - a bottle, a drinking glass, a
-lamp's shade - is a single surface of glass a wall thick, not a solid: model it as one surface (no
-inner wall), and give it `thinWalled: true` with `thickness` its wall's, so what is behind shifts
-a little as through a pane rather than bending as through a lens, and its body tints deeper where
-the wall is seen edge-on, as a bottle's sides are; and `doubleSided: true`, so its far side shows
-through its near one - its back faces are drawn first, then its front faces over them. Keep `roughness` low for clear glass,
-higher for frosted - what is behind blurs. It shines with an `environment` to reflect
-(`'studio'`, or better an `.hdr`). Glass that casts shadows (`castShadow`) casts coloured light, not
-a grey shadow - the light it lets through, tinted by its colour and its body - from directional,
-spot and rect-area lights; from a point light its shadow is grey. Glass shows what was drawn before
-anything see-through: glass seen through glass shows the solids behind both, not the farther
-glass, and near the picture's edge what would bend in from off screen is the edge itself.
+**Glass**: `transmission` (0-1) lets light through, keeping reflections whole (unlike `opacity`, which
+fades them too); `color` tints what shows through (`{ color: '#3d7fd6', transmission: 1 }` is blue
+glass). Give it an `environment` to reflect (`'studio'`, or better an `.hdr`); `roughness` low for clear,
+higher for frosted.
 
-A thin wall bends what is behind it only a little; the strong bending of a drinking glass - the
-floor magnified through a heavy base, a pattern swept round by the drink - comes from its solid
-parts. So model a heavy base as a solid disc of its own (`thickness` its depth), apart from the
-thin-walled vessel. **A liquid in a glass** is glass seen through glass, so make it one of two ways:
-- see-through (wine, water, whisky): the liquid as its own solid glass piece - `transmission: 1`,
-  `thickness` about its width, `attenuationColor`/`attenuationDistance` for its colour - with a
-  higher `renderOrder` than the vessel (`renderOrder: 1`), so it is drawn after it and bends the
-  solids behind both; where the two overlap it covers the vessel's near wall, and its own
-  reflections stand in for the wall's.
-- opaque (milk, paint, a creamy drink): an ordinary glossy material (`roughness` 0.1-0.3), which the
-  vessel's glass shows and bends as it does any solid.
+| Option | Default | |
+|---|---|---|
+| `thickness` | 0 | in its own units: what is behind is bent by its `ior` over it - about the object's depth for a solid piece; 0 is a thin shell (a bubble, a window) that doesn't bend |
+| `attenuationColor`, `attenuationDistance` | white, Infinity | its body's tint: the colour light turns after that distance through it - deeper the thicker (`{ transmission: 1, thickness: 1, attenuationColor: '#e0a030', attenuationDistance: 0.5 }` is amber) |
+| `dispersion` | 0 | splits what it bends into colours: 0.3-0.5 window glass, about 1 flint and crystal, 2+ to show it off (refined, a smooth rainbow) |
+| `thinWalled` | false | a vessel's wall: what is behind shifts a little, as through a pane, rather than bending; it tints deeper seen edge-on |
+| `ior` | 1.5 | how strongly it bends and reflects - water 1.33, glass 1.5, diamond 2.4 |
 
-**Clearcoat**: `clearcoat` (0-1) puts a clear glossy layer over the surface - car paint, lacquered
-wood, varnish - with its own sharp reflection over the base's softer one; `clearcoatRoughness` (0,
-a mirror) makes it satin. Normal and bump maps show under a smooth coat.
+- **A vessel** (bottle, drinking glass, shade) is one surface a wall thick, not a solid: no inner wall,
+  `thinWalled: true` with `thickness` the wall's, and `doubleSided: true` so its far side shows.
+- **Strong bending** (a magnifying heavy base) comes from solid parts: model the base as its own solid disc.
+- **A liquid in a glass**: see-through (wine, whisky) - its own solid glass piece (`transmission: 1`,
+  `thickness` about its width, `attenuationColor` for its colour) with `renderOrder: 1`, drawn after the
+  vessel; opaque (milk, paint) - an ordinary glossy material.
+- Glass that casts shadows casts coloured light (grey from a point light). Glass seen through glass
+  shows the solids behind both, not the farther glass.
 
-**Sheen**: `sheen` (0-1) is the soft bright rim of cloth at grazing angles - velvet, felt,
-upholstery - which plain roughness can't give: without it fabric looks like matte plastic.
-`sheenColor` (white) tints it, often lighter than the cloth or another colour entirely;
-`sheenRoughness` (0.5) runs from a thin bright rim (0) to a broad soft glow (1).
+**More surfaces** - each 0-1 unless given, on any material:
 
-**Iridescence**: `iridescence` (0-1) lays a thin film over the surface whose colours shift with
-the angle it is seen at - soap bubbles, oil on water, beetle shells, anodised metal, dichroic
-glass. It works on any material: over `transmission` it is a bubble, over a dark base an oil
-slick, over `metalness: 1` anodised titanium. `iridescenceThickness` (400) is the film's thickness
-in nanometres - about 200-800 shows colours, and changing it changes which; `iridescenceIor` (1.3)
-is the film's index of refraction (soap 1.33). For bands across the surface, as a bubble's swirl,
-give `iridescenceThicknessMap`: its green channel runs the thickness from `iridescenceThicknessMin`
-(100) at 0 to `iridescenceThickness` at 1.
+| Option | | |
+|---|---|---|
+| `clearcoat`, `clearcoatRoughness` (0) | car paint, lacquer, varnish | a clear glossy coat with its own sharp reflection; normal maps show under it |
+| `sheen`, `sheenColor` (white), `sheenRoughness` (0.5) | velvet, felt, upholstery | cloth's soft bright rim at grazing angles |
+| `iridescence`, `iridescenceThickness` (400 nm, 200-800 shows colour), `iridescenceIor` (1.3), `iridescenceThicknessMap`/`iridescenceThicknessMin` (100) | soap bubbles, oil, anodised metal | a thin film's colours shifting with angle - over `transmission` a bubble, over `metalness: 1` anodised titanium; the map's green runs Min to Thickness |
+| `specularIntensity` (1), `specularColor` | chalk, clay (0) | a non-metal's reflections; metals reflect `color` |
+| `anisotropy`, `anisotropyRotation` (radians) | brushed aluminium, steel | highlights drawn out along the UVs' u (`Math.PI / 2`: along v); with `metalness: 1`, `roughness` 0.2-0.4 |
+| `translucency`, `translucencyColor` (white) | leaves, paper lanterns, curtains | thin surfaces lit from behind too; at 1 lit only through - not scattering inside a solid |
 
-**Reflectance**: `ior` (1.5) sets how strongly a non-metal reflects - water 1.33, glass and plastic
-1.5, diamond 2.4 - and glass with `transmission` reflects more the higher it is.
-`specularIntensity` (1) scales a non-metal's reflections, 0 for none (chalk, clay, unglazed
-pottery); `specularColor` tints them face on. Metals take their reflections from `color`, so
-these leave them alone.
+**Matcap**: `matcap` is a picture of a lit sphere (clay, wax, chrome) that gives the whole look - the clay
+look of CAD viewers, for reading a shape. It ignores lights, shadows and the environment, and its shine
+stays put as the camera turns, so it looks out of place beside lit things. `color` and `map` multiply it;
+normal and bump maps and `flatShading` still shape it.
 
-**Brushed metal**: `anisotropy` (0-1) - the material's, not a texture's filtering - draws highlights and reflections out along the brushing -
-brushed aluminium, steel appliances, the bottom of a pan. The brushing runs along the UVs' u (round
-a sphere or cylinder, say; round the up axis on a mesh with no UVs); `anisotropyRotation`
-(radians) turns it - `Math.PI / 2` runs it along v. Use it with `metalness: 1` and a middling
-`roughness` (0.2-0.4).
+**Toon**: `toon: 3` shades in that many flat tones (2-16; 0, the default, is smooth) with one hard
+highlight - a cartoon. The shaded tone is the scene's ambient and hemisphere light, so add some for a
+lighter shade. Pair it with `outline` on the nodes (see Interaction) for inked edges.
 
-**Translucency**: `translucency` (0-1) lets light through thin surfaces, so they are lit from
-behind as well as in front - leaves against the sun, paper lanterns and lampshades with a light
-inside, curtains. What passes through is taken from what is scattered back, so at 1 a surface is lit
-only through it. `translucencyColor` (white) tints the light that comes through. It is light
-through a thin sheet, not light scattering inside a solid: a lantern glows, marble stays marble.
-
-**Matcap**: `matcap` is a picture of a lit sphere - clay, wax, chrome, a painted ball - that gives the
-whole look: each point takes the colour from where a sphere facing the same way would show it. It is
-the clay look of sculpting tools and CAD viewers, good for reading a model's shape, and costs one
-texture lookup - no lights, shadows or environment, which it ignores. Its shine stays put as the camera
-turns, since the light is in the picture, so it looks out of place beside lit things. `color` and
-`map` multiply it, so one grey matcap serves any colour; normal and bump maps and `flatShading`
-still shape it. Any matcap image works, or draw one on a canvas (`new Texture({ image: canvas })`).
-
-**Toon**: `toon: 3` shades in that many flat tones (2 or more; 0, the default, is smooth), with one
-hard-edged highlight - a cartoon. Lights and shadows work as usual; the shaded tone is the scene's
-ambient and hemisphere light, so add some for a lighter shade. Metals keep their colour, with a
-highlight of it. Pair it with `outline` on the nodes for inked edges.
-
-glTF models bring glass, its body and dispersion, clearcoat, sheen, reflectance, brushed metal and translucency from `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_dispersion`, `KHR_materials_clearcoat`,
-`KHR_materials_sheen`, `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_anisotropy`
-and `KHR_materials_diffuse_transmission` (by their factors; their textures aren't read), and
-iridescence from `KHR_materials_iridescence` (its thickness texture too).
+glTF models bring all of these from their `KHR_materials_*` extensions (factors; textures aren't read,
+but for iridescence's thickness).
 
 **Models without UVs** (scans, CAD exports) can still take maps: `triplanar: 40` projects them
 from the mesh's three axes instead of using UVs, repeating 40 times per unit of the mesh's own space.
@@ -616,12 +556,10 @@ Every hook can also read `uTime` - the View's clock in seconds - and the uniform
 call functions for randomness and texture without a texture (hooks can't define their own). `p`
 is a vec2 or vec3, and every result is 0 to 1:
 
-- `hash(x)` - from a float, vec2 or vec3's exact bits. The same on every GPU for the same bits, so hash
-  exact things - `hash(float(index))` gives each point, instance or segment its own random number,
-  `hash(floor(vUv * 20.0))` each cell of a grid. An interpolated value such as `vWorldPosition` can
-  differ in its last bits from GPU to GPU, and so can its hash.
-- `vnoise(p)` - value noise: random values at whole-number points, eased between. Cheapest; looks
-  blockier, its features lined up with the axes.
+- `hash(x)` - from a float, vec2 or vec3's exact bits, the same on every GPU: hash exact things -
+  `hash(float(index))` gives each point, instance or segment its own number, `hash(floor(vUv * 20.0))`
+  each cell of a grid. Use it rather than `fract(sin(x) * 43758.5)`, which differs between GPUs.
+- `vnoise(p)` - value noise: cheapest, blockier, its features lined up with the axes.
 - `snoise(p)` - simplex noise: smoother, rounder, no grid to see - the better choice for anything
   natural. About one feature per unit of `p`: scale `p` up for finer detail, `snoise(vUv * 10.0)`,
   `snoise(vec3(local.xz, uTime))` to change over time.
@@ -633,9 +571,9 @@ is a vec2 or vec3, and every result is 0 to 1:
 - `sfbmd(p)`, `sfbmd(p, octaves)` - simplex fbm with its gradient, as `snoised`: terrain normals.
 - `voronoi(p)` - cellular (Worley) noise: a random point in each unit cell of `p`. Returns a vec3 -
   `x` the distance to the nearest point (F1), `y` to the second nearest (F2), both in cells, and `z` a
-  random 0-1 for the nearest point's cell. `y - x` is 0 on the edges between cells: cracks, cells,
-  scales, stone, crystals; `z` gives each cell its own colour or height. A vec3 `p` with time as one
-  axis makes the cells drift and re-form. Costs 9 cells (vec2) or 27 (vec3) - more than `snoise`.
+  random 0-1 for the nearest point's cell. `y - x` is 0 on the edges between cells: cracks, scales,
+  stone; `z` gives each cell its own colour. A vec3 `p` with time as one axis makes the cells drift.
+  Dearer than `snoise`.
 
 And the everyday ones, with `cameraPosition` (vec3, the camera in world space) to read too:
 
@@ -656,8 +594,8 @@ And the everyday ones, with `cameraPosition` (vec3, the camera in world space) t
 - **`uniforms`**, by GLSL name: a number (float), two to four numbers (vec2-vec4), a colour string or
   Color (vec3, sent linear) or a Texture (sampler2D, read with `texture(uName, uv)`). Change one on
   `material.shader.uniforms` (`mesh.material.shader.uniforms.uAmp = 0.5`, `uniforms.uTint = '#f80'` - checked as when made) and the View redraws; assign
-  a new `material.shader` to change the code. Names starting `gl_` or `phoria`, `uTime`, and phoria2's
-  own uniforms (`uColor`, `uModel`, `uOpacity`...) are taken.
+  a new `material.shader` to change the code. Names starting `gl_` or `phoria`, `uTime`, `cameraPosition`,
+  the helpers' names and phoria2's own uniforms (`uColor`, `uModel`, `uOpacity`...) are taken.
 - **`uTime`**: a hook that reads it keeps the View drawing while time runs - no frame loop of your own.
   `view.stop()` freezes it.
 - **Every pass runs the vertex hook** - shadow maps, outlines, GPU picking. A mesh's `fragment`
@@ -688,16 +626,6 @@ shader: { uniforms: { uAmp: 0.2 }, vertex: `
   local.y += sin(phase) * uAmp;
   n = normalize(vec3(-cos(phase) * 3.0 * uAmp, 1.0, 0.0));` }
 
-// ripples spreading from the middle of a plane (give it segments: 64 or so)
-shader: { vertex: `
-  float r = length(local.xz), phase = r * 6.0 - uTime * 3.0, h = 0.04 * exp(-r * 0.4);
-  local.y += sin(phase) * h;
-  vec2 slope = local.xz / max(r, 1e-3) * cos(phase) * 6.0 * h;
-  n = normalize(vec3(-slope.x, 1.0, -slope.y));` }
-
-// breathing: grow and shrink about the middle
-shader: { vertex: 'local *= 1.0 + 0.06 * sin(uTime * 2.0);' }
-
 // dissolve through fractal noise, its edge glowing (its shadow dissolves too)
 shader: { fragment: `
   float level = 0.5 - 0.55 * cos(uTime * 0.6);
@@ -715,22 +643,12 @@ shader: { uniforms: { uOctaves: 7 }, vertex: `
 // a texture uniform: scroll a noise or pattern image across a surface
 shader: { uniforms: { uPattern: patternTexture }, fragment: 'base.rgb *= texture(uPattern, vUv * 4.0 + vec2(uTime * 0.1, 0.0)).rgb;' }
 
-// colour by height - a ramp from deep blue at y = 0 to orange at y = 2
-shader: { fragment: 'base.rgb = mix(vec3(0.01, 0.05, 0.5), vec3(1.0, 0.25, 0.0), clamp(vWorldPosition.y / 2.0, 0.0, 1.0));' }
-
 // rim glow: a hologram or force field - a faint body, bright where it turns away (with
 // transparent: true)
 shader: {
   fragment: 'base.rgb = srgb(vec3(0.25, 0.9, 1.0)) * 0.15; emissive += srgb(vec3(0.25, 0.9, 1.0)) * fresnel(vNormal, vWorldPosition, 2.5) * 2.0;',
   lit: 'base.a *= 0.3 + 0.7 * fresnel(vNormal, vWorldPosition, 1.5);',
 }
-
-// a twist: each height turned further round the y axis, its normal turned with it (give the mesh segments)
-shader: { vertex: 'mat2 turn = rotate2(local.y * 1.2 * sin(uTime)); local.xz = turn * local.xz; n.xz = turn * n.xz;' }
-
-// a hue climbing an object, and a cosine palette across another
-shader: { fragment: 'base.rgb = hsv2rgb(fract(vWorldPosition.y * 0.2 - uTime * 0.1), 0.75, 1.0);' }
-shader: { fragment: 'base.rgb = palette(vUv.x + uTime * 0.05, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.0, 0.33, 0.67));' }
 
 // instances as a meter: each bar's height from one sine, a phase apart by index, remapped and saturated
 shader: { vertex: 'float h = saturate(remap(sin(uTime * 2.0 + float(index) * 0.5), -1.0, 1.0, 0.05, 1.0)); local.y = (local.y + 0.5) * h - 0.5;' }
@@ -742,12 +660,6 @@ shader: { fragment: `
   float crack = 1.0 - smoothstep(0.0, 0.12, v.y - v.x);
   base.rgb = srgb(vec3(0.16, 0.12, 0.11)) * (0.5 + 0.9 * v.z);
   emissive += vec3(1.0, 0.25, 0.0) * crack * 4.0;` }
-
-// stained glass: each cell a random hue, dark leading between them
-shader: { fragment: 'vec3 v = voronoi(vUv * 6.0); base.rgb = hsv2rgb(v.z, 0.7, 1.0) * smoothstep(0.02, 0.06, v.y - v.x);' }
-
-// scanlines over the lit picture
-shader: { lit: 'color *= 0.75 + 0.25 * step(0.5, fract(vWorldPosition.y * 20.0 - uTime));' }
 
 // fade with distance from a point (with transparent: true on the material)
 shader: { uniforms: { uCentre: [0, 0, 0] }, lit: 'base.a *= 1.0 - smoothstep(2.0, 4.0, distance(vWorldPosition, uCentre));' }
@@ -765,16 +677,10 @@ shader: { fragment: 'base.rgb += vec3(0.3, 0.9, 1.0) * smoothstep(0.85, 1.0, fra
 
 Mistakes to avoid:
 
-- **Colours are linear**, as the shader works, so an sRGB-looking value comes out pale. Wrap a colour
-  as picked in `srgb()` - `srgb(vec3(0.75, 0.12, 0.16))` - or write linear values, roughly the sRGB
-  value squared: orange `vec3(1.0, 0.22, 0.0)`. `hsv2rgb` and `palette` give linear colour already,
-  and colour uniforms given as strings are converted for you.
-- **Hooks are statements**, run inside phoria2's `main()`: no functions of your own, no `uniform`
-  declarations (use `uniforms`), no `return` in a mesh or points hook. Declare locals as you like.
-  `hash`, the noises and the fbms are there for what you'd otherwise write a function for.
-- **Randomness from `hash()`, not `fract(sin(x) * 43758.5453)`**: the sin trick multiplies a GPU's
-  last bits of `sin` into the answer, so the same scene comes out differently on different GPUs.
-  `hash` is integer arithmetic, exact everywhere.
+- **Colours are linear**: an sRGB value comes out pale - wrap it in `srgb()` (string uniforms are
+  converted for you; `hsv2rgb` and `palette` are linear already).
+- **Hooks are statements** inside phoria2's `main()`: no functions or `uniform` declarations of your own
+  (use `uniforms`), no `return` in a mesh or points hook.
 - **`index` is an int**: `float(index)` to do sums with it.
 - **Bend the normal when you move vertices**, or the light shades the shape as it was: change `n`
   (meshes) to match, and keep it normalised. Waves on a flat plane need `segments` to bend at all.
@@ -783,23 +689,19 @@ Mistakes to avoid:
   in the fragment hook instead, lit per pixel, and keep any vertex movement gentle.
 - **Fades need `transparent: true`**: changing `base.a` in an opaque material changes nothing.
   `discard` works either way.
-- **Move in the geometry's own space**: `local` is before the node's position, rotation and scale (and
-  an instance's), so a wave along `local.y` turns with the mesh.
-- **Use `vWorldPosition`** for effects fixed in the world - a band at a height, a fade round a point -
-  and `vUv` for ones fixed to the surface.
-- **Lines move by their ends**: a straight segment stays straight - give the geometry more segments to
-  bend a line.
+- **`local` is the geometry's own space**, before the node's (and an instance's) placement, so a wave
+  turns with the mesh; `vWorldPosition` is for effects fixed in the world, `vUv` for ones on the surface.
 
 ## Lights and cameras
 
 | | Options |
 |---|---|
-| `AmbientLight` | `color`, `intensity` |
+| `AmbientLight` | `color`, `intensity` (1, as for every light) |
 | `HemisphereLight` | `sky`, `ground`, `intensity` |
-| `DirectionalLight` | `color`, `intensity`, `direction` (the way it travels, e.g. `[-1, -2, -1]`), `castShadow`, `shadowBounds`, `shadowSoftness`, `caustics` |
-| `PointLight` | `color`, `intensity`, `position`, `range` - inverse-square falloff, so intensity ~ distance squared (30 lights things ~5 m away); `castShadow`, `shadowSoftness` |
-| `SpotLight` | point light options plus `direction`, `angle`, `penumbra`, `caustics` |
-| `RectAreaLight` | `color`, `intensity`, `position`, `direction` or `target`, `width`, `height`, `castShadow`, `caustics` - a glowing rectangle: softboxes, panels, windows, screens |
+| `DirectionalLight` | `color`, `intensity`, `direction` (the way it travels, e.g. `[-1, -2, -1]`) or `target` (a point it shines towards), `castShadow`, `shadowBounds`, `shadowSoftness`, `caustics` |
+| `PointLight` | `color`, `intensity`, `position`, `range` (0: unlimited) - inverse-square falloff, so intensity ~ distance squared (30 lights things ~5 m away, ~400 at 20); `castShadow`, `shadowSoftness` |
+| `SpotLight` | point light options plus `direction` or `target`, `angle` (the cone's half-angle, radians, PI/6), `penumbra` (0-1, 0.1: the edge's softness), `caustics` |
+| `RectAreaLight` | `color`, `intensity`, `position`, `direction` or `target`, `width`, `height` (1 each), `castShadow`, `caustics` - a glowing rectangle: softboxes, panels, windows, screens |
 
 Intensity 1 on a directional light lights a white surface facing it to white.
 
@@ -817,21 +719,14 @@ its own. A point light casts all round, and everything that casts blocks it, aro
 a lantern or a carved pumpkin lights the room only through the openings. Give a bulb or flame mesh
 drawn at the light `castShadow: false`. The directional shadow is fitted to whatever casts, every
 frame; when things fly far off, give the light `shadowBounds: { min: [x, y, z], max: [x, y, z] }` -
-the world area that gets shadows - so the map stays sharp there.
-A shadow map is drawn again only when its light or something casting into it changes - orbiting a
-still scene, or another view of the same scene, reuses it - so lights that don't move cost little.
-Nothing to set: moving a caster, changing its geometry, instances or cut-out, or moving the light
-redraws it. A caster whose shader hooks move it (a vertex hook) or cut it (`discard`, or setting
-`base.a`) redraws its maps every frame; a hook that only colours doesn't. `renderer.info.shadowMaps` and
-`shadowMapsKept` count each frame's maps drawn and kept (the `debug: { stats: true }` corner shows them).
+the world area that gets shadows - so the map stays sharp there. Shadow maps are kept until their
+light or what casts into them changes, so still lights cost little; a caster whose shader hook moves
+it or cuts it (`discard`, `base.a`) redraws them every frame.
 
-**Soft shadows**: `shadowSoftness` on any shadow-casting light gives contact-hardening shadows - sharp
-where an object meets what it stands on, softening further off, as under a large light. 0 (the
-default) is the plain filtered edge; at 1, the most, the edge widens about four tenths of the gap from
-caster to surface - a large studio light. For a sun, 0.1-0.2: crisp where things touch, gently softer
-further off; from about 0.3 it reads as a large soft light - an overcast sky, a softbox. Thin things far
-above a surface fade to a soft smudge near 1, as they would. It costs more per pixel near shadow edges, most on
-phones, so it's off unless set.
+**Soft shadows**: `shadowSoftness` (0-1, 0) on a directional, point or spot light that casts gives
+contact-hardening shadows - sharp where things touch, softer further off. For a sun 0.1-0.2; from
+about 0.3 a large soft light (overcast, a softbox). It costs more per pixel near shadow edges, most on
+phones.
 
 **Rect-area lights**: `RectAreaLight` is light from a whole rectangle - a softbox, a ceiling panel, a
 window. Polished things reflect its shape, rough ones show a broad soft highlight. It shines from its
@@ -840,30 +735,22 @@ ground, `height` the other way. `intensity` is a point light's - face on, from a
 as a point light of that intensity would - so making it bigger softens it without brightening it. Its
 `castShadow` shadow comes from its middle, as soft as the light is big (no `shadowSoftness`): sharp
 where things touch, wider away; it shares the four spot light shadows, covering what is within about
-66 degrees of straight ahead. Its lookup tables (about 47 KB) load with the first one. Draw the panel
-yourself, as an emissive mesh, if it should be seen.
+66 degrees of straight ahead. Draw the panel yourself, as an emissive mesh, if it should be seen.
 
-**Caustics**: `caustics: true` on one shadow-casting directional, spot or rect-area light bends it
-through glass on its way: the light that goes through the glass leaves its straight path and lands
-where the glass sends it - gathered into bright lines and pools, thinned round them - the bright spot
-under a glass of whisky, the net of light on a pool's floor, a prism's rainbow (with `dispersion`:
-the spectrum, red bent least, violet most). Bent light lands whether the light reaches there
-directly or not: a narrow spot through a prism in a dark room throws its rainbow on a wall the beam
-never touches. The glass bends it in through its near face and out through its far one (each face's
-own normal - a prism's second face, a lens's back; `flatShading` glass by its flat faces), by its
-`ior`; light caught inside by total internal reflection is lost. Give the glass `castShadow: true`
-and a `thickness`; thin walls (`thinWalled`) only tint the light, so a tumbler's thin sides don't hide
-the drink, which does the bending. A sheet with no far side (water's surface, a plane) takes its
-`thickness` as the depth the light goes through - a pool's floor. A shader hook that bends glass's
-`normal` - water's waves - bends the light too. One light a scene (more asking warn); it lands on
-whatever casts or receives shadows, within about twice the glass's size of it. A big light softens
-caustics as it softens shadows - crisp ones want a small light (a rect light a few cm across, a narrow
-spot, a sun with low `shadowSoftness`). For a rainbow: an upright prism, a narrow beam, high
-`dispersion` (4-6), and a pale surface in its path. Like a shadow map they're drawn again only when the
-light, the glass or what it lands on changes (every frame with a hook on the glass); they need float
-render targets, and are skipped with a warning without. Limits: one pass through each piece of glass
-from the light's view - what is behind the glass from the light; bent light lights a surface as if it
-came from the light's direction.
+**Caustics**: `caustics: true` on one shadow-casting directional, spot or rect-area light (one a scene)
+bends its light through glass: gathered into bright lines and pools where the glass sends it - the
+spot under a glass of whisky, the net on a pool's floor, a prism's rainbow (with `dispersion`) - lit
+by the light directly or not.
+- The glass needs `castShadow: true` and a `thickness`; it bends by its `ior` in through its near face
+  and out through its far one (`flatShading` glass by its flat faces). Thin walls (`thinWalled`) only
+  tint, so a tumbler's sides don't hide the drink that does the bending. A flat sheet (water's surface)
+  takes its `thickness` as the depth the light goes down. A hook that bends glass's `normal` bends the light.
+- It lands on what casts or receives shadows, within about twice the glass's size of it.
+- A big light softens caustics as it softens shadows: crisp ones want a small light (a rect light a
+  few cm across, a narrow spot, a sun with low `shadowSoftness`). For a rainbow: an upright prism, a
+  narrow beam, `dispersion` 4-6, a pale surface in its path.
+- Kept until the light, the glass or what it lands on changes (every frame with a hook on the glass);
+  needs float render targets (skipped with a warning without).
 
 ```js
 scene.add(new RectAreaLight({ position: [0, 0.4, -0.4], target: [0, 0.03, 0], width: 0.03, height: 0.03, intensity: 3, castShadow: true, caustics: true }))  // a small key behind a glass: its light focused in front
@@ -895,13 +782,13 @@ view.groundShadow = { opacity: 0.5, softness: 0.8 }   // change any time; false 
   `size` (the shadow's square; default from the solids).
 - **`fxaa`** smooths edges multisampling misses - cut-outs, shader detail - or all of them when
   `antialias: false` (cheaper on phones). Runs last, after bloom.
-- Mistakes: a floor mesh that doesn't set `receiveShadow: true` casts a dark square of ground shadow
-  - mark floors as receivers. Ambient occlusion with only directional lights shows nothing (there is
-  no light from all round to dim). `view.explain()` names the effects on and warns about both.
+- **Mark floors as receivers** (`receiveShadow: true`): a floor that doesn't casts a dark square of
+  ground shadow. Ambient occlusion needs light from all round (an environment, hemisphere or ambient
+  light) - with only directional lights it shows nothing, and `view.explain()` warns.
 
 Cameras: `new PerspectiveCamera({ fov, near, far, position, target })`,
 `new OrthographicCamera({ height, near, far, position, target })` (width follows the aspect). Or
-use a View camera preset: `'isometric'` and `'top'` are orthographic. Depth of field: a perspective
+use a View camera preset: every preset but `'perspective'` is orthographic. Depth of field: a perspective
 camera's `aperture` (the lens radius, world units; 0 default, all sharp) and `focusDistance` (null
 default: the target's distance) blur what is nearer or further - shown in refined pictures (the
 View's `refine`, or `toImage({ samples })`), not the plain frame.
@@ -918,10 +805,7 @@ and `target` yourself; the orbit always turns about wherever the target is.
 
 - **Which way is up on screen**: from `'top'`, screen right is +x and screen up is -z (north on a
   map is -z). From `'front'`, right is +x and up is +y.
-- **Fly to something**: `view.frame(node, { duration: 1 })` - the glide eases in and out, and a
-  press or the wheel takes over.
-- **Back to the start**: `view.frame(undefined, { direction: 'perspective', duration: 0.6 })`
-  (or the preset the view started with).
+- **Fly to something, or back to the start**: `view.frame()` with a `duration` (see View).
 - **Where framing would go**: `view.framing(target, { padding, direction })` returns
   `{ position, target, height? }` without moving the camera - for a camera that eases after
   something that keeps changing size (`camera.position.lerp(aim.position, 0.1)`, the same for target).
@@ -942,11 +826,6 @@ and `target` yourself; the orbit always turns about wherever the target is.
   })
   // to start: last = null; followed = planet; view.frame(planet) - and to stop, followed = null
   ```
-- **Turn to an angle**: `view.controls.spherical = { yaw, pitch, distance }` (see Conventions).
-- **Light far from a point light**: point and spot light falls off with the square of distance, so
-  intensity scales with distance squared - a sun lighting planets 20 units away wants an intensity
-  of about 400 and a `HemisphereLight` fill for their dark sides; things meant to glow regardless
-  can be `unlit` or `emissive`.
 
 ## Interaction
 
@@ -1029,9 +908,8 @@ chair.onDrag = (drag) => {
   text, else its data, else its name, with "3 of 12" - or `keyboard: { label: (hit) => text }`. The
   canvas is labelled with `description`, or from the scene: each chart's `summary()` ("Sales: bar
   chart of 12 rows by month, sales"), else "3D view of 12 items".
-- **Reduced motion**: `reducedMotion` follows the system's setting by default. When on, `frame()`
-  with a `duration` jumps, `autoRotate` holds, and chart transitions and flowing links settle at
-  once. Motion of your own (a `Timeline`, `onUpdate` spin) can check `view.reducedMotion`.
+- **Reduced motion** (`reducedMotion`, under View): motion of your own (a `Timeline`, an `onUpdate` spin)
+  can check `view.reducedMotion`.
 
 ## Charts: `phoria2/charts`
 
@@ -1083,23 +961,22 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
 - **Order**: bands follow the data's order, or `scale.domain` when given - `x` left to right, `z`
   front to back (the first `z` category is nearest the viewer). Put the tallest series at the back so
   it doesn't hide the rest: `z: { field: 'region', scale: { domain: ['West', 'South', 'North'] } }`.
-- **Options**: `box: [x, y, z]` (the chart's size in world units, default about [10, 6, 6]),
-  `stack: true` (bars with no `z` stack by `color`; areas stack), `width` (bar width share, 0-1),
-  `legend: false | { position, container, ticks }` (`position`: `'top-right'`, `'top-left'`, `'bottom-right'`,
-  `'bottom-left'` inside the canvas; `container`: an element or selector - the legend's HTML goes
-  in it as a wrapping row, so give it no fixed height). Categories get swatches that click to hide
-  and show; a number colour gets a key - a ramp, highest at the top, with values marked up its side,
-  `ticks` as on an axis),
-  `theme: 'dark' | 'light'`, `title`, `description` (what a screen reader hears for it; else `chart.summary()`
-  makes one from the title and channels), `transition: false | { duration, ease }`,
-  `overlap: 'dim' | 'hide' | 'show'` (labels), `highlight` (a colour, false, or for networks
-  `'neighbours'` - the default, lighting the node's links and linked nodes - or `'node'`, the node alone),
-  `equal` (the same units on x, y and z, so a shape keeps its proportions - the box takes the data's
-  shape, its largest side the box's; default on for curves, parametric surfaces and vector fields),
-  `frame: false` (no axes, grid walls or tick labels - a shape on its own) or `frame: 'origin'` (axes through
-  zero with arrowheads and ticks, as on a blackboard - an axis not reaching zero crosses at its start),
-  `contours` (surfaces: lines of equal height - `true` for about ten at the y axis's ticks, a count, or
-  `{ count, values, place: 'surface' | 'floor' | 'both', color }`), and node options (`position`, ...).
+- **Options**, with node options (`position`, ...):
+
+  | Option | |
+  |---|---|
+  | `box` | `[x, y, z]`, the chart's size in world units - about [10, 6, 6] |
+  | `stack` | `true`: bars with no `z` stack by `color`; areas stack |
+  | `width` | a bar's share of its band, 0-1 |
+  | `legend` | `false` or `{ position, container, ticks }`: `position` `'top-right'` (or `-left`, `'bottom-...'`) inside the canvas; `container` an element or selector to put its HTML in, as a wrapping row (no fixed height). Category swatches click to hide and show; a number colour gets a ramp key |
+  | `theme` | `'dark'` \| `'light'` |
+  | `title`, `description` | `description` is what a screen reader hears; else `chart.summary()` makes one |
+  | `transition` | `false` or `{ duration, ease }` |
+  | `overlap` | labels: `'dim'` \| `'hide'` \| `'show'` |
+  | `highlight` | a colour, `false`, or for networks `'neighbours'` (default: its links and linked nodes) or `'node'` |
+  | `equal` | the same units on x, y and z, so a shape keeps its proportions; on for curves, parametric surfaces and vector fields |
+  | `frame` | `false`: no axes, walls or tick labels; `'origin'`: axes through zero with arrowheads, as on a blackboard |
+  | `contours` | surfaces' lines of equal height: `true` (about ten, at the y ticks), a count, or `{ count, values, place: 'surface' \| 'floor' \| 'both', color }` |
 - **Surfaces**: one row per grid point - `x` and `z` are the grid (numbers or categories), `y` the
   height; colour follows `y` unless `color` says otherwise:
   `chart({ mark: 'surface', data: rows, x: 'hour', z: 'day', y: 'load', color: { field: 'load', scale: { scheme: 'heat' } } })`.
@@ -1206,7 +1083,7 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
     color: { field: 'status', scale: { domain: ['ok', 'warning', 'down'], range: ['#2ecc71', '#f5a623', '#e74c3c'] } },
     label: 'id',                        // a name label on each node
     size: 'load',                       // optional: node size from a field
-    link: { width: 2, color: '#8899aa' },   // or fields: width, color, opacity, flow (moving packets)
+    link: { width: 2, color: '#8899aa' },   // or fields: width, color, opacity, flow (moving packets); tooltip as tooltip
     layout: { tiers: 'tier', order: ['edge', 'service', 'data'] },   // or 'force' (default), or 'given' (x, y, z fields)
     highlight: 'neighbours',            // hover lights the node, its links and linked nodes; dims the rest
     tooltip: ['id', 'status'],
@@ -1217,7 +1094,8 @@ A chart is a node with axes, ticks, grid walls, a legend and tooltips built in. 
   `source`/`target` name the link fields if they aren't called that; nodes are matched by `id`
   (or the `key` channel). Tiers run top to bottom, each tier a ring that widens further down - from
   the side (`camera: 'front'`, or a low view) they read as levels; `'force'` spreads nodes evenly
-  instead. A hit on a node gives the node's row as `hit.datum`, on a link the link's row (it has
+  instead, the same each time: `seed` (1) gives another arrangement, `steps` how long it settles (300),
+  `flat: true` lays it on the floor. A hit on a node gives the node's row as `hit.datum`, on a link the link's row (it has
   `source` and `target`).
 - **Chart object**: `update(rowsOrSpec)`, `filter(fn | null)`, `scales` (e.g. `chart.scales.y(50)`),
   `marks` (the nodes drawing it). Picking a mark gives the original row as `hit.datum`.
@@ -1297,7 +1175,7 @@ view.scene.backgroundBlur = 0.5
 ## HTML tag: `phoria2/element`
 
 For pages that want a model, chart or scene without writing a render loop. Importing the module
-defines `<phoria-view>` (from a CDN: `<script type="module" src="https://cdn.jsdelivr.net/npm/phoria2/dist/element.js">`).
+defines `<phoria-view>` (from a CDN: `<script type="module" src="https://cdn.jsdelivr.net/npm/phoria2@VERSION/dist/element.js">`).
 The canvas goes inside the tag (no shadow root), so page CSS styles labels, tooltips and legends;
 the tag is a block, 300px high until the page sizes it.
 
@@ -1445,8 +1323,7 @@ vertex arrays. Handlers are behaviour, not data, and are left out - as are `labe
 and points, whose `text` is a function. Particle emitters can't be described yet.
 
 **JSON Schema** for descriptions ships with the package: `phoria2/schema.json` - validate one before
-`create()`, or hand it to a model generating scenes. A chart's own options are in
-`phoria2/charts/schema.json`.
+`create()`, or hand it to a model generating scenes (charts: see Charts).
 
 **Node types of your own**: give the class a static `type` and register it, and `create()` builds its
 descriptions. Options of its own add to its parent's; to write them in descriptions too, add them in

@@ -7,7 +7,7 @@
 
 Apps are short - typically a few dozen lines - and every option is checked: unknown or misspelt
 options throw errors that name the fix. `await view.explain()` reports what a view is drawing and
-why a page might look wrong. Coordinates are +Y up, in metres; angles in radians.
+why a page might look wrong. Coordinates are +Y up, in metres; angles in radians (but a camera's `fov`, in degrees).
 
 ## Docs
 
