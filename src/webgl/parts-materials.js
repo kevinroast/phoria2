@@ -150,9 +150,13 @@ vec3 coatShade(vec3 n, vec3 v, vec3 l, vec3 radiance, float a) {
 // bends). A thin shell (thickness 0) doesn't bend it, but still blurs it. In the picture's own
 // encoding, premultiplied
 // how far light goes in glass, along a ray turned by an ior: a solid piece's thickness (as glTF has it),
-// or across a thin wall that thick - further the more slanting, up to four times
+// or across a thin wall that thick - further the more slanting, up to four times. A thickness map
+// scales it: a vase's walls thin, its foot thick
 float glassPath(vec3 r, vec3 n) {
   float t = uRefraction.y * vThicknessScale;
+#ifdef THICKNESS_MAP
+  t *= uThicknessMapTexel.g;
+#endif
   return uRefraction.w > 0.0 ? t / max(abs(dot(r, n)), 0.25) : t;
 }
 vec2 bentTo(vec3 n, vec3 v, float ior) {

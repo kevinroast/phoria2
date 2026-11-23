@@ -8,8 +8,8 @@ import { irradianceSH } from '../irradiance.js'
 import { BLUE_NOISE_SIZE, POINT_SHADOW_SIZE, SHADOW_MAP_SIZE, SOFT_SPREAD, softnessOf, SPOT_ATLAS_SIZE } from '../shadow.js'
 import { CLIP, CLIP_ONLY_FRAGMENT, COMMON, CUTOUT, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
 import { setHookUniforms } from './hooks.js'
-import { setShapeUniforms, shapeDefines } from './shape.js'
-import { glassFilter, isGlass } from '../material/features.js'
+import { setGlassUniforms, setShapeUniforms, setThicknessUniforms, shapeDefines, thicknessDefines } from './shape.js'
+import { isGlass } from '../material/features.js'
 import { blit } from './targets.js'
 import { DrawnFrom } from './drawn.js'
 import { BLUE_NOISE } from './blue-noise-data.js'
@@ -715,7 +715,10 @@ export class Passes {
    */
   drawDepth(casters, viewProjection, { normals = null, filter = false } = {}) {
     const gl = this.gl
-    const normalMatrix = normals ? new Float32Array(9) : null
+    const normalMatrix = normals || filter ? new Float32Array(9) : null
+    // a glass layer's faces reflect away more of the light the more it grazes them: the light's way
+    // at each, back through its view
+    const lightInverse = filter ? mat4.invert(new Float32Array(16), /** @type {Float32Array} */ (viewProjection)) ?? mat4.create() : null
     for (const item of casters) {
       // the shape as the picture draws it: a cut-out's holes, the shape a hook moves and its
       // fragment hook's holes
@@ -726,16 +729,24 @@ export class Passes {
         if (material.flatShading) defines.push('FLAT_SHADING')
         if (material.doubleSided) defines.push('DOUBLE_SIDED')
       }
-      if (filter) defines.push('GLASS_FILTER')
+      if (filter) {
+        defines.push('GLASS_FILTER')
+        if (material.flatShading) defines.push('FLAT_SHADING')
+        thicknessDefines(item, defines)
+      }
       const program = this.programs.ready('depth', defines, DEPTH, hook?.source)
       if (program.failed) continue
       gl.useProgram(program.program)
       if (hook) setHookUniforms(program, material, this.time, this.cameraPosition, (t) => this.resources.texture(t))
       program.set('uViewProjection', viewProjection)
       program.set('uModel', item.worldMatrix)
-      if (filter) program.set('uGlassFilter', glassFilter(material, item.worldMatrix))
-      if (normals && normalMatrix) {
-        program.set('uView', normals)
+      if (filter) {
+        program.set('uLightInverse', lightInverse)
+        setGlassUniforms(program, item)
+        setThicknessUniforms(program, item, (t) => this.resources.texture(t))
+      }
+      if (normals) program.set('uView', normals)
+      if (normalMatrix) {
         if (!mat3.normalFromMat4(normalMatrix, item.worldMatrix)) mat3.identity(normalMatrix)
         program.set('uNormalMatrix', normalMatrix)
       }

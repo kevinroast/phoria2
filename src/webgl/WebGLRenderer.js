@@ -32,7 +32,7 @@ const hookId = (hook) => {
 /** @import { Scene } from '../scene/Scene.js' */
 /** @import { Camera } from '../scene/cameras.js' */
 /** @import { Texture } from '../material/Texture.js' */
-/** @import { Environment } from './passes.js' */
+/** @import { Environment, Passes } from './passes.js' */
 /** @import { GPUHit } from './picking.js' */
 /** @import { ShadowMap } from './passes.js' */
 /** @import { Occlusion } from './effects.js' */
@@ -59,6 +59,8 @@ const hookId = (hook) => {
  *   surfaces are fogged in light, towards it
  * @property {WebGLTexture | null} behind the picture behind the see-through things - the opaque ones
  *   drawn - mipmapped, for glass to bend; taken when the frame has glass
+ * @property {WebGLTexture | null} glassSelf the one-sided glass being drawn: its own nearest depth, so
+ *   only its nearest surface draws - a vase's foot not over its bulb, whatever order they are in
  * @property {Map<Material, Map<string, DrawMemo>>} memo each material's features, hooks and programs
  * @property {Record<string, Map<unknown, number>> | undefined} masks the frame's materials' features, as collect found them
  *   for this frame, by kind of drawable - worked out by its first draw, read by the rest
@@ -229,6 +231,8 @@ const NO_SHIFT = [0, 0]
 const NO_SHADOWS = []
 /** Glass, which bends what is behind it - its material's lit transmission. @param {DrawItem} item */
 const refracts = (item) => isGlass(item.material) && item.node.drawMode === 'triangles'
+/** Glass with one side: a solid piece, drawn by its nearest surface only (#glassSelf). @param {DrawItem} item */
+const solidGlass = (item) => refracts(item) && !item.material.doubleSided && drawKind(item.node) === 'mesh'
 // renderers made, so each keeps its own refine average in a shared context's pool
 let renderers = 0
 // the step out of linear light, at the end of a linear frame's chain
@@ -649,7 +653,7 @@ export class WebGLRenderer {
     const env = frame.environment
     const bg = frame.background
     const occlusion = plain ? null : this.#ambientOcclusion, groundShadow = plain ? null : this.#groundShadow
-    const passes = gpu.loadPasses(!!frame.shadow || frame.spotShadows.length > 0 || !!frame.pointShadow || frame.outlines.length > 0 || (typeof env === 'object' && !!env.image) || (!!bg && !('getHex' in bg) && !!bg.image) || !!occlusion || !!groundShadow)
+    const passes = gpu.loadPasses(frame.transparent.some(solidGlass) || !!frame.shadow || frame.spotShadows.length > 0 || !!frame.pointShadow || frame.outlines.length > 0 || (typeof env === 'object' && !!env.image) || (!!bg && !('getHex' in bg) && !!bg.image) || !!occlusion || !!groundShadow)
     // ambient occlusion, the ground shadow and FXAA: their code loads the first time one is on (their
     // targets, like every pass's, are freed by the pool once no frame uses them)
     const effects = occlusion || groundShadow || (this.fxaa && !plain) ? gpu.loadEffects() : null
@@ -665,7 +669,7 @@ export class WebGLRenderer {
       wait, linear: (linear && float) || !!target?.srgb, width, height,
       environment: passes && typeof env === 'object' ? passes.environment(env) : null, shadows: [], occlusion: null, ...this.#lightsOf(frame),
       fogLight: frame.fog ? lightBehind(frame.fog.color, TONE_MAPPING[this.toneMapping], this.exposure) : null,
-      behind: null, memo: new Map(), programs: new Map(), masks: frame.masks,
+      behind: null, glassSelf: null, memo: new Map(), programs: new Map(), masks: frame.masks,
     }
     if (passes && typeof env === 'object' && env.image && !state.environment) {
       warnOnce(env, env.isHDR ? "this device can't render to float textures, which HDR environments need - lighting without it"
@@ -772,7 +776,18 @@ export class WebGLRenderer {
       state.behind = this.#behind(drawingInto, width, height, behindColor)
     }
     this.#beginDraws()
-    for (const item of frame.transparent) this.#draw(item, frame, true, state, twoSided.includes(item) ? 'front' : null)
+    for (const item of frame.transparent) {
+      // a solid piece of glass is see-through but shows one surface: its nearest, which its own depth
+      // finds - drawn alone first, so whatever is drawn after it (ice in a drink) isn't hidden
+      const solid = passes && solidGlass(item)
+      if (solid) {
+        this.#endDraws()
+        state.glassSelf = this.#glassSelf(passes, item, frame, drawingInto, width, height)
+        this.#beginDraws()
+      }
+      this.#draw(item, frame, true, state, twoSided.includes(item) ? 'front' : null)
+      state.glassSelf = null
+    }
     this.#endDraws()
     // outlines over everything
     if (outline && passes) passes.outlineComposite(outline, state.linear)
@@ -812,6 +827,32 @@ export class WebGLRenderer {
     gl.generateMipmap(gl.TEXTURE_2D)
     gl.bindTexture(gl.TEXTURE_2D, null)
     return texture
+  }
+
+  /**
+   * A piece of glass's own depth, nearest kept, into a target of its own - not the picture's, which
+   * what is drawn after it still tests against. Offset as its surface will be drawn, so its nearest
+   * surface passes and the rest of it (#draw, GLASS_SELF) doesn't. Leaves `into` bound again.
+   * @param {Passes} passes @param {DrawItem} item @param {FrameDescription} frame
+   * @param {WebGLFramebuffer | null} into @param {number} width @param {number} height
+   * @returns {WebGLTexture}
+   */
+  #glassSelf(passes, item, frame, into, width, height) {
+    const gl = this.gl
+    const self = this.#gpu.targets.get('glass-self', { width, height, color: null, depth: 'texture' })
+    gl.bindFramebuffer(gl.FRAMEBUFFER, self.framebuffer)
+    gl.disable(gl.BLEND)
+    gl.enable(gl.DEPTH_TEST)
+    gl.depthFunc(gl.LEQUAL)
+    gl.depthMask(true)
+    gl.clear(gl.DEPTH_BUFFER_BIT)
+    gl.enable(gl.POLYGON_OFFSET_FILL)
+    gl.polygonOffset(1, 2)
+    passes.drawDepth([item], frame.camera.viewProjection)
+    gl.disable(gl.POLYGON_OFFSET_FILL)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, into)
+    gl.enable(gl.BLEND)
+    return /** @type {WebGLTexture} */ (self.depthTexture)
   }
 
   /** Can refine samples be averaged here - can float targets be drawn to? */
@@ -1036,6 +1077,7 @@ export class WebGLRenderer {
     const ssao = kind === 'mesh' && !transparent && !material.unlit ? state.occlusion : null
     // glass, over the picture behind it: bent and tinted, and blurred where it is rough
     const behind = transparent && kind === 'mesh' && refracts(item) ? state.behind : null
+    const self = behind ? state.glassSelf : null
 
     // the program: the material's (its features, its hooks), the frame's (its lights, shadows, fog) and
     // the draw's own - placed by instances or not, cut, drawn as squares, receiving shadows, occluded,
@@ -1050,7 +1092,7 @@ export class WebGLRenderer {
     }
     const hook = memo.hook
     const signature = ((instances ? 1 : 0) | (item.clip ? 2 : 0) | (sprites ? 4 : 0) | (receives ? 8 : 0) | (ssao ? 16 : 0) | (behind ? 32 : 0)
-      | (geometry.colors !== null ? 64 : 0) | (geometry.uvs2 ? 128 : 0)) + memo.own
+      | (geometry.colors !== null ? 64 : 0) | (geometry.uvs2 ? 128 : 0) | (self ? 256 : 0)) + memo.own
     let chosen = memo.programs.get(signature)
     if (!chosen) {
       // placed and cut as every pass draws it, then the material's features and the frame's lights
@@ -1071,6 +1113,7 @@ export class WebGLRenderer {
       }
       if (ssao) defines.push('SSAO', ...(ssao.depth ? ['SSAO_DEPTH'] : []))
       if (behind) defines.push('REFRACTION')
+      if (self) defines.push('GLASS_SELF')
       // a material's own GLSL, spliced into this program
       if (hook) defines.push(...hook.defines)
       chosen = { defines, program: this.#gpu.programs.get(kind, defines, undefined, hook?.source) }
@@ -1142,6 +1185,7 @@ export class WebGLRenderer {
       }
     }
     if (behind) program.set('uBehind', behind)
+    if (self) program.set('uGlassSelf', self)
     if (ssao) {
       program.set('uSsao', ssao.texture)
       program.set('uSsaoScale', ssao.scale)

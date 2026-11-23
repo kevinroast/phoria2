@@ -186,6 +186,7 @@ contract('Material', {
     emissiveMap: materialMap('emissiveMap'),
     lightMap: materialMap('lightMap'),
     iridescenceThicknessMap: materialMap('iridescenceThicknessMap'),
+    thicknessMap: materialMap('thicknessMap'),
     matcap: materialMap('matcap'),
     unlit: { value: true, read: (m) => m.unlit, default: false, bad: 'yes', error: 'unlit' },
     flatShading: { value: true, read: (m) => m.flatShading, default: false, bad: 'yes', error: 'flatShading' },

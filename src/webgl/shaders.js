@@ -161,14 +161,13 @@ layout(location = 1) out vec4 fragGlass;
 layout(location = 2) out vec4 fragTint;
 layout(location = 3) out vec4 fragCover;
 uniform vec3 uCausticGlass;
-uniform vec3 uCausticTint;
 uniform vec4 uCausticFrom;       // the light's position, w 1 (spot, rect); w 0 for the sun
 uniform vec3 uCausticDirection;  // the sun's way
 #endif
-#if defined(ALPHA_TEST) || defined(HOOK_FRAGMENT)
+#if defined(ALPHA_TEST) || defined(HOOK_FRAGMENT) || defined(THICKNESS_MAP)
 in vec2 vUv;
 #endif
-#if defined(HOOK_FRAGMENT) || defined(NORMALS) || defined(CAUSTIC_GLASS)
+#if defined(HOOK_FRAGMENT) || defined(NORMALS) || defined(CAUSTIC_GLASS) || defined(GLASS_FILTER)
 in vec3 vNormal;
 #endif
 #ifdef NORMALS
@@ -176,7 +175,29 @@ in vec3 vNormal;
 uniform mat4 uView;
 #endif
 #ifdef GLASS_FILTER
-uniform vec3 uGlassFilter;
+uniform mat4 uViewProjection;
+uniform mat4 uLightInverse;   // the light's view back to the world: which way its light goes here
+#endif
+#if defined(GLASS_FILTER) || defined(CAUSTIC_GLASS)
+// what of the light glass lets through (glassFilterParts): what its opacity leaves (a); and where it
+// is, its colour's share (rgb), tinted by its body over its thickness - a thickness map's share of it -
+// and less what its faces reflect away, in and out: a few percent face on, nearly all where the light
+// grazes it - the dark outline of a glass's shadow
+uniform vec4 uGlassThrough;
+uniform vec4 uGlassBody;      // its body's tint through its whole thickness, and its ior
+vec3 glassTint(float thickness, float facing) {
+  float f0 = (uGlassBody.w - 1.0) / (uGlassBody.w + 1.0);
+  f0 *= f0;
+  float passed = 1.0 - (f0 + (1.0 - f0) * pow(1.0 - clamp(facing, 0.0, 1.0), 5.0));
+  return uGlassThrough.a + uGlassThrough.rgb * pow(max(uGlassBody.rgb, vec3(1e-20)), vec3(thickness)) * passed * passed;
+}
+#endif
+#ifdef THICKNESS_MAP
+// glass whose thickness varies across it, in its green channel: its tint, and how far caustics bend
+uniform sampler2D uThicknessMap;
+#if !(defined(ALPHA_TEST) && defined(MAP))
+${SAMPLING}
+#endif
 #endif
 #ifdef HOOK_FRAGMENT
 // a fragment hook's discards cut the shadow too - a dissolving thing casts what is left of it
@@ -188,9 +209,9 @@ ${CUTOUT}
 ${CLIP}
 void main() {
   clipAway(vWorldPosition);
-#if (defined(NORMALS) || defined(CAUSTIC_GLASS)) && defined(FLAT_SHADING)
+#if (defined(NORMALS) || defined(CAUSTIC_GLASS) || defined(GLASS_FILTER)) && defined(FLAT_SHADING)
   vec3 normal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
-#elif defined(HOOK_FRAGMENT) || defined(NORMALS) || defined(CAUSTIC_GLASS)
+#elif defined(HOOK_FRAGMENT) || defined(NORMALS) || defined(CAUSTIC_GLASS) || defined(GLASS_FILTER)
   vec3 normal = normalize(vNormal);
 #if defined(NORMALS) && defined(DOUBLE_SIDED)
   if (!gl_FrontFacing) normal = -normal;
@@ -209,12 +230,29 @@ void main() {
   fragColor = vec4(normalize(mat3(uView) * normal) * 0.5 + 0.5, 1.0);
 #elif defined(GLASS_FILTER)
   // a glass caster in a shadow map's glass layer: the light it lets through - the layer multiplies
-  // them - and, kept by the nearest, its depth from the light
-  fragColor = vec4(uGlassFilter, gl_FragCoord.z);
+  // them - and, kept by the nearest, its depth from the light. The light's way here: back through
+  // the light's view, from its near plane to its far
+  vec4 clip = uViewProjection * vec4(vWorldPosition, 1.0);
+  vec4 nearer = uLightInverse * vec4(clip.xy / clip.w, -1.0, 1.0), further = uLightInverse * vec4(clip.xy / clip.w, 1.0, 1.0);
+  float facing = abs(dot(normal, normalize(further.xyz / further.w - nearer.xyz / nearer.w)));
+#ifdef THICKNESS_MAP
+  fragColor = vec4(glassTint(uThicknessMapTexel.g, facing), gl_FragCoord.z);
+#else
+  fragColor = vec4(glassTint(1.0, facing), gl_FragCoord.z);
+#endif
 #elif defined(CAUSTIC_GLASS)
   fragColor = vec4(normal, 1.0);
-  fragGlass = vec4(uCausticGlass, 1.0);
-  fragTint = vec4(uCausticTint, 1.0);
+#ifdef THICKNESS_MAP
+  // where the map makes it a thin wall - under a fifth of its thickness, a vase's sides - it only
+  // tints, as thinWalled glass does: the light goes on to the first thick glass (its foot) to bend
+  float thick = uThicknessMapTexel.g;
+  if (thick < 0.2) discard;
+#else
+  float thick = 1.0;
+#endif
+  fragGlass = vec4(uCausticGlass.x * thick, uCausticGlass.yz, 1.0);
+  vec3 toward = uCausticFrom.w > 0.5 ? normalize(vWorldPosition - uCausticFrom.xyz) : uCausticDirection;
+  fragTint = vec4(glassTint(thick, abs(dot(normal, toward))), 1.0);
   float along = uCausticFrom.w > 0.5 ? length(vWorldPosition - uCausticFrom.xyz) : dot(vWorldPosition, uCausticDirection);
   fragCover = vec4(1.0, along, 0.0, 1.0);
 #else
@@ -373,6 +411,9 @@ out float vFogDepth;
 #endif
 //@hook uniforms
 
+// the same position from every program that draws the mesh - a solid glass's own depth (GLASS_SELF)
+// is compared with its picture's
+invariant gl_Position;
 out vec3 vWorldPosition;
 out vec3 vNormal;
 out vec2 vUv;
@@ -684,6 +725,10 @@ uniform float uTransmission;
 // what is behind see-through things: the picture so far, the opaque things drawn, smaller and
 // blurrier down its mip levels - for glass to show bent, and frosted
 uniform sampler2D uBehind;
+#ifdef GLASS_SELF
+// a solid piece of glass's own nearest depth: only its nearest surface draws
+uniform highp sampler2D uGlassSelf;
+#endif
 uniform vec4 uRefraction;      // ior, thickness (its own units), dispersion's half spread of the ior, 1 for a thin wall
 uniform float uSpectrum;       // how much of that spread this picture bends by: 1, or a refine sample's 0-2
 uniform vec4 uAttenuation;     // the body's colour (linear) after a distance (w; 0: no tint)
@@ -699,6 +744,9 @@ uniform vec4 uIridescence;     // amount, the film's ior, its thinnest and thick
 #endif
 #ifdef IRIDESCENCE_THICKNESS_MAP
 uniform sampler2D uIridescenceThicknessMap;
+#endif
+#ifdef THICKNESS_MAP
+uniform sampler2D uThicknessMap;
 #endif
 uniform vec4 uSpecular;      // a non-metal's reflectance face on (from its ior), and at grazing angles
 #ifdef MATCAP
@@ -1087,6 +1135,15 @@ vec3 reflected(vec3 r, vec3 n, float roughness, vec3 irradiance) {
 
 void main() {
   clipAway(vWorldPosition);
+#ifdef GLASS_SELF
+  // behind its own nearest surface - a vase's bulb behind its foot - it isn't seen: only that surface
+  // is, bending what is behind the whole piece. Within a pixel's change of depth of it: multisampled,
+  // a triangle's edge is drawn at a pixel centre it doesn't cover, its depth carried on past its edge
+  // - where the next facet's may be a hair nearer. Left out at the end, adding nothing, rather than
+  // discarded here: a discard ahead of the maps' and environment's lookups makes D3D's compiler (ANGLE,
+  // on Windows) unroll every loop after it, and take minutes
+  bool hidden = gl_FragCoord.z > texelFetch(uGlassSelf, ivec2(gl_FragCoord.xy), 0).r + fwidth(gl_FragCoord.z) + 1e-6;
+#endif
   vec4 base = vec4(uColor * vColor, uOpacity);
 #ifdef MAP
   base *= uMapTexel; // sRGB textures are decoded to linear by the hardware
@@ -1326,6 +1383,10 @@ ${RECT_LIGHTS}
   // there: where the picture behind is see-through (no background), the page shows through as before
   float glassShows = 1.0 - coverage;
   fragColor = vec4(fragColor.rgb + throughGlass(behind, glassTint) * glassShows, coverage + behind.a * glassShows);
+#endif
+#ifdef GLASS_SELF
+  // see-through, so drawn without depth: nothing, laid over what is there, leaves it as it was
+  if (hidden) fragColor = vec4(0.0);
 #endif
 }
 `

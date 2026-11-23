@@ -13,7 +13,7 @@ import { DEMOS, slug } from '../demos/registry.js'
 
 const WIDTH = 960, HEIGHT = 600, SCALE = 0.5
 // seconds to let a demo run first - longer for those that load models or build up to something
-const WAIT = { viewer: 7, 'guided-tour': 4, 'point-lights': 7, 'fog-shadows': 5, fireworks: 6, paint: 7, particles: 5, textures: 5, lights: 5, artemis: 4, cpu: 4, volcano: 5, engine: 4.5, skull: 5, 'advanced-materials': 5, glass: 6, 'viewer-passes': 5, 'render-textures': 4, 'custom-element': 5, maths: 5, science: 5 }
+const WAIT = { viewer: 7, 'guided-tour': 4, 'point-lights': 7, 'fog-shadows': 5, fireworks: 6, paint: 7, particles: 5, textures: 5, lights: 5, artemis: 4, cpu: 4, volcano: 5, engine: 4.5, skull: 5, 'advanced-materials': 5, glass: 6, vase: 6, 'viewer-passes': 5, 'render-textures': 4, 'custom-element': 5, maths: 5, science: 5 }
 // several views on one page: captured from the page, not one view's toImage() - for cells, the
 // whole poster: both cells, their titles and the paper behind them
 const PAGE = ['dashboard', 'chartlab', 'cells', 'colour', 'cad', 'schematic', 'custom-element', 'maths', 'science']
@@ -75,6 +75,11 @@ const PREPARE = {
   // the pool seen closer, its water and caustics filling the card
   water: `const { position: p, target: t } = view.camera
     p.set(t[0] + (p[0] - t[0]) * 0.62, t[1] + (p[1] - t[1]) * 0.62, t[2] + (p[2] - t[2]) * 0.62)
+    view.invalidate()`,
+  // the vase seen closer, filling the card's height - looking a little lower, so its foot stays in
+  vase: `const { position: p, target: t } = view.camera
+    p.set(t[0] + (p[0] - t[0]) * 0.8, t[1] + (p[1] - t[1]) * 0.8 - 0.3, t[2] + (p[2] - t[2]) * 0.8)
+    t.set(t[0], t[1] - 0.3, t[2])
     view.invalidate()`,
   cells: `Object.assign(document.querySelector('.cells-poster').style, { paddingTop: '16px', scrollbarWidth: 'none' })`,
   // the colour poster two by two on shorter rows - the picture is narrow enough for its one-column

@@ -2,7 +2,7 @@
 // take it, the frame's caustic view (what bends it, what it lands on, fitted round the glass), and the
 // renderer drawing them into a texture the lit programs read, kept while nothing changes.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DirectionalLight, Mesh, PerspectiveCamera, RectAreaLight, Scene, SpotLight, WebGLRenderer, box, plane } from '../src/index.js'
+import { DirectionalLight, Mesh, PerspectiveCamera, RectAreaLight, Scene, SpotLight, Texture, WebGLRenderer, box, plane } from '../src/index.js'
 import { collect } from '../src/frame.js'
 import { changesShape } from '../src/webgl/drawn.js'
 import { CAUSTIC_GRID } from '../src/webgl/caustics.js'
@@ -172,6 +172,26 @@ describe('caustics drawn', () => {
       renderer.render(s, camera())
       expect(sources.some((src) => src.includes('#define CAUSTIC_GLASS') && src.includes('#define FLAT_SHADING'))).toBe(true)
     })
+  })
+
+  it("a thickness map: the caustics' glass and the coloured shadow read it, and moving it draws them again", async () => {
+    const { gl, sources, drawLog } = floatGL()
+    const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
+    renderer.setSize(64, 64)
+    const thicknessMap = new Texture({ image: { data: new Uint8Array([0, 128, 0, 255]), width: 1, height: 1 } })
+    const { s } = scene(new DirectionalLight({ direction: [0, -1, 0], castShadow: true, caustics: true }), { ...glass, thicknessMap })
+    const cam = camera()
+    await vi.waitFor(() => {
+      renderer.render(s, cam)
+      expect(sources.some((src) => src.includes('#define CAUSTIC_GLASS') && src.includes('#define THICKNESS_MAP'))).toBe(true)
+    })
+    expect(sources.some((src) => src.includes('#define GLASS_FILTER') && src.includes('#define THICKNESS_MAP'))).toBe(true)
+    // the lit glass reads it too, scaling how far what is behind is bent
+    expect(sources.some((src) => src.includes('#define TRANSMISSION') && src.includes('#define THICKNESS_MAP') && src.includes('t *= uThicknessMapTexel.g'))).toBe(true)
+    const before = splats(drawLog)
+    thicknessMap.repeat = [2, 2]
+    renderer.render(s, cam)
+    expect(splats(drawLog)).toBe(before + 1)
   })
 
   it("without float targets, a warning and the light drawn without them", async () => {

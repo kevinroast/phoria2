@@ -951,6 +951,17 @@
             }
           ]
         },
+        "thicknessMap": {
+          "description": "Glass's thickness across the surface in its green channel, scaling thickness - a vase's thin walls and thick foot.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/texture"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "matcap": {
           "description": "A picture of a lit sphere that gives the whole look - clay, wax, chrome - picked by which way the surface faces the camera; lights are ignored.",
           "anyOf": [

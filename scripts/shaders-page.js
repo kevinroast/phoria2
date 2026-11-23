@@ -53,6 +53,7 @@ const ENABLE = {
     cutout: { alphaTest: 0.5, map: tex() }, glass: { transmission: 0.6 }, clearcoat: { clearcoat: 0.8 }, sheen: { sheen: 0.6 },
     brushed: { anisotropy: 0.6 }, translucent: { translucency: 0.5 }, toon: { toon: 4 }, flat: { flatShading: true }, double: { doubleSided: true },
     iridescent: { iridescence: 1 }, iridescenceThicknessMap: { iridescence: 1, iridescenceThicknessMap: tex() },
+    thicknessMap: { transmission: 0.6, thickness: 0.5, thicknessMap: tex() },
     triplanar: { triplanar: 2, normalMap: tex() }, vcolor: { vertexColors: true },
     additive: { blending: 'additive', transparent: true, opacity: 0.6 }, multiply: { blending: 'multiply', transparent: true, opacity: 0.6 },
   },

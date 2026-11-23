@@ -340,10 +340,15 @@ describe('coloured shadows', () => {
     renderer.render(scene, camera())
     const programs = defines()
     expect(programs.some((d) => d.includes('SHADOW_GLASS') && d.includes('SPOT_SHADOWS_GLASS'))).toBe(true)
-    // the glass layers - the sun's and the spots' - get the glass, red; the depth maps don't
-    const layers = drawLog.filter((d) => d.program.values.uGlassFilter)
+    // the glass layers - the sun's and the spots' - get the glass, red; the depth maps don't. Its ior
+    // and the light's way for what its faces reflect away, more where the light grazes them
+    const layers = drawLog.filter((d) => d.program.values.uGlassThrough)
     expect(layers).toHaveLength(2)
-    expect(layers[0].program.values.uGlassFilter.map((/** @type {number} */ v) => +v.toFixed(3))).toEqual([1, 0, 0])
+    const v = layers[0].program.values
+    expect(Array.from(v.uGlassThrough, (/** @type {number} */ x) => +x.toFixed(3))).toEqual([1, 0, 0, 0])
+    expect(v.uGlassBody[3]).toBe(1.5)
+    expect(v.uLightInverse).toBeDefined()
+    expect(programs.some((d) => d.includes('GLASS_FILTER'))).toBe(true)
   })
 
   it("casts as before without glass, and from a point light (glass's shadow grey there)", async () => {

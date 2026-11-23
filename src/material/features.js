@@ -51,6 +51,7 @@ export const MAPS = /** @type {const} */ ([
   { slot: 'emissiveMap', uniform: 'uEmissiveMap', define: 'EMISSIVE_MAP', lit: false },
   { slot: 'lightMap', uniform: 'uLightMap', define: 'LIGHT_MAP', lit: true },
   { slot: 'iridescenceThicknessMap', uniform: 'uIridescenceThicknessMap', define: 'IRIDESCENCE_THICKNESS_MAP', lit: true },
+  { slot: 'thicknessMap', uniform: 'uThicknessMap', define: 'THICKNESS_MAP', lit: true },
   { slot: 'matcap', uniform: 'uMatcap', define: 'MATCAP', lit: true },
 ])
 /** A map slot's sampler. */
@@ -195,10 +196,26 @@ export const isGlass = (m) => m.transmission > 0 && !m.unlit
  * @returns {number[]} linear rgb
  */
 export function glassFilter(m, worldMatrix) {
+  const { through, body } = glassFilterParts(m, worldMatrix)
+  return [0, 1, 2].map((i) => through[3] + through[i] * body[i])
+}
+
+/**
+ * glassFilter in parts, for the passes that work it out at each pixel - by a thickness map's share of
+ * the thickness, and what the faces reflect away at the light's angle: `through`, what its colour
+ * lets through (rgb) and what its opacity leaves (a); and `body`, its body's tint through its whole
+ * `thickness` (rgb) and its ior (w). Face on with no map, close to a + rgb * body.
+ * @param {Material} m @param {ArrayLike<number>} worldMatrix
+ * @returns {{ through: number[], body: number[] }}
+ */
+export function glassFilterParts(m, worldMatrix) {
   const scale = Math.hypot(worldMatrix[0], worldMatrix[1], worldMatrix[2])
   const path = Number.isFinite(m.attenuationDistance) && m.attenuationDistance > 0 ? m.thickness * scale / m.attenuationDistance : 0
-  const a = m.opacity, c = m.color, body = m.attenuationColor
-  return [0, 1, 2].map((i) => 1 - a + a * m.transmission * c[i] * Math.max(body[i], 1e-4) ** path)
+  const a = m.opacity, c = m.color, tint = m.attenuationColor
+  return {
+    through: [a * m.transmission * c[0], a * m.transmission * c[1], a * m.transmission * c[2], 1 - a],
+    body: [...[0, 1, 2].map((i) => Math.max(tint[i], 1e-4) ** path), m.ior],
+  }
 }
 
 /**

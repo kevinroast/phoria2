@@ -20,7 +20,7 @@ export default function run({ canvas, gui, info }) {
   const scene = view.scene
   scene.environment = HDR
   scene.background = scene.environment
-  scene.backgroundBlur = 0.5
+  scene.backgroundBlur = 0.15
   const sun = scene.add(new DirectionalLight({ direction: [-0.5, -1, -0.35], intensity: 1.2, castShadow: true }))
   const plinth = scene.add(new Mesh({
     geometry: cylinder({ radius: 1.6, height: 0.1, segments: 96 }),

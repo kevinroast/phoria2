@@ -76,6 +76,8 @@ import { Texture } from './Texture.js'
  *   towards its edges. Its colour tints what shows through, as coloured glass does
  * @property {number} [thickness] how thick glass is, in its own units - what is behind it is bent by its ior over
  *   this distance, as through a solid lens or a bottle's wall; 0 is a thin shell, which doesn't bend it (default 0)
+ * @property {MapInput | null} [thicknessMap] glass's thickness across the surface, in its green channel, scaling
+ *   `thickness` - a vase's thin walls and thick foot, as glTF's KHR_materials_volume has it
  * @property {boolean} [thinWalled] glass as a wall `thickness` thick - a window, a bottle's or a glass's side, a
  *   lamp's shade - not a solid piece: what is behind shifts a little, as through a pane, rather than bending
  *   as through a lens, and its body tints deeper where the wall is seen edge-on (default false)
@@ -134,9 +136,9 @@ import { Texture } from './Texture.js'
  */
 
 // the matcap last: the first map's repeat and offset are every map's, and a matcap has none
-const MAPS = ['map', 'roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap', 'emissiveMap', 'lightMap', 'iridescenceThicknessMap', 'matcap']
+const MAPS = ['map', 'roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap', 'emissiveMap', 'lightMap', 'iridescenceThicknessMap', 'thicknessMap', 'matcap']
 // data maps hold numbers, not colours
-const LINEAR_MAPS = new Set(['roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap', 'iridescenceThicknessMap'])
+const LINEAR_MAPS = new Set(['roughnessMap', 'metalnessMap', 'normalMap', 'bumpMap', 'aoMap', 'iridescenceThicknessMap', 'thicknessMap'])
 const FLAGS = ['unlit', 'flatShading', 'doubleSided', 'vertexColors', 'depthWrite', 'depthTest', 'sizeAttenuation', 'transparent', 'fog', 'thinWalled']
 const NUMBERS = { opacity: [0, 1], roughness: [0, 1], metalness: [0, 1], emissiveIntensity: [0, Infinity], size: [0, Infinity], width: [0, Infinity],
   alphaTest: [0, 1], normalScale: [-Infinity, Infinity], aoMapIntensity: [0, 1], triplanar: [0, Infinity], bumpScale: [-Infinity, Infinity],
@@ -183,6 +185,7 @@ const HINTS = {
   iridescenceIOR: "use 'iridescenceIor'",
   iridescenceThicknessRange: "use 'iridescenceThicknessMin' and 'iridescenceThickness' (the thickest), in nanometres",
   iridescenceThicknessTexture: "use 'iridescenceThicknessMap'",
+  thicknessTexture: "use 'thicknessMap'",
   thinFilm: "use 'iridescence' - a thin film's shifting colours",
   emissiveColor: "use 'emissive'",
   alpha: "use 'opacity'",
@@ -372,6 +375,10 @@ export class Material {
   get iridescenceThicknessMap() { return this.#maps.iridescenceThicknessMap }
   /** @param {MapInput | null} v */
   set iridescenceThicknessMap(v) { this.setMap('iridescenceThicknessMap', v) }
+  /** Glass's thickness across the surface, in its green channel, scaling `thickness`. @returns {Texture | null} */
+  get thicknessMap() { return this.#maps.thicknessMap }
+  /** @param {MapInput | null} v */
+  set thicknessMap(v) { this.setMap('thicknessMap', v) }
   /** A picture of a lit sphere that gives the whole look. @returns {Texture | null} */
   get matcap() { return this.#maps.matcap }
   /** @param {MapInput | null} v */
@@ -379,7 +386,7 @@ export class Material {
 
   /** @internal
    * @param {string} slot one of map, roughnessMap, metalnessMap, normalMap, bumpMap, aoMap, emissiveMap, lightMap,
-   *   iridescenceThicknessMap, matcap
+   *   iridescenceThicknessMap, thicknessMap, matcap
    * @param {MapInput | null} value
    */
   setMap(slot, value) {

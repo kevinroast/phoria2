@@ -38,10 +38,9 @@
 import * as mat3 from '../math/mat3.js'
 import * as mat4 from '../math/mat4.js'
 import { CAUSTIC_SIZE } from '../frame.js'
-import { glassFilter } from '../material/features.js'
 import { CLIP_ONLY_FRAGMENT, FULLSCREEN_VERTEX, MESH_VERTEX } from './shaders.js'
 import { setHookUniforms } from './hooks.js'
-import { setShapeUniforms, shapeDefines } from './shape.js'
+import { setGlassUniforms, setShapeUniforms, setThicknessUniforms, shapeDefines, thicknessDefines } from './shape.js'
 import { DrawnFrom } from './drawn.js'
 /** @import { Programs } from './programs.js' */
 /** @import { Resources } from './resources.js' */
@@ -501,6 +500,8 @@ export class Caustics {
       defines.push('CAUSTIC_GLASS')
       // faceted glass bends by its faces, as it's drawn - a prism, a cut gem
       if (material.flatShading) defines.push('FLAT_SHADING')
+      // a thickness map: thin walls bend little, a thick foot much
+      thicknessDefines(item, defines)
       const program = this.programs.ready('caustic-glass', defines, GLASS, hook?.source)
       if (program.failed) continue
       gl.useProgram(program.program)
@@ -512,10 +513,11 @@ export class Caustics {
       // thickness in world units, as the mesh is scaled
       const m = item.worldMatrix, scale = Math.hypot(m[0], m[1], m[2])
       program.set('uCausticGlass', [material.thickness * scale, material.ior, (material.ior - 1) * 0.025 * material.dispersion])
-      program.set('uCausticTint', glassFilter(material, item.worldMatrix))
+      setGlassUniforms(program, item)
       program.set('uCausticFrom', from)
       program.set('uCausticDirection', direction)
       setShapeUniforms(program, item, cutout, (t) => this.resources.texture(t))
+      setThicknessUniforms(program, item, (t) => this.resources.texture(t))
       this.resources.drawTriangles(item.geometry, item.instances)
     }
   }

@@ -407,7 +407,7 @@ fade), `roughness` (0.5), `metalness` (0), `emissive`, `emissiveIntensity`, `unl
 (`'normal'`, `'additive'` - adds light, for glows and sparks - or `'multiply'` - darkens what is behind, as a colour
 filter does: cyan over magenta is blue), `alphaTest` (cut-outs: drop pixels with less alpha - leaves, fences),
 `depthWrite`/`depthTest` (true), `map`, `normalMap`/`normalScale`, `bumpMap`/`bumpScale`, `roughnessMap`, `metalnessMap`, `aoMap`/`aoMapIntensity` (1),
-`emissiveMap`, `lightMap`/`lightMapIntensity`, `environmentIntensity` (1), `transmission`/`thickness`/`thinWalled`/`attenuationColor`/`attenuationDistance`/`dispersion`, `clearcoat`/`clearcoatRoughness`, `sheen`/`sheenColor`/`sheenRoughness`, `iridescence`/`iridescenceIor`/`iridescenceThickness`/`iridescenceThicknessMin`/`iridescenceThicknessMap`, `ior`/
+`emissiveMap`, `lightMap`/`lightMapIntensity`, `environmentIntensity` (1), `transmission`/`thickness`/`thicknessMap`/`thinWalled`/`attenuationColor`/`attenuationDistance`/`dispersion`, `clearcoat`/`clearcoatRoughness`, `sheen`/`sheenColor`/`sheenRoughness`, `iridescence`/`iridescenceIor`/`iridescenceThickness`/`iridescenceThicknessMin`/`iridescenceThicknessMap`, `ior`/
 `specularIntensity`/`specularColor`, `anisotropy`/`anisotropyRotation`, `translucency`/`translucencyColor`, `matcap`, `toon`, `triplanar`, `shader` (below); `size`/`sizeAttenuation` for Points, `width` for Lines. Change later through
 `mesh.material.color.set('#0f0')`, `mesh.material.opacity = 0.5`, or a whole new one: `mesh.material = { color: 'red' }`
 (options become a Material, as in the constructor; `mesh.geometry = box(2)` likewise).
@@ -479,7 +479,7 @@ higher for frosted.
 
 | Option | Default | |
 |---|---|---|
-| `thickness` | 0 | in its own units: what is behind is bent by its `ior` over it - about the object's depth for a solid piece; 0 is a thin shell (a bubble, a window) that doesn't bend |
+| `thickness` | 0 | in its own units: what is behind is bent by its `ior` over it - about the object's depth for a solid piece; 0 is a thin shell (a bubble, a window) that doesn't bend. `thicknessMap` (green) scales it across the surface - a vase's thin walls and thick foot, as glTF models bring it; caustics bend only where it is a fifth or more |
 | `attenuationColor`, `attenuationDistance` | white, Infinity | its body's tint: the colour light turns after that distance through it - deeper the thicker (`{ transmission: 1, thickness: 1, attenuationColor: '#e0a030', attenuationDistance: 0.5 }` is amber) |
 | `dispersion` | 0 | splits what it bends into colours: 0.3-0.5 window glass, about 1 flint and crystal, 2+ to show it off (refined, a smooth rainbow) |
 | `thinWalled` | false | a vessel's wall: what is behind shifts a little, as through a pane, rather than bending; it tints deeper seen edge-on |
@@ -491,7 +491,8 @@ higher for frosted.
 - **A liquid in a glass**: see-through (wine, whisky) - its own solid glass piece (`transmission: 1`,
   `thickness` about its width, `attenuationColor` for its colour) with `renderOrder: 1`, drawn after the
   vessel; opaque (milk, paint) - an ordinary glossy material.
-- Glass that casts shadows casts coloured light (grey from a point light). Glass seen through glass
+- Glass that casts shadows casts coloured light (grey from a point light); clear glass a faint shadow,
+  darker where the light grazes it - its outline. Glass seen through glass
   shows the solids behind both, not the farther glass.
 
 **More surfaces** - each 0-1 unless given, on any material:
@@ -515,7 +516,7 @@ highlight - a cartoon. The shaded tone is the scene's ambient and hemisphere lig
 lighter shade. Pair it with `outline` on the nodes (see Interaction) for inked edges.
 
 glTF models bring all of these from their `KHR_materials_*` extensions (factors; textures aren't read,
-but for iridescence's thickness).
+but for glass's and iridescence's thickness).
 
 **Models without UVs** (scans, CAD exports) can still take maps: `triplanar: 40` projects them
 from the mesh's three axes instead of using UVs, repeating 40 times per unit of the mesh's own space.

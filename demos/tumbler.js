@@ -91,7 +91,7 @@ function cove() {
 
 export default function run({ canvas, gui }) {
   const view = new View({
-    canvas, background: '#c6c6c9', fxaa: true, refine: true,
+    canvas, background: '#c6c6c9', fxaa: true, refine: { samples: 128 },
     camera: { position: [0.246, 0.166, 0.318], target: [0, 0.042, 0], fov: 28, near: 0.02, far: 30 },
     orbit: { minDistance: 0.12, maxDistance: 1.1, minPitch: 0.03, maxPitch: 1.5 },
     // the glass's soft contact shadow on the table, round its foot - glass leaves it off the table

@@ -9,8 +9,9 @@ import { Geometry, HemisphereLight, Mesh, SpotLight, View, box, cylinder, plane 
 // spreads it wider; a wider beam softens it. Still, it refines - each sample's colours a little
 // further along the spectrum - so the bands run into each other in a smooth spectrum.
 
-// the screen's radius and height, the beam's height, and the projector's place
-const SCREEN = 1.15, TALL = 0.8, BEAM = 0.27, PROJECTOR = [-0.95, BEAM, 0]
+// the screen's radius and height, the plinth the prism stands on, the beam's height (level through the
+// prism's middle), and the projector's place
+const SCREEN = 1.15, TALL = 0.8, PLINTH = 0.1, BEAM = PLINTH + 0.27, PROJECTOR = [-0.95, BEAM, 0]
 
 /** A curved screen round the back of the prism, open towards the projector: a strip of the inside of a ring. */
 function screen() {
@@ -29,7 +30,7 @@ function screen() {
 export default function run({ canvas, gui }) {
   const view = new View({
     canvas, background: '#050507', fxaa: true, refine: true,
-    camera: { position: [-2.3, 1.35, 1.2], target: [0.25, 0.3, -0.4], fov: 42 },
+    camera: { position: [-3.156, 1.136 + PLINTH, -0.038], target: [0.254, 0.317 + PLINTH, 0.037], fov: 42 },
     orbit: { maxPitch: 1.4, minDistance: 0.8, maxDistance: 6 },
   })
   const scene = view.scene
@@ -42,9 +43,16 @@ export default function run({ canvas, gui }) {
   scene.add(new Mesh({ geometry: plane(8), material: { color: '#2b2b30', roughness: 0.85 }, receiveShadow: true }))
   scene.add(new Mesh({ geometry: screen(), material: { color: '#f2f2f2', roughness: 0.95, doubleSided: true }, receiveShadow: true }))
 
-  // the prism: a triangle of flint-like glass standing on end
+  // a small white plinth, so the prism stands out against the dark
+  scene.add(new Mesh({
+    geometry: cylinder({ radius: 0.24, height: PLINTH, segments: 64 }), position: [0, PLINTH / 2, 0],
+    // catching more of the room's dim light than the rest, so it reads white without lighting the room
+    material: { color: '#f2f2f2', roughness: 0.6, environmentIntensity: 4 }, castShadow: true, receiveShadow: true,
+  }))
+
+  // the prism: a triangle of flint-like glass standing on end, on the plinth
   const prism = scene.add(new Mesh({
-    geometry: cylinder({ radius: 0.2, height: 0.5, segments: 3 }), position: [0, 0.25, 0], castShadow: true,
+    geometry: cylinder({ radius: 0.2, height: 0.5, segments: 3 }), position: [0, PLINTH + 0.25, 0], castShadow: true,
     material: { transmission: 1, ior: 1.62, dispersion: 6, thickness: 0.3, roughness: 0, flatShading: true },
   }))
 

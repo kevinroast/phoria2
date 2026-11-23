@@ -72,7 +72,7 @@ export default function run({ canvas, gui }) {
   scene.environment = 'studio'
   scene.environmentIntensity = 0.7
 
-  const settings = { place: 0, size: 1, turn: false, aperture: 0, focus: 0 }
+  const settings = { place: -.30, size: 0.3, turn: false, aperture: 0, focus: 0 }
 
   // the set: a pale floor, satin, so the coloured light reads on it - and behind, a sweep printed with
   // bold black and white stripes, for the glass to bend and split. The stripes are a few lines of

@@ -268,6 +268,33 @@ describe('glass', () => {
     expect(drawLog.filter((d) => d.call === 'blitFramebuffer')).toHaveLength(1)
   })
 
+  it('draws one-sided glass by its nearest surface only: its own depth drawn first, apart from the picture', async () => {
+    const drawn = async (/** @type {any} */ material) => {
+      const { gl, drawLog } = logged()
+      const renderer = new WebGLRenderer({ canvas: fakeCanvas(gl) })
+      renderer.setSize(64, 48)
+      let ready = 0
+      renderer.onReady = () => ready++
+      const frame = () => collect(withGlass({ transmission: 1, thickness: 0.5, ...material }), camera())
+      renderer.renderFrame(frame())
+      // one-sided: its depth pass's code, then a frame with it
+      if (!material.doubleSided) await vi.waitFor(() => expect(ready).toBeGreaterThan(0))
+      drawLog.length = 0
+      renderer.renderFrame(frame())
+      const glass = drawLog.filter((d) => d.program && definesOf(d.program).includes('REFRACTION'))
+      return { glass: glass[glass.length - 1], before: drawLog[drawLog.indexOf(glass[glass.length - 1]) - 1] }
+    }
+    const solid = await drawn({})
+    expect(definesOf(solid.glass.program)).toContain('GLASS_SELF')
+    expect(solid.glass.program.values.uGlassSelf).toBeDefined()
+    // just before it, its depth alone
+    expect(solid.before.call).toBe('drawElements')
+    expect(definesOf(solid.before.program)).not.toContain('REFRACTION')
+    // double-sided glass shows its far side through its near one: all of it drawn
+    const vessel = await drawn({ thinWalled: true, doubleSided: true })
+    expect(definesOf(vessel.glass.program)).not.toContain('GLASS_SELF')
+  })
+
   it("tints by its body over a distance - none where the distance is Infinity, which a uniform can't hold", () => {
     const tinted = (/** @type {any} */ material) => {
       const { gl, drawLog } = logged()

@@ -424,6 +424,12 @@ describe('glass and clearcoat from glTF', () => {
     json.materials[0].extensions.KHR_materials_volume = { thicknessFactor: 1 }
     const plain = await parseGLTF(json, { baseUrl: 'https://example.com/models/', waitForTextures: false })
     expect(/** @type {Mesh} */ (plain.find('Triangle')).material.attenuationDistance).toBe(Infinity)
+    expect(/** @type {Mesh} */ (plain.find('Triangle')).material.thicknessMap).toBe(null)
+    // a thickness texture: read as data, scaling the factor across the surface
+    json.materials[0].extensions.KHR_materials_volume = { thicknessFactor: 0.075, thicknessTexture: { index: 0 } }
+    const mapped = await parseGLTF(json, { baseUrl: 'https://example.com/models/', waitForTextures: false })
+    const vase = /** @type {Mesh} */ (mapped.find('Triangle')).material
+    expect([vase.thickness, vase.thicknessMap?.colorSpace]).toEqual([0.075, 'linear'])
     warn.mockRestore()
   })
 
