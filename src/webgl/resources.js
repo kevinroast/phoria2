@@ -5,9 +5,11 @@ import { ATTRIBUTES } from './shaders.js'
 import { isVideo } from '../material/Texture.js'
 import { freeTarget, makeTarget } from './targets.js'
 import { isInstanced } from '../scene/kinds.js'
+import { warnOnce } from '../validate.js'
 
 /** @import { Geometry } from '../geometry/Geometry.js' */
-/** @import { Texture, DataImage } from '../material/Texture.js' */
+/** @import { Texture, DataImage, CompressedImage, TextureImage } from '../material/Texture.js' */
+/** A texture's GPU copy: the version it holds, and the storage it was made with. @typedef {{ texture: WebGLTexture, version: number, width: number, height: number, internal: number }} TextureEntry */
 /** @import { Scene } from '../scene/Scene.js' */
 /** @import { RenderTexture } from '../material/RenderTexture.js' */
 /** @import { Target } from './targets.js' */
@@ -22,6 +24,16 @@ const UPLOAD_UNIT = 15
 // past this many changed regions since the last upload, those in each cell of a GRID x GRID split of
 // the image go as one rectangle round them - nearby changes together, far ones still apart
 const MOST_REGIONS = 16, GRID = 4
+// GPU-compressed formats (ktx2.js transcodes to them): the extensions that draw each, and its
+// internal format plain and in sRGB - S3TC's sRGB forms are an extension of their own
+const COMPRESSED = {
+  astc: { extensions: ['WEBGL_compressed_texture_astc'], linear: 0x93b0, srgb: 0x93d0 },
+  bc7: { extensions: ['EXT_texture_compression_bptc'], linear: 0x8e8c, srgb: 0x8e8d },
+  bc3: { extensions: ['WEBGL_compressed_texture_s3tc', 'WEBGL_compressed_texture_s3tc_srgb'], linear: 0x83f3, srgb: 0x8c4f },
+  bc1: { extensions: ['WEBGL_compressed_texture_s3tc', 'WEBGL_compressed_texture_s3tc_srgb'], linear: 0x83f0, srgb: 0x8c4c },
+  etc2: { extensions: ['WEBGL_compressed_texture_etc'], linear: 0x9278, srgb: 0x9279 },
+  'etc2-rgb': { extensions: ['WEBGL_compressed_texture_etc'], linear: 0x9274, srgb: 0x9275 },
+}
 
 /**
  * @typedef {object} MeshBuffers
@@ -150,7 +162,7 @@ export class Resources {
   /** @type {WeakMap<object, MeshBuffers>} */ #points = new WeakMap()
   /** @type {WeakMap<object, MeshBuffers>} */ #lines = new WeakMap()
   /** Points drawn as squares: an instance a point. @type {WeakMap<object, MeshBuffers & { capacity: number, sorted: boolean, data: Float32Array, view: Float64Array, scratch: SortScratch | null }>} */ #sprites = new WeakMap()
-  /** The GPU copy of each texture: the version it holds, and the storage it was made with. @type {WeakMap<Texture, { texture: WebGLTexture, version: number, width: number, height: number, internal: number }>} */ #textures = new WeakMap()
+  /** The GPU copy of each texture. @type {WeakMap<Texture, TextureEntry>} */ #textures = new WeakMap()
   /** Each render texture's targets. @type {WeakMap<RenderTexture, RenderTargets>} */ #renderTargets = new WeakMap()
   /** @type {WebGLTexture | null} */ #white = null
   /** @type {WebGLBuffer | null} */ #corners = null
@@ -441,6 +453,37 @@ export class Resources {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, texture.flipY)
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
     const image = texture.image
+    const compressed = 'compressed' in image ? /** @type {CompressedImage} */ (image) : null
+    if (compressed) {
+      if (!this.#uploadCompressed(texture, entry, compressed)) return this.#whiteTexture()
+    } else {
+      this.#uploadPixels(texture, entry, image)
+    }
+    const wrap = { repeat: gl.REPEAT, clamp: gl.CLAMP_TO_EDGE, mirror: gl.MIRRORED_REPEAT }[texture.wrap]
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap)
+    const nearest = texture.filter === 'nearest'
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, nearest ? gl.NEAREST : gl.LINEAR)
+    if (texture.mipmaps && (!compressed || compressed.levels.length > 1)) {
+      if (!compressed) gl.generateMipmap(gl.TEXTURE_2D)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, nearest ? gl.NEAREST_MIPMAP_NEAREST : gl.LINEAR_MIPMAP_LINEAR)
+      // sharp at glancing angles - as far as the GPU goes
+      const aniso = this.#anisotropic()
+      if (aniso && !nearest) gl.texParameterf(gl.TEXTURE_2D, aniso.ext.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(texture.anisotropy, aniso.max))
+    } else {
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, nearest ? gl.NEAREST : gl.LINEAR)
+    }
+    entry.version = texture.version
+    return entry.texture
+  }
+
+  /**
+   * A texture's pixels into its GL texture (bound): new storage when it is new or changed size or
+   * kind, otherwise refilled - only the parts that changed, where the updates said.
+   * @param {Texture} texture @param {TextureEntry} entry @param {TextureImage} image
+   */
+  #uploadPixels(texture, entry, image) {
+    const gl = this.gl
     const data = 'data' in image ? /** @type {DataImage} */ (image) : null
     // raw pixels: bytes as usual, floats (HDR) as half floats, which filter everywhere; sRGB textures
     // are stored as sRGB so sampling returns linear values, filtered correctly
@@ -449,7 +492,9 @@ export class Resources {
     const type = float ? gl.FLOAT : gl.UNSIGNED_BYTE
     const [width, height] = sizeOf(image)
     if (entry.version < 0 || entry.width !== width || entry.height !== height || entry.internal !== internal) {
-      // new storage: the first upload, or the image changed size or kind
+      // new storage: the first upload, or the image changed size or kind - every mip level again, if a
+      // compressed image (with only its own levels) was here before
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 1000)
       if (data) gl.texImage2D(gl.TEXTURE_2D, 0, internal, width, height, 0, gl.RGBA, type, data.data)
       else gl.texImage2D(gl.TEXTURE_2D, 0, internal, gl.RGBA, type, /** @type {TexImageSource} */ (image))
       Object.assign(entry, { width, height, internal })
@@ -473,22 +518,31 @@ export class Resources {
       gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0)
       gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0)
     }
-    const wrap = { repeat: gl.REPEAT, clamp: gl.CLAMP_TO_EDGE, mirror: gl.MIRRORED_REPEAT }[texture.wrap]
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap)
-    const nearest = texture.filter === 'nearest'
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, nearest ? gl.NEAREST : gl.LINEAR)
-    if (texture.mipmaps) {
-      gl.generateMipmap(gl.TEXTURE_2D)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, nearest ? gl.NEAREST_MIPMAP_NEAREST : gl.LINEAR_MIPMAP_LINEAR)
-      // sharp at glancing angles - as far as the GPU goes
-      const aniso = this.#anisotropic()
-      if (aniso && !nearest) gl.texParameterf(gl.TEXTURE_2D, aniso.ext.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(texture.anisotropy, aniso.max))
-    } else {
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, nearest ? gl.NEAREST : gl.LINEAR)
+  }
+
+  /**
+   * A GPU-compressed image (a transcoded KTX2) into its GL texture (bound): each of its mip levels as
+   * it is, in the format's sRGB form for a colour map. False where this context can't draw the
+   * format - a context other than the one the transcode was chosen for.
+   * @param {Texture} texture @param {TextureEntry} entry @param {CompressedImage} image
+   * @returns {boolean}
+   */
+  #uploadCompressed(texture, entry, image) {
+    const gl = this.gl
+    const kind = COMPRESSED[image.compressed]
+    const supported = kind.extensions.every((name) => gl.getExtension(name))
+    if (!supported) {
+      warnOnce(texture, `a compressed texture (${image.compressed}) this GPU can't draw - drawn white`)
+      return false
     }
-    entry.version = texture.version
-    return entry.texture
+    const internal = texture.colorSpace === 'srgb' ? kind.srgb : kind.linear
+    image.levels.forEach((level, i) => {
+      gl.compressedTexImage2D(gl.TEXTURE_2D, i, internal, Math.max(1, image.width >> i), Math.max(1, image.height >> i), 0, level)
+    })
+    // only the levels it has: a file with fewer than a full chain is still complete
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, image.levels.length - 1)
+    Object.assign(entry, { width: image.width, height: image.height, internal })
+    return true
   }
 
   /**

@@ -293,8 +293,8 @@ describe('phoria2/gltf', () => {
     const model = await parseGLTF(glb(json, new Uint8Array(bin)))
     expect(Array.from(/** @type {Mesh} */ (model.find('Triangle')).geometry.positions)).toEqual([0, 0, 0, 1, 0, 0, 0, 1, 0])
 
-    await expect(parseGLTF({ ...json, extensionsRequired: ['KHR_draco_mesh_compression'] }))
-      .rejects.toThrow("requires 'KHR_draco_mesh_compression', which isn't supported - export the model without compression")
+    await expect(parseGLTF({ ...json, extensionsRequired: ['KHR_materials_pbrSpecularGlossiness'] }))
+      .rejects.toThrow("requires 'KHR_materials_pbrSpecularGlossiness', which isn't supported")
     await expect(parseGLTF({ asset: { version: '1.0' } })).rejects.toThrow('only glTF 2.0')
   })
 

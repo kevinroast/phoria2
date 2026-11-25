@@ -125,11 +125,11 @@ export default defineConfig(({ mode }) => ({
           output: {
             // everything the sub-paths share with the core goes in one predictable chunk; modules
             // loaded on demand (explain, toImage, the tooltip, keyboard use, the .hdr parser, the
-            // renderer's environment and shadow passes, bloom, the product viewer's effects, GPU
+            // renderer's environment and shadow passes, bloom, caustics, KTX2 transcoding, the product viewer's effects, GPU
             // picking, the GLSL parts loaded on their own - webgl/parts-*.js - and HTML labels, which
             // charts bring up front) keep chunks of their own - a new one must be named here too, or
             // it is bundled into core
-            manualChunks: (id) => (/[\\/]src[\\/](?!particles|charts|gltf|motion|edit|element|explain|snapshot|tooltip|keyboard|debug|hdr|irradiance|labels\.|labelLayout|webgl[\\/](?:passes|picking|bloom|effects|ltc|blue-noise|parts-))/.test(id) ? 'core' : undefined),
+            manualChunks: (id) => (/[\\/]src[\\/](?!particles|charts|gltf|motion|edit|element|explain|snapshot|tooltip|keyboard|debug|hdr|ktx2|irradiance|labels\.|labelLayout|webgl[\\/](?:passes|picking|bloom|effects|ltc|caustics|blue-noise|parts-))/.test(id) ? 'core' : undefined),
             chunkFileNames: '[name].js',
           },
         },

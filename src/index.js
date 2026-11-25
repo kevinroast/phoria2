@@ -25,6 +25,7 @@ export { Material } from './material/Material.js'
 export { Clip } from './clip.js'
 export { Fog } from './fog.js'
 export { Texture, loadTexture } from './material/Texture.js'
+export { useDecoders } from './decoders.js'
 export { RenderTexture } from './material/RenderTexture.js'
 
 // values and maths

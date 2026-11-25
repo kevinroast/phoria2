@@ -48,7 +48,7 @@ export const DEMOS = [
   { name: 'water', title: 'swimming pool - caustics, the sun light bent by the waves' },
   { name: 'prism', title: 'prism - a beam of white light split into a rainbow - caustics with dispersion' },
   { name: 'vase', title: 'glass vase of flowers - glTF thickness map, thin glass and a solid part, shadow and caustics' },
-  { name: 'viewer', title: 'glTF product viewer - full material maps, baked occlusion, an HDR studio, shadows, animation' },
+  { name: 'viewer', title: 'glTF viewer - material maps, models types (Draco, meshopt, KTX2), glass, HDR, shadows, animation' },
   { name: 'viewer passes', title: 'product viewer passes - ambient occlusion, soft ground shadows, FXAA' },
  // { name: 'models', title: 'hand-made models from raw points and polygons - drawn solid, as edges and as points' },
   

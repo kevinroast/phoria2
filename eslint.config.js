@@ -4,7 +4,8 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
   // eval/runs and eval/full/results hold pages written by agents under test - theirs, not ours
-  globalIgnores(['dist', 'dist-demos', 'eval/runs', 'eval/full/results']),
+  // src/gltf/meshopt-decoder.js is meshoptimizer's decoder, vendored as is
+  globalIgnores(['dist', 'dist-demos', 'eval/runs', 'eval/full/results', 'src/gltf/meshopt-decoder.js']),
   {
     files: ['**/*.js'],
     extends: [js.configs.recommended],

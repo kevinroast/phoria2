@@ -12,24 +12,30 @@ import { toSRGB } from '../value/Color.js'
 import { Material } from '../material/Material.js'
 import { Texture } from '../material/Texture.js'
 import { PhoriaError, describe, warnOnce } from '../validate.js'
+import { useDecoders } from '../decoders.js'
 import { Animation } from './Animation.js'
 
 /** @import { Node } from '../scene/Node.js' */
 /** @import { Camera } from '../scene/cameras.js' */
 /** @import { Track } from './Animation.js' */
+/** @import { DecoderPaths } from '../decoders.js' */
 
 /**
  * @typedef {object} GLTFOptions
  * @property {string} [baseUrl] where relative uris resolve from (default: the file's own url)
  * @property {boolean} [waitForTextures] resolve once every texture has loaded, so the first frame
  *   is complete (default true)
+ * @property {DecoderPaths} [decoders] where the Draco and Basis (KTX2) decoders load from, for this and
+ *   every later file - as useDecoders() (default: a public CDN, fetched the first time a file needs one)
  */
 
 const SUPPORTED = new Set(['KHR_materials_emissive_strength', 'KHR_texture_transform', 'KHR_lights_punctual',
   'KHR_materials_unlit', 'KHR_mesh_quantization', 'KHR_materials_transmission', 'KHR_materials_clearcoat', 'KHR_materials_sheen',
   'KHR_materials_ior', 'KHR_materials_specular', 'KHR_materials_anisotropy', 'KHR_materials_diffuse_transmission',
-  'KHR_materials_variants', 'KHR_materials_iridescence', 'KHR_materials_volume', 'KHR_materials_dispersion'])
-const COMPRESSION = new Set(['KHR_draco_mesh_compression', 'EXT_meshopt_compression', 'KHR_texture_basisu'])
+  'KHR_materials_variants', 'KHR_materials_iridescence', 'KHR_materials_volume', 'KHR_materials_dispersion',
+  // compressed geometry and textures: decoded as the model loads
+  'KHR_draco_mesh_compression', 'EXT_meshopt_compression', 'KHR_meshopt_compression', 'KHR_texture_basisu',
+  'EXT_texture_webp', 'EXT_texture_avif'])
 
 const COMPONENTS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT2: 4, MAT3: 9, MAT4: 16 }
 const ARRAYS = { 5120: Int8Array, 5121: Uint8Array, 5122: Int16Array, 5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array }
@@ -44,6 +50,26 @@ const WRAP = { 33071: 'clamp', 33648: 'mirror', 10497: 'repeat' }
  */
 /** @type {WeakMap<Model, VariantPart[]>} */
 const VARIANT_PARTS = new WeakMap()
+
+/**
+ * A buffer or buffer view's meshopt compression, by either extension's name.
+ * @param {Record<string, any>} def @returns {Record<string, any> | undefined}
+ */
+const meshopt = (def) => def.extensions?.EXT_meshopt_compression ?? def.extensions?.KHR_meshopt_compression
+
+/**
+ * Decoded values as an accessor reads them: floats, normalized integers scaled to 0-1 or -1-1.
+ * @param {ArrayLike<number>} values @param {Record<string, any>} accessor @returns {Float32Array}
+ */
+function toFloats(values, accessor) {
+  const out = Float32Array.from(values)
+  if (accessor.normalized) {
+    const scale = 1 / NORMALIZE[accessor.componentType]
+    const signed = accessor.componentType === 5120 || accessor.componentType === 5122
+    for (let i = 0; i < out.length; i++) out[i] = signed ? Math.max(out[i] * scale, -1) : out[i] * scale
+  }
+  return out
+}
 
 /** A loaded glTF scene: a Group, plus the file's animations, cameras and material variants. */
 export class Model extends Group {
@@ -148,16 +174,16 @@ export async function parseGLTF(data, options = {}) {
   const version = String(json.asset?.version ?? '')
   if (!version.startsWith('2.')) throw new PhoriaError(`loadGLTF: glTF ${version || '(no version)'} isn't supported - only glTF 2.0`)
   for (const ext of json.extensionsRequired ?? []) {
-    if (SUPPORTED.has(ext)) continue
-    const hint = COMPRESSION.has(ext) ? ' - export the model without compression for now' : ''
-    throw new PhoriaError(`loadGLTF: the model requires '${ext}', which isn't supported${hint}`)
+    if (!SUPPORTED.has(ext)) throw new PhoriaError(`loadGLTF: the model requires '${ext}', which isn't supported`)
   }
+  if (options.decoders) useDecoders(options.decoders)
   const model = new Model({ name: json.scenes?.[json.scene ?? 0]?.name ?? 'model' })
   for (const ext of json.extensionsUsed ?? []) {
     if (!SUPPORTED.has(ext)) warnOnce(model, `the model uses '${ext}', which isn't supported - it is ignored`)
   }
   const build = new Builder(json, bin, options.baseUrl ?? '', model)
   await build.buffers()
+  await build.decompress()
   build.scene()
   // either way, embedded images' object urls are released once their textures settle
   const textures = build.textures()
@@ -195,6 +221,8 @@ class Builder {
   /** @type {Node[]} */ #nodes = []
   /** @type {string[]} */ #objectUrls = []
   /** @type {VariantPart[]} */ #variantParts = []
+  /** meshopt-compressed buffer views, decoded: each one's bytes. @type {Map<number, Uint8Array>} */ #views = new Map()
+  /** Draco-compressed primitives, decoded. @type {Map<object, { attributes: Record<string, ArrayLike<number>>, indices: Uint32Array }>} */ #draco = new Map()
 
   /** @param {Record<string, any>} json @param {Uint8Array | null} bin @param {string} base @param {Model} model */
   constructor(json, bin, base, model) {
@@ -215,6 +243,8 @@ class Builder {
 
   async buffers() {
     this.#buffers = await Promise.all((this.json.buffers ?? []).map(async (b, i) => {
+      // a meshopt file's fallback buffer: no data, as every view of it is decoded from another
+      if (b.uri === undefined && meshopt(b)?.fallback) return new Uint8Array(b.byteLength ?? 0)
       if (b.uri === undefined) {
         if (i !== 0 || !this.bin) throw new PhoriaError(`loadGLTF: buffer ${i} has no uri and there is no binary chunk`)
         return this.bin
@@ -224,6 +254,49 @@ class Builder {
       if (!response.ok) throw new PhoriaError(`loadGLTF: couldn't fetch buffer '${b.uri}' (${response.status})`)
       return new Uint8Array(await response.arrayBuffer())
     }))
+  }
+
+  /**
+   * Compressed geometry decoded, before anything reads it: meshopt's buffer views (its decoder comes
+   * with phoria2/gltf) and Draco's primitives (its decoder fetched the first time - decoders.js).
+   */
+  async decompress() {
+    const views = (this.json.bufferViews ?? []).map((bv, i) => /** @type {[number, any]} */ ([i, meshopt(bv)])).filter(([, e]) => e)
+    if (views.length) {
+      const { MeshoptDecoder } = await import('./meshopt-decoder.js')
+      await MeshoptDecoder.ready
+      for (const [i, e] of views) {
+        const from = e.byteOffset ?? 0
+        const source = this.#buffers[e.buffer].subarray(from, from + e.byteLength)
+        const out = new Uint8Array(e.count * e.byteStride)
+        MeshoptDecoder.decodeGltfBuffer(out, e.count, e.byteStride, source, e.mode, e.filter ?? 'NONE')
+        this.#views.set(i, out)
+      }
+    }
+    const primitives = (this.json.meshes ?? []).flatMap((/** @type {any} */ m) => m.primitives).filter((/** @type {any} */ p) => p.extensions?.KHR_draco_mesh_compression)
+    if (primitives.length) {
+      const { decodeDraco } = await import('./draco.js')
+      for (const p of primitives) {
+        const ext = p.extensions.KHR_draco_mesh_compression
+        /** @type {Record<string, { id: number, componentType: number }>} */
+        const attributes = {}
+        for (const [name, id] of Object.entries(ext.attributes ?? {})) {
+          if (p.attributes[name] !== undefined) attributes[name] = { id: /** @type {number} */ (id), componentType: this.json.accessors[p.attributes[name]].componentType }
+        }
+        try {
+          this.#draco.set(p, await decodeDraco(this.#viewBytes(ext.bufferView), attributes))
+        } catch (e) {
+          throw new PhoriaError(`loadGLTF: couldn't decode a Draco mesh - ${/** @type {Error} */ (e).message}`)
+        }
+      }
+    }
+  }
+
+  /** A buffer view's bytes, as stored. @param {number} index */
+  #viewBytes(index) {
+    const bv = this.json.bufferViews[index]
+    const from = bv.byteOffset ?? 0
+    return this.#buffers[bv.buffer].subarray(from, from + bv.byteLength)
   }
 
   /** Resolves when every texture has loaded (failures are warned about, not thrown). */
@@ -317,18 +390,25 @@ class Builder {
   /** @param {Record<string, any>} p */
   #geometry(p) {
     // primitives often share accessors; share their geometry too
-    const key = JSON.stringify([p.attributes, p.indices])
+    const draco = this.#draco.get(p)
+    const key = JSON.stringify([p.attributes, p.indices, p.extensions?.KHR_draco_mesh_compression?.bufferView])
     const cached = this.#geometries.get(key)
     if (cached) return cached
     const a = p.attributes
     if (a.POSITION === undefined) throw new PhoriaError('loadGLTF: a mesh primitive has no POSITION')
+    // an attribute's floats: Draco's decoded values where it has them, else the accessor's
+    const read = (/** @type {string} */ name) => {
+      const decoded = draco?.attributes[name]
+      return decoded ? toFloats(decoded, this.json.accessors[a[name]]) : /** @type {Float32Array} */ (this.#accessor(a[name]))
+    }
     /** @type {import('../geometry/Geometry.js').GeometryOptions} */
-    const options = { positions: this.#accessor(a.POSITION) }
-    if (a.NORMAL !== undefined) options.normals = this.#accessor(a.NORMAL)
-    if (a.TEXCOORD_0 !== undefined) options.uvs = this.#accessor(a.TEXCOORD_0)
-    if (a.TEXCOORD_1 !== undefined) options.uvs2 = this.#accessor(a.TEXCOORD_1)
-    if (a.COLOR_0 !== undefined) options.colors = srgbColors(/** @type {Float32Array} */ (this.#accessor(a.COLOR_0)), COMPONENTS[this.json.accessors[a.COLOR_0].type])
-    if (p.indices !== undefined) options.indices = this.#accessor(p.indices, true)
+    const options = { positions: read('POSITION') }
+    if (a.NORMAL !== undefined) options.normals = read('NORMAL')
+    if (a.TEXCOORD_0 !== undefined) options.uvs = read('TEXCOORD_0')
+    if (a.TEXCOORD_1 !== undefined) options.uvs2 = read('TEXCOORD_1')
+    if (a.COLOR_0 !== undefined) options.colors = srgbColors(read('COLOR_0'), COMPONENTS[this.json.accessors[a.COLOR_0].type])
+    if (draco) options.indices = draco.indices
+    else if (p.indices !== undefined) options.indices = this.#accessor(p.indices, true)
     const geometry = new Geometry(options)
     this.#geometries.set(key, geometry)
     return geometry
@@ -369,12 +449,14 @@ class Builder {
    */
   #read(viewIndex, offset, type, size, count, out, scale) {
     const bv = this.json.bufferViews[viewIndex]
-    const buffer = this.#buffers[bv.buffer]
+    // a meshopt view decoded is a buffer of its own, from its start
+    const decoded = this.#views.get(viewIndex)
+    const buffer = decoded ?? this.#buffers[bv.buffer]
     const Type = ARRAYS[type]
     if (!Type) throw new PhoriaError(`loadGLTF: unknown component type ${type}`)
     const bytes = Type.BYTES_PER_ELEMENT
     const stride = bv.byteStride || size * bytes
-    const start = buffer.byteOffset + (bv.byteOffset ?? 0) + offset
+    const start = buffer.byteOffset + (decoded ? 0 : bv.byteOffset ?? 0) + offset
     const view = new DataView(buffer.buffer)
     const get = {
       5120: (/** @type {number} */ o) => view.getInt8(o),
@@ -519,18 +601,23 @@ class Builder {
 
     const t = this.json.textures[info.index]
     const sampler = this.json.samplers?.[t.sampler] ?? {}
-    const image = this.json.images[t.source]
-    if (t.source === undefined || !image) throw new PhoriaError(`loadGLTF: texture ${info.index} has no image (compressed textures aren't supported)`)
+    // a compressed image - KTX2, WebP or AVIF - where the file has one, else its PNG or JPEG
+    const x = t.extensions ?? {}
+    const source = x.KHR_texture_basisu?.source ?? x.EXT_texture_webp?.source ?? x.EXT_texture_avif?.source ?? t.source
+    const image = this.json.images?.[source]
+    if (source === undefined || !image) throw new PhoriaError(`loadGLTF: texture ${info.index} has no image`)
     let url
     if (image.bufferView !== undefined) {
-      const bv = this.json.bufferViews[image.bufferView]
-      const buffer = this.#buffers[bv.buffer]
-      const bytes = buffer.subarray(bv.byteOffset ?? 0, (bv.byteOffset ?? 0) + bv.byteLength)
+      const bytes = this.#viewBytes(image.bufferView)
       url = URL.createObjectURL(new Blob([/** @type {Uint8Array<ArrayBuffer>} */ (bytes)], { type: image.mimeType ?? 'image/png' }))
       this.#objectUrls.push(url)
     } else {
       url = this.#resolve(image.uri)
     }
+    // a KTX2 image is transcoded as it loads: Texture knows one by its .ktx2 name, which an embedded
+    // one's address hasn't - so it gets one as a fragment, which fetching leaves off
+    const KTX2 = /\.ktx2($|[?#])/i
+    if ((image.mimeType === 'image/ktx2' || KTX2.test(image.uri ?? '')) && !KTX2.test(url)) url += '#.ktx2'
     const texture = new Texture({
       url,
       colorSpace,

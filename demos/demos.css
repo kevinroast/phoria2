@@ -2984,3 +2984,78 @@ button.demo-legend-item {
   color: #eee;
   font-size: 15px;
 }
+
+/* the product viewer: its models along the bottom - the one shown named, with its compression and
+   credit, over a button each, all on one row where the window is wide enough */
+.viewer-models {
+  position: fixed;
+  z-index: 5;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--float);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.viewer-caption {
+  /* as wide as the buttons, not wider: a long credit wraps */
+  width: 0;
+  min-width: 100%;
+  line-height: 1.35;
+}
+
+.viewer-caption span {
+  color: var(--text-dim);
+}
+
+.viewer-caption small {
+  display: block;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.viewer-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.viewer-buttons button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.viewer-buttons button small {
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.viewer-buttons button:hover {
+  border-color: var(--accent-dim);
+}
+
+.viewer-buttons button[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: rgba(255, 246, 226, 0.1);
+}

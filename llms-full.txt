@@ -1165,6 +1165,17 @@ A model has `animations` (each with `play()`, `pause()`, `stop()`, `loop`, `spee
 `variants` lists their names, and setting `variant` swaps the materials of every part it names at once
 (their textures load with the model; an unknown name is warned about and changes nothing). Its `toJSON()` is a plain group of its parts, with their vertex data - `create()` builds it
 back without `phoria2/gltf`, but the animations, and textures embedded in a `.glb`, aren't kept.
+
+**Compressed files** load as any other: Draco and meshopt geometry (`KHR_draco_mesh_compression`,
+`EXT_`/`KHR_meshopt_compression`, quantized attributes) and KTX2 textures (`KHR_texture_basisu`, transcoded
+to a format the GPU draws compressed - BC7, ASTC, ETC2 - or plain RGBA), as gltfpack and gltf-transform
+write them; WebP and AVIF textures too. meshopt's decoder comes with `phoria2/gltf`; Draco's and the
+KTX2 transcoder (a few hundred KB of WebAssembly each) are fetched from a public CDN the first time a
+file needs them. To host them yourself - offline, or a content security policy that forbids other
+origins (they also need `'unsafe-eval'`) - copy them and point there before loading:
+`useDecoders({ draco: '/decoders/draco/', basis: '/decoders/basis/' })` (from `phoria2`; or
+`loadGLTF(url, { decoders })`). A `.ktx2` url also works for any `Texture`.
+
 Product-viewer lighting:
 
 ```js

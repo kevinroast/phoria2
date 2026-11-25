@@ -55,6 +55,10 @@ const PREPARE = {
   viewer: `view.controls.autoRotate = false
     const { position: p, target: t } = view.camera, d = p.distanceTo(t), l = Math.hypot(2.4, 1.6, 3.2)
     p.set(t[0] + 2.4 / l * d, t[1] + 1.6 / l * d, t[2] + 3.2 / l * d)
+    // and on 10 degrees, as the turntable turns - with the backdrop more blurred, so the studio's
+    // dark corner reads as a soft shade rather than a blob behind the model
+    view.controls.rotate(-10 * Math.PI / 180, 0)
+    view.scene.backgroundBlur = 0.5
     view.invalidate()`,
   // the shadows demo by its lamp post's spot light, at dusk - its shaders compiled at load, so it shows at once
   shadows: `(async () => {

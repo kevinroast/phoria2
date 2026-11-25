@@ -4,13 +4,19 @@ import { checkNumber, checkOneOf, checkOptions, describe, fail } from '../valida
  * Raw pixels, RGBA, top row first: bytes for ordinary images, floats for HDR (linear radiance).
  * @typedef {{ data: Uint8Array | Float32Array, width: number, height: number }} DataImage
  */
-/** @typedef {HTMLImageElement | HTMLCanvasElement | HTMLVideoElement | ImageBitmap | OffscreenCanvas | DataImage} TextureImage */
+/**
+ * A GPU-compressed image, as a KTX2 file transcodes to: each mip level's blocks, largest first, in a
+ * format the GPU draws from directly - no mipmaps made for it, and no flip.
+ * @typedef {{ compressed: 'astc' | 'bc7' | 'bc3' | 'bc1' | 'etc2' | 'etc2-rgb', width: number, height: number, levels: Uint8Array[] }} CompressedImage
+ */
+/** @typedef {HTMLImageElement | HTMLCanvasElement | HTMLVideoElement | ImageBitmap | OffscreenCanvas | DataImage | CompressedImage} TextureImage */
 
 /**
  * @typedef {object} TextureOptions
  * @property {TextureImage} [image] the pixels; omit and give a url to load them
  * @property {string} [url] image to load (starts loading immediately in a browser); a .hdr file loads as
- *   linear HDR radiance, for scene.environment; a video (.mp4, .webm, .ogv, .mov, .m4v) plays muted and on a
+ *   linear HDR radiance, for scene.environment; a .ktx2 file (Basis Universal) is transcoded to a format
+ *   the GPU draws compressed, its transcoder fetched the first time (see useDecoders); a video (.mp4, .webm, .ogv, .mov, .m4v) plays muted and on a
  *   loop, and texture.image is its <video> to pause, seek or unmute
  * @property {'srgb' | 'linear'} [colorSpace] 'srgb' for colour maps (default), 'linear' for data
  *   maps such as normal and roughness maps
@@ -299,6 +305,16 @@ export class Texture {
       // a browser that won't autoplay leaves it paused on its first frame: video.play() on a click starts it
       video.play()?.catch(() => {})
       this.image = video
+      return this
+    }
+    if (/\.ktx2($|[?#])/i.test(url)) {
+      const [{ transcodeKTX2 }, response] = await Promise.all([import('../ktx2.js'), fetch(url)])
+      if (!response.ok) throw new Error(`Texture: failed to load '${url}' (${response.status})`)
+      try {
+        this.image = await transcodeKTX2(await response.arrayBuffer())
+      } catch (e) {
+        throw new Error(`Texture: couldn't transcode '${url}' - ${/** @type {Error} */ (e).message}`, { cause: e })
+      }
       return this
     }
     if (/\.hdr($|[?#])/i.test(url)) {
