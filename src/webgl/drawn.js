@@ -100,13 +100,16 @@ export class DrawnFrom {
       if (glass) {
         const [fr, fg, fb] = glassFilter(material, worldMatrix)
         r.push(fr, fg, fb, material.ior, material.flatShading ? 1 : 0, material.doubleSided ? 1 : 0)
-        // a thickness map: its tint and bending at each pixel, where the map is read
-        const thick = material.thicknessMap
-        if (thick) {
-          r.push(idOf(thick), thick.version, thick.uvSet, material.triplanar)
-          const m = uvMatrix(thick)
+        // its thickness and colour maps: its tint and bending at each pixel, where each is read
+        for (const t of [material.thicknessMap, material.map]) {
+          if (!t) {
+            r.push(0)
+            continue
+          }
+          r.push(idOf(t), t.version, t.uvSet, material.triplanar)
+          const m = uvMatrix(t)
           for (let i = 0; i < m.length; i++) r.push(m[i])
-        } else r.push(0)
+        }
       }
     }
     return this

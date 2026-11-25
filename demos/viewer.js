@@ -41,7 +41,7 @@ const COMPRESSION = {
   KTX2: 'KTX2 (Basis Universal) textures',
 }
 const HDR = 'hdr/studio_small_09_1k.hdr'
-const TURN = 0.25
+const TURN = 0.20
 
 // A product viewer: a glTF model with its full material maps, lit by an HDR studio that also shows
 // as a soft backdrop, standing on a plinth in the sun's shadow. The models along the bottom include
@@ -52,7 +52,7 @@ const TURN = 0.25
 // a choice of them, as a configurator would. With the turntable off, the picture refines.
 export default function run({ canvas, gui }) {
   // a slow turntable: a quarter of a radian a second
-  const view = new View({ canvas, orbit: { autoRotate: TURN }, refine: true, camera: { position: [2.4, 1.6, 3.2], fov: 35 } })
+  const view = new View({ canvas, orbit: { autoRotate: TURN }, camera: { position: [2.4, 1.6, 3.2], fov: 35 } })
   const scene = view.scene
   scene.environment = HDR
   scene.background = scene.environment
@@ -80,7 +80,11 @@ export default function run({ canvas, gui }) {
     const button = Object.assign(el('button', ''), { type: 'button' })
     button.append(m.name)
     if (m.compression) button.append(el('small', '', m.compression))
-    button.addEventListener('click', () => show(i))
+    // focus let go after a click, so the space bar - the turntable's key - doesn't press it again
+    button.addEventListener('click', () => {
+      button.blur()
+      show(i)
+    })
     row.append(button)
     return button
   })
@@ -167,7 +171,16 @@ export default function run({ canvas, gui }) {
   gui.add(sun, 'shadowSoftness', 0, 1, 0.05).name('shadow softness')
   gui.add(view.renderer, 'exposure', 0.2, 3, 0.05)
   gui.add(view.renderer, 'toneMapping', ['neutral', 'aces', 'none']).name('tone mapping')
-  gui.add(settings, 'turntable').onChange((on) => { view.controls.autoRotate = on ? TURN : false })
+  const turntable = (/** @type {boolean} */ on) => { view.controls.autoRotate = on ? TURN : false }
+  gui.add(settings, 'turntable').onChange(turntable)
+  // the space bar turns the turntable on and off - unless typing in a field
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== ' ' || /^(INPUT|TEXTAREA|SELECT)$/.test(/** @type {HTMLElement} */ (e.target).tagName ?? '')) return
+    e.preventDefault()
+    settings.turntable = !settings.turntable
+    turntable(settings.turntable)
+    gui.updateDisplay()
+  })
   // the controls folded away to start, so the model has the picture
   const panel = /** @type {any} */ (gui).panel
   panel?.classList.add('collapsed')

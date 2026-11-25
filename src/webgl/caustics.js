@@ -40,7 +40,7 @@ import * as mat4 from '../math/mat4.js'
 import { CAUSTIC_SIZE } from '../frame.js'
 import { CLIP_ONLY_FRAGMENT, FULLSCREEN_VERTEX, MESH_VERTEX } from './shaders.js'
 import { setHookUniforms } from './hooks.js'
-import { setGlassUniforms, setShapeUniforms, setThicknessUniforms, shapeDefines, thicknessDefines } from './shape.js'
+import { glassMapDefines, setGlassMapUniforms, setGlassUniforms, setShapeUniforms, shapeDefines } from './shape.js'
 import { DrawnFrom } from './drawn.js'
 /** @import { Programs } from './programs.js' */
 /** @import { Resources } from './resources.js' */
@@ -501,7 +501,7 @@ export class Caustics {
       // faceted glass bends by its faces, as it's drawn - a prism, a cut gem
       if (material.flatShading) defines.push('FLAT_SHADING')
       // a thickness map: thin walls bend little, a thick foot much
-      thicknessDefines(item, defines)
+      glassMapDefines(item, defines)
       const program = this.programs.ready('caustic-glass', defines, GLASS, hook?.source)
       if (program.failed) continue
       gl.useProgram(program.program)
@@ -517,7 +517,7 @@ export class Caustics {
       program.set('uCausticFrom', from)
       program.set('uCausticDirection', direction)
       setShapeUniforms(program, item, cutout, (t) => this.resources.texture(t))
-      setThicknessUniforms(program, item, (t) => this.resources.texture(t))
+      setGlassMapUniforms(program, item, (t) => this.resources.texture(t))
       this.resources.drawTriangles(item.geometry, item.instances)
     }
   }

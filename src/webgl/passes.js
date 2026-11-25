@@ -8,7 +8,7 @@ import { irradianceSH } from '../irradiance.js'
 import { BLUE_NOISE_SIZE, POINT_SHADOW_SIZE, SHADOW_MAP_SIZE, SOFT_SPREAD, softnessOf, SPOT_ATLAS_SIZE } from '../shadow.js'
 import { CLIP, CLIP_ONLY_FRAGMENT, COMMON, CUTOUT, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
 import { setHookUniforms } from './hooks.js'
-import { setGlassUniforms, setShapeUniforms, setThicknessUniforms, shapeDefines, thicknessDefines } from './shape.js'
+import { glassMapDefines, setGlassMapUniforms, setGlassUniforms, setShapeUniforms, shapeDefines } from './shape.js'
 import { isGlass } from '../material/features.js'
 import { blit } from './targets.js'
 import { DrawnFrom } from './drawn.js'
@@ -732,7 +732,7 @@ export class Passes {
       if (filter) {
         defines.push('GLASS_FILTER')
         if (material.flatShading) defines.push('FLAT_SHADING')
-        thicknessDefines(item, defines)
+        glassMapDefines(item, defines)
       }
       const program = this.programs.ready('depth', defines, DEPTH, hook?.source)
       if (program.failed) continue
@@ -743,7 +743,7 @@ export class Passes {
       if (filter) {
         program.set('uLightInverse', lightInverse)
         setGlassUniforms(program, item)
-        setThicknessUniforms(program, item, (t) => this.resources.texture(t))
+        setGlassMapUniforms(program, item, (t) => this.resources.texture(t))
       }
       if (normals) program.set('uView', normals)
       if (normalMatrix) {

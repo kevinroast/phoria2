@@ -66,18 +66,21 @@ export function setShapeUniforms(program, item, cutout, texture) {
 }
 
 /**
- * Glass with a thickness map, in the passes that see glass from a light - its coloured shadow and
- * caustics: the defines to read the map as the picture reads it, added to shapeDefines' own.
+ * Glass's maps in the passes that see glass from a light - its coloured shadow and caustics: its
+ * thickness map, and its colour map (stained glass colours the light through it), read as the
+ * picture reads them - the defines, added to shapeDefines' own.
  * @param {DrawItem} item @param {string[]} defines
  */
-export function thicknessDefines(item, defines) {
+export function glassMapDefines(item, defines) {
   const { material, geometry } = item
-  if (!material.thicknessMap) return
+  if (!material.thicknessMap && !material.map) return
   /** @param {string} d */
   const add = (d) => { if (!defines.includes(d)) defines.push(d) }
-  add('THICKNESS_MAP')
+  if (material.thicknessMap) add('THICKNESS_MAP')
+  if (material.map) add('GLASS_MAP')
   if (material.triplanar > 0) add('TRIPLANAR')
-  for (const d of secondUvDefines(material, geometry, ['thicknessMap'])) add(d)
+  const slots = /** @type {('thicknessMap' | 'map')[]} */ ([material.thicknessMap && 'thicknessMap', material.map && 'map'].filter(Boolean))
+  for (const d of secondUvDefines(material, geometry, slots)) add(d)
 }
 
 /**
@@ -92,14 +95,19 @@ export function setGlassUniforms(program, item) {
 }
 
 /**
- * The uniforms thicknessDefines' code reads: the map, where it is read.
+ * The uniforms glassMapDefines' code reads: the maps, where each is read.
  * @param {{ set: (name: string, value: any) => void }} program
  * @param {DrawItem} item @param {(t: Texture) => WebGLTexture} texture the GL texture for a map
  */
-export function setThicknessUniforms(program, item, texture) {
-  const material = item.material, map = material.thicknessMap
-  if (!map) return
-  program.set('uThicknessMap', texture(map))
-  program.set('uThicknessMapUv', uvMatrix(map))
-  if (material.triplanar > 0) program.set('uTriplanar', material.triplanar)
+export function setGlassMapUniforms(program, item, texture) {
+  const material = item.material, thickness = material.thicknessMap, map = material.map
+  if (thickness) {
+    program.set('uThicknessMap', texture(thickness))
+    program.set('uThicknessMapUv', uvMatrix(thickness))
+  }
+  if (map) {
+    program.set('uMap', texture(map))
+    program.set('uMapUv', uvMatrix(map))
+  }
+  if ((thickness || map) && material.triplanar > 0) program.set('uTriplanar', material.triplanar)
 }

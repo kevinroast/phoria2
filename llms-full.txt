@@ -491,7 +491,8 @@ higher for frosted.
 - **A liquid in a glass**: see-through (wine, whisky) - its own solid glass piece (`transmission: 1`,
   `thickness` about its width, `attenuationColor` for its colour) with `renderOrder: 1`, drawn after the
   vessel; opaque (milk, paint) - an ordinary glossy material.
-- Glass that casts shadows casts coloured light (grey from a point light); clear glass a faint shadow,
+- Glass that casts shadows casts coloured light, by its colour and its `map` (stained glass throws its
+  colours; grey from a point light); clear glass a faint shadow,
   darker where the light grazes it - its outline. Glass seen through glass
   shows the solids behind both, not the farther glass.
 

@@ -164,7 +164,7 @@ uniform vec3 uCausticGlass;
 uniform vec4 uCausticFrom;       // the light's position, w 1 (spot, rect); w 0 for the sun
 uniform vec3 uCausticDirection;  // the sun's way
 #endif
-#if defined(ALPHA_TEST) || defined(HOOK_FRAGMENT) || defined(THICKNESS_MAP)
+#if defined(ALPHA_TEST) || defined(HOOK_FRAGMENT) || defined(THICKNESS_MAP) || defined(GLASS_MAP)
 in vec2 vUv;
 #endif
 #if defined(HOOK_FRAGMENT) || defined(NORMALS) || defined(CAUSTIC_GLASS) || defined(GLASS_FILTER)
@@ -180,24 +180,34 @@ uniform mat4 uLightInverse;   // the light's view back to the world: which way i
 #endif
 #if defined(GLASS_FILTER) || defined(CAUSTIC_GLASS)
 // what of the light glass lets through (glassFilterParts): what its opacity leaves (a); and where it
-// is, its colour's share (rgb), tinted by its body over its thickness - a thickness map's share of it -
-// and less what its faces reflect away, in and out: a few percent face on, nearly all where the light
-// grazes it - the dark outline of a glass's shadow
+// is, its colour's share (rgb) - times its colour map's here (stained glass) - tinted by its body over
+// its thickness - a thickness map's share of it - and less what its faces reflect away, in and out: a
+// few percent face on, nearly all where the light grazes it - the dark outline of a glass's shadow
 uniform vec4 uGlassThrough;
 uniform vec4 uGlassBody;      // its body's tint through its whole thickness, and its ior
-vec3 glassTint(float thickness, float facing) {
+vec3 glassTint(float thickness, float facing, vec3 colour) {
   float f0 = (uGlassBody.w - 1.0) / (uGlassBody.w + 1.0);
   f0 *= f0;
   float passed = 1.0 - (f0 + (1.0 - f0) * pow(1.0 - clamp(facing, 0.0, 1.0), 5.0));
-  return uGlassThrough.a + uGlassThrough.rgb * pow(max(uGlassBody.rgb, vec3(1e-20)), vec3(thickness)) * passed * passed;
+  return uGlassThrough.a + uGlassThrough.rgb * colour * pow(max(uGlassBody.rgb, vec3(1e-20)), vec3(thickness)) * passed * passed;
 }
 #endif
 #ifdef THICKNESS_MAP
 // glass whose thickness varies across it, in its green channel: its tint, and how far caustics bend
 uniform sampler2D uThicknessMap;
-#if !(defined(ALPHA_TEST) && defined(MAP))
+#endif
+// glass whose colour is in its map: the light through it takes the map's colour - read where the
+// cut-out reads it, or set up here (the cut-out's reading comes with it when it has one)
+#if defined(GLASS_MAP) && !(defined(ALPHA_TEST) && defined(MAP))
+uniform sampler2D uMap;
+#endif
+#if (defined(THICKNESS_MAP) || defined(GLASS_MAP)) && !(defined(ALPHA_TEST) && defined(MAP))
 ${SAMPLING}
 #endif
+#ifdef GLASS_MAP
+#define GLASS_COLOUR (uMapTexel.rgb)
+#else
+#define GLASS_COLOUR vec3(1.0)
 #endif
 #ifdef HOOK_FRAGMENT
 // a fragment hook's discards cut the shadow too - a dissolving thing casts what is left of it
@@ -236,9 +246,9 @@ void main() {
   vec4 nearer = uLightInverse * vec4(clip.xy / clip.w, -1.0, 1.0), further = uLightInverse * vec4(clip.xy / clip.w, 1.0, 1.0);
   float facing = abs(dot(normal, normalize(further.xyz / further.w - nearer.xyz / nearer.w)));
 #ifdef THICKNESS_MAP
-  fragColor = vec4(glassTint(uThicknessMapTexel.g, facing), gl_FragCoord.z);
+  fragColor = vec4(glassTint(uThicknessMapTexel.g, facing, GLASS_COLOUR), gl_FragCoord.z);
 #else
-  fragColor = vec4(glassTint(1.0, facing), gl_FragCoord.z);
+  fragColor = vec4(glassTint(1.0, facing, GLASS_COLOUR), gl_FragCoord.z);
 #endif
 #elif defined(CAUSTIC_GLASS)
   fragColor = vec4(normal, 1.0);
@@ -252,7 +262,7 @@ void main() {
 #endif
   fragGlass = vec4(uCausticGlass.x * thick, uCausticGlass.yz, 1.0);
   vec3 toward = uCausticFrom.w > 0.5 ? normalize(vWorldPosition - uCausticFrom.xyz) : uCausticDirection;
-  fragTint = vec4(glassTint(thick, abs(dot(normal, toward))), 1.0);
+  fragTint = vec4(glassTint(thick, abs(dot(normal, toward)), GLASS_COLOUR), 1.0);
   float along = uCausticFrom.w > 0.5 ? length(vWorldPosition - uCausticFrom.xyz) : dot(vWorldPosition, uCausticDirection);
   fragCover = vec4(1.0, along, 0.0, 1.0);
 #else

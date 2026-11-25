@@ -1,6 +1,6 @@
 // Night scenes: distance fog, and shadows from spot and point lights.
 import { describe, expect, it, vi } from 'vitest'
-import { DirectionalLight, Fog, Group, InstancedMesh, Mesh, PerspectiveCamera, PointLight, Points, Scene, SpotLight, WebGLRenderer, box, cylinder, plane, sphere } from '../src/index.js'
+import { DirectionalLight, Fog, Group, InstancedMesh, Mesh, PerspectiveCamera, PointLight, Points, Scene, SpotLight, Texture, WebGLRenderer, box, cylinder, plane, sphere } from '../src/index.js'
 import { collect } from '../src/frame.js'
 import { fitPointShadow, fitSpotShadow } from '../src/shadow.js'
 import { ChangeWatch } from '../src/watch.js'
@@ -349,6 +349,26 @@ describe('coloured shadows', () => {
     expect(v.uGlassBody[3]).toBe(1.5)
     expect(v.uLightInverse).toBeDefined()
     expect(programs.some((d) => d.includes('GLASS_FILTER'))).toBe(true)
+  })
+
+  it("colours the light through glass by its colour map too - stained glass - read where the picture reads it", async () => {
+    const { renderer, defines, drawLog } = recording()
+    let ready = 0
+    renderer.onReady = () => ready++
+    const scene = glassScene()
+    const glass = /** @type {Mesh} */ (scene.children[1])
+    glass.material.map = new Texture({ image: { data: new Uint8Array([255, 0, 0, 255]), width: 1, height: 1 } })
+    renderer.render(scene, camera())
+    await vi.waitFor(() => expect(ready).toBeGreaterThan(0))
+    defines()
+    drawLog.length = 0
+    renderer.render(scene, camera())
+    const programs = defines()
+    expect(programs.some((d) => d.includes('GLASS_FILTER') && d.includes('GLASS_MAP'))).toBe(true)
+    const layers = drawLog.filter((d) => d.program.values.uGlassThrough)
+    expect(layers).toHaveLength(2)
+    expect(layers[0].program.values.uMap).toBeDefined()
+    expect(layers[0].program.values.uMapUv).toBeDefined()
   })
 
   it("casts as before without glass, and from a point light (glass's shadow grey there)", async () => {
