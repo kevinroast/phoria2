@@ -1,9 +1,10 @@
 import { DirectionalLight, Mesh, View, cylinder } from 'phoria2'
 import { loadGLTF } from 'phoria2/gltf'
 
-// Khronos's glTF sample models, pinned to one commit, from jsDelivr's mirror of their repository -
-// the compressed ones load from there rather than from this site
-const KHRONOS = 'https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Assets@e124e8d8d7330a5372bc2b4d00d39a4a9d7997ea/Models/'
+// Khronos's glTF sample models, pinned to one commit, from GitHub as Khronos's own sample viewer
+// loads them - the compressed ones load from there rather than from this site. (Not jsDelivr: their
+// repository is over its 50 MB limit, so it serves only the files it already has cached.)
+const KHRONOS = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/e124e8d8d7330a5372bc2b4d00d39a4a9d7997ea/Models/'
 
 /**
  * Each model: where it loads from, how it is compressed (tagged on its button, spelled out under its
@@ -14,8 +15,15 @@ const KHRONOS = 'https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Assets@e12
 const MODELS = [
   { name: 'sci-fi helmet', url: 'models/DamagedHelmet.glb', compression: '',
     credit: '"Battle Damaged Sci-fi Helmet" by theblueturtle_, glTF by Khronos - CC BY 4.0' },
-  { name: 'chess set', url: `${KHRONOS}ABeautifulGame/glTF-Binary-KTX-ETC1S-Draco/ABeautifulGame.glb`, compression: 'Draco + KTX2',
-    credit: '"A Beautiful Game" © 2020 ASWF (MaterialX Project), glTF © 2022 Ed Mackey - CC BY 4.0' },
+  // a chess set packed by gltfpack (-cc -mi -tc -tl 1024): each kind of piece one mesh, drawn once per
+  // piece - EXT_mesh_gpu_instancing - so the 49 parts are 15 draws
+  { name: 'instanced chess', url: 'models/ABeautifulGame-instanced.glb', compression: 'instanced',
+    credit: '"A Beautiful Game" © 2020 ASWF (MaterialX Project), glTF © 2022 Ed Mackey, packed with gltfpack - CC BY 4.0' },
+  { name: 'concept car', url: `${KHRONOS}CarConcept/glTF-KTX-BasisU-Draco/CarConcept.gltf`, compression: 'Draco + KTX2',
+    credit: '"Car Concept" © 2024 Darmstadt Graphics Group, by Eric Chadwick - CC BY 4.0' },
+  // glass lenses with a thin film's shifting colours over them
+  { name: 'sunglasses', url: `${KHRONOS}SunglassesKhronos/glTF-Draco/SunglassesKhronos.gltf`, compression: 'Draco + WebP',
+    credit: '"Sunglasses Khronos" © 2024 Darmstadt Graphics Group, by Eric Chadwick - CC BY 4.0' },
   // with the checked cloth it comes with: thick amber glass needs something bright behind it, or it
   // shows the dark of the studio
   { name: 'glass dragon', url: `${KHRONOS}DragonAttenuation/glTF-Meshopt/DragonAttenuation.gltf`, compression: 'meshopt', twoSided: 'Cloth Backdrop',
@@ -26,33 +34,30 @@ const MODELS = [
     credit: '"Flight Helmet", glTF by Gary Hsu - CC0' },
   { name: 'stained-glass lamp', url: `${KHRONOS}StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp.gltf`, compression: 'KTX2',
     credit: '"Stained Glass Lamp" © 2021 Wayfair, by Eric Chadwick - CC BY 4.0' },
-  // velvet with sheen, occlusion baked onto a second UV set, tiled, turned wood and fabric - and two
-  // colourways, as material variants
-  { name: 'velvet chair', url: 'models/SheenChair.glb', compression: '',
-    credit: '"Sheen Chair" © 2020 Wayfair, by Eric Chadwick - CC0' },
-  { name: 'milk truck', url: 'models/CesiumMilkTruck.glb', compression: '',
-    credit: '"Cesium Milk Truck" by Cesium - CC BY 4.0' },
 ]
 // each compression, spelled out under the model's name
 const COMPRESSION = {
   'Draco + KTX2': 'Draco geometry and KTX2 (Basis Universal) textures',
+  'Draco + WebP': 'Draco geometry and WebP textures',
   meshopt: 'meshopt geometry, quantized',
   WebP: 'WebP textures',
   KTX2: 'KTX2 (Basis Universal) textures',
+  instanced: 'meshopt geometry and KTX2 textures, 49 parts drawn as 15 meshes, the repeated pieces instanced (EXT_mesh_gpu_instancing)',
 }
 const HDR = 'hdr/studio_small_09_1k.hdr'
 const TURN = 0.20
+// where each model is first seen from: front, to the right and above
+const FRONT = [2.4, 1.6, 3.2]
 
 // A product viewer: a glTF model with its full material maps, lit by an HDR studio that also shows
 // as a soft backdrop, standing on a plinth in the sun's shadow. The models along the bottom include
 // Khronos samples in compressed forms - Draco and meshopt geometry, KTX2 and WebP textures - decoded
 // as they load, and glass: the dragon's amber body (its thickness from a map) and the lamp's stained
-// glass. The chair's occlusion is baked onto its own UV set, as Blender and Unreal export it, apart
-// from the tiling of its fabric and wood. A model with material variants - the chair's velvets - gets
-// a choice of them, as a configurator would. With the turntable off, the picture refines.
+// glass. A model with material variants - the lamp on or off, the dragon's body tinted or coloured -
+// gets a choice of them, as a configurator would. With the turntable off, the picture refines.
 export default function run({ canvas, gui }) {
   // a slow turntable: a quarter of a radian a second
-  const view = new View({ canvas, orbit: { autoRotate: TURN }, camera: { position: [2.4, 1.6, 3.2], fov: 35 } })
+  const view = new View({ canvas, orbit: { autoRotate: TURN }, refine: { samples: 128 }, camera: { position: FRONT, fov: 35 } })
   const scene = view.scene
   scene.environment = HDR
   scene.background = scene.environment
@@ -134,13 +139,16 @@ export default function run({ canvas, gui }) {
   // at - by about a third of the bar's height, so they sit above it
   const frameAbove = () => {
     if (!model) return
-    view.frame(model.bounds.union(plinth.bounds), { padding: 0.1 })
+    // from the same side each time - front, to the right and above - wherever the turntable had got to
+    view.frame(model.bounds.union(plinth.bounds), { padding: 0.1, direction: FRONT })
     const { position: p, target: t } = view.camera
     p.set(p[0] - t[0], p[1], p[2] - t[2])
     t.set(0, t[1], 0)
-    const height = canvas.clientHeight || 1, below = bar.getBoundingClientRect().height + 24
-    // drawn back for the bar, then in by a quarter: the model fills more of the picture
-    const back = (height / Math.max(height - below, height * 0.4)) * 0.76
+    // the bar's buttons and room for a two-line caption over them - the same for every model, however
+    // long its own caption, so each is framed alike
+    const height = canvas.clientHeight || 1, below = row.getBoundingClientRect().height + 70 + 24
+    // drawn back for the bar, then in by about a third: the model fills more of the picture
+    const back = (height / Math.max(height - below, height * 0.4)) * 0.6
     p.set(p[0] * back, t[1] + (p[1] - t[1]) * back, p[2] * back)
     // how far a pixel is at what it looks at, and how much of a drop straight down shows as one
     // up the picture (less, the more it looks down)

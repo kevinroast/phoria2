@@ -3,8 +3,9 @@
 // conventions are phoria2's (+Y up, metres, counter-clockwise front faces, linear colour), so
 // little needs converting.
 import * as quat from '../math/quat.js'
+import * as mat4 from '../math/mat4.js'
 import { Group } from '../scene/Node.js'
-import { Drawable, Mesh, Points, Lines } from '../scene/drawables.js'
+import { Drawable, InstancedMesh, Mesh, Points, Lines } from '../scene/drawables.js'
 import { PerspectiveCamera, OrthographicCamera } from '../scene/cameras.js'
 import { DirectionalLight, PointLight, SpotLight } from '../scene/lights.js'
 import { Geometry } from '../geometry/Geometry.js'
@@ -35,7 +36,9 @@ const SUPPORTED = new Set(['KHR_materials_emissive_strength', 'KHR_texture_trans
   'KHR_materials_variants', 'KHR_materials_iridescence', 'KHR_materials_volume', 'KHR_materials_dispersion',
   // compressed geometry and textures: decoded as the model loads
   'KHR_draco_mesh_compression', 'EXT_meshopt_compression', 'KHR_meshopt_compression', 'KHR_texture_basisu',
-  'EXT_texture_webp', 'EXT_texture_avif'])
+  'EXT_texture_webp', 'EXT_texture_avif',
+  // a mesh drawn many times, each with a place of its own: one instanced draw
+  'EXT_mesh_gpu_instancing'])
 
 const COMPONENTS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT2: 4, MAT3: 9, MAT4: 16 }
 const ARRAYS = { 5120: Int8Array, 5121: Uint8Array, 5122: Int16Array, 5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array }
@@ -335,7 +338,7 @@ class Builder {
     if (n.skin !== undefined) warnOnce(this.model, `skinned meshes aren't supported - '${name}' is drawn in its bind pose`)
     if (n.weights || (n.mesh !== undefined && this.json.meshes[n.mesh].weights)) warnOnce(this.model, "morph targets aren't supported - meshes are drawn without them")
 
-    const parts = n.mesh !== undefined ? this.#mesh(n.mesh) : []
+    const parts = n.mesh !== undefined ? this.#mesh(n.mesh, this.#instances(n, name)) : []
     // a node with one primitive is that drawable; with several, a group of them
     /** @type {Node} */
     const node = parts.length === 1 ? parts[0] : new Group()
@@ -358,8 +361,37 @@ class Builder {
     return node
   }
 
-  /** @param {number} index @returns {Node[]} */
-  #mesh(index) {
+  /**
+   * A node's instances (EXT_mesh_gpu_instancing): each one's place in the node's own space, from its
+   * translation, rotation and scale - as instance matrices - or null for a node drawn once.
+   * @param {Record<string, any>} n @param {string} name @returns {Float32Array | null}
+   */
+  #instances(n, name) {
+    const ext = n.extensions?.EXT_mesh_gpu_instancing
+    if (!ext || n.mesh === undefined) return null
+    const a = ext.attributes ?? {}
+    const at = (/** @type {string} */ key) => (a[key] !== undefined ? /** @type {Float32Array} */ (this.#accessor(a[key])) : null)
+    const t = at('TRANSLATION'), r = at('ROTATION'), s = at('SCALE')
+    const count = this.json.accessors[a.TRANSLATION ?? a.ROTATION ?? a.SCALE]?.count ?? 0
+    if (!count) {
+      warnOnce(this.model, `'${name}' has EXT_mesh_gpu_instancing with no instances - drawn once`)
+      return null
+    }
+    const out = new Float32Array(count * 16), m = new Float32Array(16)
+    for (let i = 0; i < count; i++) {
+      const q = r ? r.subarray(i * 4, i * 4 + 4) : [0, 0, 0, 1]
+      mat4.fromRotationTranslationScale(m, q, t ? t.subarray(i * 3, i * 3 + 3) : [0, 0, 0], s ? s.subarray(i * 3, i * 3 + 3) : [1, 1, 1])
+      out.set(m, i * 16)
+    }
+    return out
+  }
+
+  /**
+   * A mesh's primitives as drawables - each instanced, when the node draws it many times.
+   * @param {number} index @param {Float32Array | null} [instances] instance matrices
+   * @returns {Node[]}
+   */
+  #mesh(index, instances = null) {
     const m = this.json.meshes[index]
     return m.primitives.map((p, i) => {
       const geometry = this.#geometry(p)
@@ -367,9 +399,12 @@ class Builder {
       const mode = p.mode ?? 4
       /** @type {Node} */
       let node
+      if (instances && mode <= 3) warnOnce(this.model, `instanced points and lines aren't supported - '${m.name ?? `mesh ${index}`}' is drawn once`)
       if (mode === 0) node = new Points({ geometry, material: pointMaterial(material) })
       else if (mode === 1 || mode === 2 || mode === 3) node = new Lines({ geometry: lineList(geometry, mode), material: pointMaterial(material) })
-      else node = new Mesh({ geometry: mode === 4 ? geometry : triangleList(geometry, mode), material })
+      else if (instances) {
+        node = new InstancedMesh({ geometry: mode === 4 ? geometry : triangleList(geometry, mode), material, count: instances.length / 16, instanceMatrices: instances })
+      } else node = new Mesh({ geometry: mode === 4 ? geometry : triangleList(geometry, mode), material })
       node.name = m.primitives.length > 1 ? `${m.name ?? `mesh ${index}`} ${i}` : m.name ?? `mesh ${index}`
       // its material in each variant that changes it - made now, so their textures load with the model
       const mappings = p.extensions?.KHR_materials_variants?.mappings

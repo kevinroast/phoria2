@@ -4,6 +4,10 @@
   by Khronos. CC BY 4.0. From https://github.com/KhronosGroup/glTF-Sample-Assets
 - `SheenChair.glb` - "Sheen Chair", (c) 2020 Wayfair, LLC, by Eric Chadwick. CC0 1.0. From
   https://github.com/KhronosGroup/glTF-Sample-Assets
+- `ABeautifulGame-instanced.glb` - "A Beautiful Game" (c) 2020 ASWF (MaterialX Project), glTF (c) 2022
+  Ed Mackey. CC BY 4.0. From https://github.com/KhronosGroup/glTF-Sample-Assets - packed for phoria2 with
+  gltfpack 1.3 (`-cc -mi -tc -tl 1024`): meshopt geometry, repeated pieces instanced
+  (EXT_mesh_gpu_instancing), KTX2 textures at 1024 px.
 - `GlassVaseFlowers.glb` - "Glass Vase with Flowers": vase by Eric Chadwick, flowers by Rico Cilliers.
   CC0 1.0. From https://github.com/KhronosGroup/glTF-Sample-Assets
 - `CesiumMilkTruck.glb` - by Cesium (Analytical Graphics, Inc.). CC BY 4.0. From

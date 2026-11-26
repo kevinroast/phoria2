@@ -71,6 +71,38 @@ describe('meshopt', () => {
   })
 })
 
+describe('GPU instancing', () => {
+  it("draws a node's mesh once per instance - EXT_mesh_gpu_instancing's translations, rotations and scales as instance matrices", async () => {
+    // a triangle, and three instances: moved along x, the second turned a quarter about y, the third doubled
+    const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0])
+    const t = new Float32Array([0, 0, 0, 2, 0, 0, 4, 0, 0])
+    const r = new Float32Array([0, 0, 0, 1, 0, Math.SQRT1_2, 0, Math.SQRT1_2, 0, 0, 0, 1])
+    const sc = new Float32Array([1, 1, 1, 1, 1, 1, 2, 2, 2])
+    const bytes = new Uint8Array([...new Uint8Array(positions.buffer), ...new Uint8Array(t.buffer), ...new Uint8Array(r.buffer), ...new Uint8Array(sc.buffer)])
+    const model = await parseGLTF(gltf({
+      extensionsUsed: ['EXT_mesh_gpu_instancing'], extensionsRequired: ['EXT_mesh_gpu_instancing'],
+      nodes: [{ mesh: 0, name: 'Part', extensions: { EXT_mesh_gpu_instancing: { attributes: { TRANSLATION: 1, ROTATION: 2, SCALE: 3 } } } }],
+      buffers: [{ byteLength: bytes.length, uri: b64(bytes) }],
+      bufferViews: [{ buffer: 0, byteLength: 36 }, { buffer: 0, byteOffset: 36, byteLength: 36 }, { buffer: 0, byteOffset: 72, byteLength: 48 }, { buffer: 0, byteOffset: 120, byteLength: 36 }],
+      accessors: [
+        { bufferView: 0, componentType: 5126, count: 3, type: 'VEC3' },
+        { bufferView: 1, componentType: 5126, count: 3, type: 'VEC3' },
+        { bufferView: 2, componentType: 5126, count: 3, type: 'VEC4' },
+        { bufferView: 3, componentType: 5126, count: 3, type: 'VEC3' },
+      ],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    }))
+    const part = /** @type {any} */ (model.find('Part'))
+    expect(part.constructor.name).toBe('InstancedMesh')
+    expect(part.count).toBe(3)
+    const m = Array.from(/** @type {Float32Array} */ (part.instanceMatrices), (v) => +v.toFixed(4))
+    // the first: where it is; the second at x 2, turned (x -> -z); the third at x 4, doubled
+    expect(m.slice(0, 16)).toEqual([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+    expect([m[16], m[18], m[28]]).toEqual([0, -1, 2])
+    expect([m[32], m[37], m[42], m[44]]).toEqual([2, 2, 2, 4])
+  })
+})
+
 describe('Draco', () => {
   /** A stand-in decoder: a triangle, its colours as normalized bytes, its winding turned. */
   function fakeDraco() {
