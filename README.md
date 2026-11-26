@@ -26,10 +26,14 @@ product viewers. The [demo gallery](https://kevs3d.co.uk/phoria2/).
 - **Product viewer polish as options**: `ambientOcclusion` shades the creases, `groundShadow` sets
   a soft shadow under the model with no light needed, and `fxaa` smooths edges - each one option,
   loaded only when turned on.
-- **Studio quality if you need it**: glass that refracts, dispersion and coloured shadows; clearcoat,
+- **Studio quality if you need it**: glass that refracts, dispersion, coloured shadows and caustics; clearcoat,
   sheen, iridescence, brushed metal and translucency; rect-area lights with soft, contact-hardening
   shadows; HDR environments, bloom and fog. `refine: true` keeps drawing while nothing moves to
   increase quality further and allow depth of field.
+- **Real-world glTF**: models load as exporters and optimisers write them - Draco and meshopt
+  geometry, KTX2 textures transcoded to the GPU's own compressed formats, WebP and AVIF, and instanced
+  meshes - with their materials, variants and animations. The decoders load only for the files that
+  need them.
 - **Render textures**: a `RenderTexture` is what a camera sees, as any material's texture - live
   camera feeds on monitors, a minimap, a second view beside a product.
 - **Accessible**: `keyboard: true` lets users step through bars, points and parts with the
@@ -173,6 +177,8 @@ model.play()                                        // its first animation
 model.variant = 'Peacock Velvet'                    // one of model.variants - its colourways
 ```
 
+Compressed files - Draco, meshopt, KTX2, WebP, instanced meshes - load the same way.
+
 ## As an HTML tag
 
 No script of your own: load `phoria2/element` once (here the latest version; pin it as above for a
@@ -260,7 +266,7 @@ A full example, with a chart that follows its data, is in
 | `phoria2` | the view, scene graph, cameras, lights, materials, geometry, curves, textures, picking, labels, glass and advanced materials, area lights, bloom, ambient occlusion, ground shadows, FXAA, `refine`, render textures, `create()` from JSON |
 | `phoria2/charts` | `chart()` - charts from a spec of mark, data and channels, or of a function in cartesian or curved coordinates, and the scales they use |
 | `phoria2/particles` | `Emitter` and `Body` |
-| `phoria2/gltf` | `loadGLTF()` - glTF 2.0 models with their materials, material variants and animations |
+| `phoria2/gltf` | `loadGLTF()` - glTF 2.0 models with their materials, material variants and animations, compressed ones too (Draco, meshopt, KTX2, WebP, instancing) |
 | `phoria2/motion` | `Timeline` - named steps played in order, `follow()` along a curve, `reveal()` a path as it's travelled - for explainers and guided tours |
 | `phoria2/edit` | `TransformHandle` - a move and turn handle with grid and angle snapping - and `History` for undo, for planners and layout editors |
 | `phoria2/element` | `<phoria-view>` - a model, chart or scene as an HTML tag, its attributes View options; importing it defines the tag |

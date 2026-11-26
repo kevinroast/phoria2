@@ -279,7 +279,8 @@ class Builder {
     const primitives = (this.json.meshes ?? []).flatMap((/** @type {any} */ m) => m.primitives).filter((/** @type {any} */ p) => p.extensions?.KHR_draco_mesh_compression)
     if (primitives.length) {
       const { decodeDraco } = await import('./draco.js')
-      for (const p of primitives) {
+      // all at once: the workers share them out
+      await Promise.all(primitives.map(async (/** @type {any} */ p) => {
         const ext = p.extensions.KHR_draco_mesh_compression
         /** @type {Record<string, { id: number, componentType: number }>} */
         const attributes = {}
@@ -291,7 +292,7 @@ class Builder {
         } catch (e) {
           throw new PhoriaError(`loadGLTF: couldn't decode a Draco mesh - ${/** @type {Error} */ (e).message}`)
         }
-      }
+      }))
     }
   }
 

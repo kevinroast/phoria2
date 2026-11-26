@@ -3,7 +3,7 @@
 // fetched from where useDecoders() says - here stand-ins served by a mocked fetch, which check the
 // wiring: what is asked of the decoder and what is made of its answer. And the renderer uploading a
 // GPU-compressed image level by level.
-import { Buffer } from 'node:buffer'
+import { Buffer, resolveObjectURL } from 'node:buffer'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Mesh, PerspectiveCamera, Scene, Texture, WebGLRenderer, box, useDecoders } from '../src/index.js'
 import { parseGLTF } from '../src/gltf/index.js'
@@ -149,6 +149,58 @@ describe('Draco', () => {
     expect(Array.from(/** @type {Uint32Array} */ (geometry.indices))).toEqual([0, 2, 1])
     // bytes of 255 as 1: red, green, blue
     expect(Array.from(/** @type {Float32Array} */ (geometry.colors)).slice(0, 3)).toEqual([1, 0, 0])
+  })
+
+  it('decodes in workers where they can run: the worker script made from the decoder, its arrays handed back', async () => {
+    ;(/** @type {any} */ (globalThis)).__draco = fakeDraco()
+    serveDecoders()
+    // a stand-in Worker: the script it is given run with a self of its own, messages passed both ways
+    const made = /** @type {string[]} */ ([]), answered = { decoded: 0 }
+    vi.stubGlobal('Worker', class {
+      /** @type {any} */ onmessage = null
+      /** @type {any[] | null} */ queue = []
+      /** @type {any} */ self = null
+      /** @param {string} url */
+      constructor(url) {
+        made.push(url)
+        const blob = /** @type {Blob} */ (resolveObjectURL(url))
+        blob.text().then((code) => {
+          const self = { onmessage: /** @type {any} */ (null), postMessage: (/** @type {any} */ data) => {
+            if (data.out) answered.decoded++
+            setTimeout(() => this.onmessage?.({ data }))
+          } }
+          new Function('self', code)(self)
+          this.self = self
+          for (const data of this.queue ?? []) self.onmessage({ data })
+          this.queue = null
+        })
+      }
+      /** @param {any} data */
+      postMessage(data) {
+        if (this.queue) this.queue.push(data)
+        else this.self.onmessage({ data })
+      }
+    })
+    // the loader and its decoders fresh, so the workers are made for this test
+    vi.resetModules()
+    const { parseGLTF: parse } = await import('../src/gltf/index.js')
+    const { useDecoders: use } = await import('../src/index.js')
+    use({ draco: 'https://example.com/draco/' })
+    const model = await parse(gltf({
+      extensionsUsed: ['KHR_draco_mesh_compression'], extensionsRequired: ['KHR_draco_mesh_compression'],
+      buffers: [{ byteLength: 4, uri: b64(new Uint8Array([1, 2, 3, 4])) }],
+      bufferViews: [{ buffer: 0, byteLength: 4 }],
+      accessors: [{ componentType: 5126, count: 3, type: 'VEC3' }, { componentType: 5125, count: 3, type: 'SCALAR' }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1,
+        extensions: { KHR_draco_mesh_compression: { bufferView: 0, attributes: { POSITION: 4 } } } }] }],
+    }))
+    vi.unstubAllGlobals()
+    // decoded there, not here
+    expect(made.length).toBeGreaterThan(0)
+    expect(answered.decoded).toBe(1)
+    const { geometry } = /** @type {MeshNode} */ (model.find('Part'))
+    expect(Array.from(geometry.positions)).toEqual([0, 0, 0, 1, 0, 0, 0, 1, 0])
+    expect(Array.from(/** @type {Uint32Array} */ (geometry.indices))).toEqual([0, 2, 1])
   })
 
   it('names the folders it takes, and nothing else', () => {

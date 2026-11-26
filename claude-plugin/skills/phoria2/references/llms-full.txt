@@ -1173,8 +1173,9 @@ to a format the GPU draws compressed - BC7, ASTC, ETC2 - or plain RGBA), as gltf
 write them; WebP and AVIF textures too; and a mesh placed many times (`EXT_mesh_gpu_instancing`, gltfpack's
 `-mi`) loads as one `InstancedMesh`. meshopt's decoder comes with `phoria2/gltf`; Draco's and the
 KTX2 transcoder (a few hundred KB of WebAssembly each) are fetched from a public CDN the first time a
-file needs them. To host them yourself - offline, or a content security policy that forbids other
-origins (they also need `'unsafe-eval'`) - copy them and point there before loading:
+file needs them; Draco decodes in workers, off the page. To host them yourself - offline, or a content
+security policy that forbids other origins (they also need `'unsafe-eval'`, and `worker-src blob:` for
+the workers, without which Draco decodes on the page) - copy them and point there before loading:
 `useDecoders({ draco: '/decoders/draco/', basis: '/decoders/basis/' })` (from `phoria2`; or
 `loadGLTF(url, { decoders })`). A `.ktx2` url also works for any `Texture`.
 

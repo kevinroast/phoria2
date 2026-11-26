@@ -48,32 +48,53 @@ export function decoderPaths() {
   return { ...PATHS }
 }
 
+/** Each decoder's files, once fetching: its script's text and its WebAssembly. @type {Map<string, Promise<{ code: string, binary: ArrayBuffer }>>} */
+const FETCHED = new Map()
+
 /**
- * @internal One of the decoders, ready - its Emscripten script run and its WebAssembly compiled, once
- * a page. The scripts aren't modules: each defines a factory under `name`, taken from its text.
+ * @internal One of the decoders' files, fetched once a page: its Emscripten script's text and its
+ * WebAssembly - for running here (loadDecoder) or in a worker of its own (Draco's).
+ * @param {'draco' | 'basis'} which @param {string} script @param {string} wasm
+ * @returns {Promise<{ code: string, binary: ArrayBuffer }>}
+ */
+export function fetchDecoder(which, script, wasm) {
+  const base = PATHS[which]
+  const key = `${base}${script}`
+  let fetching = FETCHED.get(key)
+  if (!fetching) {
+    const get = async (/** @type {string} */ file) => {
+      const response = await fetch(`${base}${file}`).catch((e) => { throw new Error(`couldn't fetch ${base}${file} - ${e.message}`) })
+      if (!response.ok) throw new Error(`couldn't fetch ${base}${file} (${response.status})`)
+      return response
+    }
+    fetching = Promise.all([get(script).then((r) => r.text()), get(wasm).then((r) => r.arrayBuffer())]).then(([code, binary]) => ({ code, binary }))
+    // a failure is reported by each file that wanted it, and tried again by the next
+    fetching.catch(() => FETCHED.delete(key))
+    FETCHED.set(key, fetching)
+  }
+  return fetching
+}
+
+/**
+ * @internal One of the decoders, ready here - its Emscripten script run and its WebAssembly compiled,
+ * once a page. The scripts aren't modules: each defines a factory under `name`, taken from its text.
  * @param {'draco' | 'basis'} which @param {string} script @param {string} wasm @param {string} name
  * @returns {Promise<any>}
  */
 export function loadDecoder(which, script, wasm, name) {
-  const base = PATHS[which]
-  const key = `${base}${script}`
+  const key = `${PATHS[which]}${script}`
   let loading = LOADED.get(key)
   if (!loading) {
     loading = (async () => {
-      const get = async (/** @type {string} */ file) => {
-        const response = await fetch(`${base}${file}`).catch((e) => { throw new Error(`couldn't fetch ${base}${file} - ${e.message}`) })
-        if (!response.ok) throw new Error(`couldn't fetch ${base}${file} (${response.status})`)
-        return response
-      }
-      const [code, binary] = await Promise.all([get(script).then((r) => r.text()), get(wasm).then((r) => r.arrayBuffer())])
-      const factory = new Function(`${code}\nreturn ${name}`)()
+      const { code, binary } = await fetchDecoder(which, script, wasm)
+      const factory = new Function(`${code}
+return ${name}`)()
       // Draco's says when it's ready by a callback; Basis's factory returns a promise of the module
       if (which === 'draco') return new Promise((resolve) => { factory({ wasmBinary: binary, onModuleLoaded: resolve }) })
       const module = await factory({ wasmBinary: binary })
       module.initializeBasis?.()
       return module
     })()
-    // a failure is reported by each file that wanted it, and tried again by the next
     loading.catch(() => LOADED.delete(key))
     LOADED.set(key, loading)
   }
