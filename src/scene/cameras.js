@@ -33,6 +33,13 @@ export function aimAt(node, target) {
  * @typedef {NodeOptions & { near?: number, far?: number, target?: Vec3Input }} CameraOptions
  */
 
+/**
+ * A perspective camera's lens, optional - the type of view.camera, which is either kind of camera as
+ * presets switch it, so the lens can be set without a cast. An orthographic camera has no lens and
+ * ignores these; view.explain() warns when one is set on it.
+ * @typedef {{ fov?: number, aperture?: number, focusDistance?: number | null }} CameraLens
+ */
+
 const CAMERA_OPTIONS = [...NODE_OPTIONS, 'near', 'far', 'target', 'aspect']
 const CAMERA_HINTS = {
   lookAt: "use target: [x, y, z], or call camera.lookAt(...) after creating it",

@@ -36,7 +36,7 @@ const waitingForLabels = new Set()
 /** @import { ImageOptions } from './snapshot.js' */
 /** @import { Tooltip, TooltipContent } from './tooltip.js' */
 /** @import { ToneMapping, BloomOptions, AmbientOcclusionOptions, GroundShadowOptions } from './webgl/WebGLRenderer.js' */
-/** @import { CameraOptions } from './scene/cameras.js' */
+/** @import { CameraLens, PerspectiveCameraOptions } from './scene/cameras.js' */
 /** @import { ColorInput, Vec3Input } from './types.js' */
 /** @import { Node } from './scene/Node.js' */
 /** @import { Keyboard, KeyboardOptions } from './keyboard.js' */
@@ -52,7 +52,7 @@ const waitingForLabels = new Set()
  * @typedef {object} ViewOptions
  * @property {HTMLCanvasElement | string} [canvas] element or CSS selector; default: a new canvas filling the window
  * @property {Scene} [scene] default: a new Scene (from a description: create({ type: 'scene', ... }))
- * @property {Camera | CameraPreset | (CameraOptions & { fov?: number })} [camera] a camera, a preset
+ * @property {Camera | CameraPreset | PerspectiveCameraOptions} [camera] a camera, a preset
  *   ('perspective', 'isometric', 'top', 'front', 'side' - fitted to the scene on the first frame), or
  *   PerspectiveCamera options. Default: 'perspective' - a three-quarter view from the front right
  *   and above, fitted to the scene
@@ -433,8 +433,10 @@ export class View {
 
   /**
    * The camera drawn from. Set another camera, or a preset name to switch view - the orbit control
-   * moves over, and a preset keeps looking at the same point, fitted to the scene.
-   * @returns {Camera}
+   * moves over, and a preset keeps looking at the same point, fitted to the scene. Typed with a
+   * perspective camera's lens (fov, aperture, focusDistance) as optional, so they can be set without
+   * a cast; an orthographic camera ignores them.
+   * @returns {Camera & CameraLens}
    */
   get camera() { return this.#camera }
   /** @param {Camera | CameraPreset} camera */

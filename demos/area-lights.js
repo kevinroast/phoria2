@@ -274,7 +274,7 @@ normal = normalize(normal + (vec3(hash(f.z), hash(f.z + 0.37), hash(f.z + 0.71))
   gui.add({ refine: true }, 'refine').name('refine when still').onChange((on) => { view.refine = on })
   // depth of field, shown as the picture refines: the lens's radius, and the focus nearer or further
   // than the orbit's pivot
-  const camera = /** @type {import('phoria2').PerspectiveCamera} */ (view.camera)
+  const camera = view.camera
   const lens = gui.addFolder('Lens (refined)')
   lens.add(settings, 'aperture', 0, 0.25, 0.005).name('aperture').onChange((v) => { camera.aperture = v })
   lens.add(settings, 'focus', -3, 3, 0.05).name('focus from pivot')

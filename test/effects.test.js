@@ -260,4 +260,18 @@ describe('explain()', () => {
     expect(after).not.toContain('with dispersion but thickness 0')
     view.dispose()
   })
+
+  it('says a lens set on an orthographic camera does nothing', async () => {
+    const view = new View({ canvas: page.canvas(), camera: 'top' })
+    view.scene.add(new Mesh({ geometry: box(1) }))
+    expect(await view.explain()).not.toContain('the camera is orthographic')
+    view.camera.aperture = 0.1
+    view.camera.fov = 30
+    expect(await view.explain()).toContain('the camera is orthographic, so fov and aperture do nothing')
+    // switched to perspective, the lens is the camera's own
+    view.camera = 'perspective'
+    view.camera.aperture = 0.1
+    expect(await view.explain()).not.toContain('the camera is orthographic')
+    view.dispose()
+  })
 })

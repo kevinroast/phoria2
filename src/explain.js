@@ -209,6 +209,10 @@ export function explain(info) {
   if (refine || aperture > 0) {
     lines.push(`Refine: ${refine ? `${refine.samples} samples a still view` : 'off'}${aperture > 0 ? `; depth of field, aperture ${fmt(aperture)}, focused ${fmt(cam.focus)} ahead${cam.focusDistance === null ? ' (the orbit pivot)' : ''}` : ''}`)
   }
+  // the View's camera is typed with a lens so it can be set without a cast - on an orthographic
+  // camera, which has none, that does nothing
+  const lens = ortho ? ['fov', 'aperture', 'focusDistance'].filter((k) => k in cam) : []
+  if (lens.length) warnings.push(`the camera is orthographic, so ${lens.join(' and ')} ${lens.length > 1 ? 'do' : 'does'} nothing - they're a perspective camera's; zoom it with 'height', or switch with view.camera = 'perspective'`)
   if (aperture > 0 && !refine) warnings.push("the camera has an aperture but refine is off - depth of field shows only in refined pictures; set view.refine = true, or export with view.toImage({ samples })")
   if (refine && !refine.supported) warnings.push("refine is on but this device can't draw to float targets - pictures aren't refined")
   else if (refine && info.renderMode === 'always') warnings.push("refine is on but renderMode is 'always' - the view is never still, so it never refines; use renderMode 'auto'")
