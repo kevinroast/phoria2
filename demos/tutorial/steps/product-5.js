@@ -3,8 +3,10 @@ import { loadGLTF } from 'phoria2/gltf'
 
 // refine: once nothing moves, the picture keeps improving - soft shadows, glass and caustics smoothed out
 const view = new View({ canvas: '#scene', background: '#2a2a30', orbit: true, refine: true })
-// a lens 8mm across: what's nearer or further than the middle of the plinth goes soft
-view.camera.aperture = 0.008
+// a lens 8mm in radius: what's nearer or further than the middle of the plinth goes soft. The
+// view's own camera is a PerspectiveCamera - the comment in front of it tells your editor so
+const camera = /** @type {import('phoria2').PerspectiveCamera} */ (view.camera)
+camera.aperture = 0.008
 view.scene.environment = 'studio'
 view.scene.environmentIntensity = 0.6
 

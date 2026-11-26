@@ -2,7 +2,8 @@ import { View, Mesh, DirectionalLight, cylinder, sphere } from 'phoria2'
 import { loadGLTF } from 'phoria2/gltf'
 
 const view = new View({ canvas: '#scene', background: '#2a2a30', orbit: true, refine: true })
-view.camera.aperture = 0.008
+const camera = /** @type {import('phoria2').PerspectiveCamera} */ (view.camera)
+camera.aperture = 0.008
 view.scene.environment = 'studio'
 view.scene.environmentIntensity = 0.6
 
