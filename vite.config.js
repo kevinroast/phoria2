@@ -109,6 +109,7 @@ export default defineConfig(({ mode }) => ({
             demo: resolve(root, 'demo.html'),
             tutorial: resolve(root, 'tutorial.html'),
             'tutorial-2': resolve(root, 'tutorial-2.html'),
+            'tutorial-3': resolve(root, 'tutorial-3.html'),
             'tutorial-run': resolve(root, 'tutorial-run.html'),
           },
         },

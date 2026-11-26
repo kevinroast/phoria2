@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Product shots with phoria2</title>
+    <meta name="description" content="A product shot with phoria2, step by step - a glTF model on a plinth, studio light and soft shadows, glass, light through glass and caustics, refining and saving a picture - every step running beside its code." />
+    <link rel="icon" type="image/png" href="flower.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Saira:wght@100..900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/demos/demos.css" />
+    <link rel="stylesheet" href="/demos/tutorial/tutorial.css" />
+  </head>
+  <body class="gallery tutorial">
+    <main class="tutorial-main">
+      <a class="back" href="./">&lsaquo; Phoria demos</a>
+      <header>
+        <h1>Product shots</h1>
+        <p class="tutorial-lead">Carrying on from <a href="tutorial-2.html">Tags and plots</a>, this time
+          it's the kind of picture you'd find on a product page - a model on a plinth in a studio, with
+          soft shadows, glass and light transmission. At the end, refining an image good enough to print.
+          As before, every step is a complete program running beside its code, which you can
+          copy as one HTML file or open in CodePen. Allow about fifteen minutes.</p>
+        <!-- every part of every tutorial page: from demos/tutorial/parts.js -->
+        <nav class="tutorial-contents" aria-label="The tutorials"></nav>
+      </header>
+
+      <section id="product">
+        <h2>Part 5: A product shot</h2>
+        <p>Everything in this part is in the core library, apart from loading the model, which is
+          <code>phoria2/gltf</code>. The extra pieces - glass, soft shadows, caustics - are only loaded when a
+          scene uses them.</p>
+
+        <h3>1. A model from the web</h3>
+        <p><code>loadGLTF()</code> loads a glTF model and gives you back a node to add to the scene. These
+          sunglasses are one of Khronos's sample models, and they're compressed - Draco for the shape and WebP
+          for the textures. You don't need to do anything about that: phoria2 fetches the decoder the first
+          time a file needs it. The model is its real size in metres, so the plinth is too, 40cm across, and
+          <code>view.frame()</code> fits the camera round it.</p>
+        <figure class="step" data-step="product-1"></figure>
+        <p>There are no lights yet. <code>environment = 'studio'</code> lights everything from a built-in
+          studio, which also gives the lenses something to reflect - turn the view and watch their colours
+          shift.</p>
+
+        <h3>2. Studio light</h3>
+        <p>A <code>DirectionalLight</code> works like the sun: its light all comes from the same direction,
+          and with <code>castShadow</code> it throws shadows. The plinth needs <code>receiveShadow</code> to
+          show them, and each part of the model needs <code>castShadow</code> - <code>model.meshes</code>
+          lists them all. <code>shadowSoftness</code> keeps a shadow sharp where things touch and softens it
+          further away, as it would be under a big studio light. Turning <code>environmentIntensity</code> down
+          lets the light and its shadows stand out more.</p>
+        <figure class="step" data-step="product-2"></figure>
+        <p>The light comes from behind, so the shadows fall towards you. <code>direction</code> is the way the
+          light travels, not where it comes from.</p>
+
+        <h3>3. A glass ball</h3>
+        <p><code>transmission: 1</code> makes a material glass, so light goes through it instead of bouncing
+          off. <code>thickness</code> is how far the light travels inside it - for a solid ball, that's its
+          whole width - and <code>ior</code> is how strongly it bends: 1.5 for glass, 1.33 for water. Look
+          through the ball and you'll see the plinth upside down, like you would through a real solid one!</p>
+        <figure class="step" data-step="product-3"></figure>
+        <p>Clear glass only casts a faint shadow, darker round the edge where the light just skims it. That
+          outline is what a real glass's shadow looks like too.</p>
+
+        <h3>4. Light through glass</h3>
+        <p><code>attenuationColor</code> tints the glass from the inside, and <code>attenuationDistance</code>
+          is how far light goes through it before it's turned that colour - so thicker parts are deeper in
+          colour, and the shadow is amber as well. <code>caustics: true</code> on the light bends its light
+          through the glass, which focuses it into that bright spot in the middle of the shadow, like a glass
+          of whisky on a sunny table.</p>
+        <figure class="step" data-step="product-4"></figure>
+        <aside class="tutorial-aside">
+          <b>One light in a scene can have caustics.</b> It needs <code>castShadow</code>, and so does the
+          glass. Glass with a coloured texture - stained glass, say - throws its pattern of colours too.
+        </aside>
+
+        <h3>5. Refining an image</h3>
+        <p><code>refine: true</code> keeps drawing once nothing is moving, and averages each picture into the
+          last one, so shadows, glass and caustics get smoother over a second or two. As soon as you turn the
+          view it goes back to the normal fast picture. Refined pictures get optional depth of field as well: the
+          camera's <code>aperture</code> is the size of its lens, and anything nearer or further than the point
+          it's looking at goes soft - here the ball and the front edge of the plinth.</p>
+        <figure class="step" data-step="product-5"></figure>
+
+        <h3>6. Save an image</h3>
+        <p><code>view.toImage()</code> gives you the picture as a PNG. <code>samples</code> refines it first,
+          whether or not the view is refining, and <code>scale: 2</code> draws it at twice the canvas's size -
+          enough for print. It waits for anything that's still loading, so you never save a half-drawn
+          picture.</p>
+        <figure class="step" data-step="product-6"></figure>
+        <aside class="tutorial-aside">
+          <b>Try it with your own model.</b> Put its address in <code>loadGLTF()</code>. If it isn't made in
+          metres, frame the model with <code>view.frame(model)</code> instead of the plinth, and scale the
+          plinth to suit.
+        </aside>
+      </section>
+
+      <!-- the next part, when a later page has one: from demos/tutorial/parts.js -->
+      <p class="tutorial-onward"></p>
+
+      <section id="next">
+        <h2>Where next</h2>
+        <ul class="next-links">
+          <li><a href="./"><b>The demos</b></a> - there are over 40! Each one has the source code on GitHub.
+            The <a href="demo.html?name=viewer">product viewer</a>, <a href="demo.html?name=glass">glass</a>,
+            <a href="demo.html?name=tumbler">tumbler</a> and <a href="demo.html?name=prism">prism</a> demos
+            follow on from this part.</li>
+          <li><a href="llms-full.txt"><b>The reference</b></a> - the whole API on one page, with every option
+            and plenty of examples. It's written for coding agents, but it's just as useful for 'real humans' to read.</li>
+          <li><a href="https://github.com/kevinroast/phoria2"><b>GitHub</b></a> - the source code, a React
+            example, and the place to raise issues with questions and ideas.</li>
+        </ul>
+        <aside class="tutorial-aside">
+          <b>Using a coding agent?</b> Point it at <a href="llms-full.txt">llms-full.txt</a>, or if you use
+          Claude Code, install the phoria2 plugin - then just ask for the scene you want!
+        </aside>
+      </section>
+
+      <div class="credits">
+        <p>The sunglasses are "Sunglasses Khronos" &copy; 2024 Darmstadt Graphics Group, by Eric Chadwick,
+          <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>, from Khronos's
+          <a href="https://github.com/KhronosGroup/glTF-Sample-Assets">glTF sample models</a>.</p>
+        <p>Copyright &copy; Kevin Roast 2013-2026 &middot; <a href="https://github.com/kevinroast/phoria2">GitHub</a> &middot;
+          <a href="https://www.npmjs.com/package/phoria2">npm</a></p>
+      </div>
+    </main>
+    <script type="module" src="/demos/tutorial/page.js"></script>
+  </body>
+</html>

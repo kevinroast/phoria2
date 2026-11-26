@@ -6,4 +6,5 @@ export const PARTS = [
   { page: 'tutorial.html', id: 'dashboard', title: 'A chart dashboard' },
   { page: 'tutorial-2.html', id: 'tags', title: '3D without a render loop' },
   { page: 'tutorial-2.html', id: 'plots', title: 'Plotting functions' },
+  { page: 'tutorial-3.html', id: 'product', title: 'A product shot' },
 ]
