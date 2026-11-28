@@ -33,6 +33,9 @@ if (!demo || !load) {
   // a demo that handles the pointer its own way says how - or, with hint: '', shows no hint at all
   if (demo.hint !== undefined) hint.textContent = demo.hint
   hint.hidden = demo.orbit === false || demo.hint === ''
+  // on a touch screen, said in touches: no wheel, no right button, no clicks
+  if (matchMedia('(pointer: coarse)').matches) hint.textContent = forTouch(hint.textContent ?? '')
+  foldTitle()
   const source = /** @type {HTMLAnchorElement} */ (document.getElementById('source'))
   source.href = `${REPO}/blob/main/demos/${slug(demo.name)}.js`
   source.hidden = false
@@ -57,6 +60,31 @@ if (!demo || !load) {
   if (import.meta.env.DEV && view) Object.assign(window, { view })
   // demos without controls don't need an empty panel
   if (gui.isEmpty) gui.destroy()
+}
+
+/** A hint for the mouse, said for a touch screen. @param {string} text */
+function forTouch(text) {
+  return text
+    .replace(/right-drag to pan/gi, 'two-finger drag to pan')
+    .replace(/scroll to zoom|zoom wheel/gi, 'pinch to zoom')
+    .replace(/\bClick\b/g, 'Tap')
+    .replace(/\bclick\b/g, 'tap')
+}
+
+// On a phone the title card starts folded to one line - back, the demo's name and a chevron - so the
+// scene has the screen; the chevron opens the description and hint. As the Controls panel does, it
+// folds again when the window narrows to a phone's width
+function foldTitle() {
+  const card = /** @type {HTMLElement} */ (document.querySelector('.hud-title'))
+  const more = /** @type {HTMLButtonElement} */ (card.querySelector('.hud-more'))
+  const narrow = matchMedia('(max-width: 600px)')
+  const fold = (/** @type {boolean} */ folded) => {
+    card.classList.toggle('collapsed', folded)
+    more.setAttribute('aria-expanded', String(!folded))
+  }
+  fold(narrow.matches)
+  more.addEventListener('click', () => fold(!card.classList.contains('collapsed')))
+  narrow.addEventListener('change', (e) => fold(e.matches))
 }
 
 // Frames per second, counted from the page's animation frames and shown once a second.

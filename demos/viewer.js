@@ -101,6 +101,8 @@ export default function run({ canvas, gui }) {
     const id = ++loading
     const m = MODELS[index]
     buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(i === index)))
+    // on a phone the buttons scroll sideways: the one chosen is brought into view
+    buttons[index].scrollIntoView({ block: 'nearest', inline: 'nearest' })
     const how = m.compression ? COMPRESSION[/** @type {keyof typeof COMPRESSION} */ (m.compression)] : 'uncompressed'
     // loading, said after its name until it's here
     const state = el('span', '', ' - loading...')

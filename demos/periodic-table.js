@@ -45,9 +45,12 @@ export default function run({ canvas, info }) {
   const view = new View({ canvas, orbit: true, background: '#141418', highlight: '#ffffff',
     tooltip: (hit) => (hit.node === tiles ? tooltipFor(hit.datum) : null) })
   const { scene } = view
+  // a phone's width: the categories two blocks to a row, an element's atom framed above its card
+  const phone = matchMedia('(max-width: 600px)')
   scene.environment = 'studio'
   scene.add(new DirectionalLight({ direction: [-0.4, -1, -0.5], intensity: 1.3, castShadow: true }))
-  scene.add(new Mesh({ geometry: plane(60), position: [0, -0.01, 0], material: { color: '#1b1b21', roughness: 0.9 }, receiveShadow: true, pickable: false }))
+  // the floor: wide enough that its edge stays out of sight however far back a narrow window frames the table
+  scene.add(new Mesh({ geometry: plane(600), position: [0, -0.01, 0], material: { color: '#1b1b21', roughness: 0.9 }, receiveShadow: true, pickable: false }))
 
   // ---- the tiles: one rounded tile, 118 times. Each label layer is one kind of text; the number and
   // name wait until a tile is big enough on screen to hold them
@@ -130,33 +133,49 @@ export default function run({ canvas, info }) {
       return { x, z, h: FLAT + TALLEST * (v - lo) / (hi - lo), color: ramp(v) }
     })
   }
-  // categories gathered into blocks, two rows of five, each in atomic number order
+  // categories gathered into blocks, each in atomic number order: rows of five - or of two on a
+  // phone, where five across would make the tiles too small to read
   const names = Object.keys(CATEGORIES)
   const clusters = names.map((name) => {
     const members = ELEMENTS.filter((e) => e.category === name)
     const cols = Math.max(3, Math.ceil(Math.sqrt(members.length * 1.5)))
     return { name, members, cols, rows: Math.ceil(members.length / cols) }
   })
-  const blockAt = clusters.map((c, i) => {
-    const row = i < 5 ? 0 : 1
-    const before = clusters.slice(row * 5, i).reduce((w, b) => w + b.cols + 1.5, 0)
-    return { x: before, z: row === 0 ? 0 : Math.max(...clusters.slice(0, 5).map((b) => b.rows)) + 2.5 }
-  })
-  const width = Math.max(...[0, 1].map((r) => clusters.slice(r * 5, r * 5 + 5).reduce((w, b) => w + b.cols + 1.5, -1.5)))
-  const depth = blockAt[5].z + Math.max(...clusters.slice(5).map((b) => b.rows))
+  /** Where each block goes, so many to a row, and how wide and deep they are altogether. @param {number} perRow */
+  const blocksOf = (perRow) => {
+    /** @type {{ x: number, z: number }[]} */ const at = []
+    let z = 0, width = 0
+    for (let r = 0; r * perRow < clusters.length; r++) {
+      const row = clusters.slice(r * perRow, r * perRow + perRow)
+      let x = 0
+      for (const c of row) {
+        at.push({ x, z })
+        x += c.cols + 1.5
+      }
+      width = Math.max(width, x - 1.5)
+      z += Math.max(...row.map((c) => c.rows)) + 2.5
+    }
+    return { at, width, depth: z - 2.5 }
+  }
+  let blocks = blocksOf(5)
   const grouped = () => {
     const out = board()
+    const { at, width, depth } = blocks
     clusters.forEach((c, i) => c.members.forEach((e, j) => {
       const s = out[e.number - 1]
-      s.x = (blockAt[i].x + (j % c.cols) - width / 2 + 0.5) * PITCH
-      s.z = (blockAt[i].z + Math.floor(j / c.cols) - depth / 2 + 0.5) * PITCH
+      s.x = (at[i].x + (j % c.cols) - width / 2 + 0.5) * PITCH
+      s.z = (at[i].z + Math.floor(j / c.cols) - depth / 2 + 0.5) * PITCH
     }))
     return out
   }
-  const titles = clusters.map((c, i) => scene.add(new Label({
-    text: c.name, className: 'pt-title', place: 'above', visible: false,
-    position: [(blockAt[i].x + c.cols / 2 - width / 2) * PITCH, 0.3, (blockAt[i].z - depth / 2 - 0.3) * PITCH],
-  })))
+  const titles = clusters.map((c) => scene.add(new Label({ text: c.name, className: 'pt-title', place: 'above', visible: false, position: [0, 0.3, 0] })))
+  /** The blocks laid out for the window's width, their titles over them. */
+  const layBlocks = () => {
+    blocks = blocksOf(phone.matches ? 2 : 5)
+    const { at, width, depth } = blocks
+    clusters.forEach((c, i) => titles[i].position.set((at[i].x + c.cols / 2 - width / 2) * PITCH, 0.3, (at[i].z - depth / 2 - 0.3) * PITCH))
+  }
+  layBlocks()
 
   // ---- the atom: a nucleus of protons and neutrons, shells as rings, electrons going round them
   /** @type {Group | null} */
@@ -271,6 +290,12 @@ export default function run({ canvas, info }) {
   const direction = () => (settings.view === 'property heights' ? [0, 0.75, 1] : [0, 1.35, 1])
   /** The box the tiles will fill once they get there - and the atom, when one is shown - for the camera to frame. */
   const boxOf = (targets) => {
+    if (atom && phone.matches) {
+      // a phone: its card covers the lower half of the screen, so the atom alone, with as much again
+      // in front of it - lower on the screen - for the atom to sit above the card
+      const [x, y, z] = atom.position
+      return new Box3([x - ATOM_SIZE, y - ATOM_SIZE, z - ATOM_SIZE], [x + ATOM_SIZE, y + ATOM_SIZE, z + ATOM_SIZE * 3.5])
+    }
     const box = new Box3()
     for (const s of targets) {
       box.expandByPoint([s.x - 0.5, 0, s.z - 0.5])
@@ -288,6 +313,7 @@ export default function run({ canvas, info }) {
   const frame = (duration = 1) => view.frame(boxOf(to), { direction: direction(), padding: 0.03, duration })
   const arrange = (duration = 1.1) => {
     deselect(false)
+    layBlocks()
     const targets = settings.view === 'property heights' ? heights(settings.property) : settings.view === 'by category' ? grouped() : board()
     goTo(targets)
     for (const t of titles) t.visible = settings.view === 'by category'
@@ -296,6 +322,8 @@ export default function run({ canvas, info }) {
     showBar()
     frame(duration)
   }
+  // across a phone's width: the blocks laid out again, or the view framed for the card
+  phone.addEventListener('change', () => (settings.view === 'by category' ? arrange() : frame()))
 
   /**
    * Where an atom floats, whichever element it is: in the table's empty bay above the transition
@@ -303,7 +331,7 @@ export default function run({ canvas, info }) {
    * @returns {[number, number, number]}
    */
   const atomSpot = () => {
-    if (settings.view === 'by category') return [0, 1.9, -(depth / 2) * PITCH - ATOM_SIZE - 0.4]
+    if (settings.view === 'by category') return [0, 1.9, -(blocks.depth / 2) * PITCH - ATOM_SIZE - 0.4]
     const [x, z] = [(7.5 - 9.5) * PITCH, (2 - 5) * PITCH]
     return [x, settings.view === 'property heights' ? FLAT + TALLEST + ATOM_SIZE * 0.6 : 2.4, z]
   }

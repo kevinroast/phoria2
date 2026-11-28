@@ -120,6 +120,117 @@ body.demo #canvas {
   letter-spacing: 0.3px;
 }
 
+.hud-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* the chevron that folds the card - a phone's only, pointing up when open, as on the Controls panel */
+.hud-more {
+  display: none;
+  position: relative;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  margin: 4px 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--field);
+  cursor: pointer;
+}
+
+.hud-more::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 55%;
+  width: 7px;
+  height: 7px;
+  border-left: 2px solid var(--text);
+  border-top: 2px solid var(--text);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+/* a phone: the title card smaller and closer to the corner, folded to one line - back, the name,
+   the chevron - beside the Controls panel's button, never under it; open, it shows the description
+   and hint, but not the source link */
+@media (max-width: 600px) {
+  .hud-title {
+    top: 10px;
+    left: 10px;
+    max-width: calc(100vw - 20px);
+    /* folded, as tall as the panel's folded button beside it */
+    padding: 9px 10px 9px 14px;
+  }
+
+  /* room for the panel's folded button, about 150px, and a gap */
+  body:has(.panel) .hud-title {
+    max-width: calc(100vw - 180px);
+  }
+
+  .hud-title h1 {
+    font-size: 18px;
+  }
+
+  .hud-more {
+    display: block;
+  }
+
+  .hud-title .source-link {
+    display: none;
+  }
+
+  .hud-title.collapsed {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* the back chevron, big and bold enough to read, in a 36px square to tap - its margins let it
+     spill into the card's padding, so the card stays as tall as the panel's button */
+  .hud-title.collapsed .back {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    margin: -6px -6px -6px -12px;
+    padding-bottom: 3px;
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .hud-title.collapsed .back span,
+  .hud-title.collapsed .hud-about {
+    display: none;
+  }
+
+  .hud-title.collapsed .hud-name {
+    min-width: 0;
+  }
+
+  .hud-title.collapsed h1 {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .hud-title.collapsed .hud-more {
+    margin-top: 0;
+  }
+
+  .hud-title.collapsed .hud-more::after {
+    top: 40%;
+    transform: translate(-50%, -50%) rotate(225deg);
+  }
+
+}
+
 .hud-info {
   left: 16px;
   bottom: 16px;
@@ -143,6 +254,20 @@ body.demo #canvas {
 
 .hud-fps:empty {
   display: none;
+}
+
+/* a phone: the readout and the frame rate closer to their corners */
+@media (max-width: 600px) {
+  .hud-info {
+    left: 10px;
+    bottom: 10px;
+    max-width: calc(100vw - 20px);
+  }
+
+  .hud-fps {
+    right: 10px;
+    bottom: 10px;
+  }
 }
 
 /* while a slow demo arrives: a pill in the middle of the page, its text breathing */
@@ -246,6 +371,16 @@ body.demo #canvas {
 
 .panel.collapsed .panel-scroll {
   display: none;
+}
+
+/* a phone: the panel closer to the corner, level with the folded title card */
+@media (max-width: 600px) {
+  .panel {
+    top: 10px;
+    right: 10px;
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
 }
 
 .panel-scroll {
@@ -2328,6 +2463,96 @@ button.demo-legend-item {
   text-transform: capitalize;
 }
 
+/* a phone: the table is about 20px a tile across, so the symbols are smaller. The view switcher
+   is a row of its own under the folded title card, and the legend runs across the bottom, above the
+   readout and the frame rate, its keys packed closer */
+@media (max-width: 600px) {
+  .pt-symbol {
+    font-size: 9px;
+  }
+
+  .pt-gap {
+    font-size: 8px;
+  }
+
+  .pt-bar {
+    top: 66px;
+    left: 10px;
+    right: 10px;
+    max-width: none;
+    align-items: stretch;
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .pt-views {
+    gap: 2px;
+  }
+
+  .pt-views button {
+    flex: 1;
+    padding: 6px 4px;
+  }
+
+  .pt-views .pt-reset {
+    flex: none;
+    padding: 6px 10px;
+  }
+
+  .pt-properties {
+    justify-content: center;
+    padding-top: 6px;
+  }
+
+  .pt-properties button {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .pt-legend {
+    left: 10px;
+    right: 10px;
+    bottom: 52px;
+    width: auto;
+    max-width: none;
+    transform: none;
+    gap: 2px;
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+
+  .pt-legend button {
+    gap: 5px;
+    padding: 2px 6px;
+  }
+
+  .pt-legend i {
+    width: 9px;
+    height: 9px;
+  }
+
+  .pt-legend-ramp {
+    align-items: center;
+  }
+
+  .pt-title {
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-size: 10px;
+  }
+
+  /* an element's card over the bottom half, legend and all, its atom framed above it */
+  .pt-card {
+    z-index: 6;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    width: auto;
+    max-height: 46vh;
+    padding: 12px 14px;
+  }
+}
+
 /* physics: a row of controls top right - ball or bomb, the tower's size, reset - and the
    hardest hits called out in red, fading after a moment */
 .phx-bar {
@@ -3058,4 +3283,51 @@ button.demo-legend-item {
 .viewer-buttons button[aria-pressed='true'] {
   border-color: var(--accent);
   background: rgba(255, 246, 226, 0.1);
+}
+
+/* a phone: the models on one row that scrolls sideways, edge to edge across the bar, without their
+   compression - the caption still says it for the one shown - and the credit smaller, kept whole */
+@media (max-width: 600px) {
+  .viewer-models {
+    left: 10px;
+    right: 10px;
+    /* above the frame rate */
+    bottom: 50px;
+    width: auto;
+    max-width: none;
+    transform: none;
+    gap: 6px;
+    padding: 8px 0;
+    overflow: hidden;
+  }
+
+  .viewer-caption {
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .viewer-caption small {
+    font-size: 10px;
+  }
+
+  .viewer-buttons {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 0 10px;
+    scrollbar-width: none;
+    scroll-padding: 0 10px;
+  }
+
+  .viewer-buttons::-webkit-scrollbar {
+    display: none;
+  }
+
+  .viewer-buttons button {
+    flex: none;
+    white-space: nowrap;
+  }
+
+  .viewer-buttons button small {
+    display: none;
+  }
 }
