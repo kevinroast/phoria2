@@ -10,6 +10,7 @@ import { sampleLight } from './refine.js'
 import { hiddenInstance } from './scene/drawables.js'
 import { featureMask, isGlass, variantOfMask } from './material/features.js'
 import { drawKind, isInstanced } from './scene/kinds.js'
+import { deformedBounds, isDeformed } from './scene/deform.js'
 
 /** @import { Scene } from './scene/Scene.js' */
 /** @import { Camera } from './scene/cameras.js' */
@@ -596,6 +597,7 @@ export function solidItems(frame, list = frame.solids) {
 
 // a drawable's bounds' middle in the world, for drawItem
 const CENTER = new Vec3()
+const POSED = new Box3()
 // each material variant a number, in the order first seen - drawn grouped by it
 /** @type {Map<string, number>} */
 const VARIANTS = new Map()
@@ -627,7 +629,8 @@ function drawItem(node, view, planes, clip) {
   if (instances && instances.count === 0) return null
   if (!geometry.vertexCount) return null
 
-  const box = geometry.bounds, lo = box.min, hi = box.max
+  // a skinned or morphed mesh by where it is posed now
+  const box = isDeformed(node) ? deformedBounds(/** @type {any} */ (node), POSED) : geometry.bounds, lo = box.min, hi = box.max
   // the bounds' middle and reach, into a scratch vector - every drawable, every frame
   const center = CENTER.set((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2).applyMatrix4(worldMatrix)
   const radius = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2

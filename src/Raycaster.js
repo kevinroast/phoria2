@@ -5,6 +5,8 @@ import { Vec3 } from './value/Vec3.js'
 import { clipOwner, worldPlane } from './clip.js'
 import { BVH_MIN_TRIANGLES, bvhOf, walk } from './geometry/bvh.js'
 import { isInstanced } from './scene/kinds.js'
+import { deformedBounds, isDeformed, posedPositions } from './scene/deform.js'
+import { Box3 } from './value/Box3.js'
 
 /** @import { Camera } from './scene/cameras.js' */
 /** @import { Node } from './scene/Node.js' */
@@ -42,6 +44,8 @@ const instanceWorld = new Float32Array(16)
 const SCRATCH_WORLD = new Float32Array(16)
 const a = new Vec3(), b = new Vec3(), c = new Vec3()
 const localPlane = new Float32Array(4)
+// a posed mesh's bounds, for the cheap rejection
+const POSED_BOX = new Box3()
 
 /** The cut a node's nearest clip makes, or null. @param {Node | null} owner @returns {Cut | null} */
 const cutBy = (owner) => (owner?.clip ? { plane: worldPlane(owner), cap: !!owner.clip.cap } : null)
@@ -257,8 +261,10 @@ export class Raycaster {
   #mesh(mesh, world, instance, hits, cut = null) {
     const g = mesh.geometry
     if (!g.vertexCount) return
+    // a skinned or morphed mesh is hit where it is posed now, not as it was modelled
+    const deformed = isDeformed(mesh)
     // cheap rejection first
-    const box = g.bounds
+    const box = deformed ? deformedBounds(/** @type {any} */ (mesh), POSED_BOX) : g.bounds
     const center = box.getCenter().applyMatrix4(world)
     const scale = Math.max(Math.hypot(world[0], world[1], world[2]), Math.hypot(world[4], world[5], world[6]), Math.hypot(world[8], world[9], world[10]))
     if (this.ray.intersectSphere(center, box.getRadius() * scale) === null) return
@@ -266,7 +272,7 @@ export class Raycaster {
 
     // test in the mesh's own space, then report in world space
     const local = this.ray.clone().applyMatrix4(inverse)
-    const p = g.positions, idx = g.indices
+    const p = deformed ? posedPositions(/** @type {any} */ (mesh)) : g.positions, idx = g.indices
     // a cap shows the backs of faces through the cut, so they can be hit too
     const cullBack = !mesh.material.doubleSided && !cut?.cap
     // the plane in the mesh's own space: [n, d] times the world matrix
@@ -290,8 +296,9 @@ export class Raycaster {
       return bestT
     }
     const triangles = Math.floor(g.drawnCount / 3)
-    // big meshes through their tree; small ones a triangle at a time
-    if (triangles >= BVH_MIN_TRIANGLES) walk(bvhOf(g, triangles), o, d, test)
+    // big meshes through their tree - built from the modelled shape, so not a posed one; small ones,
+    // and posed ones, a triangle at a time
+    if (triangles >= BVH_MIN_TRIANGLES && !deformed) walk(bvhOf(g, triangles), o, d, test)
     else for (let f = 0; f < triangles; f++) test(f)
     if (!best) return
 

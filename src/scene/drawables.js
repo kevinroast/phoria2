@@ -8,6 +8,7 @@ import { checkNumber, checkOneOf, describe, fail, warnOnce } from '../validate.j
 import { resolveGeometry, resolveMaterial } from '../resolve.js'
 import { NODE_OPTIONS, Node } from './Node.js'
 import { isInstanced } from './kinds.js'
+import { deformedBounds, isDeformed, posedPositions } from './deform.js'
 
 /** @import { Geometry } from '../geometry/Geometry.js' */
 /** @import { Material, MaterialOptions } from '../material/Material.js' */
@@ -220,8 +221,25 @@ export class Drawable extends Node {
   /** @internal @param {Box3} box */
   expandBounds(box) {
     if (!this.geometry.vertexCount) return box
-    // into a scratch box, not a clone: asked for every shadow caster every frame
-    const own = OWN.copy(this.geometry.bounds).applyMatrix4(this.worldMatrix)
+    // into a scratch box, not a clone: asked for every shadow caster every frame. A skinned or
+    // morphed mesh's, as it is posed now
+    const own = (isDeformed(this) ? deformedBounds(/** @type {any} */ (this), OWN) : OWN.copy(this.geometry.bounds)).applyMatrix4(this.worldMatrix)
+    return box.union(padForHooks(own, this.material))
+  }
+
+  /**
+   * @internal A skinned or morphed mesh by its vertices as they are posed now - the bounds per frame
+   * are a little loose (a sphere round each joint); a model stood on a floor needs its feet.
+   * @param {Box3} box
+   */
+  expandExactBounds(box) {
+    if (!isDeformed(this) || this.drawMode !== 'triangles') return this.expandBounds(box)
+    const p = posedPositions(/** @type {any} */ (this)), m = this.worldMatrix
+    const own = OWN.makeEmpty()
+    for (let i = 0; i < p.length; i += 3) {
+      const x = p[i], y = p[i + 1], z = p[i + 2]
+      own.expandByXYZ(m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14])
+    }
     return box.union(padForHooks(own, this.material))
   }
 
@@ -263,6 +281,41 @@ export class Drawable extends Node {
 /** Triangles: the usual solid object. */
 export class Mesh extends Drawable {
   static type = 'mesh'
+  /** @internal A glTF skin: the joints this mesh follows - posed on the GPU. @type {import('./deform.js').Skin | null} */
+  skin = null
+  /** @internal Its morph targets' weights, in the geometry's order - shared by a glTF mesh's parts, which animations set. @type {Float32Array | null} */
+  morphWeights = null
+  /** @internal Its morph targets' names, in the same order. @type {string[]} */
+  morphNames = []
+
+  /**
+   * The weights of a loaded model's morph targets (glTF blend shapes), by name - a face's `smile`, a
+   * box's `lid`: 0 is the shape as modelled, 1 the target fully on. Read it for them all; set it with
+   * just the ones to change: `mesh.morphs = { smile: 0.7 }`. An animation of the weights sets them
+   * too, as it plays. Empty for a mesh with none. Parts of one glTF mesh share their weights.
+   * @returns {Record<string, number>}
+   */
+  get morphs() {
+    const w = this.morphWeights
+    /** @type {Record<string, number>} */
+    const out = {}
+    if (w) this.morphNames.forEach((name, i) => { out[name] = w[i] })
+    return out
+  }
+
+  set morphs(values) {
+    if (!values || typeof values !== 'object') fail('Mesh', `'morphs' must be an object of weights by name, like { smile: 0.7 }, got ${describe(values)}`)
+    const w = this.morphWeights
+    for (const [name, value] of Object.entries(values)) {
+      const i = this.morphNames.indexOf(name)
+      if (!w || i < 0) {
+        const names = this.morphNames.map((n) => `'${n}'`).join(', ')
+        warnOnce(this, `Mesh '${this.name}': no morph target '${name}' - ${names ? `it has ${names}` : 'it has none'}`)
+        continue
+      }
+      w[i] = checkNumber('Mesh', `morphs.${name}`, value)
+    }
+  }
 
   /** @internal */
   checkGeometry() {

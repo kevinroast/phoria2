@@ -4,7 +4,7 @@
 // Loaded the first time a View picks.
 import { CLIP, COMMON, CUTOUT, LINES_VERTEX, MESH_VERTEX, POINTS_VERTEX } from './shaders.js'
 import { hookFor, passDefines, setHookUniforms } from './hooks.js'
-import { setShapeUniforms, shapeDefines } from './shape.js'
+import { setPlacementUniforms, setShapeUniforms, shapeDefines } from './shape.js'
 import { makeTarget } from './targets.js'
 import * as mat4 from '../math/mat4.js'
 import { drawKind } from '../scene/kinds.js'
@@ -266,6 +266,7 @@ export class Picker {
     program.set('uProjection', this.#projection)
     program.set('uViewProjection', this.#viewProjection)
     program.set('uModel', worldMatrix)
+    setPlacementUniforms(program, item, this.resources)
     program.set('uPickId', id)
     program.set('uHighlightIndex', -2)
     if (shape) setShapeUniforms(program, item, shape.cutout, (t) => this.resources.texture(t))

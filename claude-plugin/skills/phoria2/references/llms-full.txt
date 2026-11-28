@@ -1161,11 +1161,32 @@ model.variants                                        // ['Mango Velvet', 'Peaco
 model.variant = 'Peacock Velvet'                      // null for the materials it was made with
 ```
 
+Characters and blend shapes animate as they were made: skinned meshes follow their joints, and morph
+targets (blend shapes) mix by weight.
+
+```js
+const fox = await loadGLTF('models/fox.glb')
+fox.play('Walk')
+fox.play('Run', { fade: 0.3 })                        // eases out of what was playing into Run
+const face = fox.find('Face')
+face.morphs                                           // { smile: 0, blink: 0 } - its morph targets' weights by name
+face.morphs = { smile: 0.7 }                          // set just the ones to change, 0-1
+```
+
+`model.play(name)` starts a clip and leaves others playing - clips that move different parts run
+together; `model.play(name, { fade })` switches to it, the clips playing easing out over `fade` seconds
+as it eases in (`{ fade: 0 }` cuts at once) - from the pose the model was loaded in, when nothing was
+playing. Skinning and morphing run on the GPU in every pass, so shadows, outlines, hover and click
+follow the pose; `Raycaster` hits and bounds (`view.frame(model)`) use the pose too. A vertex follows at
+most four joints (`JOINTS_0`); a skinned `EXT_mesh_gpu_instancing` mesh is drawn in its bind pose. A
+mesh's `morphs` names come from the file (`extras.targetNames`), else `'target 0'` and on; the parts of
+one glTF mesh share their weights. Animations of the weights set them as they play.
+
 A model has `animations` (each with `play()`, `pause()`, `stop()`, `loop`, `speed`), `cameras`,
 `meshes`, and material variants (KHR_materials_variants - a configurator's colourways in one file):
 `variants` lists their names, and setting `variant` swaps the materials of every part it names at once
 (their textures load with the model; an unknown name is warned about and changes nothing). Its `toJSON()` is a plain group of its parts, with their vertex data - `create()` builds it
-back without `phoria2/gltf`, but the animations, and textures embedded in a `.glb`, aren't kept.
+back without `phoria2/gltf`, but the animations, skins, morph targets, and textures embedded in a `.glb`, aren't kept.
 
 **Compressed files** load as any other: Draco and meshopt geometry (`KHR_draco_mesh_compression`,
 `EXT_`/`KHR_meshopt_compression`, quantized attributes) and KTX2 textures (`KHR_texture_basisu`, transcoded

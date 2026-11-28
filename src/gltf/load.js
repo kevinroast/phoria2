@@ -1,5 +1,6 @@
 // glTF 2.0 (.gltf and .glb) to phoria2 nodes: meshes, the metallic-roughness material and its maps,
-// textures, the node hierarchy, cameras, KHR_lights_punctual, material variants and node animations. glTF's
+// textures, the node hierarchy, cameras, KHR_lights_punctual, material variants, skins, morph targets and
+// animations of nodes and morph weights. glTF's
 // conventions are phoria2's (+Y up, metres, counter-clockwise front faces, linear colour), so
 // little needs converting.
 import * as quat from '../math/quat.js'
@@ -12,9 +13,10 @@ import { Geometry } from '../geometry/Geometry.js'
 import { toSRGB } from '../value/Color.js'
 import { Material } from '../material/Material.js'
 import { Texture } from '../material/Texture.js'
-import { PhoriaError, describe, warnOnce } from '../validate.js'
+import { PhoriaError, checkNumber, checkOptions, describe, warnOnce } from '../validate.js'
 import { useDecoders } from '../decoders.js'
-import { Animation } from './Animation.js'
+import { Animation, mix, restPose } from './Animation.js'
+import { Skin } from '../scene/deform.js'
 
 /** @import { Node } from '../scene/Node.js' */
 /** @import { Camera } from '../scene/cameras.js' */
@@ -122,17 +124,32 @@ export class Model extends Group {
   }
 
   /**
-   * Play an animation by name or index (the first when not given).
+   * Play an animation by name or index (the first when not given). On its own it starts that clip
+   * and leaves any others playing - clips that move different parts run together. With
+   * `{ fade }` it switches to it: the clips playing ease out over that many seconds as this one eases
+   * in, then stop - a character going from a walk to a run without a jump. `{ fade: 0 }` cuts at once.
+   *
+   *     model.play('Walk')
+   *     model.play('Run', { fade: 0.3 })
+   *
    * @param {string | number} [which]
+   * @param {{ fade?: number }} [options]
    * @returns {Animation | null}
    */
-  play(which = 0) {
+  play(which = 0, options) {
     const a = typeof which === 'number' ? this.animations[which] : this.animations.find((x) => x.name === which)
     if (!a) {
       const names = this.animations.map((x) => `'${x.name}'`).join(', ')
       warnOnce(this, `no animation ${typeof which === 'number' ? which : `'${which}'`} - this model has ${names || 'none'}`)
       return null
     }
+    if (options === undefined) return a.play()
+    checkOptions('Model.play', options, ['fade'], { crossFade: "use 'fade'", duration: "use 'fade'", blend: "use 'fade'" })
+    const fade = options.fade === undefined ? 0 : Math.max(0, checkNumber('Model.play', 'fade', options.fade))
+    for (const other of this.animations) if (other !== a && other.playing) other.fadeTo(0, fade, true)
+    // from nothing when it wasn't playing; from where it is when it was fading out
+    if (!a.playing) a.weight = fade > 0 ? 0 : 1
+    a.fadeTo(1, fade)
     return a.play()
   }
 
@@ -224,6 +241,7 @@ class Builder {
   /** @type {Node[]} */ #nodes = []
   /** @type {string[]} */ #objectUrls = []
   /** @type {VariantPart[]} */ #variantParts = []
+  /** Each node's drawables (its mesh's primitives), by the node's index - what its skin and morph weights go on. @type {Map<number, Node[]>} */ #parts = new Map()
   /** meshopt-compressed buffer views, decoded: each one's bytes. @type {Map<number, Uint8Array>} */ #views = new Map()
   /** Draco-compressed primitives, decoded. @type {Map<object, { attributes: Record<string, ArrayLike<number>>, indices: Uint32Array }>} */ #draco = new Map()
 
@@ -319,6 +337,8 @@ class Builder {
     const scene = json.scenes?.[json.scene ?? 0]
     const roots = scene ? scene.nodes ?? [] : this.#nodes.map((_, i) => i).filter((i) => !this.#nodes[i].parent)
     for (const i of roots) this.model.add(this.#nodes[i])
+    // skins once every node is made: their joints can be anywhere in the file
+    ;(json.nodes ?? []).forEach((n, i) => { if (n.skin !== undefined) this.#skin(n, i) })
     // material variants: their names, and the parts each one changes
     const variants = json.extensions?.KHR_materials_variants?.variants ?? []
     this.model.variants = variants.map((/** @type {any} */ v, /** @type {number} */ i) => String(v?.name ?? `variant ${i}`))
@@ -326,8 +346,11 @@ class Builder {
     this.model.animations = (json.animations ?? []).map((a, i) => this.#animation(a, i))
     if (this.model.animations.length) {
       const model = this.model
+      // the pose as loaded: what a mix gives the weight its clips leave over
+      const rest = restPose(model.animations)
       model.onUpdate((_node, dt) => {
-        for (const a of model.animations) a.advance(dt)
+        for (const a of model.animations) a.step(dt)
+        mix(model.animations, rest)
       })
     }
   }
@@ -336,10 +359,11 @@ class Builder {
   #node(index) {
     const n = this.json.nodes[index]
     const name = n.name ?? `node ${index}`
-    if (n.skin !== undefined) warnOnce(this.model, `skinned meshes aren't supported - '${name}' is drawn in its bind pose`)
-    if (n.weights || (n.mesh !== undefined && this.json.meshes[n.mesh].weights)) warnOnce(this.model, "morph targets aren't supported - meshes are drawn without them")
-
     const parts = n.mesh !== undefined ? this.#mesh(n.mesh, this.#instances(n, name)) : []
+    if (n.mesh !== undefined) {
+      this.#parts.set(index, parts)
+      this.#morphs(n, parts)
+    }
     // a node with one primitive is that drawable; with several, a group of them
     /** @type {Node} */
     const node = parts.length === 1 ? parts[0] : new Group()
@@ -388,6 +412,52 @@ class Builder {
   }
 
   /**
+   * A node's skin: its joints and their inverse bind matrices, on each of its mesh's parts. A skin of
+   * its own per node, even where nodes share one in the file - its matrices are for the mesh drawn.
+   * @param {Record<string, any>} n @param {number} index
+   */
+  #skin(n, index) {
+    const def = this.json.skins?.[n.skin]
+    const parts = this.#parts.get(index) ?? []
+    const name = n.name ?? `node ${index}`
+    if (!def || !parts.length) return
+    const joints = (def.joints ?? []).map((/** @type {number} */ j) => this.#nodes[j]).filter(Boolean)
+    if (!joints.length) return
+    const inverseBind = def.inverseBindMatrices !== undefined ? /** @type {Float32Array} */ (this.#accessor(def.inverseBindMatrices)) : null
+    const skin = new Skin(joints, inverseBind)
+    for (const part of parts) {
+      const mesh = /** @type {any} */ (part)
+      if (mesh instanceof InstancedMesh) {
+        warnOnce(this.model, `skinned instances aren't supported - '${name}' is drawn in its bind pose`)
+        continue
+      }
+      if (mesh.drawMode !== 'triangles' || !mesh.geometry.deform?.joints) continue
+      mesh.skin = skin
+    }
+  }
+
+  /**
+   * A mesh's blend shapes: the weights its parts share - the node's, or the mesh's own defaults -
+   * and their names (from the mesh's extras.targetNames, as exporters write them).
+   * @param {Record<string, any>} n @param {Node[]} parts
+   */
+  #morphs(n, parts) {
+    const m = this.json.meshes[n.mesh]
+    const count = Math.max(0, ...m.primitives.map((/** @type {any} */ p) => p.targets?.length ?? 0))
+    if (!count) return
+    const weights = new Float32Array(count)
+    const given = n.weights ?? m.weights
+    if (Array.isArray(given)) weights.set(given.slice(0, count).map(Number))
+    const names = Array.from({ length: count }, (_, i) => String(m.extras?.targetNames?.[i] ?? `target ${i}`))
+    for (const part of parts) {
+      const mesh = /** @type {any} */ (part)
+      if (mesh.drawMode !== 'triangles' || !mesh.geometry.deform?.targets.length) continue
+      mesh.morphWeights = weights
+      mesh.morphNames = names
+    }
+  }
+
+  /**
    * A mesh's primitives as drawables - each instanced, when the node draws it many times.
    * @param {number} index @param {Float32Array | null} [instances] instance matrices
    * @returns {Node[]}
@@ -427,7 +497,7 @@ class Builder {
   #geometry(p) {
     // primitives often share accessors; share their geometry too
     const draco = this.#draco.get(p)
-    const key = JSON.stringify([p.attributes, p.indices, p.extensions?.KHR_draco_mesh_compression?.bufferView])
+    const key = JSON.stringify([p.attributes, p.indices, p.extensions?.KHR_draco_mesh_compression?.bufferView, p.targets])
     const cached = this.#geometries.get(key)
     if (cached) return cached
     const a = p.attributes
@@ -446,8 +516,39 @@ class Builder {
     if (draco) options.indices = draco.indices
     else if (p.indices !== undefined) options.indices = this.#accessor(p.indices, true)
     const geometry = new Geometry(options)
+    geometry.deform = this.#deform(p, read, geometry.vertexCount)
     this.#geometries.set(key, geometry)
     return geometry
+  }
+
+  /**
+   * A primitive's skinning - the four joints each vertex follows (JOINTS_0) and how much (WEIGHTS_0,
+   * made to add up to 1) - and its morph targets' offsets; null when it has neither.
+   * @param {Record<string, any>} p @param {(name: string) => Float32Array} read @param {number} count vertices
+   * @returns {import('../scene/deform.js').Deform | null}
+   */
+  #deform(p, read, count) {
+    const a = p.attributes
+    let joints = null, weights = null
+    if (a.JOINTS_0 !== undefined && a.WEIGHTS_0 !== undefined) {
+      joints = read('JOINTS_0')
+      weights = read('WEIGHTS_0')
+      if (a.JOINTS_1 !== undefined) warnOnce(this.model, 'a vertex follows more than four joints (JOINTS_1) - only its first four are used')
+      // exporters round, and some leave a vertex's weights short of 1
+      for (let v = 0; v < count; v++) {
+        const sum = weights[v * 4] + weights[v * 4 + 1] + weights[v * 4 + 2] + weights[v * 4 + 3]
+        if (sum > 0 && Math.abs(sum - 1) > 1e-6) for (let k = 0; k < 4; k++) weights[v * 4 + k] /= sum
+      }
+    }
+    const targets = (p.targets ?? []).map((/** @type {Record<string, number>} */ t) => {
+      const positions = t.POSITION !== undefined ? /** @type {Float32Array} */ (this.#accessor(t.POSITION)) : new Float32Array(count * 3)
+      const normals = t.NORMAL !== undefined ? /** @type {Float32Array} */ (this.#accessor(t.NORMAL)) : null
+      let reach = 0
+      for (let i = 0; i < positions.length; i += 3) reach = Math.max(reach, Math.hypot(positions[i], positions[i + 1], positions[i + 2]))
+      return { positions, normals, reach }
+    })
+    if (!joints && !targets.length) return null
+    return { joints, weights, targets }
   }
 
   /**
@@ -705,16 +806,19 @@ class Builder {
     /** @type {Track[]} */
     const tracks = []
     for (const ch of a.channels) {
-      const path = { translation: 'position', rotation: 'quaternion', scale: 'scale' }[ch.target.path]
+      const path = /** @type {Track['path'] | undefined} */ ({ translation: 'position', rotation: 'quaternion', scale: 'scale', weights: 'weights' }[ch.target.path])
       if (!path) {
-        warnOnce(this.model, `'${ch.target.path}' animations aren't supported - only translation, rotation and scale`)
+        warnOnce(this.model, `'${ch.target.path}' animations aren't supported - only translation, rotation, scale and weights`)
         continue
       }
       const node = this.#nodes[ch.target.node]
       if (!node) continue
+      // morph weights: the array the node's parts share
+      const weights = path === 'weights' ? /** @type {any} */ (this.#parts.get(ch.target.node)?.find((m) => /** @type {any} */ (m).morphWeights))?.morphWeights ?? null : null
+      if (path === 'weights' && !weights) continue
       const s = a.samplers[ch.sampler]
       tracks.push({
-        node, path,
+        node, path, weights,
         times: /** @type {Float32Array} */ (this.#accessor(s.input)),
         values: /** @type {Float32Array} */ (this.#accessor(s.output)),
         interpolation: s.interpolation ?? 'LINEAR',
@@ -783,6 +887,9 @@ function lineList(g, mode) {
 function withIndices(g, indices, triangles) {
   // only normals the file gave - reading g.normals would work them out from the strip's own indices,
   // taken as a triangle list; the new geometry works them out from its real triangles instead
-  return new Geometry({ positions: g.positions, normals: triangles && g.hasNormals ? g.normals : undefined, uvs: g.uvs ?? undefined, uvs2: g.uvs2 ?? undefined,
+  const out = new Geometry({ positions: g.positions, normals: triangles && g.hasNormals ? g.normals : undefined, uvs: g.uvs ?? undefined, uvs2: g.uvs2 ?? undefined,
     colors: g.colors ?? undefined, indices })
+  // the same vertices, so the same skin and blend shapes
+  out.deform = g.deform
+  return out
 }

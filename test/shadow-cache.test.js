@@ -4,6 +4,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { DirectionalLight, Group, InstancedMesh, Material, Mesh, PerspectiveCamera, PointLight, Scene, SpotLight, Texture, WebGLRenderer, box, plane } from '../src/index.js'
 import { fakeCanvas, fakeGL } from './fakes.js'
+import { Skin } from '../src/scene/deform.js'
 
 const camera = () => new PerspectiveCamera({ position: [0, 6, 12], target: [0, 0, 0], aspect: 1 })
 
@@ -108,6 +109,30 @@ describe('a shadow map', () => {
     const { draw } = await lit(light)
     draw()
     light.direction.set(1, -2, -1)
+    expect(draw()).toEqual(DRAWN)
+    expect(draw()).toEqual(KEPT)
+  })
+
+  it("is drawn again when a skinned caster's joints move, or a morphed one's weights change - its own matrix standing still", async () => {
+    // the light's view fixed, so only the pose can change the map
+    const { draw, scene, crate } = await lit(new DirectionalLight({ direction: [-1, -2, -1], castShadow: true, shadowBounds: { min: [-5, -1, -5], max: [5, 5, 5] } }))
+    const g = crate.geometry.clone(), n = g.vertexCount
+    const joints = new Float32Array(n * 4), weights = new Float32Array(n * 4)
+    for (let v = 0; v < n; v++) weights[v * 4] = 1
+    g.deform = { joints, weights, targets: [{ positions: new Float32Array(n * 3).fill(0.1), normals: null, reach: 0.18 }] }
+    crate.geometry = g
+    const joint = scene.add(new Group())
+    const deformed = /** @type {any} */ (crate)
+    deformed.skin = new Skin([joint], null)
+    deformed.morphWeights = new Float32Array([0])
+    deformed.morphNames = ['grow']
+    draw()
+    expect(draw()).toEqual(KEPT)
+    joint.position.set(0, 0.5, 0)
+    scene.update(0, 0)
+    expect(draw()).toEqual(DRAWN)
+    expect(draw()).toEqual(KEPT)
+    crate.morphs = { grow: 1 }
     expect(draw()).toEqual(DRAWN)
     expect(draw()).toEqual(KEPT)
   })

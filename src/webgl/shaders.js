@@ -22,6 +22,9 @@ export const ATTRIBUTES = {
   pointOpacity: 12,
   pointAngle: 13,
   pointIndex: 14,
+  // skinned meshes: the four joints each vertex follows, and how much (meshes only - points take 11-14)
+  joints: 11,
+  weights: 12,
   // lines: per-segment endpoints and colours, and the corner of the quad being drawn
   segmentStart: 0,
   segmentEnd: 1,
@@ -410,6 +413,29 @@ out vec4 vTangent;
 layout(location = 10) in vec2 uv2;
 out vec2 vUv2;
 #endif
+#ifdef SKINNED
+// a skin: the joints each vertex follows and how much, and every joint's matrix from the bind pose to
+// now, in the mesh's own space - a row of four texels (its columns) a joint
+layout(location = 11) in vec4 joints;
+layout(location = 12) in vec4 weights;
+uniform highp sampler2D uJoints;
+mat4 jointMatrix(float j) {
+  int row = int(j + 0.5);
+  return mat4(texelFetch(uJoints, ivec2(0, row), 0), texelFetch(uJoints, ivec2(1, row), 0),
+    texelFetch(uJoints, ivec2(2, row), 0), texelFetch(uJoints, ivec2(3, row), 0));
+}
+#endif
+#ifdef MORPH
+// blend shapes: MORPH targets' offsets in a texture, target after target, vertex after vertex -
+// MORPH_STRIDE texels each (the position's offset, then the normal's) - and each target's weight
+uniform highp sampler2D uMorphs;
+uniform float uMorphWeights[MORPH];
+uniform int uMorphVertices;
+vec3 morphTexel(int at) {
+  int width = textureSize(uMorphs, 0).x;
+  return texelFetch(uMorphs, ivec2(at % width, at / width), 0).xyz;
+}
+#endif
 
 uniform mat4 uModel;
 uniform mat3 uNormalMatrix;
@@ -452,6 +478,25 @@ void main() {
   // the vertex in the geometry's own space - where a shader hook moves it
   vec3 local = position;
   vec3 n = normal;
+#ifdef MORPH
+  // the blend shapes mixed in, then the skin, then any hook - as the CPU poses it (scene/deform.js)
+  for (int t = 0; t < MORPH; t++) {
+    float w = uMorphWeights[t];
+    if (w == 0.0) continue;
+    int at = (t * uMorphVertices + gl_VertexID) * MORPH_STRIDE;
+    local += w * morphTexel(at);
+#if MORPH_STRIDE > 1
+    n += w * morphTexel(at + 1);
+#endif
+  }
+#endif
+#ifdef SKINNED
+  mat4 skin = weights.x * jointMatrix(joints.x) + weights.y * jointMatrix(joints.y) +
+    weights.z * jointMatrix(joints.z) + weights.w * jointMatrix(joints.w);
+  local = (skin * vec4(local, 1.0)).xyz;
+  mat3 skinTurn = mat3(skin);
+  n = skinTurn * n;
+#endif
 #ifdef HOOK_VERTEX
   {
     int index = gl_InstanceID;
@@ -489,11 +534,15 @@ void main() {
   vUv2 = uv2;
 #endif
 #ifdef ANISOTROPY
-  // a direction along the surface, so it turns as the model does
+  // a direction along the surface, so it turns as the model does - and as its skin does
+  vec3 along = tangent.xyz;
+#ifdef SKINNED
+  along = skinTurn * along;
+#endif
 #ifdef INSTANCED
-  vTangent = vec4(mat3(uModel) * (m * tangent.xyz), tangent.w);
+  vTangent = vec4(mat3(uModel) * (m * along), tangent.w);
 #else
-  vTangent = vec4(mat3(uModel) * tangent.xyz, tangent.w);
+  vTangent = vec4(mat3(uModel) * along, tangent.w);
 #endif
 #endif
 #ifdef TRIPLANAR

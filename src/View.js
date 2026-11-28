@@ -1783,7 +1783,7 @@ function drawnPoints(node, camera) {
         const x = p[i * 3], y = p[i * 3 + 1], z = p[i * 3 + 2]
         points.push([m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]])
       }
-    } else points.push(...corners(n.expandBounds(new Box3())))
+    } else points.push(...corners(n.expandExactBounds(new Box3())))
   })
   return points
 }

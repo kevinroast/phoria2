@@ -40,7 +40,7 @@ import * as mat4 from '../math/mat4.js'
 import { CAUSTIC_SIZE } from '../frame.js'
 import { CLIP_ONLY_FRAGMENT, FULLSCREEN_VERTEX, MESH_VERTEX } from './shaders.js'
 import { setHookUniforms } from './hooks.js'
-import { glassMapDefines, setGlassMapUniforms, setGlassUniforms, setShapeUniforms, shapeDefines } from './shape.js'
+import { glassMapDefines, setGlassMapUniforms, setGlassUniforms, setPlacementUniforms, setShapeUniforms, shapeDefines } from './shape.js'
 import { DrawnFrom } from './drawn.js'
 /** @import { Programs } from './programs.js' */
 /** @import { Resources } from './resources.js' */
@@ -508,6 +508,7 @@ export class Caustics {
       if (hook) setHookUniforms(program, material, time, cameraPosition, (t) => this.resources.texture(t))
       program.set('uViewProjection', viewProjection)
       program.set('uModel', item.worldMatrix)
+      setPlacementUniforms(program, item, this.resources)
       if (!mat3.normalFromMat4(normalMatrix, item.worldMatrix)) mat3.identity(normalMatrix)
       program.set('uNormalMatrix', normalMatrix)
       // thickness in world units, as the mesh is scaled

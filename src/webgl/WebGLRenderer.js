@@ -5,7 +5,7 @@ import { Material } from '../material/Material.js'
 import { ACCUMULATE_FRAGMENT, CLIP_ONLY_FRAGMENT, ENCODE_FRAGMENT, FULLSCREEN_VERTEX, MESH_VERTEX } from './shaders.js'
 import { hookFailed, hookFor, hooksLoading, setHookUniforms } from './hooks.js'
 import { hasParts } from './parts.js'
-import { placementDefines, setShapeUniforms, shapeDefines } from './shape.js'
+import { placementDefines, setPlacementUniforms, setShapeUniforms, shapeDefines } from './shape.js'
 import { definesOf, featuresOf, featuresOfMask, isGlass, secondUvDefines, setUniformsOf } from '../material/features.js'
 import { GLState } from './glstate.js'
 import { collect, solidItems } from '../frame.js'
@@ -240,6 +240,18 @@ const ENCODE = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, ENCODE_FRAGM
 // a refine sample into the running average
 const ACCUMULATE = /** @type {[string, string]} */ ([FULLSCREEN_VERTEX, ACCUMULATE_FRAGMENT])
 // counting a cap's faces into the stencil: the solids' surfaces, colour and depth left alone
+/**
+ * A skinned or morphed mesh's part of its program's signature - skinned or not, its number of morph
+ * targets and whether they move normals - as placementDefines (shape.js) makes its defines.
+ * @param {DrawItem} item @returns {number}
+ */
+function deformKey(item) {
+  const node = /** @type {any} */ (item.node), d = item.geometry.deform
+  if (!d) return 0
+  const targets = node.morphWeights ? d.targets.length : 0
+  return (node.skin && d.joints ? 1 : 0) + targets * 2 + (targets && d.targets.some((t) => t.normals) ? 1024 : 0)
+}
+
 const CLIP_MASK = /** @type {[string, string]} */ ([MESH_VERTEX, CLIP_ONLY_FRAGMENT])
 // a cap: a square on the plane, two units across, facing +Y until it is placed
 const CAP_SQUARE = new Geometry({
@@ -1092,7 +1104,7 @@ export class WebGLRenderer {
     }
     const hook = memo.hook
     const signature = ((instances ? 1 : 0) | (item.clip ? 2 : 0) | (sprites ? 4 : 0) | (receives ? 8 : 0) | (ssao ? 16 : 0) | (behind ? 32 : 0)
-      | (geometry.colors !== null ? 64 : 0) | (geometry.uvs2 ? 128 : 0) | (self ? 256 : 0)) + memo.own
+      | (geometry.colors !== null ? 64 : 0) | (geometry.uvs2 ? 128 : 0) | (self ? 256 : 0)) + memo.own + deformKey(item) * 2 ** 44
     let chosen = memo.programs.get(signature)
     if (!chosen) {
       // placed and cut as every pass draws it, then the material's features and the frame's lights
@@ -1193,6 +1205,7 @@ export class WebGLRenderer {
     }
 
     program.set('uModel', worldMatrix)
+    setPlacementUniforms(program, item, this.#gpu.resources)
     const hl = frame.highlight
     if (hl && (hl.nodes ? hl.nodes.has(node) : hl.node === node)) {
       program.set('uHighlightIndex', hl.index ?? -1)
@@ -1334,6 +1347,7 @@ export class WebGLRenderer {
       gl.useProgram(program.program)
       program.set('uViewProjection', frame.camera.viewProjection)
       program.set('uModel', item.worldMatrix)
+      setPlacementUniforms(program, item, this.#gpu.resources)
       setShapeUniforms(program, item, cutout, (t) => this.#gpu.resources.texture(t))
       program.set('uClipPlane', cap.plane)
       if (hook) setHookUniforms(program, item.material, frame.time ?? 0, frame.camera.position, (t) => this.#gpu.resources.texture(t))

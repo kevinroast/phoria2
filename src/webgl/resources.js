@@ -68,7 +68,24 @@ const sentEnough = (entry, geometry) => !!geometry.indices || (entry.filledTo ??
  */
 function layoutOf(g, instances, withNormals, withTangents) {
   return [g.positions.length, withNormals, g.uvs?.length, g.uvs2?.length, g.colors?.length, g.indices?.length,
-    instances?.instanceMatrices.length, instances?.instanceColors?.length, withTangents].join()
+    instances?.instanceMatrices.length, instances?.instanceColors?.length, withTangents, !!g.deform?.joints].join()
+}
+
+/**
+ * Texels a vertex takes in a geometry's morph texture: its position's offset, and its normal's when
+ * any target has normals.
+ * @param {Geometry} geometry @returns {number}
+ */
+export function morphStride(geometry) {
+  return geometry.deform?.targets.some((t) => t.normals) ? 2 : 1
+}
+
+/** Read exactly, texel by texel: float textures can't be filtered everywhere. @param {WebGL2RenderingContext} gl */
+function floatParameters(gl) {
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 }
 
 /**
@@ -164,6 +181,8 @@ export class Resources {
   /** Points drawn as squares: an instance a point. @type {WeakMap<object, MeshBuffers & { capacity: number, sorted: boolean, data: Float32Array, view: Float64Array, scratch: SortScratch | null }>} */ #sprites = new WeakMap()
   /** The GPU copy of each texture. @type {WeakMap<Texture, TextureEntry>} */ #textures = new WeakMap()
   /** Each render texture's targets. @type {WeakMap<RenderTexture, RenderTargets>} */ #renderTargets = new WeakMap()
+  /** Each skin's joint matrices on the GPU, and the version sent. @type {WeakMap<object, { texture: WebGLTexture, version: number, rows: number }>} */ #joints = new WeakMap()
+  /** Each geometry's morph targets on the GPU. @type {WeakMap<object, WebGLTexture>} */ #morphs = new WeakMap()
   /** @type {WebGLTexture | null} */ #white = null
   /** @type {WebGLBuffer | null} */ #corners = null
   /** Counts for renderer.info. */
@@ -284,6 +303,12 @@ export class Resources {
     if (geometry.colors) attributes.color = attribute(ATTRIBUTES.color, geometry.colors, 3)
     else gl.vertexAttrib3f(ATTRIBUTES.color, 1, 1, 1)
     if (withTangents) attributes.tangent = attribute(ATTRIBUTES.tangent, tangentsOf(geometry), 4)
+    // a skin's joints and weights, for triangles - points use these locations for their own arrays
+    const skin = withNormals ? geometry.deform : null
+    if (skin?.joints && skin.weights) {
+      attributes.joints = attribute(ATTRIBUTES.joints, skin.joints, 4)
+      attributes.weights = attribute(ATTRIBUTES.weights, skin.weights, 4)
+    }
 
     let matrixBuffer = null, colorBuffer = null
     if (instances) {
@@ -312,7 +337,7 @@ export class Resources {
     gl.bindVertexArray(null)
 
     // every array sent whole
-    const filled = Object.fromEntries(Object.keys(attributes).filter((k) => k !== 'tangent').map((k) => [k, geometry.vertexCount]))
+    const filled = Object.fromEntries(Object.keys(attributes).filter((k) => k !== 'tangent' && k !== 'joints' && k !== 'weights').map((k) => [k, geometry.vertexCount]))
     entry = { vao, buffers, count: geometry.elementCount, indexType, geometry, version: geometry.version,
       instanceVersion: instances?.version ?? 0, matrixBuffer, colorBuffer, attributes, layout, filled, filledTo: geometry.vertexCount }
     cache.set(key, entry)
@@ -714,6 +739,8 @@ export class Resources {
     this.#sprites = new WeakMap()
     this.#textures = new WeakMap()
     this.#renderTargets = new WeakMap()
+    this.#joints = new WeakMap()
+    this.#morphs = new WeakMap()
     this.#usedBy = new WeakMap()
     this.#white = null
     this.#corners = null
@@ -741,6 +768,74 @@ export class Resources {
     const gl = this.gl
     gl.deleteVertexArray(entry.vao)
     for (const b of entry.buffers) gl.deleteBuffer(b)
+  }
+
+  /**
+   * A skin's joint matrices as a float texture - a row of four texels (a matrix's columns) a joint -
+   * sent again only when the pose has changed.
+   * @param {import('../scene/deform.js').Skin} skin
+   * @returns {WebGLTexture}
+   */
+  jointTexture(skin) {
+    const gl = this.gl, rows = skin.joints.length
+    let entry = this.#joints.get(skin)
+    if (entry && entry.version === skin.version && entry.rows === rows) return entry.texture
+    if (!entry) {
+      entry = { texture: /** @type {WebGLTexture} */ (gl.createTexture()), version: -1, rows: 0 }
+      this.#joints.set(skin, entry)
+    }
+    gl.activeTexture(gl.TEXTURE0 + UPLOAD_UNIT)
+    gl.bindTexture(gl.TEXTURE_2D, entry.texture)
+    if (entry.rows !== rows) {
+      floatParameters(gl)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 4, rows, 0, gl.RGBA, gl.FLOAT, skin.matrices)
+    } else gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 4, rows, gl.RGBA, gl.FLOAT, skin.matrices)
+    entry.version = skin.version
+    entry.rows = rows
+    return entry.texture
+  }
+
+  /**
+   * A geometry's morph targets as a float texture: target after target, vertex after vertex, the
+   * position's offset then (when the targets have them) the normal's - rows as wide as the GPU
+   * allows. Sent once; freed with the geometry.
+   * @param {Geometry} geometry
+   * @returns {WebGLTexture}
+   */
+  morphTexture(geometry) {
+    const cached = this.#morphs.get(geometry)
+    if (cached) return cached
+    const gl = this.gl
+    const targets = /** @type {import('../scene/deform.js').Deform} */ (geometry.deform).targets
+    const stride = morphStride(geometry), n = geometry.vertexCount
+    const texels = targets.length * n * stride
+    const width = Math.max(1, Math.min(texels, 4096, gl.getParameter(gl.MAX_TEXTURE_SIZE) || 4096)), height = Math.ceil(texels / width)
+    const data = new Float32Array(width * height * 4)
+    targets.forEach((t, ti) => {
+      for (let v = 0; v < n; v++) {
+        const at = ((ti * n + v) * stride) * 4
+        data[at] = t.positions[v * 3]
+        data[at + 1] = t.positions[v * 3 + 1]
+        data[at + 2] = t.positions[v * 3 + 2]
+        if (stride > 1 && t.normals) {
+          data[at + 4] = t.normals[v * 3]
+          data[at + 5] = t.normals[v * 3 + 1]
+          data[at + 6] = t.normals[v * 3 + 2]
+        }
+      }
+    })
+    const texture = /** @type {WebGLTexture} */ (gl.createTexture())
+    gl.activeTexture(gl.TEXTURE0 + UPLOAD_UNIT)
+    gl.bindTexture(gl.TEXTURE_2D, texture)
+    floatParameters(gl)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, data)
+    this.#morphs.set(geometry, texture)
+    geometry.onDispose(() => {
+      if (this.#morphs.get(geometry) !== texture) return
+      gl.deleteTexture(texture)
+      this.#morphs.delete(geometry)
+    })
+    return texture
   }
 
   #whiteTexture() {

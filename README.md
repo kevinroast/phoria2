@@ -32,7 +32,7 @@ product viewers. The [demo gallery](https://kevs3d.co.uk/phoria2/).
   increase quality further and allow depth of field.
 - **Real-world glTF**: models load as exporters and optimisers write them - Draco and meshopt
   geometry, KTX2 textures transcoded to the GPU's own compressed formats, WebP and AVIF, and instanced
-  meshes - with their materials, variants and animations. The decoders load only for the files that
+  meshes - with their materials, variants, skins, morph targets and animations. The decoders load only for the files that
   need them.
 - **Render textures**: a `RenderTexture` is what a camera sees, as any material's texture - live
   camera feeds on monitors, a minimap, a second view beside a product.
@@ -177,6 +177,10 @@ model.play()                                        // its first animation
 model.variant = 'Peacock Velvet'                    // one of model.variants - its colourways
 ```
 
+Characters and blend shapes animate as they were made - skinned meshes follow their joints, morph
+targets mix by weight (`mesh.morphs = { smile: 0.7 }`) - and `model.play('Run', { fade: 0.3 })` crossfades
+from one clip to the next.
+
 Compressed files - Draco, meshopt, KTX2, WebP, instanced meshes - load the same way.
 
 ## As an HTML tag
@@ -266,7 +270,7 @@ A full example, with a chart that follows its data, is in
 | `phoria2` | the view, scene graph, cameras, lights, materials, geometry, curves, textures, picking, labels, glass and advanced materials, area lights, bloom, ambient occlusion, ground shadows, FXAA, `refine`, render textures, `create()` from JSON |
 | `phoria2/charts` | `chart()` - charts from a spec of mark, data and channels, or of a function in cartesian or curved coordinates, and the scales they use |
 | `phoria2/particles` | `Emitter` and `Body` |
-| `phoria2/gltf` | `loadGLTF()` - glTF 2.0 models with their materials, material variants and animations, compressed ones too (Draco, meshopt, KTX2, WebP, instancing) |
+| `phoria2/gltf` | `loadGLTF()` - glTF 2.0 models with their materials, material variants, skins, morph targets and animations, compressed ones too (Draco, meshopt, KTX2, WebP, instancing) |
 | `phoria2/motion` | `Timeline` - named steps played in order, `follow()` along a curve, `reveal()` a path as it's travelled - for explainers and guided tours |
 | `phoria2/edit` | `TransformHandle` - a move and turn handle with grid and angle snapping - and `History` for undo, for planners and layout editors |
 | `phoria2/element` | `<phoria-view>` - a model, chart or scene as an HTML tag, its attributes View options; importing it defines the tag |

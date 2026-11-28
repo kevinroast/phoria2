@@ -58,6 +58,12 @@ export class Geometry {
    * @type {{ type: string } & Record<string, unknown> | null}
    */
   source = null
+  /**
+   * @internal Skinning and blend shapes, from a glTF model: the joints and weights each vertex
+   * follows, and its morph targets. Kept by clone(); not by toJSON().
+   * @type {import('../scene/deform.js').Deform | null}
+   */
+  deform = null
 
   /** @type {Float32Array | null} */
   #normals = null
@@ -216,6 +222,11 @@ export class Geometry {
     })
     g.source = this.source && { ...this.source }
     g.drawCount = this.drawCount
+    const d = this.deform
+    if (d) {
+      g.deform = { joints: d.joints && d.joints.slice(), weights: d.weights && d.weights.slice(),
+        targets: d.targets.map((t) => ({ positions: t.positions.slice(), normals: t.normals && t.normals.slice(), reach: t.reach })) }
+    }
     return g
   }
 
@@ -265,6 +276,15 @@ export class Geometry {
     this.uvs2 = expand(this.uvs2, 2)
     this.colors = expand(this.colors, 3)
     for (const name of POINT_ARRAYS) this[name] = expand(this[name], 1)
+    const d = this.deform
+    if (d) {
+      d.joints = expand(d.joints, 4)
+      d.weights = expand(d.weights, 4)
+      for (const t of d.targets) {
+        t.positions = /** @type {Float32Array} */ (expand(t.positions, 3))
+        t.normals = expand(t.normals, 3)
+      }
+    }
     this.indices = null
     this.source = null
   }

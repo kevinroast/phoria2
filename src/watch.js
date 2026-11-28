@@ -181,6 +181,8 @@ export class ChangeWatch {
       this.#push(node.count)
       this.#push(node.version)
     }
+    // a blend shape's weights - a skin's joints are nodes of their own, watched as any node is
+    if (node.morphWeights) for (const w of node.morphWeights) this.#push(w)
     this.#push(idOf(m))
     // its values where it first appears; later parts with it add only its id
     if (this.#materials.has(m)) return

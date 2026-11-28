@@ -528,7 +528,7 @@ export class Node {
   get bounds() {
     this.updateWorld()
     const box = new Box3()
-    this.traverse((n) => n.expandBounds(box))
+    this.traverse((n) => n.expandExactBounds(box))
     return box
   }
 
@@ -542,7 +542,7 @@ export class Node {
   boundsFrom(camera) {
     this.updateWorld()
     const box = new Box3()
-    this.eachShownTo(camera, (n) => n.expandBounds(box))
+    this.eachShownTo(camera, (n) => n.expandExactBounds(box))
     return box
   }
 
@@ -566,6 +566,15 @@ export class Node {
   /** @internal Grow a world space box by this node's own geometry (none for a plain node). @param {Box3} box */
   expandBounds(box) {
     return box
+  }
+
+  /**
+   * @internal As expandBounds, but exact where that is loose to be quick - a skinned or morphed mesh by
+   * its posed vertices. For bounds asked for now and then (framing, placing), not every frame.
+   * @param {Box3} box
+   */
+  expandExactBounds(box) {
+    return this.expandBounds(box)
   }
 
   /**

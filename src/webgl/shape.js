@@ -2,7 +2,7 @@
 // masks - draw it as the picture does: instanced, cut by its clip, with a cut-out's holes, moved by
 // its shader hooks. One place says how, so a new kind of shape reaches every pass at once.
 import { hookFor, passDefines } from './hooks.js'
-import { uvMatrix } from './resources.js'
+import { morphStride, uvMatrix } from './resources.js'
 import { glassFilterParts, secondUvDefines } from '../material/features.js'
 
 /** @import { DrawItem } from '../frame.js' */
@@ -18,7 +18,31 @@ import { glassFilterParts, secondUvDefines } from '../material/features.js'
 export function placementDefines(item) {
   const defines = item.instances ? ['INSTANCED'] : []
   if (item.clip) defines.push('CLIP')
+  // a skinned or morphed mesh, posed on the GPU - in every pass, so its shadow and pick follow it
+  const node = /** @type {any} */ (item.node)
+  if (node.skin && item.geometry.deform?.joints) defines.push('SKINNED')
+  const targets = node.morphWeights ? item.geometry.deform?.targets.length ?? 0 : 0
+  if (targets) defines.push(`MORPH ${targets}`, `MORPH_STRIDE ${morphStride(item.geometry)}`)
   return defines
+}
+
+/**
+ * The uniforms placementDefines' skin and blend shapes read: the joints' matrices, the morph
+ * targets and their weights. Every pass that sets a mesh's uModel calls this beside it.
+ * @param {{ set: (name: string, value: any) => void }} program
+ * @param {DrawItem} item @param {import('./resources.js').Resources} resources
+ */
+export function setPlacementUniforms(program, item, resources) {
+  const node = /** @type {any} */ (item.node)
+  if (node.skin && item.geometry.deform?.joints) {
+    node.skin.update(item.worldMatrix)
+    program.set('uJoints', resources.jointTexture(node.skin))
+  }
+  if (node.morphWeights && item.geometry.deform?.targets.length) {
+    program.set('uMorphs', resources.morphTexture(item.geometry))
+    program.set('uMorphWeights', node.morphWeights)
+    program.set('uMorphVertices', item.geometry.vertexCount)
+  }
 }
 
 /**

@@ -34,6 +34,12 @@ const MODELS = [
     credit: '"Flight Helmet", glTF by Gary Hsu - CC0' },
   { name: 'stained-glass lamp', url: `${KHRONOS}StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp.gltf`, compression: 'KTX2',
     credit: '"Stained Glass Lamp" © 2021 Wayfair, by Eric Chadwick - CC BY 4.0' },
+  // a skeleton moving the mesh: three clips on the same joints - switching crossfades
+  { name: 'fox', url: `${KHRONOS}Fox/glTF-Binary/Fox.glb`, compression: 'skinned',
+    credit: '"Fox" by PixelMannen - CC0; rigged and animated by tomkranis - CC BY 4.0; glTF by AsoboStudio and scurest' },
+  // eight blend shapes, each with its own normals: a slider each in the controls
+  { name: 'morph targets', url: `${KHRONOS}MorphStressTest/glTF-Binary/MorphStressTest.glb`, compression: 'morphs',
+    credit: '"Morph Stress Test" © 2019 Analytical Graphics, Inc., by Ed Mackey - CC BY 4.0' },
 ]
 // each compression, spelled out under the model's name
 const COMPRESSION = {
@@ -43,6 +49,8 @@ const COMPRESSION = {
   WebP: 'WebP textures',
   KTX2: 'KTX2 (Basis Universal) textures',
   instanced: 'meshopt geometry and KTX2 textures, 49 parts drawn as 15 meshes, the repeated pieces instanced (EXT_mesh_gpu_instancing)',
+  skinned: 'a skin of 24 joints - Survey, Walk and Run, crossfaded in the controls',
+  morphs: 'eight morph targets, posed on the GPU - a slider each in the controls',
 }
 const HDR = 'hdr/studio_small_09_1k.hdr'
 const TURN = 0.20
@@ -54,7 +62,9 @@ const FRONT = [2.4, 1.6, 3.2]
 // Khronos samples in compressed forms - Draco and meshopt geometry, KTX2 and WebP textures - decoded
 // as they load, and glass: the dragon's amber body (its thickness from a map) and the lamp's stained
 // glass. A model with material variants - the lamp on or off, the dragon's body tinted or coloured -
-// gets a choice of them, as a configurator would. With the turntable off, the picture refines.
+// gets a choice of them, as a configurator would. The fox is skinned - a skeleton moving its mesh, its
+// clips crossfading as you switch - and the morph test blends eight shapes, a slider each. With the
+// turntable off and nothing moving, the picture refines.
 export default function run({ canvas, gui }) {
   // a slow turntable: a quarter of a radian a second
   const view = new View({ canvas, orbit: { autoRotate: TURN }, refine: { samples: 128 }, camera: { position: FRONT, fov: 35 } })
@@ -72,7 +82,7 @@ export default function run({ canvas, gui }) {
     receiveShadow: true,
   }))
 
-  const settings = { variant: '', environment: 'studio HDR', backdrop: true, turntable: true }
+  const settings = { variant: '', clip: '', environment: 'studio HDR', backdrop: true, turntable: true }
   /** @type {import('phoria2/gltf').Model | null} */
   let model = null
   let loading = 0
@@ -128,6 +138,11 @@ export default function run({ canvas, gui }) {
     for (const mesh of model.meshes) mesh.castShadow = mesh.receiveShadow = true
     scene.add(model)
     if (model.animations.length) model.play()
+    // its clips to switch between, when it has more than one - eased from one to the next
+    settings.clip = model.animations[0]?.name ?? ''
+    clips.options(model.animations.map((a) => a.name))
+    clips.root.style.display = model.animations.length > 1 ? '' : 'none'
+    showMorphs()
     // its variants to choose from, if it has any - shown in the first
     settings.variant = model.variants[0] ?? ''
     model.variant = model.variants[0] ?? null
@@ -165,6 +180,24 @@ export default function run({ canvas, gui }) {
     if (!model) return
     model.variant = v
   })
+  // the clip playing: switching crossfades over half a second, so a walk eases into a run
+  const clips = gui.add(settings, 'clip', []).name('animation').onChange((name) => model?.play(name, { fade: 0.5 }))
+  // a slider for each of the model's morph targets - moving one takes over from its animation
+  const morphFolder = gui.addFolder('Morph targets')
+  const showMorphs = () => {
+    morphFolder.body.replaceChildren()
+    morphFolder.children = []
+    const meshes = (model?.meshes ?? []).filter((m) => /** @type {any} */ (m).morphs && Object.keys(/** @type {any} */ (m).morphs).length)
+    morphFolder.root.style.display = meshes.length ? '' : 'none'
+    const weights = /** @type {Record<string, number>} */ ({})
+    for (const mesh of meshes) Object.assign(weights, /** @type {any} */ (mesh).morphs)
+    for (const name of Object.keys(weights)) {
+      morphFolder.add(weights, name, 0, 1, 0.01).onChange((/** @type {number} */ v) => {
+        for (const a of model?.animations ?? []) a.pause()
+        for (const mesh of meshes) if (name in /** @type {any} */ (mesh).morphs) /** @type {any} */ (mesh).morphs = { [name]: v }
+      })
+    }
+  }
   show(0)
   gui.add(settings, 'environment', ['studio HDR', 'built-in studio', 'none']).onChange((v) => {
     scene.environment = v === 'studio HDR' ? HDR : v === 'built-in studio' ? 'studio' : 'none'

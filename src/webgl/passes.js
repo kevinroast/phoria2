@@ -8,7 +8,7 @@ import { irradianceSH } from '../irradiance.js'
 import { BLUE_NOISE_SIZE, POINT_SHADOW_SIZE, SHADOW_MAP_SIZE, SOFT_SPREAD, softnessOf, SPOT_ATLAS_SIZE } from '../shadow.js'
 import { CLIP, CLIP_ONLY_FRAGMENT, COMMON, CUTOUT, EQUIRECT, FULLSCREEN_VERTEX, MESH_VERTEX, TONE_MAP } from './shaders.js'
 import { setHookUniforms } from './hooks.js'
-import { glassMapDefines, setGlassMapUniforms, setGlassUniforms, setShapeUniforms, shapeDefines } from './shape.js'
+import { glassMapDefines, setGlassMapUniforms, setGlassUniforms, setPlacementUniforms, setShapeUniforms, shapeDefines } from './shape.js'
 import { isGlass } from '../material/features.js'
 import { blit } from './targets.js'
 import { DrawnFrom } from './drawn.js'
@@ -740,6 +740,7 @@ export class Passes {
       if (hook) setHookUniforms(program, material, this.time, this.cameraPosition, (t) => this.resources.texture(t))
       program.set('uViewProjection', viewProjection)
       program.set('uModel', item.worldMatrix)
+      setPlacementUniforms(program, item, this.resources)
       if (filter) {
         program.set('uLightInverse', lightInverse)
         setGlassUniforms(program, item)
@@ -802,6 +803,7 @@ export class Passes {
         if (hook) setHookUniforms(program, item.material, frame.time ?? 0, frame.camera.position, (t) => this.resources.texture(t))
         program.set('uViewProjection', frame.camera.viewProjection)
         program.set('uModel', item.worldMatrix)
+        setPlacementUniforms(program, item, this.resources)
         program.set('uMask', [outline.color[0], outline.color[1], outline.color[2], px / OUTLINE_MAX])
         setShapeUniforms(program, item, cutout, (t) => this.resources.texture(t))
         this.resources.drawTriangles(item.geometry, item.instances)

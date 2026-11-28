@@ -9,7 +9,7 @@
 // - each in three frames: plain; full - every light and shadow, studio light, fog, a clip with its
 //   cap, an outline, ambient occlusion, the ground shadow, bloom and FXAA, and a GPU pick; and linear
 //   light with an HDR environment;
-// - shader hooks, instancing and the second UV set, each in those frames too.
+// - shader hooks, instancing, the second UV set, and skinned and morphed meshes, each in those frames too.
 // Every frame waits for its shaders, so each compiles now; a failure is caught, with the driver's
 // log, and the check goes on. Run from shaders.html, or headless with `npm run shaders`.
 import {
@@ -19,6 +19,7 @@ import {
 import { FEATURES } from '../src/material/features.js'
 import { collect } from '../src/frame.js'
 import { WebGLRenderer } from '../src/webgl/WebGLRenderer.js'
+import { Skin } from '../src/scene/deform.js'
 // every GLSL part registered before the first frame, as if each had loaded: a material waiting for
 // its part is left out of a frame, and its variants would go unchecked (src/webgl/parts.js)
 import { SHADOW_PARTS } from '../src/webgl/parts-shadows.js'
@@ -94,7 +95,7 @@ const geometryFor = (/** @type {string} */ kind, /** @type {object} */ extra = {
 
 /**
  * A drawable of a kind with the features named, in a group (for a clip), with its node options.
- * @param {'mesh' | 'points' | 'lines'} kind @param {string[]} features @param {{ hooks?: boolean, instanced?: boolean, uv2?: boolean }} axes
+ * @param {'mesh' | 'points' | 'lines'} kind @param {string[]} features @param {{ hooks?: boolean, instanced?: boolean, uv2?: boolean, skinned?: boolean, morphs?: 'normals' | 'positions' }} axes
  */
 function drawable(kind, features, axes) {
   const material = /** @type {Record<string, any>} */ ({})
@@ -114,7 +115,36 @@ function drawable(kind, features, axes) {
     return m
   }
   const Kind = kind === 'mesh' ? Mesh : kind === 'points' ? Points : Lines
-  return new /** @type {any} */ (Kind)({ geometry: g, material, castShadow: true, receiveShadow: true, ...node })
+  const made = new /** @type {any} */ (Kind)({ geometry: g, material, castShadow: true, receiveShadow: true, ...node })
+  if (axes.skinned || axes.morphs) deform(made, axes)
+  return made
+}
+
+/**
+ * A mesh skinned to two joints, and/or given a blend shape (with normals or without) half on - as a
+ * glTF model's would be - so the skinned and morphed programs compile.
+ * @param {any} mesh @param {{ skinned?: boolean, morphs?: 'normals' | 'positions' }} axes
+ */
+function deform(mesh, axes) {
+  const g = mesh.geometry.clone(), n = g.vertexCount
+  mesh.geometry = g
+  const joints = axes.skinned ? new Float32Array(n * 4) : null, weights = axes.skinned ? new Float32Array(n * 4) : null
+  if (joints && weights) for (let v = 0; v < n; v++) {
+    joints[v * 4] = v % 2
+    weights[v * 4] = 1
+  }
+  const targets = axes.morphs ? [{ positions: new Float32Array(n * 3).fill(0.05), normals: axes.morphs === 'normals' ? new Float32Array(n * 3) : null, reach: 0.09 }] : []
+  g.deform = { joints, weights, targets }
+  if (axes.skinned) {
+    const a = new Group(), b = new Group({ position: [0, 0.2, 0] })
+    a.add(b)
+    mesh.add(a)
+    mesh.skin = new Skin([a, b], null)
+  }
+  if (axes.morphs) {
+    mesh.morphWeights = new Float32Array([0.5])
+    mesh.morphNames = ['grow']
+  }
 }
 
 /** The frames each variant is drawn in. */
@@ -215,6 +245,13 @@ try {
   variants.push(['mesh instanced+hooks+cutout', () => drawable('mesh', ['cutout'], { instanced: true, hooks: true })])
   variants.push(['mesh uv2', () => drawable('mesh', ['map'], { uv2: true })])
   variants.push(['mesh uv2+triplanar+cutout', () => drawable('mesh', ['triplanar', 'cutout'], { uv2: true })])
+  // glTF skins and blend shapes, posed in the vertex shader - in every pass, so their shadows and picks
+  const solid = featuresOf('mesh').filter((f) => f !== 'unlit' && f !== 'multiply')
+  variants.push(['mesh skinned', () => drawable('mesh', [], { skinned: true })])
+  variants.push(['mesh morphed', () => drawable('mesh', [], { morphs: 'positions' })])
+  variants.push(['mesh morphed with normals', () => drawable('mesh', [], { morphs: 'normals' })])
+  variants.push(['mesh skinned+morphed+everything', () => drawable('mesh', solid, { skinned: true, morphs: 'normals' })])
+  variants.push(['mesh skinned+morphed+hooks+cutout', () => drawable('mesh', ['cutout'], { skinned: true, morphs: 'positions', hooks: true })])
 
   // Lights whose code is compiled only when a scene has them - rect-area lights, soft shadows - drawn
   // once each in the full frame, with only the features their code meets, rather than added to every

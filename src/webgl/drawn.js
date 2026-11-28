@@ -5,8 +5,9 @@
 //
 // The record is numbers, compared one by one: the light's view, then each caster as the depth pass
 // draws it - which node, its world matrix, its geometry and how much of it is drawn, its instances,
-// its section plane, and what of its material shapes it (a cut-out's threshold, map and the map's
-// placement; glass's colour and sides). A caster with shader hooks can move or cut itself with time,
+// its section plane, its pose (a skin's joints, its blend shapes' weights), and what of its material
+// shapes it (a cut-out's threshold, map and the map's placement; glass's colour and sides). A caster
+// with shader hooks can move or cut itself with time,
 // so a map with one is drawn every frame. Anything that changes a map must be in its record: a test
 // for each (test/shadow-cache.test.js).
 import { glassFilter } from '../material/features.js'
@@ -85,6 +86,14 @@ export class DrawnFrom {
       if (material.shader && (glass || changesShape(material.shader))) this.#keepable = false
       r.push(idOf(node), idOf(geometry), geometry.version, geometry.drawnCount)
       for (let i = 0; i < 16; i++) r.push(worldMatrix[i])
+      // a skinned or morphed mesh moves with its pose while its own matrix stands still: its joints'
+      // matrices (their version) and its blend shapes' weights
+      const deformed = /** @type {any} */ (node)
+      if (deformed.skin && geometry.deform?.joints) {
+        deformed.skin.update(worldMatrix)
+        r.push(deformed.skin.version)
+      } else r.push(-1)
+      if (deformed.morphWeights && geometry.deform?.targets.length) for (const w of deformed.morphWeights) r.push(w)
       if (instances) r.push(instances.version, instances.count)
       else r.push(-1, -1)
       if (clip) r.push(1, clip.plane[0], clip.plane[1], clip.plane[2], clip.plane[3])
