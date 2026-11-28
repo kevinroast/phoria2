@@ -1,5 +1,6 @@
 import { DirectionalLight, Mesh, View, cylinder } from 'phoria2'
 import { loadGLTF } from 'phoria2/gltf'
+import { slug } from './registry.js'
 
 // Khronos's glTF sample models, pinned to one commit, from GitHub as Khronos's own sample viewer
 // loads them - the compressed ones load from there rather than from this site. (Not jsDelivr: their
@@ -49,7 +50,7 @@ const COMPRESSION = {
   WebP: 'WebP textures',
   KTX2: 'KTX2 (Basis Universal) textures',
   instanced: 'meshopt geometry and KTX2 textures, 49 parts drawn as 15 meshes, the repeated pieces instanced (EXT_mesh_gpu_instancing)',
-  skinned: 'a skin of 24 joints - Survey, Walk and Run, crossfaded in the controls',
+  skinned: 'a skin of 24 joints - its clips crossfade as you switch',
   morphs: 'eight morph targets, posed on the GPU - a slider each in the controls',
 }
 const HDR = 'hdr/studio_small_09_1k.hdr'
@@ -62,9 +63,9 @@ const FRONT = [2.4, 1.6, 3.2]
 // Khronos samples in compressed forms - Draco and meshopt geometry, KTX2 and WebP textures - decoded
 // as they load, and glass: the dragon's amber body (its thickness from a map) and the lamp's stained
 // glass. A model with material variants - the lamp on or off, the dragon's body tinted or coloured -
-// gets a choice of them, as a configurator would. The fox is skinned - a skeleton moving its mesh, its
-// clips crossfading as you switch - and the morph test blends eight shapes, a slider each. With the
-// turntable off and nothing moving, the picture refines.
+// gets a button for each over its caption, as a configurator would. The fox is skinned - a skeleton
+// moving its mesh - with a button for each of its clips, crossfading as you switch; the morph test
+// blends eight shapes, a slider each. With the turntable off and nothing moving, the picture refines.
 export default function run({ canvas, gui }) {
   // a slow turntable: a quarter of a radian a second
   const view = new View({ canvas, orbit: { autoRotate: TURN }, refine: { samples: 128 }, camera: { position: FRONT, fov: 35 } })
@@ -82,15 +83,16 @@ export default function run({ canvas, gui }) {
     receiveShadow: true,
   }))
 
-  const settings = { variant: '', clip: '', environment: 'studio HDR', backdrop: true, turntable: true }
+  const settings = { environment: 'studio HDR', backdrop: true, turntable: true }
   /** @type {import('phoria2/gltf').Model | null} */
   let model = null
   let loading = 0
 
   // the models along the bottom: a button each, its compression tagged, and the one shown named
-  // over them with its compression and credit
+  // over them with its compression and credit - and over that, its colourways and its clips, a
+  // button each, where they can't be missed
   const el = (/** @type {string} */ tag, /** @type {string} */ className, /** @type {string} */ text = '') => Object.assign(document.createElement(tag), { className, textContent: text })
-  const bar = el('div', 'viewer-models'), caption = el('div', 'viewer-caption'), row = el('div', 'viewer-buttons')
+  const bar = el('div', 'viewer-models'), choices = el('div', 'viewer-choices'), caption = el('div', 'viewer-caption'), row = el('div', 'viewer-buttons')
   const buttons = MODELS.map((m, i) => {
     const button = Object.assign(el('button', ''), { type: 'button' })
     button.append(m.name)
@@ -103,13 +105,56 @@ export default function run({ canvas, gui }) {
     row.append(button)
     return button
   })
-  bar.append(caption, row)
+  bar.append(choices, caption, row)
   document.body.append(bar)
+
+  /**
+   * The model's choices over its caption: its material variants and, when it has more than one, its
+   * clips - a group each, a button each, the one showing pressed. On a phone each button is its
+   * number, its name kept for screen readers and as its tooltip.
+   */
+  const showChoices = () => {
+    choices.replaceChildren()
+    if (!model) return
+    const loaded = model
+    /** @param {string} label @param {string[]} names @param {string | null} now @param {(name: string) => void} pick */
+    const group = (label, names, now, pick) => {
+      const set = el('div', 'viewer-choice-group')
+      set.setAttribute('role', 'group')
+      set.setAttribute('aria-label', label)
+      set.append(el('span', 'viewer-choice-label', label))
+      const pills = names.map((name, i) => {
+        const pill = Object.assign(el('button', ''), { type: 'button', title: name })
+        pill.setAttribute('aria-label', name)
+        pill.setAttribute('aria-pressed', String(name === now))
+        pill.append(el('span', 'viewer-choice-name', name), el('span', 'viewer-choice-number', String(i + 1)))
+        pill.addEventListener('click', () => {
+          pill.blur()
+          pick(name)
+          for (const p of pills) p.setAttribute('aria-pressed', String(p === pill))
+        })
+        return pill
+      })
+      set.append(...pills)
+      choices.append(set)
+    }
+    if (loaded.variants.length) group('Variant', loaded.variants, loaded.variant, (name) => { loaded.variant = name })
+    // switching crossfades over half a second, so a walk eases into a run
+    if (loaded.animations.length > 1) {
+      const playing = loaded.animations.find((a) => a.playing)?.name ?? null
+      group('Animation', loaded.animations.map((a) => a.name), playing, (name) => loaded.play(name, { fade: 0.5 }))
+    }
+    choices.hidden = !choices.childElementCount
+  }
 
   /** @param {number} index */
   const show = async (index) => {
     const id = ++loading
     const m = MODELS[index]
+    // the address names the model shown, so it can be shared or bookmarked: ?name=viewer&model=fox
+    const address = new URL(location.href)
+    address.searchParams.set('model', slug(m.name))
+    history.replaceState(history.state, '', address)
     buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(i === index)))
     // on a phone the buttons scroll sideways: the one chosen is brought into view
     buttons[index].scrollIntoView({ block: 'nearest', inline: 'nearest' })
@@ -138,16 +183,10 @@ export default function run({ canvas, gui }) {
     for (const mesh of model.meshes) mesh.castShadow = mesh.receiveShadow = true
     scene.add(model)
     if (model.animations.length) model.play()
-    // its clips to switch between, when it has more than one - eased from one to the next
-    settings.clip = model.animations[0]?.name ?? ''
-    clips.options(model.animations.map((a) => a.name))
-    clips.root.style.display = model.animations.length > 1 ? '' : 'none'
     showMorphs()
-    // its variants to choose from, if it has any - shown in the first
-    settings.variant = model.variants[0] ?? ''
+    // its variants, if it has any - shown in the first
     model.variant = model.variants[0] ?? null
-    variants.options(model.variants)
-    variants.root.style.display = model.variants.length ? '' : 'none'
+    showChoices()
     frameAbove()
   }
   // the plinth and the model on it, framed in the picture above the bar along the bottom: framed in
@@ -162,8 +201,8 @@ export default function run({ canvas, gui }) {
     p.set(p[0] - t[0], p[1], p[2] - t[2])
     t.set(0, t[1], 0)
     // the bar's buttons and room for a two-line caption over them - the same for every model, however
-    // long its own caption, so each is framed alike
-    const height = canvas.clientHeight || 1, below = row.getBoundingClientRect().height + 70 + 24
+    // long its own caption, so each is framed alike - and its choices, for a model that has them
+    const height = canvas.clientHeight || 1, below = row.getBoundingClientRect().height + choices.getBoundingClientRect().height + 70 + 24
     // drawn back for the bar, then in by about a third: the model fills more of the picture
     const back = (height / Math.max(height - below, height * 0.4)) * 0.6
     p.set(p[0] * back, t[1] + (p[1] - t[1]) * back, p[2] * back)
@@ -175,13 +214,6 @@ export default function run({ canvas, gui }) {
     p.set(p[0], p[1] - drop, p[2])
     t.set(0, t[1] - drop, 0)
   }
-  // the model's material variants: all its parts in another colourway at once
-  const variants = gui.add(settings, 'variant', []).onChange((v) => {
-    if (!model) return
-    model.variant = v
-  })
-  // the clip playing: switching crossfades over half a second, so a walk eases into a run
-  const clips = gui.add(settings, 'clip', []).name('animation').onChange((name) => model?.play(name, { fade: 0.5 }))
   // a slider for each of the model's morph targets - moving one takes over from its animation
   const morphFolder = gui.addFolder('Morph targets')
   const showMorphs = () => {
@@ -198,7 +230,9 @@ export default function run({ canvas, gui }) {
       })
     }
   }
-  show(0)
+  // the model the address names (?model=fox, as its name with dashes for spaces), or the first
+  const asked = new URLSearchParams(location.search).get('model')?.toLowerCase()
+  show(Math.max(0, MODELS.findIndex((m) => slug(m.name) === asked)))
   gui.add(settings, 'environment', ['studio HDR', 'built-in studio', 'none']).onChange((v) => {
     scene.environment = v === 'studio HDR' ? HDR : v === 'built-in studio' ? 'studio' : 'none'
     scene.background = settings.backdrop && v === 'studio HDR' ? scene.environment : '#1c1c20'

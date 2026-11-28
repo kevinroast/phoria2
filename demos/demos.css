@@ -3267,6 +3267,63 @@ button.demo-legend-item {
   color: var(--text);
 }
 
+/* the model's choices, over its caption: its variants and its clips, a small pill each, a group each
+   with its label - on a phone each pill is its number */
+.viewer-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  /* as wide as the buttons, not wider: many choices wrap */
+  width: 0;
+  min-width: 100%;
+}
+
+.viewer-choices[hidden] {
+  display: none;
+}
+
+.viewer-choice-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.viewer-choice-label {
+  margin-right: 2px;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.viewer-choice-group button {
+  min-width: 26px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.viewer-choice-group button:hover {
+  border-color: var(--accent-dim);
+}
+
+.viewer-choice-group button[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #16161a;
+}
+
+.viewer-choice-number {
+  display: none;
+}
+
 .viewer-caption {
   /* as wide as the buttons, not wider: a long credit wraps */
   width: 0;
@@ -3363,5 +3420,23 @@ button.demo-legend-item {
 
   .viewer-buttons button small {
     display: none;
+  }
+
+  /* the choices as numbers, a fingertip wide: 1, 2, 3 */
+  .viewer-choices {
+    padding: 0 10px;
+  }
+
+  .viewer-choice-group button {
+    min-width: 32px;
+    padding: 4px 8px;
+  }
+
+  .viewer-choice-name {
+    display: none;
+  }
+
+  .viewer-choice-number {
+    display: inline;
   }
 }
